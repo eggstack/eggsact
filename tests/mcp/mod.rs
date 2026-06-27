@@ -1,0 +1,17 @@
+pub mod test_additional_edge_cases;
+pub mod test_boundary_conditions;
+pub mod test_comprehensive_parity;
+pub mod test_composite_tools;
+pub mod test_determinism_concurrency;
+pub mod test_deterministic_real_use;
+pub mod test_edge_cases;
+pub mod test_error_structure;
+pub mod test_golden_fixtures;
+pub mod test_hardening_and_gaps;
+pub mod test_lifecycle_and_gaps;
+pub mod test_mcp_tools;
+pub mod test_protocol;
+pub mod test_real_tool_use;
+pub mod test_response_structure;
+pub mod test_tool_coverage;
+pub mod test_tool_gaps;
