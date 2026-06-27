@@ -69,6 +69,18 @@ fn test_glob_match_case_insensitive() {
 }
 
 #[test]
+fn test_glob_match_double_star_case_insensitive() {
+    let result = glob_match("**/*.TXT", "src/main.txt", "posix", false);
+    assert!(result.matches);
+}
+
+#[test]
+fn test_glob_match_multiple_double_stars_use_current_path_position() {
+    let result = glob_match("**/x/y/**/z.txt", "a/b/x/y/c/z.txt", "posix", true);
+    assert!(result.matches);
+}
+
+#[test]
 fn test_glob_match_empty_pattern() {
     let result = glob_match("", "", "posix", true);
     assert!(result.matches);

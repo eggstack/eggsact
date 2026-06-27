@@ -131,6 +131,8 @@ fn match_double_star(
     pattern_parts: &[&str],
     path_parts: &[String],
     p_idx: usize,
+    mut path_idx: usize,
+    case_sensitive: bool,
 ) -> (bool, usize, usize) {
     let next_pattern_idx = p_idx + 1;
 
@@ -138,7 +140,6 @@ fn match_double_star(
         return (true, next_pattern_idx, path_parts.len());
     }
 
-    let mut path_idx = p_idx;
     while path_idx <= path_parts.len() {
         let remaining_pattern = &pattern_parts[next_pattern_idx..];
         let remaining_path: Vec<&str> = if path_idx < path_parts.len() {
@@ -148,7 +149,7 @@ fn match_double_star(
         };
 
         let (matched, consumed_p, consumed_path) =
-            match_segments(remaining_pattern, &remaining_path, true);
+            match_segments(remaining_pattern, &remaining_path, case_sensitive);
 
         if matched {
             return (
@@ -182,7 +183,7 @@ fn match_segments(
         if pattern_seg == "**" {
             let path_strs: Vec<String> = path_parts.iter().map(|s| (*s).to_string()).collect();
             let (matched, new_p_idx, new_path_idx) =
-                match_double_star(pattern_parts, &path_strs, p_idx);
+                match_double_star(pattern_parts, &path_strs, p_idx, path_idx, case_sensitive);
             if !matched {
                 return (false, p_idx, path_idx);
             }
