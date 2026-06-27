@@ -86,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Physical and mathematical constants** (pi, e, speed of light, Planck, Avogadro, etc.)
 - **Statistical functions** (sum, mean, median, std, variance, min, max, product)
 - **Number theory** (gcd, lcm, factorial)
-- **MCP server** (stdio JSON-RPC 2.0, protocol version 2024-11-05, server identity `nl-calc-exact` v1.0.0)
+- **MCP server** (stdio JSON-RPC 2.0, protocol version 2024-11-05, server identity `eggsact`)
 - **59 MCP tools** across 17 categories:
   - Math & Units (4): math_eval, unit_convert, unit_info, constant_lookup
   - Text Measurement & Comparison (10): text_measure, text_equal, text_diff_explain, text_inspect, text_count, text_truncate, text_fingerprint, text_hash, text_position, text_window

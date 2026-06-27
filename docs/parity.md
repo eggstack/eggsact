@@ -9,7 +9,7 @@ Rust.
 
 The Python reference lives in `eggcalc/mcp/` (schemas.py, tools.py, server.py) and
 provides 64 tool definitions. The Rust implementation in `src/mcp/` replicates all 64
-tools with matching behavior. All 251 parity tests pass.
+tools with matching behavior. All parity tests pass.
 
 ## Parity Framework
 
@@ -138,7 +138,7 @@ They do not affect client-facing behavior or interchangeability.
 
 Both implementations identify themselves identically to MCP clients:
 
-- **Name:** `eggcalc`
+- **Name:** `eggsact`
 - **Version:** `1.1.3`
 
 This ensures clients see the same server regardless of which backend is running.

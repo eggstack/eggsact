@@ -25,8 +25,8 @@ cargo install eggsact
 ### From source
 
 ```bash
-git clone https://github.com/anomalyco/nl-clicalc
-cd nl-clicalc/eggsact
+git clone https://github.com/eggstack/eggsact
+cd eggsact
 cargo install --path .
 ```
 
@@ -75,7 +75,7 @@ let (result, _typ) = run("30m to ft").unwrap();
 
 ### MCP Server
 
-Start the server and connect via JSON-RPC 2.0 over stdio. The server identifies as `nl-calc-exact` v1.0.0 with MCP protocol version `2024-11-05`.
+Start the server and connect via JSON-RPC 2.0 over stdio. The server identifies as `eggsact` with MCP protocol version `2024-11-05`.
 
 ```bash
 eggsact --mcp

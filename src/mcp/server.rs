@@ -3194,7 +3194,7 @@ async fn handle_request_async(
                     },
                 },
                 server_info: ServerInfo {
-                    name: "eggcalc".to_string(),
+                    name: "eggsact".to_string(),
                     version: env!("CARGO_PKG_VERSION").to_string(),
                 },
             })

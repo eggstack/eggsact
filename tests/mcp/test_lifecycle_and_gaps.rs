@@ -112,7 +112,7 @@ fn test_full_mcp_lifecycle() {
         Some(&Value::String("2.0".to_string()))
     );
     let server_info = &init_resp["result"]["serverInfo"];
-    assert_eq!(server_info["name"], "eggcalc");
+    assert_eq!(server_info["name"], "eggsact");
     assert_eq!(init_resp["result"]["protocolVersion"], "2024-11-05");
 
     // Step 2: Notify initialized

@@ -1,16 +1,16 @@
 # eggsact MCP Tool Reference
 
-Complete reference for all 59 tools exposed by the `nl-calc-exact` MCP server.
+Complete reference for all 64 tools exposed by the `eggsact` MCP server.
 
 ## Overview
 
 | Property | Value |
 |----------|-------|
 | Protocol version | 2024-11-05 |
-| Server name | `nl-calc-exact` |
+| Server name | `eggsact` |
 | Server version | 1.0.0 |
 | Transport | stdio JSON-RPC 2.0 |
-| Total tools | 59 |
+| Total tools | 64 |
 
 The server communicates over stdin/stdout using newline-delimited JSON-RPC 2.0 messages. All tool responses are wrapped in a `ToolResponse` envelope with an `ok` boolean field.
 
@@ -1099,6 +1099,95 @@ Check delimiter balance in text (parentheses, brackets, braces, angle brackets).
 
 ---
 
+## Security
+
+### text_security_inspect
+
+Inspect text for security concerns: hidden characters, mixed scripts, confusables, and injection patterns.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `text` | string | yes | -- | Text to inspect |
+| `policy` | string | no | `"default"` | Policy: `"default"`, `"source_code"`, `"prompt"`, `"markdown"`, `"identifier"` |
+| `normalize` | string | no | `"none"` | Normalize before checking: `"none"`, `"NFC"`, `"NFD"`, `"NFKC"`, `"NFKD"` |
+| `compare_normalized` | boolean | no | `false` | Compare normalized vs raw form |
+| `detail` | string | no | `"summary"` | Detail level: `"summary"`, `"normal"`, `"full"` |
+
+**Return:** `{"pass": <boolean>, "policy": <string>, "findings": [<object>], "summary": <string>}`
+
+---
+
+## Preflight
+
+### edit_preflight
+
+Preview the effect of a text edit before applying it. Supports literal find-replace, patch, and line-range modes.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `original` | string | yes | -- | Original text content |
+| `old` | string | no | -- | Text to find (literal mode) |
+| `new` | string | no | -- | Replacement text (literal mode) |
+| `replacement_mode` | string | no | `"literal"` | Mode: `"literal"`, `"patch"`, `"line_range"` |
+| `strict` | boolean | no | `true` | Require exact match |
+| `expected_fingerprint` | string | no | -- | SHA-256 fingerprint to verify original |
+| `patch_text` | string | no | -- | Unified diff patch (patch mode) |
+| `start_line` | integer | no | -- | Start line (line_range mode) |
+| `end_line` | integer | no | -- | End line (line_range mode) |
+
+**Return:** `{"ok_to_apply": <boolean>, "match_count": <int>, "unique_match": <boolean>, "preview_before": <string>, "preview_after": <string>, "fingerprint_before": <string>, "fingerprint_after": <string>, "findings": [<object>]}`
+
+---
+
+### command_preflight
+
+Analyze a shell command for safety before execution: detect dangerous patterns, pipes, redirections, and risky features.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `command` | string | yes | -- | Shell command to analyze |
+| `platform` | string | no | `"posix"` | Platform: `"posix"`, `"windows"`, `"auto"` |
+| `policy` | string | no | `"default"` | Policy: `"default"`, `"strict"`, `"permissive"` |
+| `working_directory` | string | no | -- | Working directory context |
+
+**Return:** `{"verdict": <string>, "argv": [<string>], "features": <object>, "risk_level": <string>, "findings": [<object>]}`
+
+---
+
+### config_preflight
+
+Validate a configuration file before writing: detect syntax errors, schema violations, and structural issues.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `text` | string | yes | -- | Configuration file content |
+| `format` | string | no | `"auto"` | Format: `"auto"`, `"json"`, `"toml"`, `"dotenv"`, `"ini"`, `"cargo_toml"` |
+| `schema` | object | no | -- | Optional schema for validation |
+| `strict` | boolean | no | `false` | Strict validation mode |
+
+**Return:** `{"valid": <boolean>, "format": <string>, "verdict": <string>, "findings": [<object>]}`
+
+---
+
+## Comparison
+
+### structured_data_compare
+
+Compare two structured data strings (JSON or TOML) with configurable comparison semantics.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `a` | string | yes | -- | First data string |
+| `b` | string | yes | -- | Second data string |
+| `format` | string | no | `"json"` | Format: `"json"`, `"toml"` |
+| `ignore_object_order` | boolean | no | `true` | Ignore key ordering |
+| `ignore_array_order` | boolean | no | `false` | Ignore element ordering |
+| `max_diffs` | integer | no | 50 | Maximum differences to report |
+
+**Return:** `{"equal": <boolean>, "valid_a": <boolean>, "valid_b": <boolean>, "differences": [<object>], "findings": [<object>]}`
+
+---
+
 ## Quick Reference Table
 
 | # | Tool | Category | Required Params |
@@ -1162,3 +1251,8 @@ Check delimiter balance in text (parentheses, brackets, braces, angle brackets).
 | 57 | `cargo_toml_inspect` | Versioning | `text` |
 | 58 | `glob_match` | Other | `pattern`, `path` |
 | 59 | `validate_brackets` | Other | `text` |
+| 60 | `text_security_inspect` | Security | `text` |
+| 61 | `edit_preflight` | Preflight | `file_path`, `old`, `new` |
+| 62 | `command_preflight` | Preflight | `command` |
+| 63 | `config_preflight` | Preflight | `file_path`, `text` |
+| 64 | `structured_data_compare` | Comparison | `left`, `right` |

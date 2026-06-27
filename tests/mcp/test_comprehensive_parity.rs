@@ -1760,7 +1760,7 @@ fn test_initialize_returns_server_info() {
         r#"{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}"#,
     );
     let info = r["result"]["serverInfo"].as_object().unwrap();
-    assert_eq!(info["name"].as_str().unwrap(), "eggcalc");
+    assert_eq!(info["name"].as_str().unwrap(), "eggsact");
     assert!(info.get("version").is_some());
 }
 

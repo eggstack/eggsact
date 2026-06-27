@@ -41,7 +41,7 @@ fn test_initialize_response() {
     let server_info = result.get("serverInfo").expect("Missing serverInfo");
     assert_eq!(
         server_info.get("name"),
-        Some(&Value::String("eggcalc".to_string()))
+        Some(&Value::String("eggsact".to_string()))
     );
     assert!(
         server_info.get("version").is_some(),

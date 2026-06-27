@@ -5,12 +5,12 @@ edition = "2021"
 description = "Natural language math calculator with MCP server for AI coding agents"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/anomalyco/nl-clicalc"
-homepage = "https://github.com/anomalyco/nl-clicalc"
+repository = "https://github.com/eggstack/eggsact"
+homepage = "https://github.com/eggstack/eggsact"
 documentation = "https://docs.rs/eggsact"
 keywords = ["math", "calculator", "natural-language", "mcp", "nlp"]
 categories = ["command-line-utilities", "mathematics", "science"]
-authors = ["nl-clicalc Authors"]
+authors = ["David Bowman"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

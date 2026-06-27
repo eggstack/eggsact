@@ -2006,7 +2006,7 @@ fn test_initialize_response() {
     let result = response["result"].as_object().unwrap();
     assert_eq!(result["protocolVersion"], "2024-11-05");
     let server_info = result["serverInfo"].as_object().unwrap();
-    assert_eq!(server_info["name"], "eggcalc");
+    assert_eq!(server_info["name"], "eggsact");
     assert!(server_info.get("version").is_some());
 }
 
