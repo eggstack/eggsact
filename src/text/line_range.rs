@@ -67,6 +67,74 @@ fn fingerprint(text: &str) -> String {
     hex[..16].to_string()
 }
 
+#[derive(Debug, Clone, Copy)]
+struct LineSegment<'a> {
+    text: &'a str,
+    byte_start: usize,
+    byte_end: usize,
+}
+
+fn line_number_to_one_based(line: usize, line_base: usize) -> Result<usize, String> {
+    match line_base {
+        0 => line
+            .checked_add(1)
+            .ok_or_else(|| "line number is too large".to_string()),
+        1 => Ok(line),
+        _ => Err(format!("line_base must be 0 or 1, got {}", line_base)),
+    }
+}
+
+fn split_line_segments(text: &str) -> Vec<LineSegment<'_>> {
+    if text.is_empty() {
+        return vec![LineSegment {
+            text: "",
+            byte_start: 0,
+            byte_end: 0,
+        }];
+    }
+
+    let mut segments = Vec::new();
+    let mut start = 0usize;
+    let mut iter = text.char_indices().peekable();
+
+    while let Some((idx, ch)) = iter.next() {
+        match ch {
+            '\n' => {
+                segments.push(LineSegment {
+                    text: &text[start..idx],
+                    byte_start: start,
+                    byte_end: idx + ch.len_utf8(),
+                });
+                start = idx + ch.len_utf8();
+            }
+            '\r' => {
+                let mut end = idx + ch.len_utf8();
+                if let Some((next_idx, '\n')) = iter.peek().copied() {
+                    iter.next();
+                    end = next_idx + '\n'.len_utf8();
+                }
+                segments.push(LineSegment {
+                    text: &text[start..idx],
+                    byte_start: start,
+                    byte_end: end,
+                });
+                start = end;
+            }
+            _ => {}
+        }
+    }
+
+    if start < text.len() {
+        segments.push(LineSegment {
+            text: &text[start..],
+            byte_start: start,
+            byte_end: text.len(),
+        });
+    }
+
+    segments
+}
+
 pub fn line_range_extract(
     text: &str,
     start_line: usize,
@@ -92,21 +160,11 @@ pub fn line_range_extract(
 
     let mut findings: Vec<LineExtractFinding> = vec![];
 
-    let lines_raw: Vec<&str> = text.split('\n').collect();
-    let total_lines = if text.ends_with('\n') {
-        if lines_raw.len() > 1 {
-            lines_raw.len() - 1
-        } else {
-            1
-        }
-    } else {
-        lines_raw.len()
-    };
+    let lines = split_line_segments(text);
+    let total_lines = lines.len();
 
-    let total_lines = if total_lines == 0 { 1 } else { total_lines };
-
-    let start_1based = start_line + (1 - line_base);
-    let end_1based = end_line + (1 - line_base);
+    let start_1based = line_number_to_one_based(start_line, line_base)?;
+    let end_1based = line_number_to_one_based(end_line, line_base)?;
 
     let mut valid_range = true;
     let mut start_1based = start_1based;
@@ -133,65 +191,13 @@ pub fn line_range_extract(
         end_1based = total_lines;
     }
 
-    let mut char_start = 0;
-    let mut byte_start = 0;
-    let mut current_line = 1;
-    for (byte_offset, ch) in text.char_indices() {
-        if current_line == start_1based {
-            char_start = text[..byte_offset].chars().count();
-            break;
-        }
-        if ch == '\n' {
-            current_line += 1;
-        }
-    }
-
-    let mut char_end = text.chars().count();
-    let mut byte_end = 0;
-    let mut current_line = 1;
-    let mut found_start = false;
-    let mut prev_byte_end = 0;
-    for (byte_offset, ch) in text.char_indices() {
-        if current_line == start_1based && !found_start {
-            found_start = true;
-            byte_start = prev_byte_end;
-        }
-        if ch == '\n' {
-            prev_byte_end = byte_offset + 1;
-            if current_line == end_1based {
-                char_end = text[..byte_offset + 1].chars().count();
-                byte_end = prev_byte_end;
-                break;
-            }
-            current_line += 1;
-        }
-    }
-
-    // If end_1based was beyond the text, byte_end stays 0.
-    // In that case, extend to the end of the text.
-    if byte_end == 0 {
-        byte_end = text.len();
-        char_end = text.chars().count();
-    }
-
-    if char_end < char_start {
-        char_end = char_start;
-    }
-
-    if byte_end < byte_start {
-        byte_end = byte_start;
-    }
-
     let mut extracted_lines: Vec<LineExtractLine> = vec![];
     let mut extracted_text_parts: Vec<String> = vec![];
 
-    let end_idx = std::cmp::min(end_1based, lines_raw.len());
-    for i in (start_1based - 1)..end_idx {
-        let line_text = if i < lines_raw.len() {
-            lines_raw[i].to_string()
-        } else {
-            String::new()
-        };
+    let start_idx = start_1based.saturating_sub(1);
+    let end_idx = std::cmp::min(end_1based, lines.len());
+    for i in start_idx..end_idx {
+        let line_text = lines[i].text.to_string();
         let line_dict = if include_line_numbers {
             LineExtractLine {
                 text: line_text,
@@ -204,12 +210,16 @@ pub fn line_range_extract(
             }
         };
         extracted_lines.push(line_dict);
-        extracted_text_parts.push(if i < lines_raw.len() {
-            lines_raw[i].to_string()
-        } else {
-            String::new()
-        });
+        extracted_text_parts.push(lines[i].text.to_string());
     }
+
+    let (byte_start, byte_end) = if start_idx < end_idx && end_idx > 0 {
+        (lines[start_idx].byte_start, lines[end_idx - 1].byte_end)
+    } else {
+        (text.len(), text.len())
+    };
+    let char_start = text[..byte_start].chars().count();
+    let char_end = text[..byte_end].chars().count();
 
     let newline_style = detect_newline_style(text).to_string();
     let join_sep = match newline_style.as_str() {
@@ -225,7 +235,7 @@ pub fn line_range_extract(
         String::new()
     };
 
-    let ends_with_newline = text.ends_with('\n');
+    let ends_with_newline = text.ends_with('\n') || text.ends_with('\r');
 
     Ok(LineRangeExtractResult {
         line_count_total: total_lines,
@@ -294,45 +304,44 @@ pub fn line_range_compare(
         ));
     }
 
-    fn extract_lines(t: &str) -> Vec<&str> {
-        let raw: Vec<&str> = t.split('\n').collect();
-        if t.ends_with('\n') {
-            if raw.len() > 1 {
-                raw[..raw.len() - 1].to_vec()
-            } else {
-                vec![]
-            }
-        } else {
-            raw
-        }
+    let left_lines = split_line_segments(left_text);
+    let right_lines = split_line_segments(right_text);
+
+    let start_1based = line_number_to_one_based(start_line, line_base)?;
+    let end_1based = line_number_to_one_based(end_line, line_base)?;
+
+    if start_1based > left_lines.len() || start_1based > right_lines.len() {
+        return Err(format!(
+            "start_line ({}) exceeds available lines (left: {}, right: {})",
+            start_line,
+            left_lines.len(),
+            right_lines.len()
+        ));
     }
 
-    let left_lines = extract_lines(left_text);
-    let right_lines = extract_lines(right_text);
-
-    let _total_left = if left_lines.is_empty() {
-        1
-    } else {
-        left_lines.len()
-    };
-    let _total_right = if right_lines.is_empty() {
-        1
-    } else {
-        right_lines.len()
-    };
-
-    let start_1based = start_line + (1 - line_base);
-    let end_1based = end_line + (1 - line_base);
-
     let left_slice: Vec<&str> = {
-        let start = std::cmp::max(0, start_1based as isize - 1) as usize;
+        let start = start_1based.saturating_sub(1);
         let end = std::cmp::min(end_1based, left_lines.len());
-        left_lines[start..end].to_vec()
+        if start >= end {
+            Vec::new()
+        } else {
+            left_lines[start..end]
+                .iter()
+                .map(|line| line.text)
+                .collect()
+        }
     };
     let right_slice: Vec<&str> = {
-        let start = std::cmp::max(0, start_1based as isize - 1) as usize;
+        let start = start_1based.saturating_sub(1);
         let end = std::cmp::min(end_1based, right_lines.len());
-        right_lines[start..end].to_vec()
+        if start >= end {
+            Vec::new()
+        } else {
+            right_lines[start..end]
+                .iter()
+                .map(|line| line.text)
+                .collect()
+        }
     };
 
     fn normalize_for_compare(s: &str, mode: &str) -> String {
