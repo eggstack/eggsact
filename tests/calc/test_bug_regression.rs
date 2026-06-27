@@ -31,10 +31,21 @@ fn test_bug001_fifteen_hundred() {
 }
 
 #[test]
-#[ignore = "BUG-001 partially unfixed: combine_number_parts does not handle multi-level compound multipliers"]
 fn test_bug001_one_hundred_twenty_one_thousand() {
     let (result, _) = run("one hundred twenty one thousand").unwrap();
     assert_eq!(result, "121000");
+}
+
+#[test]
+fn test_bug001_multi_scale_compound_number() {
+    let (result, _) = run("one million two hundred three thousand four hundred five").unwrap();
+    assert_eq!(result, "1203405");
+}
+
+#[test]
+fn test_bug001_hundred_without_leading_one() {
+    let (result, _) = run("hundred twenty one").unwrap();
+    assert_eq!(result, "121");
 }
 
 #[test]

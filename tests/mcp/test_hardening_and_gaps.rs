@@ -1389,7 +1389,7 @@ fn test_constant_lookup_pi() {
         .and_then(|r| r.get("value"))
         .and_then(|v| v.as_f64());
     assert!(value.is_some(), "pi should return a number");
-    assert!((value.unwrap() - 3.141592653589793).abs() < 1e-10);
+    assert!((value.unwrap() - std::f64::consts::PI).abs() < 1e-10);
 }
 
 #[test]

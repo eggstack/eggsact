@@ -718,11 +718,7 @@ fn test_normalize_arc_cos() {
 #[test]
 fn test_normalize_quintillion() {
     let result = normalize("five quintillion").unwrap();
-    assert!(
-        result.contains("1000000000000000000") || result.contains("1e18"),
-        "Expected quintillion magnitude in normalized output, got: {}",
-        result
-    );
+    assert_eq!(result, "5000000000000000000");
 }
 
 #[test]

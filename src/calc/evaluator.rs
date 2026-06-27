@@ -2104,7 +2104,7 @@ mod tests {
         let v: f64 = val("log1p(0)").parse().unwrap();
         assert!(v.abs() < 1e-10);
         let v: f64 = val("log1p(1)").parse().unwrap();
-        assert!((v - 0.6931471805599453).abs() < 1e-10);
+        assert!((v - std::f64::consts::LN_2).abs() < 1e-10);
         let v: f64 = val("expm1(0)").parse().unwrap();
         assert!(v.abs() < 1e-10);
         let v: f64 = val("expm1(1)").parse().unwrap();

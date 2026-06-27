@@ -1084,11 +1084,6 @@ fn parse_simple_number(token: &str) -> Option<f64> {
     s.parse::<f64>().ok()
 }
 
-/// Check if a number value is a "tens" value (20, 30, 40, etc.)
-fn is_tens(value: f64) -> bool {
-    value >= 20.0 && value < 100.0 && value % 10.0 == 0.0
-}
-
 /// Combine a run of numbers into final tokens.
 ///
 /// Uses the same logic as Python's combine_number_parts:
@@ -1105,7 +1100,7 @@ fn combine_number_run(run: &[(String, f64)]) -> Vec<String> {
     // Check if this is a compound number (has tens >= 20 or hundreds)
     let has_compound = values
         .iter()
-        .any(|&v| v >= 100.0 || (v >= 20.0 && v < 100.0 && v % 10.0 == 0.0));
+        .any(|&v| v >= 100.0 || ((20.0..100.0).contains(&v) && v % 10.0 == 0.0));
 
     if has_compound && values.len() > 1 {
         combine_number_parts(&values)
@@ -1122,89 +1117,39 @@ fn combine_number_run(run: &[(String, f64)]) -> Vec<String> {
     }
 }
 
-/// Combine number parts into a single mathematical expression.
+/// Combine number parts into a single numeric token.
 ///
-/// Rules:
-/// - Consecutive small numbers (tens + ones) combine: [20, 2] -> ["22"]
-/// - Hundreds chain with multiplication: [3, 100, 20, 2] -> ["3", "*", "100", "+", "22"]
+/// English cardinal numbers are built from an accumulating group below the
+/// current large scale:
+/// - [20, 2] -> 22
+/// - [3, 100, 20, 2] -> 322
+/// - [1, 100, 20, 1, 1000] -> 121000
 fn combine_number_parts(values: &[f64]) -> Vec<String> {
     if values.is_empty() {
         return vec![];
     }
 
-    let mut result = Vec::new();
-    let mut skip_next = false;
+    let mut total = 0.0;
+    let mut group = 0.0;
 
-    for i in 0..values.len() {
-        if skip_next {
-            skip_next = false;
-            continue;
-        }
-
-        let part = values[i];
-
-        if i == values.len() - 1 {
-            // Last element: check if we need a prefix operator
-            if i > 0 && values[i - 1] < 100.0 && part >= 100.0 {
-                result.push(format!("*{}", format_number(part)));
-            } else if i > 0 {
-                result.push(format!("+{}", format_number(part)));
-            } else {
-                result.push(format_number(part));
+    for &part in values {
+        if part == 100.0 {
+            if group == 0.0 {
+                group = 1.0;
             }
-            continue;
-        }
-
-        let next_part = values[i + 1];
-
-        if i == 0 {
-            // First element
-            if part < 10.0 && next_part == 10.0 {
-                // e.g., [1, 10] -> "11"
-                result.push(format_number(part + next_part));
-                skip_next = true;
-            } else if part == 10.0 && next_part < 10.0 {
-                // e.g., [10, 5] -> "15"
-                result.push(format_number(part + next_part));
-                skip_next = true;
-            } else if is_tens(part) && next_part < 10.0 {
-                // e.g., [20, 3] -> "23"
-                result.push(format_number(part + next_part));
-                skip_next = true;
-            } else if part < 10.0 && next_part >= 100.0 {
-                // e.g., [3, 100] -> "3*100"
-                result.push(format_number(part));
-                result.push("*".to_string());
-                result.push(format_number(next_part));
-                skip_next = true;
-            } else {
-                result.push(format_number(part));
+            group *= part;
+        } else if part >= 1000.0 {
+            if group == 0.0 {
+                group = 1.0;
             }
+            total += group * part;
+            group = 0.0;
         } else {
-            // Non-first element
-            if part == 10.0 && values[i - 1] < 10.0 {
-                // e.g., [1, 10, 5] - the 10 was already combined with the 1
-                continue;
-            } else if is_tens(part) && next_part < 10.0 {
-                // e.g., [3, 100, 20, 2] -> "+22"
-                result.push(format!("+{}", format_number(part + next_part)));
-                skip_next = true;
-            } else if part < 10.0 {
-                // e.g., [100, 5] -> "+5"
-                result.push(format!("+{}", format_number(part)));
-            } else if i > 0 && values[i - 1] < 10.0 && part < 100.0 {
-                // e.g., [3, 50] -> "+50" (after a single digit)
-                result.push(format!("+{}", format_number(part)));
-            } else if i > 0 && values[i - 1] < 100.0 {
-                // e.g., [3, 100] -> "*100" (after a single digit, before hundred)
-                result.push(format!("*{}", format_number(part)));
-            } else {
-                result.push(format!("+{}", format_number(part)));
-            }
+            group += part;
         }
     }
 
-    result
+    vec![format_number(total + group)]
 }
 
 /// Format a number for output, showing integers without decimal point.

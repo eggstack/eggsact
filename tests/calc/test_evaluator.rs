@@ -139,7 +139,7 @@ fn test_sqrt() {
         ("4".to_string(), "int".to_string())
     );
     let result: f64 = evaluate("sqrt(2)").unwrap().0.parse().unwrap();
-    assert!((result - 1.41421356237).abs() < 1e-6);
+    assert!((result - std::f64::consts::SQRT_2).abs() < 1e-6);
 }
 
 #[test]
@@ -542,15 +542,15 @@ fn test_inf_is_error() {
 fn test_complex_number_functions() {
     // real()
     assert_eq!(val("real(5)"), 5.0);
-    assert_eq!(val("real(-3.14)"), -3.14);
+    assert_eq!(val("real(-3.125)"), -3.125);
 
     // imag() - always returns 0 for real numbers
     assert_eq!(val("imag(5)"), 0.0);
-    assert_eq!(val("imag(-3.14)"), 0.0);
+    assert_eq!(val("imag(-3.125)"), 0.0);
 
     // conj() / conjugate() - identity for real numbers
     assert_eq!(val("conj(5)"), 5.0);
-    assert_eq!(val("conjugate(-3.14)"), -3.14);
+    assert_eq!(val("conjugate(-3.125)"), -3.125);
 
     // phase() - 0 for positive, PI for negative
     assert_eq!(val("phase(5)"), 0.0);

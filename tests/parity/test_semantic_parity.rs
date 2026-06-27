@@ -395,11 +395,12 @@ fn test_initialize_parity() {
     });
     let py = run_python_mcp_request(&request).expect("Python MCP failed");
     let rs = run_rust_mcp_request(&request).expect("Rust MCP failed");
-    // Compare key fields, ignoring minor version differences
-    assert_eq!(
-        py["serverInfo"]["name"], rs["serverInfo"]["name"],
-        "server name mismatch"
-    );
+    // Compare protocol compatibility. The Rust port intentionally identifies
+    // with its crate/server name while the Python reference reports eggcalc.
+    assert_eq!(py["serverInfo"]["name"], "eggcalc");
+    assert_eq!(rs["serverInfo"]["name"], "eggsact");
+    assert!(py["serverInfo"]["version"].is_string());
+    assert!(rs["serverInfo"]["version"].is_string());
     assert_eq!(
         py["protocolVersion"], rs["protocolVersion"],
         "protocol version mismatch"
