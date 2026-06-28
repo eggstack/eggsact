@@ -35,6 +35,29 @@ pub struct TextReplaceCheckResult {
     pub findings: Vec<Finding>,
 }
 
+#[derive(Debug, Clone)]
+pub struct TextReplaceCheckOptions<'a> {
+    pub mode: &'a str,
+    pub expected_count: Option<usize>,
+    pub allow_multiple: bool,
+    pub newline_policy: &'a str,
+    pub return_preview: bool,
+    pub max_preview_chars: usize,
+}
+
+impl Default for TextReplaceCheckOptions<'static> {
+    fn default() -> Self {
+        Self {
+            mode: "exact",
+            expected_count: None,
+            allow_multiple: false,
+            newline_policy: "preserve",
+            return_preview: false,
+            max_preview_chars: MAX_PREVIEW_CHARS,
+        }
+    }
+}
+
 fn normalize_for_match(s: &str, mode: &str) -> String {
     match mode {
         "nfc" => s.nfc().collect(),
@@ -70,6 +93,36 @@ fn detect_newline_style(text: &str) -> String {
     } else {
         "LF".to_string()
     }
+}
+
+fn apply_newline_policy(text: &str, policy: &str) -> String {
+    match policy {
+        "normalize_lf" => normalize_newlines_to_lf(text),
+        "normalize_crlf" => {
+            let lf_text = normalize_newlines_to_lf(text);
+            lf_text.replace('\n', "\r\n")
+        }
+        _ => text.to_string(),
+    }
+}
+
+fn normalize_newlines_to_lf(text: &str) -> String {
+    let mut normalized = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                normalized.push('\n');
+            }
+            _ => normalized.push(ch),
+        }
+    }
+
+    normalized
 }
 
 fn codepoint_index_to_line_column(
@@ -134,32 +187,25 @@ fn codepoint_index_to_line_column(
     (current_line, column_base)
 }
 
-fn get_byte_offsets(text: &str, codepoint_index: usize, old_len: usize) -> (usize, usize) {
-    let mut char_indices = text.char_indices();
-    let mut cp_idx = 0;
-    let mut byte_start = text.len();
+fn byte_offset_for_codepoint(text: &str, codepoint_index: usize) -> usize {
+    text.char_indices()
+        .nth(codepoint_index)
+        .map(|(byte_offset, _)| byte_offset)
+        .unwrap_or_else(|| text.len())
+}
 
-    while let Some((byte_offset, _)) = char_indices.next() {
-        if cp_idx == codepoint_index {
-            byte_start = byte_offset;
-            break;
-        }
-        cp_idx += 1;
+fn build_position(text: &str, codepoint_index: usize, match_len: usize) -> PositionInfo {
+    let byte_start = byte_offset_for_codepoint(text, codepoint_index);
+    let byte_end = byte_offset_for_codepoint(text, codepoint_index + match_len);
+    let (line, column) = codepoint_index_to_line_column(text, codepoint_index, 1, 1);
+
+    PositionInfo {
+        codepoint_index,
+        byte_start,
+        byte_end,
+        line,
+        column,
     }
-
-    let mut char_indices = text.char_indices();
-    let mut cp_idx = 0;
-    let mut byte_end = text.len();
-
-    while let Some((byte_offset, _)) = char_indices.next() {
-        if cp_idx == codepoint_index + old_len {
-            byte_end = byte_offset;
-            break;
-        }
-        cp_idx += 1;
-    }
-
-    (byte_start, byte_end)
 }
 
 fn get_text_at_codepoint_range(text: &str, start_cp: usize, end_cp: usize) -> String {
@@ -177,6 +223,7 @@ fn get_text_at_codepoint_range(text: &str, start_cp: usize, end_cp: usize) -> St
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn text_replace_check(
     text: &str,
     old: &str,
@@ -188,6 +235,36 @@ pub fn text_replace_check(
     return_preview: bool,
     max_preview_chars: usize,
 ) -> Result<TextReplaceCheckResult, String> {
+    text_replace_check_with_options(
+        text,
+        old,
+        new,
+        TextReplaceCheckOptions {
+            mode,
+            expected_count,
+            allow_multiple,
+            newline_policy,
+            return_preview,
+            max_preview_chars,
+        },
+    )
+}
+
+pub fn text_replace_check_with_options(
+    text: &str,
+    old: &str,
+    new: &str,
+    options: TextReplaceCheckOptions<'_>,
+) -> Result<TextReplaceCheckResult, String> {
+    let TextReplaceCheckOptions {
+        mode,
+        expected_count,
+        allow_multiple,
+        newline_policy,
+        return_preview,
+        max_preview_chars,
+    } = options;
+
     if text.len() > MAX_TEXT_LENGTH {
         return Err(format!(
             "Input length {} exceeds MAX_TEXT_LENGTH {}",
@@ -224,50 +301,31 @@ pub fn text_replace_check(
     let mut positions: Vec<PositionInfo> = Vec::new();
     let mut search_start = 0;
 
-    // For exact mode, search text directly for correct positions.
-    // For normalized modes, search text_norm to preserve normalized matching,
-    // then map positions back to text via codepoint index.
-    if mode == "exact" {
+    if old.is_empty() {
+        positions.extend((0..=text.chars().count()).map(|cp_idx| build_position(text, cp_idx, 0)));
+    } else if mode == "exact" {
+        // Search text directly for correct positions.
         while search_start <= text.len() {
-            if let Some(idx) = text[special_min(search_start, text.len())..].find(old) {
-                let byte_idx = special_min(search_start, text.len()) + idx;
+            let search_from = search_start.min(text.len());
+            if let Some(idx) = text[search_from..].find(old) {
+                let byte_idx = search_from + idx;
                 let cp_idx = text[..byte_idx].chars().count();
-                let (byte_start, byte_end) = get_byte_offsets(text, cp_idx, old_chars);
-                let (line, column) = codepoint_index_to_line_column(text, cp_idx, 1, 1);
-                positions.push(PositionInfo {
-                    codepoint_index: cp_idx,
-                    byte_start,
-                    byte_end,
-                    line,
-                    column,
-                });
-                search_start = byte_idx + if !old.is_empty() { old.len() } else { 1 };
+                positions.push(build_position(text, cp_idx, old_chars));
+                search_start = byte_idx + old.len();
             } else {
                 break;
             }
         }
     } else {
+        // Search text_norm to preserve normalized matching, then map positions
+        // back to text via codepoint index.
         while search_start <= text_norm.len() {
-            if let Some(idx) =
-                text_norm[special_min(search_start, text_norm.len())..].find(&old_norm)
-            {
-                let byte_idx = special_min(search_start, text_norm.len()) + idx;
+            let search_from = search_start.min(text_norm.len());
+            if let Some(idx) = text_norm[search_from..].find(&old_norm) {
+                let byte_idx = search_from + idx;
                 let cp_idx = text_norm[..byte_idx].chars().count();
-                let (byte_start, byte_end) = get_byte_offsets(text, cp_idx, old_chars);
-                let (line, column) = codepoint_index_to_line_column(text, cp_idx, 1, 1);
-                positions.push(PositionInfo {
-                    codepoint_index: cp_idx,
-                    byte_start,
-                    byte_end,
-                    line,
-                    column,
-                });
-                search_start = byte_idx
-                    + if !old_norm.is_empty() {
-                        old_norm.len()
-                    } else {
-                        1
-                    };
+                positions.push(build_position(text, cp_idx, old_chars));
+                search_start = byte_idx + old_norm.len();
             } else {
                 break;
             }
@@ -279,11 +337,7 @@ pub fn text_replace_check(
     let would_change = match_count > 0;
 
     let expected_count_met = if let Some(expected) = expected_count {
-        if match_count != expected {
-            false
-        } else {
-            true
-        }
+        match_count == expected
     } else {
         true
     };
@@ -321,7 +375,7 @@ pub fn text_replace_check(
         });
     }
 
-    let changed_text_built = if would_change {
+    let replaced_text = if would_change {
         let old_chars = old.chars().count();
         let mut parts: Vec<String> = Vec::new();
         let mut last_cp = 0;
@@ -340,6 +394,7 @@ pub fn text_replace_check(
     } else {
         text.to_string()
     };
+    let changed_text_built = apply_newline_policy(&replaced_text, newline_policy);
 
     let mut hasher = Sha256::new();
     hasher.update(changed_text_built.as_bytes());
@@ -390,14 +445,6 @@ pub fn text_replace_check(
         preview_after,
         findings,
     })
-}
-
-fn special_min(a: usize, b: usize) -> usize {
-    if a < b {
-        a
-    } else {
-        b
-    }
 }
 
 #[cfg(test)]

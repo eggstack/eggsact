@@ -1,4 +1,4 @@
-use eggsact::text::text_replace_check;
+use eggsact::text::{text_replace_check, text_replace_check_with_options, TextReplaceCheckOptions};
 
 // ─── text_replace_check ──────────────────────────────────────────────
 
@@ -19,6 +19,23 @@ fn test_replace_check_simple() {
     assert_eq!(result.match_count, 1);
     assert!(result.would_change);
     assert!(result.unique_match);
+}
+
+#[test]
+fn test_replace_check_with_options_api() {
+    let result = text_replace_check_with_options(
+        "hello world",
+        "world",
+        "rust",
+        TextReplaceCheckOptions {
+            return_preview: true,
+            max_preview_chars: 100,
+            ..TextReplaceCheckOptions::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(result.match_count, 1);
+    assert_eq!(result.preview_after, "hello rust");
 }
 
 #[test]
@@ -98,6 +115,17 @@ fn test_replace_check_empty_old() {
 }
 
 #[test]
+fn test_replace_check_empty_old_multibyte_is_byte_safe() {
+    let result =
+        text_replace_check("é😀", "", "x", "exact", None, true, "preserve", true, 100).unwrap();
+    assert_eq!(result.match_count, 3);
+    assert_eq!(result.positions[0].byte_start, 0);
+    assert_eq!(result.positions[1].byte_start, 2);
+    assert_eq!(result.positions[2].byte_start, 6);
+    assert_eq!(result.preview_after, "xéx😀x");
+}
+
+#[test]
 fn test_replace_check_empty_text() {
     let result =
         text_replace_check("", "a", "b", "exact", None, false, "preserve", false, 0).unwrap();
@@ -169,4 +197,40 @@ fn test_replace_check_newline_style_none() {
         result.newline_style_before, "LF",
         "Text with no newlines should report newline_style_before as 'LF' (matching Python)"
     );
+}
+
+#[test]
+fn test_replace_check_normalize_lf_policy() {
+    let result = text_replace_check(
+        "hello\r\nworld",
+        "world",
+        "rust",
+        "exact",
+        None,
+        false,
+        "normalize_lf",
+        true,
+        100,
+    )
+    .unwrap();
+    assert_eq!(result.newline_style_after, "LF");
+    assert_eq!(result.preview_after, "hello\nrust");
+}
+
+#[test]
+fn test_replace_check_normalize_crlf_policy() {
+    let result = text_replace_check(
+        "hello\nworld",
+        "world",
+        "rust",
+        "exact",
+        None,
+        false,
+        "normalize_crlf",
+        true,
+        100,
+    )
+    .unwrap();
+    assert_eq!(result.newline_style_after, "CRLF");
+    assert_eq!(result.preview_after, "hello\r\nrust");
 }

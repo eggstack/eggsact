@@ -24,7 +24,10 @@ pub mod validate;
 pub mod version;
 
 pub use regex_safety::{regex_safety_check, RegexSafetyResult};
-pub use replace::{text_replace_check, TextReplaceCheckResult};
+pub use replace::{
+    text_replace_check, text_replace_check_with_options, TextReplaceCheckOptions,
+    TextReplaceCheckResult,
+};
 
 pub use cargo::{cargo_toml_inspect, CargoInspectResult};
 pub use config::{
