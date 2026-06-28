@@ -71,7 +71,10 @@ fn fingerprint(text: &str) -> String {
 struct LineSegment<'a> {
     text: &'a str,
     byte_start: usize,
+    // End of the visible line content, excluding the line terminator.
     byte_end: usize,
+    // Start offset of the next line, including any line terminator bytes.
+    byte_after_terminator: usize,
 }
 
 fn line_number_to_one_based(line: usize, line_base: usize) -> Result<usize, String> {
@@ -90,6 +93,7 @@ fn split_line_segments(text: &str) -> Vec<LineSegment<'_>> {
             text: "",
             byte_start: 0,
             byte_end: 0,
+            byte_after_terminator: 0,
         }];
     }
 
@@ -103,7 +107,8 @@ fn split_line_segments(text: &str) -> Vec<LineSegment<'_>> {
                 segments.push(LineSegment {
                     text: &text[start..idx],
                     byte_start: start,
-                    byte_end: idx + ch.len_utf8(),
+                    byte_end: idx,
+                    byte_after_terminator: idx + ch.len_utf8(),
                 });
                 start = idx + ch.len_utf8();
             }
@@ -116,7 +121,8 @@ fn split_line_segments(text: &str) -> Vec<LineSegment<'_>> {
                 segments.push(LineSegment {
                     text: &text[start..idx],
                     byte_start: start,
-                    byte_end: end,
+                    byte_end: idx,
+                    byte_after_terminator: end,
                 });
                 start = end;
             }
@@ -129,10 +135,46 @@ fn split_line_segments(text: &str) -> Vec<LineSegment<'_>> {
             text: &text[start..],
             byte_start: start,
             byte_end: text.len(),
+            byte_after_terminator: text.len(),
         });
     }
 
     segments
+}
+
+fn range_text<'a>(
+    text: &'a str,
+    lines: &[LineSegment<'_>],
+    start_idx: usize,
+    end_idx: usize,
+) -> &'a str {
+    if start_idx < end_idx && end_idx > 0 {
+        &text[lines[start_idx].byte_start..lines[end_idx - 1].byte_end]
+    } else {
+        ""
+    }
+}
+
+fn range_compare_pieces<'a>(
+    text: &'a str,
+    lines: &[LineSegment<'_>],
+    start_idx: usize,
+    end_idx: usize,
+) -> Vec<&'a str> {
+    if start_idx >= end_idx {
+        return Vec::new();
+    }
+
+    (start_idx..end_idx)
+        .map(|i| {
+            let end = if i + 1 < end_idx {
+                lines[i].byte_after_terminator
+            } else {
+                lines[i].byte_end
+            };
+            &text[lines[i].byte_start..end]
+        })
+        .collect()
 }
 
 pub fn line_range_extract(
@@ -192,7 +234,6 @@ pub fn line_range_extract(
     }
 
     let mut extracted_lines: Vec<LineExtractLine> = vec![];
-    let mut extracted_text_parts: Vec<String> = vec![];
 
     let start_idx = start_1based.saturating_sub(1);
     let end_idx = std::cmp::min(end_1based, lines.len());
@@ -210,7 +251,6 @@ pub fn line_range_extract(
             }
         };
         extracted_lines.push(line_dict);
-        extracted_text_parts.push(lines[i].text.to_string());
     }
 
     let (byte_start, byte_end) = if start_idx < end_idx && end_idx > 0 {
@@ -222,12 +262,7 @@ pub fn line_range_extract(
     let char_end = text[..byte_end].chars().count();
 
     let newline_style = detect_newline_style(text).to_string();
-    let join_sep = match newline_style.as_str() {
-        "CRLF" => "\r\n",
-        "CR" => "\r",
-        _ => "\n",
-    };
-    let extracted_text = extracted_text_parts.join(join_sep);
+    let extracted_text = range_text(text, &lines, start_idx, end_idx).to_string();
 
     let fingerprint = if include_fingerprint {
         fingerprint(&extracted_text)
@@ -319,35 +354,16 @@ pub fn line_range_compare(
         ));
     }
 
-    let left_slice: Vec<&str> = {
-        let start = start_1based.saturating_sub(1);
-        let end = std::cmp::min(end_1based, left_lines.len());
-        if start >= end {
-            Vec::new()
-        } else {
-            left_lines[start..end]
-                .iter()
-                .map(|line| line.text)
-                .collect()
-        }
-    };
-    let right_slice: Vec<&str> = {
-        let start = start_1based.saturating_sub(1);
-        let end = std::cmp::min(end_1based, right_lines.len());
-        if start >= end {
-            Vec::new()
-        } else {
-            right_lines[start..end]
-                .iter()
-                .map(|line| line.text)
-                .collect()
-        }
-    };
+    let start_idx = start_1based.saturating_sub(1);
+    let left_end_idx = std::cmp::min(end_1based, left_lines.len());
+    let right_end_idx = std::cmp::min(end_1based, right_lines.len());
+    let left_slice = range_compare_pieces(left_text, &left_lines, start_idx, left_end_idx);
+    let right_slice = range_compare_pieces(right_text, &right_lines, start_idx, right_end_idx);
 
     fn normalize_for_compare(s: &str, mode: &str) -> String {
         match mode {
             "ignore_trailing_whitespace" => s.trim_end().to_string(),
-            "normalize_newlines" => s.trim_end_matches('\r').to_string(),
+            "normalize_newlines" => s.replace("\r\n", "\n").replace('\r', "\n"),
             _ => s.to_string(),
         }
     }
@@ -363,8 +379,8 @@ pub fn line_range_compare(
 
     let equal = left_norm == right_norm;
 
-    let left_text_slice = left_slice.join("\n");
-    let right_text_slice = right_slice.join("\n");
+    let left_text_slice = range_text(left_text, &left_lines, start_idx, left_end_idx);
+    let right_text_slice = range_text(right_text, &right_lines, start_idx, right_end_idx);
     let left_fp = fingerprint(&left_text_slice);
     let right_fp = fingerprint(&right_text_slice);
 

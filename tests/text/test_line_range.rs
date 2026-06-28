@@ -18,6 +18,8 @@ fn test_line_range_extract_single_line() {
     let result = line_range_extract(text, 2, 2, 1, false, false).unwrap();
     assert_eq!(result.lines.len(), 1);
     assert!(result.lines[0].text.contains("line2"));
+    assert_eq!(result.text, "line2");
+    assert_eq!(&text[result.byte_start..result.byte_end], result.text);
 }
 
 #[test]
@@ -154,6 +156,8 @@ fn test_line_range_extract_mixed_newlines() {
     let text = "line1\r\nline2\nline3";
     let result = line_range_extract(text, 1, 3, 1, false, false).unwrap();
     assert_eq!(result.lines.len(), 3);
+    assert_eq!(result.text, text);
+    assert_eq!(&text[result.byte_start..result.byte_end], result.text);
 }
 
 #[test]
@@ -161,6 +165,23 @@ fn test_line_range_compare_mixed_newlines() {
     let left = "line1\r\nline2\nline3";
     let right = "line1\r\nline2\nline3";
     let result = line_range_compare(left, right, 1, 3, 1, "exact").unwrap();
+    assert!(result.equal);
+}
+
+#[test]
+fn test_line_range_compare_exact_detects_newline_differences() {
+    let left = "line1\r\nline2";
+    let right = "line1\nline2";
+    let result = line_range_compare(left, right, 1, 2, 1, "exact").unwrap();
+    assert!(!result.equal);
+    assert_eq!(result.diff_summary, "differ at line 1");
+}
+
+#[test]
+fn test_line_range_compare_normalize_newlines_accepts_newline_differences() {
+    let left = "line1\r\nline2";
+    let right = "line1\nline2";
+    let result = line_range_compare(left, right, 1, 2, 1, "normalize_newlines").unwrap();
     assert!(result.equal);
 }
 
