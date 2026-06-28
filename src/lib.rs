@@ -26,7 +26,8 @@
 //! eggsact --mcp
 //! ```
 //!
-//! The server accepts JSON-RPC 2.0 requests and provides 64 tools for math, text processing, and more.
+//! The server accepts JSON-RPC 2.0 requests and provides MCP tools for math,
+//! text processing, structured data, paths, Unicode safety, and more.
 
 pub mod calc;
 pub mod mcp;

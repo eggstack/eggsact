@@ -9,10 +9,10 @@ A natural language math calculator with an MCP (Model Context Protocol) server f
 
 - Natural language math: "two to the power of ten" evaluates to 1024
 - Unit conversions: "30m to ft", "100C in F"
-- Physical and mathematical constants: `pi`, `c`, `planck`, `avogadro`
+- Physical and mathematical constants: `pi`, `c`, `planck`, `avogadro`, `gravity`
 - MCP server with 64 tools for AI agents to reduce hallucinations
 - High-performance Rust implementation with zero required external services
-- Drop-in replacement for the Python `eggcalc` project
+- Rust reimplementation of the Python `eggcalc` project
 
 ## Installation
 
@@ -70,7 +70,7 @@ assert_eq!(result, "1024");
 
 // Unit conversion
 let (result, _typ) = run("30m to ft").unwrap();
-// result ≈ "98.4251968503937"
+// result ≈ "98.42519685039369 ft"
 ```
 
 ### MCP Server
@@ -246,7 +246,9 @@ eggsact --mcp
 ### Constants
 
 - **Mathematical**: `pi`, `e`, `tau`, `phi`
-- **Physical**: `c`, `h`, `hbar`, `k`, `G`, `na`, `R`, `qe`, `me`, `mp`, `mn`, `epsilon0`, `mu0`, `g`, `atm`
+- **Physical**: `c`, `h`, `hbar`, `k`, `G`, `na`, `R`, `qe`, `me`, `mp`, `mn`, `epsilon0`, `mu0`, `gravity`, `atm`
+
+`g` is parsed as the gram unit in unit expressions. Use `gravity` or `standardgravity` for standard gravity.
 
 ### Statistical
 
@@ -285,7 +287,7 @@ Temperature conversions use offset math, not multiplicative factors. Prefixed un
 Evaluate a natural language or unit-expression string. Handles NL parsing, normalization, and unit conversion.
 
 ```rust
-pub fn run(expr: &str) -> Result<(String, String), String>
+pub fn run(expr: &str) -> Result<(String, String), eggsact::calc::RunError>
 ```
 
 ```rust
@@ -296,7 +298,7 @@ assert_eq!(result, "35");
 assert_eq!(typ, "int");
 
 let (result, typ) = run("30m + 100ft").unwrap();
-// result ≈ "60.48", typ = "float"
+// result ≈ "60.480000000000004 m", typ = "float"
 
 let (result, typ) = run("sqrt(144)").unwrap();
 assert_eq!(result, "12");
@@ -360,7 +362,7 @@ eggsact/
 │   ├── mcp/                 # MCP server
 │   │   ├── mod.rs           # Module re-exports
 │   │   ├── server.rs        # stdio JSON-RPC 2.0 server, tool dispatch
-│   │   ├── tools.rs         # 64 MCP tool implementations
+│   │   ├── tools.rs         # MCP tool implementations
 │   │   └── schemas.rs       # JSON-RPC type definitions, tool schemas
 │   └── text/                # Text processing library
 │       ├── mod.rs           # Module re-exports
@@ -403,7 +405,6 @@ cargo build --release
 
 ```bash
 cargo test
-# 304 tests pass (85 unit + 219 integration)
 ```
 
 ### Run

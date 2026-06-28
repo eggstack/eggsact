@@ -21,6 +21,9 @@ const MAX_TOOL_TIMEOUT_SECONDS: u64 = 30;
 const MAX_CANCELLED_REQUESTS: usize = 10_000;
 const MAX_TOOL_WORKERS: usize = 16;
 
+pub const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
+pub const MCP_SERVER_NAME: &str = "eggsact";
+
 const SCHEMA_DETAIL_FULL: &str = "full";
 
 #[allow(clippy::type_complexity)]
@@ -2420,6 +2423,10 @@ fn list_tools() -> Vec<ToolDefinition> {
     list_tools_raw().into_iter().map(enrich_tool).collect()
 }
 
+pub fn mcp_tool_count() -> usize {
+    list_tools().len()
+}
+
 fn compact_input_schema(schema: &Value) -> Value {
     let obj = match schema.as_object() {
         Some(o) => o,
@@ -3176,14 +3183,14 @@ async fn handle_request_async(
     match request.method.as_str() {
         "initialize" => Some(
             serde_json::to_value(InitializeResult {
-                protocol_version: "2024-11-05".to_string(),
+                protocol_version: MCP_PROTOCOL_VERSION.to_string(),
                 capabilities: Capabilities {
                     tools: ToolsCapability {
                         list_changed: false,
                     },
                 },
                 server_info: ServerInfo {
-                    name: "eggsact".to_string(),
+                    name: MCP_SERVER_NAME.to_string(),
                     version: env!("CARGO_PKG_VERSION").to_string(),
                 },
             })
@@ -3930,6 +3937,46 @@ pub async fn main() -> ! {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::HashSet;
+
+    #[test]
+    fn tool_registration_tables_are_in_sync() {
+        let raw_tools = list_tools_raw();
+        let mut definition_names = HashSet::new();
+        for tool in &raw_tools {
+            assert!(
+                definition_names.insert(tool.name.as_str()),
+                "duplicate tool definition: {}",
+                tool.name
+            );
+            assert!(
+                TOOL_METADATA.contains_key(tool.name.as_str()),
+                "tool definition lacks metadata: {}",
+                tool.name
+            );
+        }
+
+        let mut handler_names = HashSet::new();
+        for (name, _) in TOOL_HANDLERS {
+            assert!(
+                handler_names.insert(*name),
+                "duplicate tool handler: {name}"
+            );
+            assert!(
+                definition_names.contains(name),
+                "tool handler lacks definition: {name}"
+            );
+        }
+
+        for name in &definition_names {
+            assert!(
+                handler_names.contains(name),
+                "tool definition lacks handler: {name}"
+            );
+        }
+
+        assert_eq!(mcp_tool_count(), definition_names.len());
+    }
 
     #[test]
     fn test_bug018_pattern_matches_anywhere_in_string() {

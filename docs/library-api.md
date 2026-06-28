@@ -28,7 +28,7 @@ use eggsact::{run, evaluate, split_at_operators};
 ### `run`
 
 ```rust
-pub fn run(expr: &str) -> Result<(String, String), String>
+pub fn run(expr: &str) -> Result<(String, String), eggsact::calc::RunError>
 ```
 
 Full natural language pipeline. Normalizes English text into a math expression, then evaluates it.
@@ -38,14 +38,14 @@ Full natural language pipeline. Normalizes English text into a math expression, 
 
 **Returns:**
 - `Ok((result, type_name))` -- the result string and its type (`"int"`, `"float"`, `"nan"`, `"inf"`, `"-inf"`)
-- `Err(message)` -- a human-readable error string
+- `Err(RunError)` -- a human-readable error value with `Display` and `Error` implementations
 
 **What it handles:**
 - Number words: `"five plus three"` -> `("8", "int")`
 - Operator words: `"thirty times two"` -> `("60", "int")`
 - Function names: `"square root of 144"` -> `("12", "float")`
 - Percentages: `"50 percent of 200"` -> `("100", "float")`
-- Unit conversions: `"30m + 100ft"` -> `("60.48", "float")`
+- Unit conversions: `"30m + 100ft"` -> `("60.480000000000004 m", "float")`
 - Fillers: `"what's five plus three"` -> `("8", "int")`
 
 **Examples:**
@@ -83,7 +83,7 @@ Direct mathematical expression evaluation. Parses Python-style math syntax witho
 - Arithmetic: `+`, `-`, `*`, `/`, `%`, `**` (power)
 - Parentheses for grouping
 - Functions: `sin()`, `cos()`, `sqrt()`, `abs()`, `log()`, `log2()`, `log10()`, etc.
-- Constants: `pi`, `e`, `tau`, `c`, `g`, `na`, `h`, etc.
+- Constants: `pi`, `e`, `tau`, `c`, `gravity`, `na`, `h`, etc.
 - Comparison: `<`, `>`, `<=`, `>=`, `==`, `!=`
 - Complex numbers: `3+4j`
 
@@ -345,8 +345,10 @@ The `eggsact::mcp` module provides a JSON-RPC 2.0 server over stdio for AI codin
 ### Starting the Server
 
 ```rust
-// This blocks and runs forever (divergent return type -> !)
-eggsact::mcp::server::main();
+#[tokio::main]
+async fn main() -> ! {
+    eggsact::mcp::server::main().await
+}
 ```
 
 The server reads JSON-RPC requests from stdin and writes responses to stdout. It supports the following MCP methods:
@@ -396,7 +398,7 @@ Use the MCP server only when integrating with an AI agent framework that speaks 
 
 ## Error Handling
 
-All errors are returned as `Err(String)` with a descriptive message. The common error patterns are:
+`evaluate()` returns `Err(String)`. `run()` returns `Err(RunError)`, which displays as the underlying message. The common error patterns are:
 
 | Error | Cause |
 |-------|-------|

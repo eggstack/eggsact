@@ -8,11 +8,11 @@ Complete reference for all 64 tools exposed by the `eggsact` MCP server.
 |----------|-------|
 | Protocol version | 2024-11-05 |
 | Server name | `eggsact` |
-| Server version | 1.0.0 |
+| Server version | 1.1.3 |
 | Transport | stdio JSON-RPC 2.0 |
 | Total tools | 64 |
 
-The server communicates over stdin/stdout using newline-delimited JSON-RPC 2.0 messages. All tool responses are wrapped in a `ToolResponse` envelope with an `ok` boolean field.
+The server communicates over stdin/stdout using newline-delimited JSON-RPC 2.0 messages. `tools/call` responses follow MCP shape: JSON-RPC `result.content[0].text` contains a JSON-encoded `ToolResponse` envelope with an `ok` boolean field.
 
 ## Transport Protocol
 
@@ -25,13 +25,13 @@ The server communicates over stdin/stdout using newline-delimited JSON-RPC 2.0 m
 ### Success Response Format
 
 ```json
-{"jsonrpc": "2.0", "id": 1, "result": {"ok": true, "result": {"result": "5", "type": "number"}}}
+{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"ok\": true, \"tool\": \"math_eval\", \"result\": {\"value\": \"5\", \"type\": \"int\"}}"}]}}
 ```
 
 ### Error Response Format
 
 ```json
-{"jsonrpc": "2.0", "id": 1, "result": {"ok": false, "error_type": "input_too_large", "error": "Expression exceeds 10000 chars", "hints": ["Reduce expression length"]}}
+{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"ok\": false, \"tool\": \"math_eval\", \"error_type\": \"input_too_large\", \"error\": \"Expression length 10001 exceeds MAX_EXPRESSION_LENGTH 10000\", \"hints\": [\"Reduce expression length\"]}"}],"isError":true}}
 ```
 
 ### Server Error Format (JSON-RPC level)
@@ -103,7 +103,7 @@ Evaluate arithmetic, unit conversions, constants, and scientific expressions.
 |-----------|------|----------|---------|-------------|
 | `expression` | string | yes | -- | Math expression to evaluate |
 
-**Return:** `{"result": <string>, "type": <string>}` where `type` is `"number"`, `"unit_value"`, etc.
+**Return:** `{"value": <string>, "type": <string>, "unit": <string|null>, "display": <string|null>}`. `unit` and `display` are present only for unit-bearing results.
 
 **Limits:** `MAX_EXPRESSION_LENGTH` (10,000 chars).
 
@@ -112,7 +112,7 @@ Evaluate arithmetic, unit conversions, constants, and scientific expressions.
 {"jsonrpc": "2.0", "method": "tools/call", "id": 1, "params": {"name": "math_eval", "arguments": {"expression": "sqrt(144) + 2**10"}}}
 
 // Response
-{"jsonrpc": "2.0", "id": 1, "result": {"ok": true, "result": {"result": "1036.0", "type": "number"}}}
+{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"ok\": true, \"tool\": \"math_eval\", \"result\": {\"value\": \"1036\", \"type\": \"int\"}}"}]}}
 ```
 
 ```json
@@ -120,7 +120,7 @@ Evaluate arithmetic, unit conversions, constants, and scientific expressions.
 {"jsonrpc": "2.0", "method": "tools/call", "id": 2, "params": {"name": "math_eval", "arguments": {"expression": "30m in ft"}}}
 
 // Response
-{"jsonrpc": "2.0", "id": 2, "result": {"ok": true, "result": {"result": "98.4251968503937 ft", "type": "unit_value"}}}
+{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\"ok\": true, \"tool\": \"math_eval\", \"result\": {\"value\": \"98.42519685039369\", \"type\": \"float\", \"unit\": \"ft\", \"display\": \"98.42519685039369 ft\"}}"}]}}
 ```
 
 ---

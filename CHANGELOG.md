@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BARE_COMPOUND_UNITS`, `PER_UNIT_RE`, `BARE_SIMPLE_UNIT_RE`, and
   `UNIT_INLINE_RE` patterns plus a rewritten `preprocess_units()`
   handle the spacing and `per`/`kph` variants.
+- **BUG-LRC-001 / B10**: `line_range_compare` now rejects out-of-range
+  line indices with an error instead of panicking.
+
+### Changed
+- Centralized MCP server identity and protocol constants in
+  `src/mcp/server.rs`.
+- Added a registration invariant test so MCP tool definitions, handlers,
+  metadata, and the exported tool count cannot drift silently.
+- Refreshed README and MCP reference examples to match current unit output
+  and MCP `content` response shape.
 
 ### Tests
 - 33 `test_bug00{1..9}_*` regression tests in
@@ -66,13 +76,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cargo toml inspect, protocol (float/string IDs, notifications,
   tools/list field validation).
 
-### Known Issues (new)
-- **BUG-LRC-001 (B10)**: `line_range_compare` panics on out-of-bounds
-  line indices (High).
-- **BUG-VC-001 (B11)**: `version_compare` ignores prerelease segments
-  (`1.0.0-alpha` == `1.0.0`) (Medium).
-- **BUG-JC-001 (B12)**: `json_compare` treats `1.0` ≠ `1` (int vs
-  float) — intended per JSON spec (Low).
+### Known Differences
+- `version_compare` in `semver` mode preserves Python parity by comparing
+  only major/minor/patch. Pre-release ordering is enforced by
+  `version_constraint_check`.
+- `json_compare` treats `1.0` and `1` as different JSON values, matching
+  JSON type-sensitive comparison.
 
 ## [0.1.0] - 2026-05-30
 
@@ -87,7 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Statistical functions** (sum, mean, median, std, variance, min, max, product)
 - **Number theory** (gcd, lcm, factorial)
 - **MCP server** (stdio JSON-RPC 2.0, protocol version 2024-11-05, server identity `eggsact`)
-- **59 MCP tools** across 17 categories:
+- **64 MCP tools** across 17 categories:
   - Math & Units (4): math_eval, unit_convert, unit_info, constant_lookup
   - Text Measurement & Comparison (10): text_measure, text_equal, text_diff_explain, text_inspect, text_count, text_truncate, text_fingerprint, text_hash, text_position, text_window
   - Text Transformation (4): text_transform, escape_text, unescape_text, text_replace_check
@@ -106,7 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Glob (1): glob_match
   - Security (1): validate_brackets
 - **Text processing library** (21 modules): primitives, confusables, diff, measure, validate, transform, position, regex_safety, replace, path, identifier, shell, markdown, glob, config, toml, patch, line_range, unicode_policy, cargo, version
-- **Test suite** with 304+ tests (85 unit, 219 integration, including Python parity tests)
+- **Test suite** with unit, integration, MCP protocol, and Python parity tests
 
 ### Known Differences from Python eggcalc
 

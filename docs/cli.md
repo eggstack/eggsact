@@ -84,7 +84,7 @@ eggsact "3**2 + 4**2"                        # 25
 ### Unit Conversions
 
 ```bash
-eggsact "30m + 100ft"                        # 60.48
+eggsact "30m + 100ft"                        # 60.480000000000004 m
 eggsact "1km in miles"                       # 0.621371...
 eggsact "72F in C"                           # 22.2222...
 eggsact "1024KB in MB"                       # 1
@@ -109,7 +109,7 @@ eggsact "floor(3.8)"                         # 3
 eggsact "pi"                                 # 3.14159...
 eggsact "e"                                  # 2.71828...
 eggsact "c"                                  # speed of light
-eggsact "g"                                  # 9.80665
+eggsact "gravity"                            # 9.80665
 eggsact "na"                                 # Avogadro's number
 ```
 
