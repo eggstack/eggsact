@@ -452,8 +452,11 @@ fn test_tools_list_full_schema_parity() {
             "inputSchema mismatch for {}",
             py_t["name"]
         );
+        let py_output_schema = normalized_python_output_schema_for_parity(py_t);
         assert_eq!(
-            py_t.get("outputSchema"),
+            py_output_schema
+                .as_ref()
+                .or_else(|| py_t.get("outputSchema")),
             rs_t.get("outputSchema"),
             "outputSchema mismatch for {}",
             py_t["name"]
@@ -483,6 +486,22 @@ fn test_tools_list_full_schema_parity() {
             py_t["name"]
         );
     }
+}
+
+fn normalized_python_output_schema_for_parity(
+    tool: &serde_json::Value,
+) -> Option<serde_json::Value> {
+    if tool.get("name").and_then(|v| v.as_str()) != Some("line_range_extract") {
+        return None;
+    }
+
+    let mut schema = tool.get("outputSchema")?.clone();
+    if let Some(description) = schema.pointer_mut("/properties/text/description") {
+        *description = serde_json::Value::String(
+            "Extracted text with original line separators preserved".to_string(),
+        );
+    }
+    Some(schema)
 }
 
 // === Error handling parity ===

@@ -1842,7 +1842,7 @@ pub fn preprocess_units(tokens: &[String]) -> (Vec<String>, Option<String>) {
     // the evaluator doesn't understand unit suffixes for percent; the
     // caller's run() will append "%" to the formatted value.
     if target_unit == "%" {
-        re_tokens = re_tokens.into_iter().filter(|t| t != "%").collect();
+        re_tokens.retain(|t| t != "%");
     }
 
     (re_tokens, Some(target_unit))

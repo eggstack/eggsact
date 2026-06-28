@@ -163,7 +163,7 @@ pub fn dotenv_validate(
             }
         }
 
-        let value_present = value != "" && value != "''" && value != "\"\"";
+        let value_present = !value.is_empty() && value != "''" && value != "\"\"";
 
         if EXPANSION_RE.is_match(&raw_value) {
             contains_expansion.push(key.clone());
@@ -280,9 +280,7 @@ pub fn ini_validate(text: &str, duplicate_policy: &str) -> IniValidateResult {
             if !sections.contains(&section_name) {
                 sections.push(section_name.clone());
             }
-            if !keys_by_section.contains_key(&section_name) {
-                keys_by_section.insert(section_name, Vec::new());
-            }
+            keys_by_section.entry(section_name).or_default();
             continue;
         }
 
@@ -319,12 +317,12 @@ pub fn ini_validate(text: &str, duplicate_policy: &str) -> IniValidateResult {
             if let Some(ref section) = current_section {
                 keys_by_section
                     .entry(section.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(key);
             } else {
                 keys_by_section
                     .entry("(top-level)".to_string())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(key);
             }
         } else {

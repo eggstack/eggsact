@@ -55,7 +55,7 @@ fn detect_duplicates(names: &[String]) -> Vec<String> {
     let mut dupes: Vec<String> = Vec::new();
     for (_, group) in groups.iter() {
         if group.len() > 1 {
-            let mut sorted: Vec<String> = group.iter().cloned().collect();
+            let mut sorted: Vec<String> = group.to_vec();
             sorted.sort();
             dupes.extend(sorted);
         }
@@ -81,24 +81,14 @@ pub struct PackageInfo {
     pub readme: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WorkspaceInfo {
     pub present: bool,
     pub members: Vec<String>,
     pub exclude: Vec<String>,
 }
 
-impl Default for WorkspaceInfo {
-    fn default() -> Self {
-        Self {
-            present: false,
-            members: Vec::new(),
-            exclude: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DependencyForm {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
@@ -120,24 +110,6 @@ pub struct DependencyForm {
     pub optional: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_features: Option<bool>,
-}
-
-impl Default for DependencyForm {
-    fn default() -> Self {
-        Self {
-            version: None,
-            path: None,
-            git: None,
-            workspace: false,
-            inline_table: false,
-            registry: None,
-            branch: None,
-            tag: None,
-            features: None,
-            optional: None,
-            default_features: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -291,10 +263,10 @@ pub fn cargo_toml_inspect(
         }
     }
 
-    if package.name.is_none() || package.name.as_ref().map_or(true, |s| s.is_empty()) {
+    if package.name.is_none() || package.name.as_ref().is_none_or(|s| s.is_empty()) {
         findings.push("Missing or empty 'name' in [package]".to_string());
     }
-    if package.version.is_none() || package.version.as_ref().map_or(true, |s| s.is_empty()) {
+    if package.version.is_none() || package.version.as_ref().is_none_or(|s| s.is_empty()) {
         findings.push("Missing or empty 'version' in [package]".to_string());
     }
     if package.edition.is_none() {

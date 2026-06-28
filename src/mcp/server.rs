@@ -1211,7 +1211,7 @@ use std::sync::RwLock;
 static ACTIVE_PROFILE: LazyLock<RwLock<String>> = LazyLock::new(|| {
     let profile = std::env::var("EGGCALC_MCP_PROFILE").unwrap_or_else(|_| "full".to_string());
     if !PROFILE_NAMES.contains(&profile.as_str()) {
-        let available: Vec<&str> = PROFILE_NAMES.iter().copied().collect();
+        let available: Vec<&str> = PROFILE_NAMES.to_vec();
         eprintln!(
             "Error: Invalid EGGCALC_MCP_PROFILE: {:?}. Available profiles: {}",
             profile,
@@ -1231,7 +1231,7 @@ static ACTIVE_SCHEMA_DETAIL: LazyLock<RwLock<String>> = LazyLock::new(|| {
 /// Set the active MCP profile. Returns Ok(()) on success, or Err with available profiles on failure.
 pub fn set_active_profile(name: &str) -> Result<(), String> {
     if !PROFILE_NAMES.contains(&name) {
-        let available: Vec<&str> = PROFILE_NAMES.iter().copied().collect();
+        let available: Vec<&str> = PROFILE_NAMES.to_vec();
         return Err(format!(
             "Unknown profile: {:?}. Available profiles: {}",
             name,
@@ -2605,10 +2605,8 @@ fn find_close_match<'a>(input: &str, tool_names: &[&'a str]) -> Option<&'a str> 
     for &name in tool_names {
         let dist = levenshtein_distance(input, name);
         let threshold = input.chars().count().min(name.chars().count()) / 2;
-        if dist <= threshold {
-            if best.map_or(true, |(_, best_dist)| dist < best_dist) {
-                best = Some((name, dist));
-            }
+        if dist <= threshold && best.is_none_or(|(_, best_dist)| dist < best_dist) {
+            best = Some((name, dist));
         }
     }
 
@@ -2643,10 +2641,7 @@ fn validate_property_inner(
         None => return Some(format!("Schema for '{}' must be an object", path)),
     };
 
-    let expected_type = match obj.get("type") {
-        Some(t) => t,
-        None => return None,
-    };
+    let expected_type = obj.get("type")?;
 
     let type_options: Vec<&str> = match expected_type {
         Value::String(s) => vec![s.as_str()],
@@ -2718,7 +2713,7 @@ fn validate_property_inner(
         }
     }
 
-    if type_options.iter().any(|t| *t == "string") && value.is_string() {
+    if type_options.contains(&"string") && value.is_string() {
         if let Some(s) = value.as_str() {
             if let Some(min) = obj.get("minLength").and_then(|v| v.as_u64()) {
                 if (s.chars().count() as u64) < min {
@@ -2825,7 +2820,7 @@ fn validate_property_inner(
         }
     }
 
-    if type_options.iter().any(|t| *t == "object") && value.is_object() {
+    if type_options.contains(&"object") && value.is_object() {
         let sub_props = obj.get("properties").and_then(|v| v.as_object());
         let sub_required = obj.get("required").and_then(|v| v.as_array());
         let sub_additional = obj
@@ -2833,8 +2828,8 @@ fn validate_property_inner(
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let has_sub_schema = sub_props.map_or(false, |p| !p.is_empty())
-            || sub_required.map_or(false, |r| !r.is_empty());
+        let has_sub_schema =
+            sub_props.is_some_and(|p| !p.is_empty()) || sub_required.is_some_and(|r| !r.is_empty());
 
         if has_sub_schema {
             if let Some(req) = sub_required {
@@ -2890,7 +2885,7 @@ fn validate_property_inner(
         }
     }
 
-    if type_options.iter().any(|t| *t == "array") && value.is_array() {
+    if type_options.contains(&"array") && value.is_array() {
         if let Some(arr) = value.as_array() {
             if let Some(min) = obj.get("minItems").and_then(|v| v.as_u64()) {
                 if (arr.len() as u64) < min {
@@ -2956,15 +2951,9 @@ fn value_matches_type(value: &Value, t: &str) -> bool {
 }
 
 fn validate_arguments(name: &str, arguments: &Value) -> Option<String> {
-    let schema = match SCHEMA_CACHE.get(name) {
-        Some(s) => s,
-        None => return None,
-    };
+    let schema = SCHEMA_CACHE.get(name)?;
 
-    let obj = match arguments.as_object() {
-        Some(o) => o,
-        None => return None,
-    };
+    let obj = arguments.as_object()?;
 
     let props = schema.get("properties").and_then(|v| v.as_object());
     let required = schema.get("required").and_then(|v| v.as_array());
@@ -3567,11 +3556,12 @@ async fn handle_request_async(
                                 cancelled_set.insert(request_id.clone());
                             }
                         }
-                        Value::Number(n) if n.is_i64() || n.is_u64() => {
-                            if request_id.to_string().len() <= MAX_REQUEST_ID_LENGTH {
-                                let mut cancelled_set = cancelled.lock().await;
-                                cancelled_set.insert(request_id.clone());
-                            }
+                        Value::Number(n)
+                            if (n.is_i64() || n.is_u64())
+                                && request_id.to_string().len() <= MAX_REQUEST_ID_LENGTH =>
+                        {
+                            let mut cancelled_set = cancelled.lock().await;
+                            cancelled_set.insert(request_id.clone());
                         }
                         _ => {}
                     }

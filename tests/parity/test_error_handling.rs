@@ -25,7 +25,7 @@ fn run_rust_jsonrpc(request: &str) -> Value {
 
 fn run_python_jsonrpc(request: &str) -> Value {
     let mut child = Command::new("python3")
-        .args(&["-m", "eggcalc.mcp.server"])
+        .args(["-m", "eggcalc.mcp.server"])
         .current_dir("/Users/davidbowman/projects/eggcalc")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

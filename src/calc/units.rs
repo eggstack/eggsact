@@ -219,7 +219,7 @@ pub static UNIT_BASE: LazyLock<HashMap<&'static str, UnitDefinition>> = LazyLock
         "pc",
         UnitDefinition {
             category: "length",
-            to_base: 3.0856775814913673e16,
+            to_base: 3.085_677_581_491_367e16,
         },
     );
     m.insert(
@@ -936,7 +936,7 @@ pub static UNIT_BASE: LazyLock<HashMap<&'static str, UnitDefinition>> = LazyLock
         "hp",
         UnitDefinition {
             category: "power",
-            to_base: 745.69987158227022,
+            to_base: 745.699_871_582_270_2,
         },
     );
 

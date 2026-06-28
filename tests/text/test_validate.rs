@@ -399,7 +399,7 @@ fn test_json_compare_case_rename_path() {
     let a = r#"{"Foo": 1}"#;
     let b = r#"{"foo": 1}"#;
     let result = json_compare(a, b, true, false, false, false, false, 100).unwrap();
-    if let Some(ref diff) = result.diffs.first() {
+    if let Some(diff) = result.diffs.first() {
         assert!(
             !diff.path.contains("/->"),
             "Path should not have extra '/': {}",

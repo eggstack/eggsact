@@ -237,8 +237,8 @@ pub fn line_range_extract(
 
     let start_idx = start_1based.saturating_sub(1);
     let end_idx = std::cmp::min(end_1based, lines.len());
-    for i in start_idx..end_idx {
-        let line_text = lines[i].text.to_string();
+    for (i, line) in lines.iter().enumerate().take(end_idx).skip(start_idx) {
+        let line_text = line.text.to_string();
         let line_dict = if include_line_numbers {
             LineExtractLine {
                 text: line_text,
@@ -381,8 +381,8 @@ pub fn line_range_compare(
 
     let left_text_slice = range_text(left_text, &left_lines, start_idx, left_end_idx);
     let right_text_slice = range_text(right_text, &right_lines, start_idx, right_end_idx);
-    let left_fp = fingerprint(&left_text_slice);
-    let right_fp = fingerprint(&right_text_slice);
+    let left_fp = fingerprint(left_text_slice);
+    let right_fp = fingerprint(right_text_slice);
 
     let mut diff_summary = if equal {
         "equal".to_string()

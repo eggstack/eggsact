@@ -350,7 +350,7 @@ fn _pi_find_long_minified_lines(text: &str) -> Vec<Value> {
 
 fn _pi_find_instruction_phrases(text: &str, phrase_patterns: Option<&[String]>) -> Vec<Value> {
     let phrases: Vec<String> = if let Some(patterns) = phrase_patterns {
-        patterns.iter().cloned().collect()
+        patterns.to_vec()
     } else {
         DEFAULT_INSTRUCTION_PHRASES
             .iter()
@@ -527,7 +527,7 @@ pub fn prompt_input_inspect(
     let risk_score = _pi_compute_risk_score(&findings);
     let summary = _pi_build_summary(&findings, risk_score);
     let recommended_next_tool = _pi_recommend_next_tool(&findings);
-    let mut checks_run: Vec<String> = active_checks.iter().cloned().collect();
+    let mut checks_run: Vec<String> = active_checks.to_vec();
     checks_run.sort();
 
     PromptInspectResult {

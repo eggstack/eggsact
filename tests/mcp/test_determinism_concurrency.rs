@@ -602,9 +602,8 @@ fn test_malformed_jsonrpc_version() {
 #[test]
 fn test_extra_fields_ignored() {
     let r = call_tool_raw(r#"{"jsonrpc":"2.0","method":"ping","id":1,"extra":"field"}"#);
-    assert_eq!(
+    assert!(
         r.get("result").is_some(),
-        true,
         "Extra fields should be ignored, server should still respond"
     );
 }

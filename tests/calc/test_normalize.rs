@@ -1112,7 +1112,7 @@ fn test_degrees_bare_celsius() {
 // ─── BUG-013: M → MR zero-arg memory function ───────────────────────
 
 #[test]
-fn test_M_in_function_mappings() {
+fn test_m_in_function_mappings() {
     // Verify "M" is mapped to "MR" in FUNCTION_MAPPINGS
     assert!(
         eggsact::calc::normalize::FUNCTION_MAPPINGS

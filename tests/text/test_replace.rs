@@ -108,9 +108,8 @@ fn test_replace_check_expected_count() {
 fn test_replace_check_empty_old() {
     let result = text_replace_check("hello", "", "x", "exact", None, false, "preserve", false, 0);
     // Empty old string: function finds matches at every position
-    match result {
-        Ok(r) => assert!(r.match_count > 0),
-        Err(_) => {}
+    if let Ok(r) = result {
+        assert!(r.match_count > 0)
     }
 }
 

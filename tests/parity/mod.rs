@@ -52,7 +52,7 @@ fn run_python_request(tool_name: &str, arguments: Value, request_id: u32) -> Opt
     let request_str = serde_json::to_string(&request).unwrap();
 
     let mut child = Command::new("python3")
-        .args(&["-m", "eggcalc.mcp.server"])
+        .args(["-m", "eggcalc.mcp.server"])
         .current_dir("/Users/davidbowman/projects/eggcalc")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -266,7 +266,7 @@ fn run_python_mcp_request(request: &Value) -> Result<Value, String> {
     let request_str = serde_json::to_string(request).map_err(|e| e.to_string())?;
 
     let mut child = Command::new("python3")
-        .args(&["-m", "eggcalc.mcp.server"])
+        .args(["-m", "eggcalc.mcp.server"])
         .current_dir("/Users/davidbowman/projects/eggcalc")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

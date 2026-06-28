@@ -50,9 +50,7 @@ fn check_pattern_complexity(pattern: &str) -> Result<(), String> {
             max_nesting = max_nesting.max(nesting_depth);
             in_char_class = true;
         } else if c == ']' {
-            if nesting_depth > 0 {
-                nesting_depth -= 1;
-            }
+            nesting_depth = nesting_depth.saturating_sub(1);
             in_char_class = false;
         } else if c == '(' && !in_char_class {
             nesting_depth += 1;
@@ -225,9 +223,7 @@ pub fn regex_safety_check(pattern: &str) -> RegexSafetyResult {
 
         if c == ')' {
             last_paren_end = i as i32;
-            if paren_depth > 0 {
-                paren_depth -= 1;
-            }
+            paren_depth = paren_depth.saturating_sub(1);
             i += 1;
             continue;
         }
@@ -253,14 +249,14 @@ pub fn regex_safety_check(pattern: &str) -> RegexSafetyResult {
                     });
                 }
                 has_inner_quantifier = true;
-            } else if paren_depth == 0 && last_paren_end > 0 {
-                if has_inner_quantifier {
-                    findings.push(RegexSafetyFinding {
-                        kind: "nested_quantifier".to_string(),
-                        span: vec![i as i32, j as i32],
-                        message: "Quantifier after group with quantifier may cause catastrophic backtracking".to_string(),
-                    });
-                }
+            } else if paren_depth == 0 && last_paren_end > 0 && has_inner_quantifier {
+                findings.push(RegexSafetyFinding {
+                    kind: "nested_quantifier".to_string(),
+                    span: vec![i as i32, j as i32],
+                    message:
+                        "Quantifier after group with quantifier may cause catastrophic backtracking"
+                            .to_string(),
+                });
             }
 
             i = j;

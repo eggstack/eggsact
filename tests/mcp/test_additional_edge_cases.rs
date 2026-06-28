@@ -1388,7 +1388,7 @@ fn test_code_fence_extract_nested() {
     let r = call_tool("code_fence_extract", serde_json::json!({"text": md}));
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     let blocks = r["result"]["blocks"].as_array().unwrap();
-    assert!(blocks.len() >= 1, "Should extract at least one block");
+    assert!(!blocks.is_empty(), "Should extract at least one block");
 }
 
 #[test]
@@ -1759,7 +1759,7 @@ fn test_text_position_middle_of_multiline() {
     assert_eq!(r["result"]["valid"], true);
     let line = r["result"]["line"].as_u64().unwrap();
     assert!(
-        line >= 2 && line <= 3,
+        (2..=3).contains(&line),
         "Offset 8 should be on line 2 or 3, got line {}",
         line
     );

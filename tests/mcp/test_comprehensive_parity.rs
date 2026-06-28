@@ -388,7 +388,9 @@ fn test_canonicalize_with_mapping() {
     );
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     // Mapping should be present when return_mapping=true
-    assert!(r["result"].get("mapping").is_some() || r["result"].get("operations_applied").is_some());
+    assert!(
+        r["result"].get("mapping").is_some() || r["result"].get("operations_applied").is_some()
+    );
 }
 
 #[test]
@@ -456,7 +458,10 @@ fn test_unicode_policy_identifier_strict_confusable() {
         let rule = f["rule"].as_str().unwrap_or("");
         rule.contains("confusable") || rule.contains("mixed_scripts")
     });
-    assert!(has_issue, "Finding should reference confusable or mixed_scripts");
+    assert!(
+        has_issue,
+        "Finding should reference confusable or mixed_scripts"
+    );
 }
 
 #[test]
@@ -478,10 +483,7 @@ fn test_unicode_policy_identifier_strict_invisible() {
     );
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     let findings = r["result"]["findings"].as_array().unwrap();
-    assert!(
-        !findings.is_empty(),
-        "Zero-width space should be flagged"
-    );
+    assert!(!findings.is_empty(), "Zero-width space should be flagged");
 }
 
 #[test]
@@ -502,7 +504,10 @@ fn test_unicode_policy_filename_safe_control_char() {
     );
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     let findings = r["result"]["findings"].as_array().unwrap();
-    assert!(!findings.is_empty(), "Null byte in filename should be flagged");
+    assert!(
+        !findings.is_empty(),
+        "Null byte in filename should be flagged"
+    );
 }
 
 #[test]
@@ -523,7 +528,10 @@ fn test_unicode_policy_source_code_bidi() {
     );
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     let findings = r["result"]["findings"].as_array().unwrap();
-    assert!(!findings.is_empty(), "Bidi in source code should be flagged");
+    assert!(
+        !findings.is_empty(),
+        "Bidi in source code should be flagged"
+    );
 }
 
 #[test]
@@ -642,9 +650,7 @@ fn test_sequential_session_init_then_tool() {
     assert!(responses[0].get("result").is_some());
     // Second response should be tool result
     let tool_resp = &responses[1];
-    let text = tool_resp["result"]["content"][0]["text"]
-        .as_str()
-        .unwrap();
+    let text = tool_resp["result"]["content"][0]["text"].as_str().unwrap();
     let tool_result: Value = serde_json::from_str(text).unwrap();
     assert_eq!(tool_result["ok"], true);
     assert_eq!(tool_result["result"]["value"], "4");
@@ -860,10 +866,7 @@ fn test_structured_data_compare_different_json() {
 
 #[test]
 fn test_math_large_float_precision() {
-    let r = call_tool(
-        "math_eval",
-        serde_json::json!({"expression": "0.1 + 0.2"}),
-    );
+    let r = call_tool("math_eval", serde_json::json!({"expression": "0.1 + 0.2"}));
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     let val = r["result"]["value"]
         .as_str()
@@ -912,10 +915,23 @@ fn test_math_commutative() {
 
 #[test]
 fn test_math_factorial_growth() {
-    let r5 = call_tool("math_eval", serde_json::json!({"expression": "factorial(5)"}));
-    let r10 = call_tool("math_eval", serde_json::json!({"expression": "factorial(10)"}));
-    let r15 = call_tool("math_eval", serde_json::json!({"expression": "factorial(15)"}));
-    let v5 = r5["result"]["value"].as_str().unwrap().parse::<u64>().unwrap();
+    let r5 = call_tool(
+        "math_eval",
+        serde_json::json!({"expression": "factorial(5)"}),
+    );
+    let r10 = call_tool(
+        "math_eval",
+        serde_json::json!({"expression": "factorial(10)"}),
+    );
+    let r15 = call_tool(
+        "math_eval",
+        serde_json::json!({"expression": "factorial(15)"}),
+    );
+    let v5 = r5["result"]["value"]
+        .as_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
     let v10 = r10["result"]["value"]
         .as_str()
         .unwrap()
@@ -935,10 +951,7 @@ fn test_math_factorial_growth() {
 
 #[test]
 fn test_math_trig_identities() {
-    let r = call_tool(
-        "math_eval",
-        serde_json::json!({"expression": "sin(pi/6)"}),
-    );
+    let r = call_tool("math_eval", serde_json::json!({"expression": "sin(pi/6)"}));
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     let val = r["result"]["value"]
         .as_str()
@@ -947,10 +960,7 @@ fn test_math_trig_identities() {
         .unwrap();
     assert!((val - 0.5).abs() < 1e-10, "sin(pi/6) should be 0.5");
 
-    let r = call_tool(
-        "math_eval",
-        serde_json::json!({"expression": "cos(pi/3)"}),
-    );
+    let r = call_tool("math_eval", serde_json::json!({"expression": "cos(pi/3)"}));
     let val = r["result"]["value"]
         .as_str()
         .unwrap()
@@ -961,7 +971,10 @@ fn test_math_trig_identities() {
 
 #[test]
 fn test_math_sqrt_squared() {
-    let r = call_tool("math_eval", serde_json::json!({"expression": "sqrt(9) ** 2"}));
+    let r = call_tool(
+        "math_eval",
+        serde_json::json!({"expression": "sqrt(9) ** 2"}),
+    );
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     assert_eq!(r["result"]["value"].as_str().unwrap(), "9");
 }
@@ -999,10 +1012,7 @@ fn test_text_equal_long_strings() {
 
 #[test]
 fn test_text_count_frequency_table() {
-    let r = call_tool(
-        "text_count",
-        serde_json::json!({"text": "aabbc"}),
-    );
+    let r = call_tool("text_count", serde_json::json!({"text": "aabbc"}));
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     // Default mode returns frequency table
     assert_eq!(r["result"]["a"].as_u64().unwrap(), 2);
@@ -1254,10 +1264,7 @@ fn test_shell_split_complex_command() {
 
 #[test]
 fn test_shell_split_single_empty_arg() {
-    let r = call_tool(
-        "shell_split",
-        serde_json::json!({"command": "cmd ''"}),
-    );
+    let r = call_tool("shell_split", serde_json::json!({"command": "cmd ''"}));
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     let argv = r["result"]["argv"].as_array().unwrap();
     assert_eq!(argv.len(), 2);
@@ -1582,7 +1589,11 @@ fn test_patch_summary_multi_file() {
         .as_u64()
         .or_else(|| r["result"]["file_count"].as_u64())
         .unwrap_or(0);
-    assert!(count >= 1, "Should detect at least 1 file changed, got {}", count);
+    assert!(
+        count >= 1,
+        "Should detect at least 1 file changed, got {}",
+        count
+    );
 }
 
 #[test]
@@ -1770,7 +1781,11 @@ fn test_tools_list_returns_tools_array() {
     assert!(r.get("result").is_some());
     let tools = r["result"]["tools"].as_array().unwrap();
     assert!(!tools.is_empty());
-    assert!(tools.len() >= 60, "Should have 60+ tools, got {}", tools.len());
+    assert!(
+        tools.len() >= 60,
+        "Should have 60+ tools, got {}",
+        tools.len()
+    );
 }
 
 #[test]
@@ -1803,9 +1818,8 @@ fn test_ping_returns_empty() {
 
 #[test]
 fn test_notification_no_response() {
-    let response_str = mcp_request(
-        r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#,
-    );
+    let response_str =
+        mcp_request(r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#);
     let trimmed = response_str.trim();
     // Notifications should produce no response
     assert!(
@@ -1842,7 +1856,11 @@ fn test_large_request_rejected() {
         let r: Value = serde_json::from_str(trimmed).unwrap();
         // Should be rejected due to size
         assert!(
-            r.get("error").is_some() || r["result"]["content"][0]["text"].as_str().map(|t| t.contains("false")).unwrap_or(false),
+            r.get("error").is_some()
+                || r["result"]["content"][0]["text"]
+                    .as_str()
+                    .map(|t| t.contains("false"))
+                    .unwrap_or(false),
             "Large request should be rejected, got: {}",
             r
         );

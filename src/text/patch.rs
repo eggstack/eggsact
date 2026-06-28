@@ -3,6 +3,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
+use super::unicode_tools::detect_newline_style;
+
 const MAX_PATCH_LENGTH: usize = 200_000;
 const MAX_ORIGINAL_LENGTH: usize = 200_000;
 
@@ -80,26 +82,6 @@ pub struct PatchSummaryResult {
 pub struct RenamePair {
     pub from: String,
     pub to: String,
-}
-
-fn detect_newline_style(text: &str) -> String {
-    let has_crlf = text.contains("\r\n");
-    let standalone_cr = text.matches('\r').count() - text.matches("\r\n").count();
-    let standalone_lf = text.matches('\n').count() - text.matches("\r\n").count();
-
-    if has_crlf && (standalone_cr > 0 || standalone_lf > 0) {
-        "mixed".to_string()
-    } else if standalone_cr > 0 && standalone_lf > 0 {
-        "mixed".to_string()
-    } else if has_crlf {
-        "CRLF".to_string()
-    } else if standalone_cr > 0 {
-        "CR".to_string()
-    } else if standalone_lf > 0 {
-        "LF".to_string()
-    } else {
-        "none".to_string()
-    }
 }
 
 fn parse_hunk_header(line: &str) -> Option<(usize, usize, usize, usize)> {
@@ -263,12 +245,12 @@ fn normalize_line(line: &str) -> String {
 }
 
 fn strip_line_prefix(line: &str) -> String {
-    if line.starts_with('+') {
-        line[1..].to_string()
-    } else if line.starts_with('-') {
-        line[1..].to_string()
-    } else if line.starts_with(' ') {
-        line[1..].to_string()
+    if let Some(stripped) = line
+        .strip_prefix('+')
+        .or_else(|| line.strip_prefix('-'))
+        .or_else(|| line.strip_prefix(' '))
+    {
+        stripped.to_string()
     } else {
         line.to_string()
     }
@@ -371,8 +353,6 @@ fn apply_hunk(
             hunk_idx += 1;
         } else if hline.starts_with('+') {
             new_lines.push(strip_line_prefix(&hline));
-            hunk_idx += 1;
-        } else if hline.starts_with('\\') {
             hunk_idx += 1;
         } else {
             hunk_idx += 1;

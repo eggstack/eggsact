@@ -12,19 +12,17 @@ fn needs_fancy_regex(pattern: &str) -> bool {
             chars.next();
             continue;
         }
-        if c == '(' {
-            if chars.peek() == Some(&'?') {
-                chars.next();
-                if let Some(&next) = chars.peek() {
-                    if next == '=' || next == '!' {
-                        return true;
-                    }
-                    if next == '<' {
-                        // Check for lookbehind: (?<= or (?<!, but not (?<name>...)
-                        if let Some(&next2) = chars.peek() {
-                            if next2 == '=' || next2 == '!' {
-                                return true;
-                            }
+        if c == '(' && chars.peek() == Some(&'?') {
+            chars.next();
+            if let Some(&next) = chars.peek() {
+                if next == '=' || next == '!' {
+                    return true;
+                }
+                if next == '<' {
+                    // Check for lookbehind: (?<= or (?<!, but not (?<name>...)
+                    if let Some(&next2) = chars.peek() {
+                        if next2 == '=' || next2 == '!' {
+                            return true;
                         }
                     }
                 }
@@ -1003,16 +1001,11 @@ pub fn json_shape(
                 }
 
                 let mut item_types = Vec::new();
-                let mut shown = 0;
-                for item in arr.iter() {
-                    if shown >= max_array_items {
-                        break;
-                    }
+                for item in arr.iter().take(max_array_items) {
                     item_types.push(
                         analyze_shape(item, depth + 1, max_depth, max_keys, max_array_items)
                             .key_type,
                     );
-                    shown += 1;
                 }
 
                 JsonShapeKey {
@@ -1363,7 +1356,7 @@ pub fn regex_finditer(
             valid_pattern: true,
             matches,
             truncated,
-            match_count: match_count as i32,
+            match_count,
             error: None,
         };
     }
@@ -1470,7 +1463,7 @@ pub fn regex_finditer(
         valid_pattern: true,
         matches,
         truncated,
-        match_count: match_count as i32,
+        match_count,
         error: None,
     }
 }
@@ -1533,7 +1526,7 @@ fn value_preview(value: &serde_json::Value, max_len: usize) -> Option<String> {
             }
         }
         serde_json::Value::Array(a) => Some(format!("[{} items]", a.len())),
-        serde_json::Value::Object(o) => Some(format!("{{{}}}", format!("{} keys", o.len()))),
+        serde_json::Value::Object(o) => Some(format!("{{{} keys}}", o.len())),
     }
 }
 
@@ -2005,6 +1998,7 @@ pub struct JsonCompareResult {
     pub summary: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn json_compare(
     a: &str,
     b: &str,
@@ -2108,6 +2102,7 @@ pub fn json_compare(
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compare_values(
         path: &str,
         a_val: &serde_json::Value,
@@ -2126,10 +2121,8 @@ pub fn json_compare(
             return;
         }
 
-        if treat_missing_null_as_equal {
-            if a_val.is_null() || b_val.is_null() {
-                return;
-            }
+        if treat_missing_null_as_equal && (a_val.is_null() || b_val.is_null()) {
+            return;
         }
 
         let a_type = get_json_type(a_val);
@@ -2805,11 +2798,9 @@ fn detect_duplicate_keys_raw(text: &str, duplicates: &mut Vec<String>) {
                 depth += 1;
                 keys_at_depth.push(std::collections::HashSet::new());
             }
-            b'}' | b']' => {
-                if depth > 0 {
-                    depth -= 1;
-                    keys_at_depth.pop();
-                }
+            b'}' | b']' if depth > 0 => {
+                depth -= 1;
+                keys_at_depth.pop();
             }
             _ => {}
         }
@@ -3066,21 +3057,18 @@ pub fn validate_schema_light(
                     }
                 }
                 if let Some(serde_json::Value::String(pattern)) = schema_map.get("pattern") {
-                    match Regex::new(pattern) {
-                        Ok(re) => {
-                            if !re.is_match(s).unwrap_or(false) {
-                                violations.push(SchemaViolation {
-                                    path: path.to_string(),
-                                    message: format!(
-                                        "string '{}' does not match pattern '{}'",
-                                        s, pattern
-                                    ),
-                                    value_type: Some("string".to_string()),
-                                    expected_type: None,
-                                });
-                            }
+                    if let Ok(re) = Regex::new(pattern) {
+                        if !re.is_match(s).unwrap_or(false) {
+                            violations.push(SchemaViolation {
+                                path: path.to_string(),
+                                message: format!(
+                                    "string '{}' does not match pattern '{}'",
+                                    s, pattern
+                                ),
+                                value_type: Some("string".to_string()),
+                                expected_type: None,
+                            });
                         }
-                        Err(_) => {}
                     }
                 }
             }

@@ -196,10 +196,7 @@ fn line_column_to_codepoint_index(
 
     let col_index = column.checked_sub(column_base)?;
     let line_text_raw = lines[line_index];
-    let trimmed_len = line_text_raw
-        .trim_end_matches(|c| c == '\r' || c == '\n')
-        .chars()
-        .count();
+    let trimmed_len = line_text_raw.trim_end_matches(['\r', '\n']).chars().count();
     if col_index > trimmed_len {
         return None;
     }
@@ -212,6 +209,7 @@ fn line_column_to_codepoint_index(
     Some(codepoint_index + col_index)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn text_position(
     text: &str,
     byte_offset: Option<usize>,
@@ -448,10 +446,7 @@ pub fn text_position(
 
         if line_index < lines.len() {
             let line_text_raw = lines[line_index];
-            let trimmed_len = line_text_raw
-                .trim_end_matches(|c| c == '\r' || c == '\n')
-                .chars()
-                .count();
+            let trimmed_len = line_text_raw.trim_end_matches(['\r', '\n']).chars().count();
 
             if col_index > trimmed_len {
                 return TextPositionResult {
@@ -494,11 +489,7 @@ pub fn text_position(
     };
 
     let line_preview = if line_num < lines.len() {
-        Some(
-            lines[line_num]
-                .trim_end_matches(|c| c == '\r' || c == '\n')
-                .to_string(),
-        )
+        Some(lines[line_num].trim_end_matches(['\r', '\n']).to_string())
     } else {
         None
     };
@@ -645,7 +636,7 @@ pub fn text_window(
     let line_index = line_num.saturating_sub(line_base);
     let line_text = if line_index < lines_all.len() {
         lines_all[line_index]
-            .trim_end_matches(|c| c == '\r' || c == '\n')
+            .trim_end_matches(['\r', '\n'])
             .to_string()
     } else {
         String::new()
@@ -665,9 +656,7 @@ pub fn text_window(
             if ln < lines_all.len() {
                 Some(LineInfo {
                     line: ln + line_base,
-                    text: lines_all[ln]
-                        .trim_end_matches(|c| c == '\r' || c == '\n')
-                        .to_string(),
+                    text: lines_all[ln].trim_end_matches(['\r', '\n']).to_string(),
                 })
             } else {
                 None
@@ -681,9 +670,7 @@ pub fn text_window(
             if ln < lines_all.len() {
                 Some(LineInfo {
                     line: ln + line_base,
-                    text: lines_all[ln]
-                        .trim_end_matches(|c| c == '\r' || c == '\n')
-                        .to_string(),
+                    text: lines_all[ln].trim_end_matches(['\r', '\n']).to_string(),
                 })
             } else {
                 None
@@ -708,7 +695,7 @@ pub fn text_window(
 
     if byte_offset < text.len() {
         let b = text.as_bytes()[byte_offset];
-        if b >= 0x80 && b < 0xC0 {
+        if (0x80..0xC0).contains(&b) {
             warnings.push(
                 "Position falls in middle of multi-byte sequence (byte is continuation byte)"
                     .to_string(),

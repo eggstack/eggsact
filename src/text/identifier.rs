@@ -364,12 +364,13 @@ fn classify_style(text: &str) -> String {
         return "invalid".to_string();
     }
 
-    if text.starts_with('_') || text.starts_with(char::is_lowercase) {
-        if text.contains('_') && !text.contains('-') {
-            let parts: Vec<&str> = text.split('_').filter(|p| !p.is_empty()).collect();
-            if !parts.is_empty() && parts.iter().all(|p| p.chars().all(|c| c.is_lowercase())) {
-                return "snake_case".to_string();
-            }
+    if (text.starts_with('_') || text.starts_with(char::is_lowercase))
+        && text.contains('_')
+        && !text.contains('-')
+    {
+        let parts: Vec<&str> = text.split('_').filter(|p| !p.is_empty()).collect();
+        if !parts.is_empty() && parts.iter().all(|p| p.chars().all(|c| c.is_lowercase())) {
+            return "snake_case".to_string();
         }
     }
 
@@ -380,12 +381,13 @@ fn classify_style(text: &str) -> String {
         }
     }
 
-    if text.starts_with(char::is_uppercase) {
-        if !text.contains('_') && !text.contains('-') && is_valid_rust_identifier(text) {
-            if text.chars().any(|c| c.is_uppercase()) {
-                return "PascalCase".to_string();
-            }
-        }
+    if text.starts_with(char::is_uppercase)
+        && !text.contains('_')
+        && !text.contains('-')
+        && is_valid_rust_identifier(text)
+        && text.chars().any(|c| c.is_uppercase())
+    {
+        return "PascalCase".to_string();
     }
 
     if text.contains('-') && !text.contains('_') {
@@ -402,10 +404,9 @@ fn classify_style(text: &str) -> String {
         && !text.contains('_')
         && !text.contains('-')
         && is_valid_rust_identifier(text)
+        && text.chars().any(|c| c.is_uppercase())
     {
-        if text.chars().any(|c| c.is_uppercase()) {
-            return "camelCase".to_string();
-        }
+        return "camelCase".to_string();
     }
 
     if is_valid_rust_identifier(text) {
@@ -853,10 +854,7 @@ pub fn identifier_inspect(
             std::collections::HashMap::new();
         for (i, raw) in identifiers.iter().enumerate() {
             let cf_key = caseless::default_case_fold_str(&normalized_ids[i]);
-            casefold_map
-                .entry(cf_key)
-                .or_insert_with(Vec::new)
-                .push(raw.clone());
+            casefold_map.entry(cf_key).or_default().push(raw.clone());
         }
 
         for (_, items) in casefold_map.iter().filter(|(_, v)| v.len() > 1) {
@@ -886,12 +884,12 @@ pub fn identifier_inspect(
         for (i, raw) in identifiers.iter().enumerate() {
             norm_map
                 .entry(normalized_ids[i].clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(raw.clone());
         }
 
         for (_, items) in norm_map.iter().filter(|(_, v)| v.len() > 1) {
-            let originals: Vec<String> = items.iter().cloned().collect();
+            let originals: Vec<String> = items.to_vec();
             for i in 0..originals.len() {
                 for j in (i + 1)..originals.len() {
                     let pair = if originals[i] <= originals[j] {
@@ -973,10 +971,7 @@ pub fn identifier_table_inspect(
             std::collections::HashMap::new();
         for name in &names {
             let cf_key = name.to_lowercase();
-            cf_map
-                .entry(cf_key)
-                .or_insert_with(Vec::new)
-                .push(name.clone());
+            cf_map.entry(cf_key).or_default().push(name.clone());
         }
         for (_, group) in cf_map.iter().filter(|(_, v)| v.len() > 1) {
             collisions.push(TableCollisionInfo {
@@ -995,10 +990,7 @@ pub fn identifier_table_inspect(
             std::collections::HashMap::new();
         for name in &names {
             let nfc_key = normalize_text(name, "NFC");
-            nfc_map
-                .entry(nfc_key)
-                .or_insert_with(Vec::new)
-                .push(name.clone());
+            nfc_map.entry(nfc_key).or_default().push(name.clone());
         }
         for (nfc_key, group) in nfc_map.iter().filter(|(_, v)| {
             let unique: std::collections::HashSet<_> = v.iter().cloned().collect();
@@ -1117,7 +1109,7 @@ pub fn identifier_table_inspect(
             let style = classify_style(name);
             style_map
                 .entry(stripped)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push((name.clone(), style));
         }
         for (stripped, entries) in style_map.iter().filter(|(_, entries)| {
@@ -1182,7 +1174,7 @@ pub fn identifier_table_inspect(
             let style = classify_style(name);
             style_map2
                 .entry(stripped)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push((name.clone(), style));
         }
         for (stripped, entries) in style_map2.iter().filter(|(_, entries)| {

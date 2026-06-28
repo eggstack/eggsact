@@ -160,11 +160,9 @@ pub fn markdown_structure(
 
         if in_frontmatter {
             let stripped = stripped.to_string();
-            if stripped == "---" && frontmatter_format == "yaml" {
-                frontmatter_line_end = Some(line_num);
-                in_frontmatter = false;
-                continue;
-            } else if stripped == "+++" && frontmatter_format == "toml" {
+            if (stripped == "---" && frontmatter_format == "yaml")
+                || (stripped == "+++" && frontmatter_format == "toml")
+            {
                 frontmatter_line_end = Some(line_num);
                 in_frontmatter = false;
                 continue;
@@ -217,16 +215,14 @@ pub fn markdown_structure(
                 let target = &link_match[2];
                 let mut mismatch_flags: Vec<String> = Vec::new();
 
-                if visible.starts_with("http://") || visible.starts_with("https://") {
-                    if visible != target {
-                        mismatch_flags.push("visible_is_url".to_string());
-                    }
+                if (visible.starts_with("http://") || visible.starts_with("https://"))
+                    && visible != target
+                {
+                    mismatch_flags.push("visible_is_url".to_string());
                 }
 
-                if DOMAIN_RE.is_match(visible) {
-                    if visible != target {
-                        mismatch_flags.push("visible_is_domain".to_string());
-                    }
+                if DOMAIN_RE.is_match(visible) && visible != target {
+                    mismatch_flags.push("visible_is_domain".to_string());
                 }
 
                 links.push(MarkdownLink {
@@ -254,16 +250,14 @@ pub fn markdown_structure(
             }
         }
 
-        if !tables_detected && !in_fence {
-            if TABLE_SEPARATOR_RE.is_match(stripped) {
-                for j in (0..i).rev() {
-                    let prev = lines[j].trim();
-                    if !prev.is_empty() {
-                        if prev.contains('|') {
-                            tables_detected = true;
-                        }
-                        break;
+        if !tables_detected && !in_fence && TABLE_SEPARATOR_RE.is_match(stripped) {
+            for j in (0..i).rev() {
+                let prev = lines[j].trim();
+                if !prev.is_empty() {
+                    if prev.contains('|') {
+                        tables_detected = true;
                     }
+                    break;
                 }
             }
         }

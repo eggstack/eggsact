@@ -67,9 +67,8 @@ fn _split_posix_components(path: &str) -> (Vec<&str>, Option<&str>) {
         return (vec![], None);
     }
 
-    if path.starts_with('/') {
+    if let Some(rest) = path.strip_prefix('/') {
         let root = "/";
-        let rest = &path[1..];
         if rest.is_empty() {
             return (vec![], Some(root));
         }
@@ -78,7 +77,7 @@ fn _split_posix_components(path: &str) -> (Vec<&str>, Option<&str>) {
     }
 
     let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
-    return (parts, None);
+    (parts, None)
 }
 
 fn _split_windows_components(path: &str) -> (Vec<&str>, Option<String>) {
@@ -94,19 +93,13 @@ fn _split_windows_components(path: &str) -> (Vec<&str>, Option<String>) {
             if rest.is_empty() {
                 return (vec![], Some(root));
             }
-            let parts: Vec<&str> = rest
-                .split(|c| c == '/' || c == '\\')
-                .filter(|p| !p.is_empty())
-                .collect();
+            let parts: Vec<&str> = rest.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
             return (parts, Some(root));
         }
     }
 
     if path.starts_with("\\\\") {
-        let parts: Vec<&str> = path
-            .split(|c| c == '/' || c == '\\')
-            .filter(|p| !p.is_empty())
-            .collect();
+        let parts: Vec<&str> = path.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
         if parts.len() >= 3 {
             let root = format!("\\\\{}\\{}", parts[0], parts[1]);
             let components: Vec<&str> = parts[2..].to_vec();
@@ -117,15 +110,12 @@ fn _split_windows_components(path: &str) -> (Vec<&str>, Option<String>) {
     }
 
     if path.contains('\\') {
-        let parts: Vec<&str> = path
-            .split(|c| c == '/' || c == '\\')
-            .filter(|p| !p.is_empty())
-            .collect();
+        let parts: Vec<&str> = path.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
         return (parts, None);
     }
 
     let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
-    return (parts, None);
+    (parts, None)
 }
 
 fn _get_suffixes(name: &str) -> Vec<String> {
@@ -206,8 +196,8 @@ pub fn path_analyze(path: &str, style: &str) -> PathAnalyzeResult {
 
     let (suffixes, suffix, stem) = if let Some(ref name_str) = name {
         let suffs = _get_suffixes(name_str);
-        let suff = suffs.last().map(|s| s.clone());
-        let full_suff = suffs.first().map(|s| s.clone());
+        let suff = suffs.last().cloned();
+        let full_suff = suffs.first().cloned();
         let stm = if let Some(ref fs) = full_suff {
             if !fs.is_empty() {
                 let name_len = name_str.len();
@@ -379,7 +369,7 @@ pub fn path_normalize(
                 is_unc_track = false;
             }
             components.push(part);
-        } else if part != "" && part != "." && part != ".." {
+        } else if !part.is_empty() && part != "." && part != ".." {
             components.push(part);
         }
     }
@@ -583,9 +573,7 @@ pub fn path_scope_check(
 
     let inside_root = target_cmp.starts_with(&root_prefix) || target_cmp == root_cmp;
 
-    let escapes_via_dotdot = target
-        .split(|c: char| c == '/' || c == '\\')
-        .any(|seg| seg == "..");
+    let escapes_via_dotdot = target.split(['/', '\\']).any(|seg| seg == "..");
 
     let mut relative_path = String::new();
     if inside_root {

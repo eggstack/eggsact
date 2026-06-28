@@ -1110,7 +1110,7 @@ fn evaluate_function(
         // ── Factorial / Combinatorics ──
         "factorial" | "fact" if args.len() == 1 => {
             let n = args[0] as i64;
-            if args[0] != n as f64 || n < 0 || n > MAX_FACTORIAL {
+            if args[0] != n as f64 || !(0..=MAX_FACTORIAL).contains(&n) {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "factorial({}) out of range (0..={})",
                     args[0], MAX_FACTORIAL
@@ -1120,24 +1120,24 @@ fn evaluate_function(
             // f64 rounding for n > 170. Surface via __int_result__ so the
             // MCP layer reports type "int" instead of "float".
             let s = factorial_bigint(n as u64);
-            return Err(EvaluationError::InvalidOperation(format!(
+            Err(EvaluationError::InvalidOperation(format!(
                 "__int_result__{}",
                 s
-            )));
+            )))
         }
         "perm" if args.len() == 1 => {
             let n = args[0] as i64;
-            if args[0] != n as f64 || n < 0 || n > MAX_FACTORIAL {
+            if args[0] != n as f64 || !(0..=MAX_FACTORIAL).contains(&n) {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "perm({}) out of range (0..={})",
                     args[0], MAX_FACTORIAL
                 )));
             }
             let s = factorial_bigint(n as u64);
-            return Err(EvaluationError::InvalidOperation(format!(
+            Err(EvaluationError::InvalidOperation(format!(
                 "__int_result__{}",
                 s
-            )));
+            )))
         }
         "perm" | "npr" if args.len() == 2 => {
             let n = args[0] as i64;
@@ -1222,7 +1222,7 @@ fn evaluate_function(
                     result = (result / g)
                         .abs()
                         .checked_mul(v.abs())
-                        .ok_or_else(|| EvaluationError::ValueOverflow)?;
+                        .ok_or(EvaluationError::ValueOverflow)?;
                 }
             }
             Ok(result as f64)
@@ -1441,10 +1441,10 @@ fn evaluate_function(
             } else {
                 format!("0o{:o}", n)
             };
-            return Err(EvaluationError::InvalidOperation(format!(
+            Err(EvaluationError::InvalidOperation(format!(
                 "__string_result__{}",
                 s
-            )));
+            )))
         }
 
         // ── Prime number functions ──
@@ -1498,10 +1498,10 @@ fn evaluate_function(
                 ));
             }
             let s = prime_factors_string(n);
-            return Err(EvaluationError::InvalidOperation(format!(
+            Err(EvaluationError::InvalidOperation(format!(
                 "__string_result__{}",
                 s
-            )));
+            )))
         }
 
         // ── Complex number functions (f64 simplification) ──
@@ -1525,17 +1525,17 @@ fn evaluate_function(
                 std::f64::consts::PI
             };
             let s = format!("({}, {})", r, phi);
-            return Err(EvaluationError::InvalidOperation(format!(
+            Err(EvaluationError::InvalidOperation(format!(
                 "__string_result__{}",
                 s
-            )));
+            )))
         }
         "polar" if args.len() == 2 => {
             let s = format!("({}, {})", args[0], args[1]);
-            return Err(EvaluationError::InvalidOperation(format!(
+            Err(EvaluationError::InvalidOperation(format!(
                 "__string_result__{}",
                 s
-            )));
+            )))
         }
         // BUG-004 / parity B4: Python's cmath.rect(r, phi) returns
         // r * (cos(phi) + sin(phi)j). Return a (real, imag) tuple string
@@ -1546,10 +1546,10 @@ fn evaluate_function(
             let real = r * phi.cos();
             let imag = r * phi.sin();
             let s = format!("({}, {})", real, imag);
-            return Err(EvaluationError::InvalidOperation(format!(
+            Err(EvaluationError::InvalidOperation(format!(
                 "__string_result__{}",
                 s
-            )));
+            )))
         }
 
         // ── Random functions ──
@@ -1724,10 +1724,10 @@ fn evaluate_function(
                     vars.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
                 format!("{{{}}}", entries.join(", "))
             };
-            return Err(EvaluationError::InvalidOperation(format!(
+            Err(EvaluationError::InvalidOperation(format!(
                 "__string_result__{}",
                 s
-            )));
+            )))
         }
         "clearvars" if args.is_empty() => {
             let mut vars = USER_VARIABLES.lock().unwrap();
@@ -1825,13 +1825,12 @@ fn next_prime(n: i64) -> Result<i64, EvaluationError> {
     let mut candidate = if n < 2 {
         2
     } else {
-        n.checked_add(1)
-            .ok_or_else(|| EvaluationError::ValueOverflow)?
+        n.checked_add(1).ok_or(EvaluationError::ValueOverflow)?
     };
     if candidate % 2 == 0 && candidate > 2 {
         candidate = candidate
             .checked_add(1)
-            .ok_or_else(|| EvaluationError::ValueOverflow)?;
+            .ok_or(EvaluationError::ValueOverflow)?;
     }
     let mut iterations = 0;
     while iterations < 10_000 {
@@ -1840,7 +1839,7 @@ fn next_prime(n: i64) -> Result<i64, EvaluationError> {
         }
         candidate = candidate
             .checked_add(2)
-            .ok_or_else(|| EvaluationError::ValueOverflow)?;
+            .ok_or(EvaluationError::ValueOverflow)?;
         iterations += 1;
     }
     Err(EvaluationError::InvalidOperation(
@@ -1948,10 +1947,6 @@ mod tests {
 
     fn val(expr: &str) -> String {
         evaluate(expr).unwrap().0
-    }
-
-    fn typ(expr: &str) -> String {
-        evaluate(expr).unwrap().1
     }
 
     // ── Phase 1: Number parsing ──
@@ -2263,8 +2258,8 @@ mod tests {
         // values up to MAX_FACTORIAL succeed.
         let r = evaluate("factorial(1001)");
         assert!(r.is_err());
-        assert_eq!(val("factorial(170)").len() > 0, true);
-        assert_eq!(val("factorial(1000)").len() > 0, true);
+        assert!(!val("factorial(170)").is_empty());
+        assert!(!val("factorial(1000)").is_empty());
     }
 
     #[test]
@@ -2279,7 +2274,7 @@ mod tests {
         for _ in 0..101 {
             deep.push('(');
         }
-        deep.push_str("1");
+        deep.push('1');
         for _ in 0..101 {
             deep.push(')');
         }

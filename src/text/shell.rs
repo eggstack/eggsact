@@ -378,7 +378,7 @@ pub fn argv_compare(
         }
         resolved_left = Some(split.argv.clone());
         if let Some(lv) = left_argv {
-            if &split.argv != lv {
+            if split.argv != lv {
                 findings.push("Left command parse differs from provided left_argv".to_string());
             }
         }
@@ -402,7 +402,7 @@ pub fn argv_compare(
         }
         resolved_right = Some(split.argv.clone());
         if let Some(rv) = right_argv {
-            if &split.argv != rv {
+            if split.argv != rv {
                 findings.push("Right command parse differs from provided right_argv".to_string());
             }
         }

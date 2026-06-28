@@ -844,7 +844,7 @@ fn test_text_diff_explain_simple() {
     assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
     let inner = result.get("result").unwrap();
     assert_eq!(inner.get("equal"), Some(&Value::Bool(false)));
-    assert!(inner.get("diffs").unwrap().as_array().unwrap().len() > 0);
+    assert!(!inner.get("diffs").unwrap().as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -1219,7 +1219,12 @@ fn test_config_preflight_invalid_json() {
         inner.get("verdict"),
         Some(&Value::String("invalid".to_string()))
     );
-    assert!(inner.get("findings").unwrap().as_array().unwrap().len() > 0);
+    assert!(!inner
+        .get("findings")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -1392,11 +1397,7 @@ fn test_version_constraint_check_with_note_finding() {
     );
     let findings = result.get("findings");
     assert!(
-        findings.is_some()
-            && findings
-                .unwrap()
-                .as_array()
-                .map_or(false, |a| !a.is_empty()),
+        findings.is_some() && findings.unwrap().as_array().is_some_and(|a| !a.is_empty()),
         "BUG-009: ^0.0.0 should produce findings, got: {:?}",
         result
     );

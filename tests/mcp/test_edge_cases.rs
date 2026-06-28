@@ -896,7 +896,7 @@ fn test_text_inspect_bidi_controls() {
         safe_repr.contains("RLO")
             || r["result"]["bidi_controls"]
                 .as_array()
-                .map_or(false, |a| !a.is_empty()),
+                .is_some_and(|a| !a.is_empty()),
         "Should detect bidi control, safe_repr: {}",
         safe_repr
     );
@@ -1785,9 +1785,7 @@ fn test_line_range_extract_out_of_bounds() {
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     assert!(
         r["result"]["valid_range"].as_bool().unwrap_or(false)
-            || r["result"]["lines"]
-                .as_array()
-                .map_or(true, |a| a.is_empty()),
+            || r["result"]["lines"].as_array().is_none_or(|a| a.is_empty()),
         "Out-of-bounds range should return empty or invalid_range"
     );
 }

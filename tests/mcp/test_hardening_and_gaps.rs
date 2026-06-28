@@ -904,7 +904,7 @@ fn test_temperature_conversion_precision() {
             .and_then(|r| r.get("value"))
             .and_then(|v| v.as_f64());
         assert!(
-            actual.map_or(false, |a| (a - expected).abs() < 0.001),
+            actual.is_some_and(|a| (a - expected).abs() < 0.001),
             "{}{}->{} should be {}, got {:?}",
             value,
             from,
@@ -1249,7 +1249,7 @@ fn test_version_compare_less() {
         .and_then(|r| r.get("comparison"))
         .and_then(|c| c.as_f64());
     assert!(
-        cmp.map_or(false, |c| c < 0.0),
+        cmp.is_some_and(|c| c < 0.0),
         "1.0.0 should be less than 2.0.0"
     );
 }
@@ -1266,7 +1266,7 @@ fn test_version_compare_greater() {
         .and_then(|r| r.get("comparison"))
         .and_then(|c| c.as_f64());
     assert!(
-        cmp.map_or(false, |c| c > 0.0),
+        cmp.is_some_and(|c| c > 0.0),
         "2.0.0 should be greater than 1.0.0"
     );
 }

@@ -324,7 +324,7 @@ fn test_bug019_toml_crlf_error_column_not_offset() {
         assert_eq!(line, 2, "Error should be on line 2");
         // Column must be positive and within the line's length
         assert!(
-            col >= 1 && col <= 20,
+            (1..=20).contains(&col),
             "BUG-019: Column {} is out of range for line 2 of the input",
             col
         );

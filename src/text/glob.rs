@@ -24,20 +24,14 @@ fn split_path_windows(path: &str) -> Vec<String> {
         segments.push(path[..2].to_string());
         let rest = &path[2..];
         if !rest.is_empty() {
-            let parts: Vec<&str> = rest
-                .split(|c| c == '/' || c == '\\')
-                .filter(|p| !p.is_empty())
-                .collect();
+            let parts: Vec<&str> = rest.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
             segments.extend(parts.iter().map(|p| p.to_string()));
         }
         return segments;
     }
 
     if path.starts_with("\\\\") {
-        let parts: Vec<&str> = path
-            .split(|c| c == '/' || c == '\\')
-            .filter(|p| !p.is_empty())
-            .collect();
+        let parts: Vec<&str> = path.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
         if parts.len() >= 2 {
             segments.push(format!("\\\\{}\\{}", parts[0], parts[1]));
             segments.extend(parts[2..].iter().map(|p| p.to_string()));
@@ -47,10 +41,7 @@ fn split_path_windows(path: &str) -> Vec<String> {
         return segments;
     }
 
-    let parts: Vec<&str> = path
-        .split(|c| c == '/' || c == '\\')
-        .filter(|p| !p.is_empty())
-        .collect();
+    let parts: Vec<&str> = path.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
     parts.into_iter().map(|p| p.to_string()).collect()
 }
 
@@ -101,8 +92,8 @@ fn fnmatch_to_regex(pattern: &str) -> String {
                     i += 1;
                 } else {
                     let mut char_class = String::new();
-                    for k in i..=j {
-                        char_class.push(chars[k]);
+                    for c in chars.iter().take(j + 1).skip(i) {
+                        char_class.push(*c);
                     }
                     if char_class.starts_with("[!") {
                         char_class = format!("[^{}", &char_class[2..]);
@@ -244,9 +235,6 @@ pub fn glob_match(
             if i + 2 < chars.len() && chars[i + 2] == '/' {
                 pattern_parts.push("**");
                 i += 3;
-            } else if i + 2 == chars.len() {
-                pattern_parts.push("**");
-                i += 2;
             } else {
                 pattern_parts.push("**");
                 i += 2;

@@ -298,9 +298,9 @@ pub fn detect_newline_style(text: &str) -> String {
     let standalone_cr = text.matches('\r').count() - text.matches("\r\n").count();
     let standalone_lf = text.matches('\n').count() - text.matches("\r\n").count();
 
-    if has_crlf && (standalone_cr > 0 || standalone_lf > 0) {
-        "mixed".to_string()
-    } else if standalone_cr > 0 && standalone_lf > 0 {
+    if (has_crlf && (standalone_cr > 0 || standalone_lf > 0))
+        || (standalone_cr > 0 && standalone_lf > 0)
+    {
         "mixed".to_string()
     } else if has_crlf {
         "CRLF".to_string()
@@ -314,7 +314,7 @@ pub fn detect_newline_style(text: &str) -> String {
 }
 
 pub fn unicode_scripts(s: &str) -> Vec<String> {
-    s.chars().map(|c| script_name(c)).collect()
+    s.chars().map(script_name).collect()
 }
 
 pub fn confusables_count(s: &str) -> usize {

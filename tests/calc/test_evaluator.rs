@@ -472,7 +472,7 @@ fn test_lcm_with_integers() {
 // ─── C5: Gravitational constant G ───────────────────────────────────
 
 #[test]
-fn test_gravitational_constant_G() {
+fn test_gravitational_constant_g() {
     let (val, _) = evaluate("G").unwrap();
     let v: f64 = val.parse().unwrap();
     assert!(
@@ -501,7 +501,7 @@ fn test_bare_g_is_gram_not_gravity() {
 // ─── EV-2: Gas constant R accessible via uppercase ──────────────────
 
 #[test]
-fn test_gas_constant_R_uppercase() {
+fn test_gas_constant_r_uppercase() {
     let (val, _) = evaluate("R").unwrap();
     let v: f64 = val.parse().unwrap();
     assert!(
@@ -573,7 +573,7 @@ fn test_random_functions() {
     // seed() + random() for determinism
     let _ = evaluate("seed(42)");
     let r1 = val("random()");
-    assert!(r1 >= 0.0 && r1 < 1.0, "random() should be in [0, 1)");
+    assert!((0.0..1.0).contains(&r1), "random() should be in [0, 1)");
 
     // Seed again for same sequence
     let _ = evaluate("seed(42)");
@@ -584,14 +584,17 @@ fn test_random_functions() {
     let _ = evaluate("seed(42)");
     let r = val("randint(1, 10)");
     assert!(
-        r >= 1.0 && r <= 10.0 && r == r.floor(),
+        (1.0..=10.0).contains(&r) && r == r.floor(),
         "randint(1,10) should be integer in [1,10]"
     );
 
     // uniform(a, b) returns value in [a, b]
     let _ = evaluate("seed(42)");
     let r = val("uniform(5.0, 10.0)");
-    assert!(r >= 5.0 && r <= 10.0, "uniform(5,10) should be in [5,10]");
+    assert!(
+        (5.0..=10.0).contains(&r),
+        "uniform(5,10) should be in [5,10]"
+    );
 
     // randn() returns finite value
     let _ = evaluate("seed(42)");

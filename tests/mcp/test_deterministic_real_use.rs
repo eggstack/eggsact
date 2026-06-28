@@ -57,11 +57,6 @@ fn call_tool(name: &str, args: Value) -> Value {
     call_tool_and_get_result(&request)
 }
 
-fn call_tool_raw(request: &str) -> Value {
-    let response_str = mcp_request(request);
-    serde_json::from_str(&response_str).expect("Failed to parse JSON-RPC response")
-}
-
 fn is_tool_error(result: &Value) -> bool {
     result.get("ok") == Some(&Value::Bool(false))
 }

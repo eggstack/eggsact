@@ -32,7 +32,7 @@ use crate::text::transform::{
     TextFingerprintResult, TextHashResult, TextTransformResult, UnescapeTextResult,
 };
 use crate::text::unicode_tools::{
-    detect_mixed_scripts as unicode_detect_mixed_scripts,
+    detect_mixed_scripts as unicode_detect_mixed_scripts, detect_newline_style,
     find_invisibles as unicode_find_invisibles,
 };
 use crate::text::{
@@ -137,13 +137,17 @@ fn try_acquire_spawn_permit() -> Option<SpawnPermit> {
     }
 }
 
-fn _require_str<'a>(args: &'a Value, field: &str, tool: &str) -> Result<&'a str, ToolResponse> {
+fn _require_str<'a>(
+    args: &'a Value,
+    field: &str,
+    tool: &str,
+) -> Result<&'a str, Box<ToolResponse>> {
     match args.get(field) {
         Some(v) => match v.as_str() {
             Some(s) => {
                 let codepoint_len = s.chars().count();
                 if codepoint_len > MAX_TEXT_LENGTH {
-                    return Err(ToolResponse::error(
+                    return Err(Box::new(ToolResponse::error(
                         "input_too_large",
                         &format!(
                             "{} length {} exceeds {}",
@@ -151,23 +155,23 @@ fn _require_str<'a>(args: &'a Value, field: &str, tool: &str) -> Result<&'a str,
                         ),
                         None,
                         Some(tool),
-                    ));
+                    )));
                 }
                 Ok(s)
             }
-            None => Err(ToolResponse::error(
+            None => Err(Box::new(ToolResponse::error(
                 "invalid_arguments",
                 &format!("{} must be a string, got {}", field, json_type_name(v)),
                 None,
                 Some(tool),
-            )),
+            ))),
         },
-        None => Err(ToolResponse::error(
+        None => Err(Box::new(ToolResponse::error(
             "invalid_arguments",
             &format!("{} must be a string, got NoneType", field),
             None,
             Some(tool),
-        )),
+        ))),
     }
 }
 
@@ -195,7 +199,7 @@ fn unicode_casefold(s: &str) -> String {
 pub fn math_eval(args: &Value) -> ToolResponse {
     let expression = match _require_str(args, "expression", "math_eval") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
 
     if expression.chars().count() > MAX_EXPRESSION_LENGTH {
@@ -213,7 +217,7 @@ pub fn math_eval(args: &Value) -> ToolResponse {
 
     // Detect true division (/) so we can match Python's float-division semantics.
     // Floor division (//) is excluded. Power (**) is handled by the evaluator.
-    let has_true_division = contains_true_division(&expression);
+    let has_true_division = contains_true_division(expression);
 
     // Run evaluation on a dedicated thread with timeout.
     // Using std::thread + mpsc avoids the deadlock the old tokio-based
@@ -334,7 +338,7 @@ fn contains_true_division(expr: &str) -> bool {
 pub fn text_measure(args: &Value) -> ToolResponse {
     let text = match _require_str(args, "text", "text_measure") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let detail = args
         .get("detail")
@@ -524,11 +528,11 @@ pub fn text_measure(args: &Value) -> ToolResponse {
 pub fn text_equal(args: &Value) -> ToolResponse {
     let a = match _require_str(args, "a", "text_equal") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let b = match _require_str(args, "b", "text_equal") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let casefold = args
         .get("casefold")
@@ -814,11 +818,11 @@ fn is_invisible_char(c: char) -> bool {
 pub fn text_diff_explain(args: &Value) -> ToolResponse {
     let a = match _require_str(args, "a", "text_diff_explain") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let b = match _require_str(args, "b", "text_diff_explain") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let max_diffs = args.get("max_diffs").and_then(|v| v.as_i64()).unwrap_or(20);
     if max_diffs < 0 {
@@ -1068,26 +1072,6 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
     ToolResponse::success(result, Some("text_diff_explain")).with_tool("text_diff_explain")
 }
 
-fn detect_newline_style(text: &str) -> String {
-    let has_crlf = text.contains("\r\n");
-    let standalone_cr = text.matches('\r').count() - text.matches("\r\n").count();
-    let standalone_lf = text.matches('\n').count() - text.matches("\r\n").count();
-
-    if has_crlf && (standalone_cr > 0 || standalone_lf > 0) {
-        "mixed".to_string()
-    } else if standalone_cr > 0 && standalone_lf > 0 {
-        "mixed".to_string()
-    } else if has_crlf {
-        "CRLF".to_string()
-    } else if standalone_cr > 0 {
-        "CR".to_string()
-    } else if standalone_lf > 0 {
-        "LF".to_string()
-    } else {
-        "none".to_string()
-    }
-}
-
 fn invisible_display_name(c: char) -> &'static str {
     match c {
         '\u{200b}' => "ZWSP",
@@ -1225,7 +1209,7 @@ fn inspect_max_items(detail: &str) -> usize {
 pub fn text_inspect(args: &Value) -> ToolResponse {
     let text = match _require_str(args, "text", "text_inspect") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let include_codepoints = args
         .get("include_codepoints")
@@ -1774,7 +1758,7 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
 pub fn text_count(args: &Value) -> ToolResponse {
     let text = match _require_str(args, "text", "text_count") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let target = match args.get("target") {
         Some(v) => match v.as_str() {
@@ -1876,15 +1860,13 @@ pub fn text_count(args: &Value) -> ToolResponse {
                     );
                 }
             }
-            "byte" => {
-                if target.len() != 1 || !target.is_ascii() {
-                    return ToolResponse::error(
-                        "invalid_arguments",
-                        "target must be a single byte for count_mode='byte'",
-                        Some(vec!["Provide a single-byte target".to_string()]),
-                        Some("text_count"),
-                    );
-                }
+            "byte" if (target.len() != 1 || !target.is_ascii()) => {
+                return ToolResponse::error(
+                    "invalid_arguments",
+                    "target must be a single byte for count_mode='byte'",
+                    Some(vec!["Provide a single-byte target".to_string()]),
+                    Some("text_count"),
+                );
             }
             _ => {}
         }
@@ -2014,7 +1996,7 @@ pub fn text_count(args: &Value) -> ToolResponse {
 pub fn validate_brackets(args: &Value) -> ToolResponse {
     let text = match _require_str(args, "text", "validate_brackets") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let pairs_val = args.get("pairs");
 
@@ -2115,7 +2097,7 @@ pub fn validate_brackets(args: &Value) -> ToolResponse {
 pub fn validate_json(args: &Value) -> ToolResponse {
     let text = match _require_str(args, "text", "validate_json") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
 
     match crate::text::validate_json(text) {
@@ -2322,7 +2304,7 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
         .enumerate()
         .filter(|(_, v)| {
             v.as_str()
-                .map_or(false, |s| s.chars().count() > MAX_REGEX_SAMPLE_LENGTH)
+                .is_some_and(|s| s.chars().count() > MAX_REGEX_SAMPLE_LENGTH)
         })
         .map(|(i, _)| i)
         .collect();
@@ -2625,8 +2607,8 @@ pub fn list_compare(args: &Value) -> ToolResponse {
         result
     };
 
-    let a_transformed: Vec<String> = a.iter().map(|v| transform(v)).collect();
-    let b_transformed: Vec<String> = b.iter().map(|v| transform(v)).collect();
+    let a_transformed: Vec<String> = a.iter().map(&transform).collect();
+    let b_transformed: Vec<String> = b.iter().map(&transform).collect();
 
     use std::collections::HashMap;
     let mut a_counts: HashMap<String, usize> = HashMap::new();
@@ -2745,8 +2727,8 @@ pub fn list_compare(args: &Value) -> ToolResponse {
         _ => same_unordered,
     };
 
-    let only_in_a: Vec<Value> = only_a_orig.iter().cloned().collect();
-    let only_in_b: Vec<Value> = only_b_orig.iter().cloned().collect();
+    let only_in_a: Vec<Value> = only_a_orig.to_vec();
+    let only_in_b: Vec<Value> = only_b_orig.to_vec();
 
     if mode == "ordered" {
         let mut aligned: Vec<serde_json::Value> = Vec::new();
@@ -2870,7 +2852,7 @@ pub fn text_truncate(args: &Value) -> ToolResponse {
         None => {
             return ToolResponse::error(
                 "invalid_arguments",
-                &format!("text must be a string, got NoneType"),
+                "text must be a string, got NoneType",
                 None,
                 Some("text_truncate"),
             )
@@ -3020,7 +3002,7 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
 
     // If either unit is not recognized by get_unit_info(), return an error
     // instead of silently skipping the cross-category check.
-    let (&(_, ref from_cat), &(_, ref to_cat)) = match (&from_info, &to_info) {
+    let ((_, from_cat), (_, to_cat)) = match (&from_info, &to_info) {
         (Some(f), Some(t)) => (f, t),
         _ => {
             return ToolResponse::error(
@@ -3392,7 +3374,7 @@ pub fn toml_shape_tool(args: &Value) -> ToolResponse {
                             Value::String(_) =>
                                 return ToolResponse::error(
                                     "invalid_arguments",
-                                    &format!("max_tables must be an integer, got string"),
+                                    "max_tables must be an integer, got string",
                                     None,
                                     Some("toml_shape")
                                 ),
@@ -4353,11 +4335,11 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
 pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
     let pattern = match _require_str(args, "pattern", "regex_finditer") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let text = match _require_str(args, "text", "regex_finditer") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let flags = match args.get("flags") {
         Some(Value::Array(arr)) => {
@@ -5238,15 +5220,13 @@ fn _pi_find_markdown_links(text: &str) -> Vec<serde_json::Value> {
             "target": link_target,
         });
 
-        if link_target.starts_with("http://")
+        if (link_target.starts_with("http://")
             || link_target.starts_with("https://")
-            || link_target.starts_with("ftp://")
+            || link_target.starts_with("ftp://"))
+            && (link_text.contains("http://") || link_text.contains("https://"))
         {
-            if link_text.contains("http://") || link_text.contains("https://") {
-                severity = "warn";
-                details["mismatch"] =
-                    serde_json::json!("text contains URL while target is also a URL");
-            }
+            severity = "warn";
+            details["mismatch"] = serde_json::json!("text contains URL while target is also a URL");
         }
         if link_target.starts_with("data:") {
             severity = "warn";
@@ -5368,7 +5348,7 @@ fn _pi_find_base64_like_blobs(text: &str) -> Vec<serde_json::Value> {
 fn _pi_find_long_minified_lines(text: &str) -> Vec<serde_json::Value> {
     let mut findings = Vec::new();
     let mut offset = 0usize;
-    for line in text.split(|c| c == '\n' || c == '\r') {
+    for line in text.split(['\n', '\r']) {
         let line_len = line.chars().count();
         if line_len > 1000 {
             findings.push(serde_json::json!({
@@ -5902,7 +5882,7 @@ pub fn text_position(args: &Value) -> ToolResponse {
 pub fn text_hash(args: &Value) -> ToolResponse {
     let text = match _require_str(args, "text", "text_hash") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let algorithms = match args.get("algorithms") {
         Some(Value::Array(arr)) => {
@@ -6013,10 +5993,10 @@ pub fn text_hash(args: &Value) -> ToolResponse {
         "cp866",
         "cp874",
     ];
-    let enc_lower = encoding.to_lowercase().replace('-', "").replace('_', "");
+    let enc_lower = encoding.to_lowercase().replace(['-', '_'], "");
     let known = valid_encodings
         .iter()
-        .any(|e| e.replace('-', "").replace('_', "") == enc_lower);
+        .any(|e| e.replace(['-', '_'], "") == enc_lower);
     if !known {
         return ToolResponse::error(
             "invalid_arguments",
@@ -6073,11 +6053,11 @@ pub fn text_hash(args: &Value) -> ToolResponse {
 pub fn escape_text(args: &Value) -> ToolResponse {
     let text = match _require_str(args, "text", "escape_text") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let mode = match _require_str(args, "mode", "escape_text") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let detail = args
         .get("detail")
@@ -6161,11 +6141,11 @@ pub fn escape_text(args: &Value) -> ToolResponse {
 pub fn unescape_text(args: &Value) -> ToolResponse {
     let text = match _require_str(args, "text", "unescape_text") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let mode = match _require_str(args, "mode", "unescape_text") {
         Ok(s) => s,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let detail = args
         .get("detail")
@@ -6966,16 +6946,15 @@ pub fn json_compare(args: &Value) -> ToolResponse {
     let parsed_a = parsed_a.unwrap();
     let parsed_b = parsed_b.unwrap();
 
-    let (equal, type_match, diffs) = compare_json_values(
-        &parsed_a,
-        &parsed_b,
+    let options = JsonCompareOptions {
         ignore_object_order,
         ignore_array_order,
         numeric_string_equivalence,
         casefold_keys,
         treat_missing_null_as_equal,
         max_diffs,
-    );
+    };
+    let (equal, type_match, diffs) = compare_json_values(&parsed_a, &parsed_b, options);
 
     let truncated = diffs.len() >= max_diffs;
     let diff_count = diffs.len();
@@ -7038,44 +7017,50 @@ struct JsonDiff {
     b_preview: Option<String>,
 }
 
-fn compare_json_values(
-    a: &serde_json::Value,
-    b: &serde_json::Value,
+#[derive(Clone, Copy)]
+struct JsonCompareOptions {
     ignore_object_order: bool,
     ignore_array_order: bool,
     numeric_string_equivalence: bool,
     casefold_keys: bool,
     treat_missing_null_as_equal: bool,
     max_diffs: usize,
+}
+
+struct JsonCompareState {
+    diffs: Vec<JsonDiff>,
+    type_match: bool,
+}
+
+fn compare_json_values(
+    a: &serde_json::Value,
+    b: &serde_json::Value,
+    options: JsonCompareOptions,
 ) -> (bool, bool, Vec<JsonDiff>) {
-    let mut diffs = Vec::new();
-    let mut type_match = true;
+    let mut state = JsonCompareState {
+        diffs: Vec::new(),
+        type_match: true,
+    };
 
     fn compare_rec(
         a: &serde_json::Value,
         b: &serde_json::Value,
         path: &str,
-        ignore_object_order: bool,
-        ignore_array_order: bool,
-        numeric_string_equivalence: bool,
-        casefold_keys: bool,
-        treat_missing_null_as_equal: bool,
-        diffs: &mut Vec<JsonDiff>,
-        type_match: &mut bool,
-        max_diffs: usize,
+        options: JsonCompareOptions,
+        state: &mut JsonCompareState,
     ) {
-        if diffs.len() >= max_diffs {
+        if state.diffs.len() >= options.max_diffs {
             return;
         }
 
-        if treat_missing_null_as_equal && (a.is_null() || b.is_null()) {
+        if options.treat_missing_null_as_equal && (a.is_null() || b.is_null()) {
             return;
         }
 
         let type_a = get_json_type_detail(a);
         let type_b = get_json_type_detail(b);
 
-        if numeric_string_equivalence {
+        if options.numeric_string_equivalence {
             if let (serde_json::Value::String(s), serde_json::Value::Number(n)) = (a, b) {
                 if let Ok(num) = s.parse::<f64>() {
                     if num == n.as_f64().unwrap_or(f64::NAN) {
@@ -7100,8 +7085,8 @@ fn compare_json_values(
         }
 
         if type_a != type_b {
-            *type_match = false;
-            diffs.push(JsonDiff {
+            state.type_match = false;
+            state.diffs.push(JsonDiff {
                 path: path.to_string(),
                 kind: "type_changed".to_string(),
                 a_type: Some(type_a.to_string()),
@@ -7114,13 +7099,13 @@ fn compare_json_values(
 
         match (a, b) {
             (serde_json::Value::Object(obj_a), serde_json::Value::Object(obj_b)) => {
-                if ignore_object_order {
+                if options.ignore_object_order {
                     // Order-insensitive: build casefolded → original key maps
                     let keys_a_map: std::collections::HashMap<String, String> = obj_a
                         .keys()
                         .map(|k| {
                             (
-                                if casefold_keys {
+                                if options.casefold_keys {
                                     unicode_casefold(k)
                                 } else {
                                     k.clone()
@@ -7133,7 +7118,7 @@ fn compare_json_values(
                         .keys()
                         .map(|k| {
                             (
-                                if casefold_keys {
+                                if options.casefold_keys {
                                     unicode_casefold(k)
                                 } else {
                                     k.clone()
@@ -7159,7 +7144,7 @@ fn compare_json_values(
                             format!("{}/{}", path, orig_key)
                         };
                         let a_val = &obj_a[orig_key];
-                        diffs.push(JsonDiff {
+                        state.diffs.push(JsonDiff {
                             path: new_path,
                             kind: "key_missing_in_b".to_string(),
                             a_type: Some(get_json_type(a_val).to_string()),
@@ -7181,7 +7166,7 @@ fn compare_json_values(
                             format!("{}/{}", path, orig_key)
                         };
                         let b_val = &obj_b[orig_key];
-                        diffs.push(JsonDiff {
+                        state.diffs.push(JsonDiff {
                             path: new_path,
                             kind: "key_missing_in_a".to_string(),
                             a_type: None,
@@ -7216,14 +7201,8 @@ fn compare_json_values(
                             &obj_a[orig_key_a],
                             &obj_b[orig_key_b],
                             &new_path,
-                            ignore_object_order,
-                            ignore_array_order,
-                            numeric_string_equivalence,
-                            casefold_keys,
-                            treat_missing_null_as_equal,
-                            diffs,
-                            type_match,
-                            max_diffs,
+                            options,
+                            state,
                         );
                     }
                 } else {
@@ -7231,7 +7210,7 @@ fn compare_json_values(
                     let a_key_order: Vec<String> = obj_a
                         .keys()
                         .map(|k| {
-                            if casefold_keys {
+                            if options.casefold_keys {
                                 unicode_casefold(k)
                             } else {
                                 k.clone()
@@ -7241,7 +7220,7 @@ fn compare_json_values(
                     let b_key_order: Vec<String> = obj_b
                         .keys()
                         .map(|k| {
-                            if casefold_keys {
+                            if options.casefold_keys {
                                 unicode_casefold(k)
                             } else {
                                 k.clone()
@@ -7265,7 +7244,7 @@ fn compare_json_values(
                                 format!("{}/{}", path, orig_key_a)
                             };
                             let a_val = &obj_a[orig_key_a];
-                            diffs.push(JsonDiff {
+                            state.diffs.push(JsonDiff {
                                 path: new_path,
                                 kind: "key_missing_in_b".to_string(),
                                 a_type: Some(get_json_type(a_val).to_string()),
@@ -7287,14 +7266,8 @@ fn compare_json_values(
                             &obj_a[orig_key_a],
                             &obj_b[orig_key_b],
                             &new_path,
-                            ignore_object_order,
-                            ignore_array_order,
-                            numeric_string_equivalence,
-                            casefold_keys,
-                            treat_missing_null_as_equal,
-                            diffs,
-                            type_match,
-                            max_diffs,
+                            options,
+                            state,
                         );
                     }
 
@@ -7305,8 +7278,8 @@ fn compare_json_values(
                         } else {
                             path.to_string()
                         };
-                        *type_match = false;
-                        diffs.push(JsonDiff {
+                        state.type_match = false;
+                        state.diffs.push(JsonDiff {
                             path: actual_path,
                             kind: "object_length_changed".to_string(),
                             a_type: Some("object".to_string()),
@@ -7319,8 +7292,8 @@ fn compare_json_values(
             }
             (serde_json::Value::Array(arr_a), serde_json::Value::Array(arr_b)) => {
                 if arr_a.len() != arr_b.len() {
-                    *type_match = false;
-                    diffs.push(JsonDiff {
+                    state.type_match = false;
+                    state.diffs.push(JsonDiff {
                         path: path.to_string(),
                         kind: "array_length_changed".to_string(),
                         a_type: Some(type_a.to_string()),
@@ -7331,7 +7304,7 @@ fn compare_json_values(
                     return;
                 }
 
-                if ignore_array_order {
+                if options.ignore_array_order {
                     let mut a_sorted: Vec<_> = arr_a.iter().collect();
                     let mut b_sorted: Vec<_> = arr_b.iter().collect();
                     let cmp = |a: &&serde_json::Value, b: &&serde_json::Value| {
@@ -7342,41 +7315,17 @@ fn compare_json_values(
                     a_sorted.sort_by(cmp);
                     b_sorted.sort_by(cmp);
                     for (i, (va, vb)) in a_sorted.iter().zip(b_sorted.iter()).enumerate() {
-                        compare_rec(
-                            va,
-                            vb,
-                            &format!("{}/{}", path, i),
-                            ignore_object_order,
-                            ignore_array_order,
-                            numeric_string_equivalence,
-                            casefold_keys,
-                            treat_missing_null_as_equal,
-                            diffs,
-                            type_match,
-                            max_diffs,
-                        );
+                        compare_rec(va, vb, &format!("{}/{}", path, i), options, state);
                     }
                 } else {
                     for (i, (va, vb)) in arr_a.iter().zip(arr_b.iter()).enumerate() {
-                        compare_rec(
-                            va,
-                            vb,
-                            &format!("{}/{}", path, i),
-                            ignore_object_order,
-                            ignore_array_order,
-                            numeric_string_equivalence,
-                            casefold_keys,
-                            treat_missing_null_as_equal,
-                            diffs,
-                            type_match,
-                            max_diffs,
-                        );
+                        compare_rec(va, vb, &format!("{}/{}", path, i), options, state);
                     }
                 }
             }
             _ => {
                 if a != b {
-                    diffs.push(JsonDiff {
+                    state.diffs.push(JsonDiff {
                         path: path.to_string(),
                         kind: "value_changed".to_string(),
                         a_type: Some(type_a.to_string()),
@@ -7389,22 +7338,10 @@ fn compare_json_values(
         }
     }
 
-    compare_rec(
-        a,
-        b,
-        "",
-        ignore_object_order,
-        ignore_array_order,
-        numeric_string_equivalence,
-        casefold_keys,
-        treat_missing_null_as_equal,
-        &mut diffs,
-        &mut type_match,
-        max_diffs,
-    );
+    compare_rec(a, b, "", options, &mut state);
 
-    let equal = diffs.is_empty();
-    (equal, type_match, diffs)
+    let equal = state.diffs.is_empty();
+    (equal, state.type_match, state.diffs)
 }
 
 pub fn json_canonicalize(args: &Value) -> ToolResponse {
@@ -7757,11 +7694,9 @@ fn detect_duplicates_in_json(text: &str, duplicates: &mut Vec<String>) {
                 depth += 1;
                 keys_at_depth.push(std::collections::HashSet::new());
             }
-            b'}' | b']' => {
-                if depth > 0 {
-                    depth -= 1;
-                    keys_at_depth.pop();
-                }
+            b'}' | b']' if depth > 0 => {
+                depth -= 1;
+                keys_at_depth.pop();
             }
             _ => {}
         }
@@ -7776,7 +7711,7 @@ fn sort_json_keys(v: &serde_json::Value) -> serde_json::Value {
             for (k, val) in map.iter() {
                 sorted.insert(k.clone(), sort_json_keys(val));
             }
-            serde_json::Value::Object(sorted.into_iter().map(|(k, v)| (k, v)).collect())
+            serde_json::Value::Object(sorted.into_iter().collect())
         }
         serde_json::Value::Array(arr) => {
             serde_json::Value::Array(arr.iter().map(sort_json_keys).collect())
@@ -7995,7 +7930,7 @@ pub fn list_dedupe(args: &Value) -> ToolResponse {
         .enumerate()
         .filter(|(_, v)| {
             v.as_str()
-                .map_or(false, |s| s.chars().count() > MAX_TEXT_LENGTH)
+                .is_some_and(|s| s.chars().count() > MAX_TEXT_LENGTH)
         })
         .map(|(i, _)| i)
         .collect();
@@ -8137,7 +8072,7 @@ pub fn list_sort(args: &Value) -> ToolResponse {
         .enumerate()
         .filter(|(_, v)| {
             v.as_str()
-                .map_or(false, |s| s.chars().count() > MAX_TEXT_LENGTH)
+                .is_some_and(|s| s.chars().count() > MAX_TEXT_LENGTH)
         })
         .map(|(i, _)| i)
         .collect();
@@ -8375,7 +8310,7 @@ pub fn identifier_inspect(args: &Value) -> ToolResponse {
     let identifiers = match identifiers_val.and_then(|v| v.as_array()) {
         Some(arr) => {
             // Validate all elements are strings
-            for (_i, item) in arr.iter().enumerate() {
+            for item in arr.iter() {
                 if !item.is_string() {
                     return ToolResponse::error(
                         "invalid_arguments",
@@ -8941,7 +8876,7 @@ pub fn shell_quote_join(args: &Value) -> ToolResponse {
         .enumerate()
         .filter(|(_, v)| {
             v.as_str()
-                .map_or(false, |s| s.chars().count() > MAX_TEXT_LENGTH)
+                .is_some_and(|s| s.chars().count() > MAX_TEXT_LENGTH)
         })
         .map(|(i, _)| i)
         .collect();
@@ -9021,7 +8956,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
                 .enumerate()
                 .filter(|(_, v)| {
                     v.as_str()
-                        .map_or(false, |s| s.chars().count() > MAX_TEXT_LENGTH)
+                        .is_some_and(|s| s.chars().count() > MAX_TEXT_LENGTH)
                 })
                 .map(|(i, _)| i)
                 .collect();
@@ -9039,7 +8974,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
             Some(
                 arr.iter()
                     .filter_map(|v| v.as_str().map(String::from))
-                    .collect(),
+                    .collect::<Vec<_>>(),
             )
         }
         None => None,
@@ -9076,7 +9011,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
                 .enumerate()
                 .filter(|(_, v)| {
                     v.as_str()
-                        .map_or(false, |s| s.chars().count() > MAX_TEXT_LENGTH)
+                        .is_some_and(|s| s.chars().count() > MAX_TEXT_LENGTH)
                 })
                 .map(|(i, _)| i)
                 .collect();
@@ -9094,7 +9029,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
             Some(
                 arr.iter()
                     .filter_map(|v| v.as_str().map(String::from))
-                    .collect(),
+                    .collect::<Vec<_>>(),
             )
         }
         None => None,
@@ -9134,7 +9069,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
         return ToolResponse::error("invalid_arguments", msg, None, Some("argv_compare"));
     }
 
-    if let Some(ref cmd) = left_command {
+    if let Some(cmd) = left_command {
         if cmd.chars().count() > MAX_TEXT_LENGTH {
             return ToolResponse::error(
                 "input_too_large",
@@ -9144,7 +9079,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
             );
         }
     }
-    if let Some(ref cmd) = right_command {
+    if let Some(cmd) = right_command {
         if cmd.chars().count() > MAX_TEXT_LENGTH {
             return ToolResponse::error(
                 "input_too_large",
@@ -9155,10 +9090,10 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
         }
     }
 
-    let left_ref = left_command.as_deref();
-    let right_ref = right_command.as_deref();
-    let left_argv_ref = left_argv.as_ref().map(|v: &Vec<String>| v.as_slice());
-    let right_argv_ref = right_argv.as_ref().map(|v: &Vec<String>| v.as_slice());
+    let left_ref = left_command;
+    let right_ref = right_command;
+    let left_argv_ref = left_argv.as_deref();
+    let right_argv_ref = right_argv.as_deref();
 
     let result =
         crate::text::argv_compare(left_ref, right_ref, left_argv_ref, right_argv_ref, shell);
@@ -9664,7 +9599,7 @@ pub fn unicode_policy_check(args: &Value) -> ToolResponse {
 
     if let Some(ref n) = normalization {
         let valid_normalizations = ["raw", "NFC", "NFD", "NFKC", "NFKD"];
-        if !valid_normalizations.contains(&n) {
+        if !valid_normalizations.contains(n) {
             return ToolResponse::error(
                 "invalid_arguments",
                 &format!("Unsupported normalization form: {}", n),
@@ -10395,10 +10330,8 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                     "severity": sev,
                     "message": msg,
                 }));
-                if sev == "error" {
-                    if !machine_codes.contains(&"UNICODE_RISK".to_string()) {
-                        machine_codes.push("UNICODE_RISK".to_string());
-                    }
+                if sev == "error" && !machine_codes.contains(&"UNICODE_RISK".to_string()) {
+                    machine_codes.push("UNICODE_RISK".to_string());
                 }
             }
         }
@@ -10421,10 +10354,8 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                 "form": normalize,
             }),
         );
-        if changed {
-            if !machine_codes.contains(&"NORMALIZATION_DIFF".to_string()) {
-                machine_codes.push("NORMALIZATION_DIFF".to_string());
-            }
+        if changed && !machine_codes.contains(&"NORMALIZATION_DIFF".to_string()) {
+            machine_codes.push("NORMALIZATION_DIFF".to_string());
         }
     }
     // 4. If policy is "prompt", "markdown", or "default", call prompt_input_inspect
@@ -10456,10 +10387,9 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                 if pi_findings.iter().any(|f| {
                     let sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("");
                     sev == "warn" || sev == "error"
-                }) {
-                    if !machine_codes.contains(&"PROMPT_INJECTION_RISK".to_string()) {
-                        machine_codes.push("PROMPT_INJECTION_RISK".to_string());
-                    }
+                }) && !machine_codes.contains(&"PROMPT_INJECTION_RISK".to_string())
+                {
+                    machine_codes.push("PROMPT_INJECTION_RISK".to_string());
                 }
             }
         }
@@ -10495,7 +10425,7 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                 &id_result.result,
                 &id_result.error,
             );
-            if let Some(id_findings) = id_result.findings.as_ref().map(|f| f.as_slice()) {
+            if let Some(id_findings) = id_result.findings.as_deref() {
                 if !id_findings.is_empty() {
                     for f in id_findings {
                         let code = f
@@ -10863,15 +10793,11 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
         machine_codes.push("AMBIGUOUS_REPLACEMENT".to_string());
         recommended_next = Some("text_diff_explain".to_string());
     }
-    if has_patch_fail || has_patch_error {
-        if !machine_codes.contains(&"PATCH_FAILED".to_string()) {
-            machine_codes.push("PATCH_FAILED".to_string());
-        }
+    if (has_patch_fail || has_patch_error) && !machine_codes.contains(&"PATCH_FAILED".to_string()) {
+        machine_codes.push("PATCH_FAILED".to_string());
     }
-    if has_invalid_range {
-        if !machine_codes.contains(&"LINE_RANGE_INVALID".to_string()) {
-            machine_codes.push("LINE_RANGE_INVALID".to_string());
-        }
+    if has_invalid_range && !machine_codes.contains(&"LINE_RANGE_INVALID".to_string()) {
+        machine_codes.push("LINE_RANGE_INVALID".to_string());
     }
     if has_fingerprint {
         if !machine_codes.contains(&"FINGERPRINT_MISMATCH".to_string()) {
@@ -11018,10 +10944,8 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
                         "message": rf,
                     }));
                 }
-                if !risky.is_empty() {
-                    if !machine_codes.contains(&"SHELL_RISK".to_string()) {
-                        machine_codes.push("SHELL_RISK".to_string());
-                    }
+                if !risky.is_empty() && !machine_codes.contains(&"SHELL_RISK".to_string()) {
+                    machine_codes.push("SHELL_RISK".to_string());
                 }
             }
         }
@@ -11084,10 +11008,11 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
                         }));
                     }
                 }
-                if has_rs_findings && risk != "none" {
-                    if !machine_codes.contains(&"REGEX_RISK".to_string()) {
-                        machine_codes.push("REGEX_RISK".to_string());
-                    }
+                if has_rs_findings
+                    && risk != "none"
+                    && !machine_codes.contains(&"REGEX_RISK".to_string())
+                {
+                    machine_codes.push("REGEX_RISK".to_string());
                 }
                 subresults.entry("regex_safety_check".to_string())
                     .or_insert_with(|| serde_json::json!([]))
@@ -11281,7 +11206,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                     let jc_result = json_canonicalize(&serde_json::json!({"text": text}));
                     if let Some(ref r) = jc_result.result {
                         let canonical = r.get("canonical").and_then(|v| v.as_str());
-                        let changed = canonical.map_or(false, |c| c != text);
+                        let changed = canonical.is_some_and(|c| c != text);
                         subresults.insert(
                             "json_canonicalize".to_string(),
                             serde_json::json!({

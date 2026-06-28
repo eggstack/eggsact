@@ -67,7 +67,7 @@ static SEMVER_LAX_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 fn parse_pre_release_identifiers(ident: &str) -> Vec<String> {
     ident
-        .split(|c| c == '.' || c == '-' || c == ' ')
+        .split(['.', '-', ' '])
         .filter(|p| !p.is_empty())
         .map(String::from)
         .collect()
@@ -587,8 +587,8 @@ pub fn check_version_constraint(
         };
     }
 
-    if constraint.starts_with('^') {
-        let ver_str = &constraint[1..].trim();
+    if let Some(stripped) = constraint.strip_prefix('^') {
+        let ver_str = stripped.trim();
         let parsed_bound = parse_version(ver_str);
 
         if parsed_bound.is_none() {
@@ -642,8 +642,8 @@ pub fn check_version_constraint(
         };
     }
 
-    if constraint.starts_with('~') {
-        let ver_str = &constraint[1..].trim();
+    if let Some(stripped) = constraint.strip_prefix('~') {
+        let ver_str = stripped.trim();
         let parsed_bound = parse_version_lax(ver_str);
 
         if parsed_bound.is_none() {

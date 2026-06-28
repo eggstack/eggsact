@@ -26,7 +26,7 @@ fn test_dotenv_validate_comments() {
 fn test_dotenv_validate_export_prefix() {
     let text = "export KEY=value";
     let result = dotenv_validate(text, true, "^[A-Z_]+$", "error");
-    assert!(result.entries.len() >= 1);
+    assert!(!result.entries.is_empty());
 }
 
 #[test]

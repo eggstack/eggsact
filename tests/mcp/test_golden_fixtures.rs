@@ -275,7 +275,7 @@ fn test_golden_dump_all() {
 
     eprintln!("=== Golden Fixture Reference Outputs ===");
 
-    let requests = vec![
+    let requests = [
         r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"5 + 3"}},"id":1}"#,
         r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"text_measure","arguments":{"text":"hello"}},"id":1}"#,
         r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"text_equal","arguments":{"a":"hello","b":"hello"}},"id":1}"#,
@@ -283,7 +283,7 @@ fn test_golden_dump_all() {
         r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"unit_convert","arguments":{"value":1000,"from_unit":"m","to_unit":"km"}},"id":1}"#,
     ];
 
-    let tool_names = vec![
+    let tool_names = [
         "math_eval",
         "text_measure",
         "text_equal",
