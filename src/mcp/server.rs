@@ -2598,7 +2598,11 @@ fn find_close_match<'a>(input: &str, tool_names: &[&'a str]) -> Option<&'a str> 
             || at_word_boundary(&lower_name, &lower_input)
         {
             // Python returns the shortest tool name when there are ties
-            if best_boundary.is_none() || name.len() < best_boundary.unwrap().0.len() {
+            let is_shorter = match best_boundary {
+                Some((best_name, _)) => name.len() < best_name.len(),
+                None => true,
+            };
+            if is_shorter {
                 best_boundary = Some((name, 0));
             }
         }
@@ -2828,6 +2832,10 @@ fn validate_property_inner(
     }
 
     if type_options.contains(&"object") && value.is_object() {
+        let value_obj = match value.as_object() {
+            Some(obj) => obj,
+            None => return Some(format!("Expected object at '{}'", path)),
+        };
         let sub_props = obj.get("properties").and_then(|v| v.as_object());
         let sub_required = obj.get("required").and_then(|v| v.as_array());
         let sub_additional = obj
@@ -2842,7 +2850,7 @@ fn validate_property_inner(
             if let Some(req) = sub_required {
                 for field in req {
                     if let Some(field_name) = field.as_str() {
-                        if !value.as_object().unwrap().contains_key(field_name) {
+                        if !value_obj.contains_key(field_name) {
                             return Some(format!(
                                 "Missing required field '{}' in '{}'",
                                 field_name, path
@@ -3171,6 +3179,38 @@ fn ensure_mcp_defaults() {
     }
 }
 
+fn json_rpc_error(code: i32, message: impl Into<String>, id: Option<Value>) -> Value {
+    serde_json::to_value(JsonRpcError {
+        jsonrpc: "2.0".to_string(),
+        error: JsonRpcErrorDetail {
+            code,
+            message: message.into(),
+        },
+        id,
+    })
+    .unwrap_or_else(|_| {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "error": {"code": -32603, "message": "Internal error: failed to serialize error response"},
+            "id": null
+        })
+    })
+}
+
+fn invalid_request(message: impl Into<String>, id: Option<Value>) -> Value {
+    json_rpc_error(-32600, message, id)
+}
+
+fn method_not_found(message: impl Into<String>, id: Option<Value>) -> Value {
+    json_rpc_error(-32601, message, id)
+}
+
+fn write_json_line(value: &Value) {
+    if let Ok(output) = serde_json::to_string(value) {
+        println!("{}", output);
+    }
+}
+
 async fn handle_request_async(
     request: &JsonRpcRequest,
     cancelled: &Arc<tokio::sync::Mutex<CancelledRequests>>,
@@ -3201,11 +3241,10 @@ async fn handle_request_async(
             let params = request.params.as_ref();
             if let Some(p) = params {
                 if !p.is_object() {
-                    return Some(serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "error": {"code": -32600, "message": "Invalid params: expected object"},
-                        "id": request.id
-                    }));
+                    return Some(invalid_request(
+                        "Invalid params: expected object",
+                        request.id.clone(),
+                    ));
                 }
             }
             // Validate param types (matching Python messages exactly)
@@ -3213,62 +3252,61 @@ async fn handle_request_async(
                 if let Some(d) = p.get("schema_detail") {
                     if !d.is_string() || !matches!(d.as_str(), Some("compact" | "normal" | "full"))
                     {
-                        return Some(serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32600, "message": "Invalid 'schema_detail' parameter: expected compact, normal, or full"},
-                            "id": request.id
-                        }));
+                        return Some(invalid_request(
+                            "Invalid 'schema_detail' parameter: expected compact, normal, or full",
+                            request.id.clone(),
+                        ));
                     }
                 }
                 if let Some(t) = p.get("tier") {
                     // Python treats bool as int (isinstance(True, int) == True)
                     if !t.is_i64() && !t.is_u64() && !t.is_boolean() {
-                        return Some(serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32600, "message": "Invalid 'tier' parameter: expected integer"},
-                            "id": request.id
-                        }));
+                        return Some(invalid_request(
+                            "Invalid 'tier' parameter: expected integer",
+                            request.id.clone(),
+                        ));
                     }
                 }
                 if let Some(t) = p.get("tags") {
-                    if !t.is_array() {
-                        return Some(serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32600, "message": "Invalid 'tags' parameter: expected array"},
-                            "id": request.id
-                        }));
-                    }
-                    if !t.as_array().unwrap().iter().all(|v| v.is_string()) {
-                        return Some(serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32600, "message": "Invalid 'tags' parameter: all items must be strings"},
-                            "id": request.id
-                        }));
+                    match t.as_array() {
+                        Some(tags) if tags.iter().all(|v| v.is_string()) => {}
+                        Some(_) => {
+                            return Some(invalid_request(
+                                "Invalid 'tags' parameter: all items must be strings",
+                                request.id.clone(),
+                            ));
+                        }
+                        None => {
+                            return Some(invalid_request(
+                                "Invalid 'tags' parameter: expected array",
+                                request.id.clone(),
+                            ));
+                        }
                     }
                 }
                 if let Some(n) = p.get("names") {
-                    if !n.is_array() {
-                        return Some(serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32600, "message": "Invalid 'names' parameter: expected array"},
-                            "id": request.id
-                        }));
-                    }
-                    if !n.as_array().unwrap().iter().all(|v| v.is_string()) {
-                        return Some(serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32600, "message": "Invalid 'names' parameter: all items must be strings"},
-                            "id": request.id
-                        }));
+                    match n.as_array() {
+                        Some(names) if names.iter().all(|v| v.is_string()) => {}
+                        Some(_) => {
+                            return Some(invalid_request(
+                                "Invalid 'names' parameter: all items must be strings",
+                                request.id.clone(),
+                            ));
+                        }
+                        None => {
+                            return Some(invalid_request(
+                                "Invalid 'names' parameter: expected array",
+                                request.id.clone(),
+                            ));
+                        }
                     }
                 }
                 if let Some(pr) = p.get("profile") {
                     if !pr.is_string() {
-                        return Some(serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32600, "message": "Invalid 'profile' parameter: expected string"},
-                            "id": request.id
-                        }));
+                        return Some(invalid_request(
+                            "Invalid 'profile' parameter: expected string",
+                            request.id.clone(),
+                        ));
                     }
                 }
             }
@@ -3373,40 +3411,36 @@ async fn handle_request_async(
             let params = match request.params.as_ref() {
                 Some(p) => {
                     if !p.is_object() {
-                        return Some(serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32600, "message": "Invalid params: expected object"},
-                            "id": request.id
-                        }));
+                        return Some(invalid_request(
+                            "Invalid params: expected object",
+                            request.id.clone(),
+                        ));
                     }
                     p
                 }
                 None => {
-                    return Some(serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "error": {"code": -32600, "message": "Invalid params: expected object"},
-                        "id": request.id
-                    }));
+                    return Some(invalid_request(
+                        "Invalid params: expected object",
+                        request.id.clone(),
+                    ));
                 }
             };
             let name = match params.get("name").and_then(|v| v.as_str()) {
                 Some(n) => n,
                 None => {
-                    return Some(serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "error": {"code": -32600, "message": "Invalid params: missing tool name"},
-                        "id": request.id
-                    }));
+                    return Some(invalid_request(
+                        "Invalid params: missing tool name",
+                        request.id.clone(),
+                    ));
                 }
             };
             let arguments_val = match params.get("arguments") {
                 Some(v) if v.is_object() => v.clone(),
                 Some(_) => {
-                    return Some(serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "error": {"code": -32600, "message": "Invalid arguments: expected object"},
-                        "id": request.id
-                    }));
+                    return Some(invalid_request(
+                        "Invalid arguments: expected object",
+                        request.id.clone(),
+                    ));
                 }
                 None => serde_json::Value::Object(serde_json::Map::new()),
             };
@@ -3428,58 +3462,43 @@ async fn handle_request_async(
 
             // Look up the tool handler (exact match only)
             let canonical_name = name.to_string();
-            let handler_opt = TOOL_HANDLERS
+            let handler = match TOOL_HANDLERS
                 .iter()
                 .find(|(tool_name, _)| *tool_name == name)
-                .map(|(_, h)| *h);
-
-            if handler_opt.is_none() {
-                // Unknown tool — return -32601 (matching Python)
-                let tool_names: Vec<&str> = TOOL_HANDLERS.iter().map(|(n, _)| *n).collect();
-                let msg = match find_close_match(name, &tool_names) {
-                    Some(m) => format!("Unknown tool: {}. Did you mean: {}?", name, m),
-                    None => format!("Unknown tool: {}", name),
-                };
-                return Some(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32601,
-                        "message": msg
-                    },
-                    "id": request.id
-                }));
-            }
+                .map(|(_, h)| *h)
+            {
+                Some(handler) => handler,
+                None => {
+                    // Unknown tool — return -32601 (matching Python)
+                    let tool_names: Vec<&str> = TOOL_HANDLERS.iter().map(|(n, _)| *n).collect();
+                    let msg = match find_close_match(name, &tool_names) {
+                        Some(m) => format!("Unknown tool: {}. Did you mean: {}?", name, m),
+                        None => format!("Unknown tool: {}", name),
+                    };
+                    return Some(method_not_found(msg, request.id.clone()));
+                }
+            };
 
             // Enforce active profile: reject tools not in the current profile
             let profile_tools = get_profile_tools(&get_active_profile());
             if !profile_tools.contains(&&*canonical_name) {
-                return Some(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32602,
-                        "message": format!(
-                            "Tool '{}' is not available in profile '{}'. Use tools/list to see available tools, or switch profile.",
-                            canonical_name, get_active_profile()
-                        )
-                    },
-                    "id": request.id
-                }));
+                return Some(json_rpc_error(
+                    -32602,
+                    format!(
+                        "Tool '{}' is not available in profile '{}'. Use tools/list to see available tools, or switch profile.",
+                        canonical_name,
+                        get_active_profile()
+                    ),
+                    request.id.clone(),
+                ));
             }
 
-            let handler = handler_opt.unwrap();
-
             if let Some(msg) = validate_arguments(&canonical_name, &arguments_val) {
-                return Some(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32602,
-                        "message": format!(
-                            "Invalid arguments for tool '{}': {}",
-                            canonical_name, msg
-                        )
-                    },
-                    "id": request.id
-                }));
+                return Some(json_rpc_error(
+                    -32602,
+                    format!("Invalid arguments for tool '{}': {}", canonical_name, msg),
+                    request.id.clone(),
+                ));
             }
 
             let name_owned = canonical_name.to_string();
@@ -3529,14 +3548,14 @@ async fn handle_request_async(
                         Some(wrap_tool_response(&tool_response))
                     }
                 }
-                Ok(Err(join_err)) => Some(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32000,
-                        "message": format!("Tool execution error: {}", truncate_2000(&sanitize_error(&join_err.to_string())))
-                    },
-                    "id": request.id
-                })),
+                Ok(Err(join_err)) => Some(json_rpc_error(
+                    -32000,
+                    format!(
+                        "Tool execution error: {}",
+                        truncate_2000(&sanitize_error(&join_err.to_string()))
+                    ),
+                    request.id.clone(),
+                )),
                 Err(_timeout) => Some(wrap_tool_response(&ToolResponse::error(
                     "timeout",
                     &format!(
@@ -3582,11 +3601,10 @@ async fn handle_request_async(
         "profiles/list" => {
             if let Some(ref params) = request.params {
                 if !params.is_object() {
-                    return Some(serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "error": {"code": -32600, "message": "Invalid params: expected object"},
-                        "id": request.id
-                    }));
+                    return Some(invalid_request(
+                        "Invalid params: expected object",
+                        request.id.clone(),
+                    ));
                 }
             }
             let active = get_active_profile();
@@ -3625,17 +3643,10 @@ async fn handle_request_async(
             } else {
                 request.method.clone()
             };
-            Some(
-                serde_json::to_value(JsonRpcError {
-                    jsonrpc: "2.0".to_string(),
-                    error: JsonRpcErrorDetail {
-                        code: -32601,
-                        message: format!("Method not found: {}", display_method),
-                    },
-                    id: request.id.clone(),
-                })
-                .unwrap(),
-            )
+            Some(method_not_found(
+                format!("Method not found: {}", display_method),
+                request.id.clone(),
+            ))
         }
     }
 }
@@ -3662,36 +3673,20 @@ pub async fn main() -> ! {
 
         // Request size limit
         if trimmed.len() > MAX_REQUEST_BYTES {
-            let error_response = JsonRpcError {
-                jsonrpc: "2.0".to_string(),
-                error: JsonRpcErrorDetail {
-                    code: -32700,
-                    message: format!(
-                        "Request exceeds maximum size of {} bytes",
-                        MAX_REQUEST_BYTES
-                    ),
-                },
-                id: None,
-            };
-            if let Ok(output) = serde_json::to_string(&error_response) {
-                println!("{}", output);
-            }
+            write_json_line(&json_rpc_error(
+                -32700,
+                format!(
+                    "Request exceeds maximum size of {} bytes",
+                    MAX_REQUEST_BYTES
+                ),
+                None,
+            ));
             continue;
         }
 
         // Reject batch requests (check before JSON parse, matching Python)
         if trimmed.starts_with('[') {
-            let error_response = JsonRpcError {
-                jsonrpc: "2.0".to_string(),
-                error: JsonRpcErrorDetail {
-                    code: -32600,
-                    message: "Batch requests are not supported".to_string(),
-                },
-                id: None,
-            };
-            if let Ok(output) = serde_json::to_string(&error_response) {
-                println!("{}", output);
-            }
+            write_json_line(&invalid_request("Batch requests are not supported", None));
             continue;
         }
 
@@ -3699,34 +3694,17 @@ pub async fn main() -> ! {
         let request_value: serde_json::Value = match serde_json::from_str(trimmed) {
             Ok(v) => v,
             Err(_) => {
-                let error_response = JsonRpcError {
-                    jsonrpc: "2.0".to_string(),
-                    error: JsonRpcErrorDetail {
-                        code: -32700,
-                        message: "Parse error: invalid JSON".to_string(),
-                    },
-                    id: None,
-                };
-                if let Ok(output) = serde_json::to_string(&error_response) {
-                    println!("{}", output);
-                }
+                write_json_line(&json_rpc_error(-32700, "Parse error: invalid JSON", None));
                 continue;
             }
         };
 
         // Validate top-level is object
         if !request_value.is_object() {
-            let error_response = JsonRpcError {
-                jsonrpc: "2.0".to_string(),
-                error: JsonRpcErrorDetail {
-                    code: -32600,
-                    message: "Invalid Request: expected JSON object".to_string(),
-                },
-                id: None,
-            };
-            if let Ok(output) = serde_json::to_string(&error_response) {
-                println!("{}", output);
-            }
+            write_json_line(&invalid_request(
+                "Invalid Request: expected JSON object",
+                None,
+            ));
             continue;
         }
 
@@ -3736,52 +3714,31 @@ pub async fn main() -> ! {
             .and_then(|v| v.as_str())
             .unwrap_or("null");
         if actual_version != "2.0" {
-            let error_response = JsonRpcError {
-                jsonrpc: "2.0".to_string(),
-                error: JsonRpcErrorDetail {
-                    code: -32600,
-                    message: format!(
-                        "Invalid Request: jsonrpc must be '2.0', got '{}'",
-                        actual_version
-                    ),
-                },
-                id: request_value.get("id").cloned(),
-            };
-            if let Ok(output) = serde_json::to_string(&error_response) {
-                println!("{}", output);
-            }
+            write_json_line(&invalid_request(
+                format!(
+                    "Invalid Request: jsonrpc must be '2.0', got '{}'",
+                    actual_version
+                ),
+                request_value.get("id").cloned(),
+            ));
             continue;
         }
 
         // Validate method
         let method = match request_value.get("method") {
-            Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
+            Some(Value::String(method)) => method.clone(),
             Some(_) => {
-                let error_response = JsonRpcError {
-                    jsonrpc: "2.0".to_string(),
-                    error: JsonRpcErrorDetail {
-                        code: -32600,
-                        message: "Invalid Request: 'method' must be a string".to_string(),
-                    },
-                    id: request_value.get("id").cloned(),
-                };
-                if let Ok(output) = serde_json::to_string(&error_response) {
-                    println!("{}", output);
-                }
+                write_json_line(&invalid_request(
+                    "Invalid Request: 'method' must be a string",
+                    request_value.get("id").cloned(),
+                ));
                 continue;
             }
             None => {
-                let error_response = JsonRpcError {
-                    jsonrpc: "2.0".to_string(),
-                    error: JsonRpcErrorDetail {
-                        code: -32600,
-                        message: "Invalid Request: missing 'method'".to_string(),
-                    },
-                    id: request_value.get("id").cloned(),
-                };
-                if let Ok(output) = serde_json::to_string(&error_response) {
-                    println!("{}", output);
-                }
+                write_json_line(&invalid_request(
+                    "Invalid Request: missing 'method'",
+                    request_value.get("id").cloned(),
+                ));
                 continue;
             }
         };
@@ -3790,20 +3747,13 @@ pub async fn main() -> ! {
         {
             let mut limiter = rate_limiter.lock().await;
             if !limiter.check() {
-                let error_response = JsonRpcError {
-                    jsonrpc: "2.0".to_string(),
-                    error: JsonRpcErrorDetail {
-                        code: -32600,
-                        message: format!(
-                            "Rate limit exceeded: max {} requests per second",
-                            MAX_REQUESTS_PER_SECOND
-                        ),
-                    },
-                    id: request_value.get("id").cloned(),
-                };
-                if let Ok(output) = serde_json::to_string(&error_response) {
-                    println!("{}", output);
-                }
+                write_json_line(&invalid_request(
+                    format!(
+                        "Rate limit exceeded: max {} requests per second",
+                        MAX_REQUESTS_PER_SECOND
+                    ),
+                    request_value.get("id").cloned(),
+                ));
                 continue;
             }
         }
@@ -3813,54 +3763,31 @@ pub async fn main() -> ! {
         if let Some(id_val) = id {
             // Reject boolean, array, object, and float ids per JSON-RPC 2.0 spec
             if id_val.is_boolean() || id_val.is_array() || id_val.is_object() {
-                let error_response = JsonRpcError {
-                    jsonrpc: "2.0".to_string(),
-                    error: JsonRpcErrorDetail {
-                        code: -32600,
-                        message: "Invalid Request: 'id' must be a string, integer, or null"
-                            .to_string(),
-                    },
-                    id: None,
-                };
-                if let Ok(output) = serde_json::to_string(&error_response) {
-                    println!("{}", output);
-                }
+                write_json_line(&invalid_request(
+                    "Invalid Request: 'id' must be a string, integer, or null",
+                    None,
+                ));
                 continue;
             }
             // Reject float IDs (JSON numbers that aren't integers)
             // Use as_i64()/as_u64() for exact integer detection — as_f64() loses
             // precision for integers >2^53 and would silently accept them.
             if id_val.is_number() && id_val.as_i64().is_none() && id_val.as_u64().is_none() {
-                let error_response = JsonRpcError {
-                    jsonrpc: "2.0".to_string(),
-                    error: JsonRpcErrorDetail {
-                        code: -32600,
-                        message: "Invalid Request: 'id' must be a string, integer, or null"
-                            .to_string(),
-                    },
-                    id: None,
-                };
-                if let Ok(output) = serde_json::to_string(&error_response) {
-                    println!("{}", output);
-                }
+                write_json_line(&invalid_request(
+                    "Invalid Request: 'id' must be a string, integer, or null",
+                    None,
+                ));
                 continue;
             }
             let id_str = id_val.to_string();
             if id_str.len() > MAX_REQUEST_ID_LENGTH {
-                let error_response = JsonRpcError {
-                    jsonrpc: "2.0".to_string(),
-                    error: JsonRpcErrorDetail {
-                        code: -32600,
-                        message: format!(
-                            "Invalid Request: 'id' exceeds maximum length of {}",
-                            MAX_REQUEST_ID_LENGTH
-                        ),
-                    },
-                    id: None,
-                };
-                if let Ok(output) = serde_json::to_string(&error_response) {
-                    println!("{}", output);
-                }
+                write_json_line(&invalid_request(
+                    format!(
+                        "Invalid Request: 'id' exceeds maximum length of {}",
+                        MAX_REQUEST_ID_LENGTH
+                    ),
+                    None,
+                ));
                 continue;
             }
         }
@@ -3901,11 +3828,11 @@ pub async fn main() -> ! {
                             },
                         }
                     };
-                    Some(serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "error": {"code": -32603, "message": truncate_2000(&sanitize_error(&format!("Internal error: {}", msg)))},
-                        "id": request.id
-                    }))
+                    Some(json_rpc_error(
+                        -32603,
+                        truncate_2000(&sanitize_error(&format!("Internal error: {}", msg))),
+                        request.id.clone(),
+                    ))
                 }
             }
         };
@@ -3913,9 +3840,7 @@ pub async fn main() -> ! {
             // Check if this is already a JSON-RPC error (has "error" key at top level)
             if result.get("error").is_some() && result.get("result").is_none() {
                 // Already a JSON-RPC error response, output directly
-                if let Ok(output) = serde_json::to_string(&result) {
-                    println!("{}", output);
-                }
+                write_json_line(&result);
             } else {
                 let response = JsonRpcResponse {
                     jsonrpc: "2.0".to_string(),
@@ -3923,8 +3848,8 @@ pub async fn main() -> ! {
                     id: request.id,
                 };
 
-                if let Ok(output) = serde_json::to_string(&response) {
-                    println!("{}", output);
+                if let Ok(value) = serde_json::to_value(response) {
+                    write_json_line(&value);
                 }
             }
         }
