@@ -27,6 +27,8 @@ path, so run `cargo build` before running parity tests.
 ## Testing
 
 ```sh
+cargo fmt --check        # formatting gate
+cargo clippy --all-targets --all-features
 cargo test               # all tests (unit, integration, parity)
 cargo test --lib         # unit tests within src/ only
 cargo test --test lib parity   # parity tests against Python
@@ -129,3 +131,14 @@ cargo test --test lib parity
 
 If your change introduces a valid behavioral difference from Python, update the parity
 test to accept the new behavior and document the divergence in `docs/parity.md`.
+
+## Release Checklist
+
+Run the release script from the repository root before tagging or publishing:
+
+```sh
+./release.sh
+```
+
+The script regenerates confusable-character data, verifies formatting, runs clippy,
+runs the full test suite, and then builds the optimized binary.

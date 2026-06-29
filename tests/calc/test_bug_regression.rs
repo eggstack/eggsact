@@ -458,10 +458,7 @@ fn test_bug205_comb_exact_at_53bit_boundary() {
     // Expected: 1000*999*998*997*996*995 / 720.
     let expected: u128 = 1000 * 999 * 998 * 997 * 996 * 995 / 720;
     let actual: u128 = val.parse().expect("int result should parse");
-    assert_eq!(
-        actual, expected,
-        "BUG-205: comb(1000, 6) should be exact"
-    );
+    assert_eq!(actual, expected, "BUG-205: comb(1000, 6) should be exact");
 }
 
 // ─── BUG-206: nextprime/prevprime skip the MAX_PRIME upper-bound guard ───
@@ -493,8 +490,5 @@ fn test_bug206_prevprime_rejects_above_max_prime() {
 fn test_bug206_isprime_still_rejects_above_max_prime() {
     // Regression: isprime already enforced this guard.
     let result = evaluate("isprime(10000000000000)");
-    assert!(
-        result.is_err(),
-        "isprime(1e13) should still be rejected"
-    );
+    assert!(result.is_err(), "isprime(1e13) should still be rejected");
 }

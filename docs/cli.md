@@ -11,6 +11,8 @@ eggsact [--mcp | expression]
 ```
 
 - `--mcp` -- Start MCP server mode (reads JSON-RPC from stdin, writes to stdout)
+- `-h`, `--help` -- Print usage information
+- `-V`, `--version` -- Print the installed eggsact version
 - `expression` -- Math expression to evaluate (one or more arguments joined with spaces)
 - No arguments -- Print usage message
 
@@ -45,14 +47,23 @@ eggsact --mcp
 
 The server reads requests from stdin and writes responses to stdout. This mode is intended for integration with AI agent frameworks.
 
+### Help and Version
+
+```bash
+eggsact --help
+eggsact --version
+```
+
 ### No Arguments
 
 ```bash
 eggsact
 # Output:
 # Usage: eggsact [--mcp | expression]
-#   --mcp       Start MCP server mode
-#   expression  Evaluate math expression
+#   --mcp          Start MCP server mode
+#   -h, --help     Print this help message
+#   -V, --version  Print version information
+#   expression     Evaluate math expression
 ```
 
 ## Examples

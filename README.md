@@ -51,6 +51,10 @@ eggsact "30m to ft"
 eggsact "2 ** 10"
 # 1024
 
+# Help and version
+eggsact --help
+eggsact --version
+
 # MCP server mode (stdio JSON-RPC)
 eggsact --mcp
 ```

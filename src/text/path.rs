@@ -393,7 +393,9 @@ pub fn path_normalize(
             // The drive letter is already embedded as the first component; strip
             // it from the joined string before prepending so we don't duplicate.
             let drive = &path[..2];
-            let tail = normalized.strip_prefix(drive).unwrap_or(normalized.as_str());
+            let tail = normalized
+                .strip_prefix(drive)
+                .unwrap_or(normalized.as_str());
             normalized = format!("{}{}", drive, tail);
         }
     }

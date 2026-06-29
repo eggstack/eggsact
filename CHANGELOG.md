@@ -67,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `src/mcp/server.rs`.
 - Added a registration invariant test so MCP tool definitions, handlers,
   metadata, and the exported tool count cannot drift silently.
+- Added conventional `-h`/`--help` and `-V`/`--version` CLI handling with
+  parser tests, and documented the flag behavior in the CLI guide.
+- Expanded `release.sh` and contributing docs so release builds run formatting,
+  clippy, and the full test suite before `cargo build --release`.
 - Refreshed README and MCP reference examples to match current unit output
   and MCP `content` response shape.
 

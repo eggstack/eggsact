@@ -5,5 +5,14 @@ cd "$(dirname "$0")"
 echo "=== Regenerating confusables data from Unicode.org ==="
 python3 scripts/generate_confusables.py
 
+echo "=== Checking formatting ==="
+cargo fmt --check
+
+echo "=== Running clippy ==="
+cargo clippy --all-targets --all-features
+
+echo "=== Running tests ==="
+cargo test
+
 echo "=== Building release ==="
 cargo build --release
