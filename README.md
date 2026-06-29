@@ -87,7 +87,7 @@ eggsact --mcp
 
 ## MCP Tools
 
-64 tools organized by category.
+64 tools across 16 categories. See `architecture/mcp-server.md` for the full reference.
 
 ### Math & Units (4)
 
@@ -98,7 +98,7 @@ eggsact --mcp
 | `unit_info` | Get metadata about a unit (category, base unit, aliases) |
 | `constant_lookup` | Look up physical or mathematical constants by name |
 
-### Text Measurement & Comparison (10)
+### Text (17)
 
 | Tool | Description |
 |------|-------------|
@@ -112,15 +112,13 @@ eggsact --mcp
 | `text_hash` | Hash text with SHA-256, SHA-1, MD5, or CRC32 |
 | `text_position` | Convert between byte offsets, line/column, and UTF-16 positions |
 | `text_window` | Extract a window of text around a position |
-
-### Text Transformation (4)
-
-| Tool | Description |
-|------|-------------|
 | `text_transform` | Casefold, normalize (NFC/NFD/NFKC/NFKD), and transform text |
+| `text_replace_check` | Preview a text replacement before applying it |
 | `escape_text` | Escape special characters (JSON, shell, regex, URL) |
 | `unescape_text` | Unescape escaped strings back to their original form |
-| `text_replace_check` | Preview a text replacement before applying it |
+| `text_security_inspect` | Composite: aggregate security checks across multiple tools |
+| `prompt_input_inspect` | Detect hidden characters and instruction injection in prompts |
+| `line_range_extract` / `line_range_compare` | Extract and compare line ranges |
 
 ### JSON (7)
 
@@ -133,6 +131,7 @@ eggsact --mcp
 | `json_query` | Query JSON with a simple dot-path language |
 | `json_shape` | Describe the structure of a JSON document |
 | `validate_schema_light` | Lightweight JSON schema validation |
+| `structured_data_compare` | Composite: compare structured data using JSON tools |
 
 ### Regex (3)
 
@@ -158,6 +157,7 @@ eggsact --mcp
 | `path_analyze` | Analyze path components (parent, stem, extension, etc.) |
 | `path_compare` | Compare two paths for equivalence |
 | `path_scope_check` | Check whether a path is within a given directory scope |
+| `glob_match` | Match a file path against a glob pattern |
 
 ### Identifiers (3)
 
@@ -167,13 +167,14 @@ eggsact --mcp
 | `identifier_inspect` | Inspect identifiers for confusables and collisions |
 | `identifier_table_inspect` | Analyze a table of identifiers for naming issues |
 
-### Shell (3)
+### Shell (4)
 
 | Tool | Description |
 |------|-------------|
 | `shell_split` | Split a shell command string into argv tokens |
 | `shell_quote_join` | Quote and join tokens into a safe shell command string |
 | `argv_compare` | Compare two argument lists for equivalence |
+| `command_preflight` | Composite: pre-check a shell command using shell/identifier tools |
 
 ### Markdown (2)
 
@@ -182,7 +183,7 @@ eggsact --mcp
 | `markdown_structure` | Parse markdown headings, lists, and code blocks |
 | `code_fence_extract` | Extract fenced code blocks with language tags |
 
-### Config Files (4)
+### Config & Validation (5)
 
 | Tool | Description |
 |------|-------------|
@@ -190,28 +191,23 @@ eggsact --mcp
 | `ini_validate` | Validate INI file syntax |
 | `validate_toml` | Validate TOML syntax |
 | `toml_shape` | Describe the structure of a TOML document |
+| `validate_brackets` | Check bracket balance in text (parens, braces, brackets, angle) |
+| `config_preflight` | Composite: pre-check a config file using validation tools |
 
-### Patches (2)
+### Patches (3)
 
 | Tool | Description |
 |------|-------------|
 | `patch_apply_check` | Preview a unified diff patch without modifying files |
 | `patch_summary` | Summarize changes in a unified diff patch |
+| `edit_preflight` | Composite: pre-check an edit operation using text tools |
 
-### Line Ranges (2)
-
-| Tool | Description |
-|------|-------------|
-| `line_range_extract` | Extract a range of lines from text |
-| `line_range_compare` | Compare two line ranges for overlap or equality |
-
-### Unicode (3)
+### Unicode (2)
 
 | Tool | Description |
 |------|-------------|
 | `unicode_policy_check` | Validate text against named Unicode safety policies |
 | `canonicalize_text` | Normalize text using configurable canonicalization profiles |
-| `prompt_input_inspect` | Detect hidden characters and instruction injection in prompts |
 
 ### Versioning (3)
 
@@ -220,18 +216,6 @@ eggsact --mcp
 | `version_constraint_check` | Check if a semver version satisfies a constraint |
 | `version_compare` | Compare two semver versions |
 | `cargo_toml_inspect` | Extract metadata from Cargo.toml files |
-
-### Glob (1)
-
-| Tool | Description |
-|------|-------------|
-| `glob_match` | Match a file path against a glob pattern |
-
-### Security (1)
-
-| Tool | Description |
-|------|-------------|
-| `validate_brackets` | Check bracket balance in text (parens, braces, brackets, angle) |
 
 ## Math Features
 
@@ -368,7 +352,7 @@ eggsact/
 │   │   ├── server.rs        # stdio JSON-RPC 2.0 server, tool dispatch
 │   │   ├── tools.rs         # MCP tool implementations
 │   │   └── schemas.rs       # JSON-RPC type definitions, tool schemas
-│   └── text/                # Text processing library
+│   └── text/                # Text processing library (24 modules)
 │       ├── mod.rs           # Module re-exports
 │       ├── primitives.rs    # UTF-8 encoding, codepoint iteration
 │       ├── confusables.rs   # Unicode confusable character lookup
@@ -389,10 +373,16 @@ eggsact/
 │       ├── patch.rs         # Unified diff parsing and application
 │       ├── line_range.rs    # Line range extraction and comparison
 │       ├── unicode_policy.rs # Unicode safety policies
+│       ├── unicode_tools.rs # Mixed-script, invisible char detection
+│       ├── inspect_prompt.rs # Prompt injection detection
+│       ├── synthesis.rs     # Composite tool orchestration
 │       ├── cargo.rs         # Cargo.toml inspection
 │       ├── version.rs       # Semver constraint checking
 │       └── confusables_generated.rs # Generated confusables data (data file)
 ├── tests/                   # Integration and unit tests
+├── docs/                    # Detailed documentation
+├── architecture/            # Architecture documentation
+├── .skills/                 # Agent task skills
 ├── Cargo.toml
 └── README.md
 ```

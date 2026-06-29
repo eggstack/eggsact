@@ -57,12 +57,12 @@ eggsact/
       tools.rs           # Tool implementation functions
       schemas.rs         # Tool definitions with input/output schemas
     text/
-      mod.rs             # Text module root, re-exports
+      mod.rs             # Text module root, re-exports (24 submodules)
       primitives.rs      # UTF-8, codepoint, grapheme utilities
       confusables.rs     # Homoglyph and confusable detection
       diff.rs            # String diffing
       validate.rs        # JSON, regex, bracket validation
-      ...                # 20+ additional text processing modules
+      ...                # 20 additional text processing modules
   tests/
     lib.rs               # Test entry point
     parity/              # Python/Rust comparison tests

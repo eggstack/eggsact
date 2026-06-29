@@ -28,18 +28,37 @@ cargo clippy --all-targets --all-features  # lint
 src/
   main.rs           # CLI entry, arg parsing, dispatch
   lib.rs            # library root, re-exports run()/evaluate()
-  calc/             # calculator: evaluator, normalize, units
+  calc/             # calculator: evaluator, normalize, units (3 modules)
   mcp/              # MCP server (server.rs ~4k lines, tools.rs, schemas.rs)
-  text/             # text processing modules (20+ submodules)
+  text/             # text processing library (24 modules)
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text
-  calc/             # calculator tests
-  mcp/              # MCP protocol + tool tests
-  text/             # text processing tests
-  parity/           # Python/Rust parity tests (spawns both servers as subprocesses)
+  calc/             # calculator tests (4 files)
+  mcp/              # MCP protocol + tool tests (14 files)
+  parity/           # Python/Rust parity tests (12 files)
+  text/             # text processing tests (24 files)
 scripts/
   generate_confusables.py  # regenerates src/text/confusables_generated.rs from unicode.org
 ```
+
+## Architecture docs
+
+Detailed architecture documentation is in `architecture/`:
+
+- `architecture/overview.md` — directory layout, dependency flow, constants
+- `architecture/calculator.md` — calculator core, NL pipeline, units, constants
+- `architecture/mcp-server.md` — MCP protocol, tool registration, categories, error handling
+- `architecture/text-library.md` — all 24 text modules, public API, code patterns
+
+## Skills
+
+Agent task skills in `.skills/`:
+
+- `.skills/mcp-tools.md` — how to add or update MCP tools
+- `.skills/testing.md` — testing patterns, commands, test structure
+- `.skills/debugging.md` — common issues, debugging workflows
+- `.skills/release.md` — release process and checklist
+- `.skills/text-processing.md` — text module conventions and patterns
 
 ## Key gotchas
 
