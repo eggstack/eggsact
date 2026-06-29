@@ -2021,7 +2021,7 @@ fn list_tools_raw() -> Vec<ToolDefinition> {
                     "items": {"type": "array", "items": {"type": "string"}, "description": "List of strings to dedupe", "maxItems": 10000},
                     "normalization": {"type": "string", "enum": ["raw", "NFC", "NFD", "NFKC", "NFKD"], "default": "NFC"},
                     "casefold": {"type": "boolean", "default": false, "description": "Apply casefolding before comparison"},
-                    "stable": {"type": "boolean", "default": true, "description": "Preserve first occurrence order"}
+                    "stable": {"type": "boolean", "default": true, "description": "Accepted for compatibility; deduplication keeps first occurrence order"}
                 },
                 "required": ["items"]
             }),
@@ -2038,7 +2038,7 @@ fn list_tools_raw() -> Vec<ToolDefinition> {
                     "normalization": {"type": "string", "enum": ["raw", "NFC", "NFD", "NFKC", "NFKD"], "default": "NFC"},
                     "casefold": {"type": "boolean", "default": false, "description": "Apply casefolding for sorting"},
                     "reverse": {"type": "boolean", "default": false, "description": "Sort in descending order"},
-                    "stable": {"type": "boolean", "default": true, "description": "Preserve original order for equal elements"}
+                    "stable": {"type": "boolean", "default": true, "description": "Accepted for compatibility; Python sorting is always stable"}
                 },
                 "required": ["items"]
             }),

@@ -56,9 +56,14 @@ const MAX_CONCURRENT_SPAWNED: usize = 16;
 const SPAWN_ACQUIRE_TIMEOUT: u64 = 10; // seconds to wait for a spawn slot
 const MAX_EXPRESSION_LENGTH: usize = 10_000;
 
-/// Split text into lines, treating `\r`, `\n`, `\r\n`, and Unicode line separators as line separators.
-/// Matches Python's `str.splitlines()` behavior for all standard line endings.
+/// Split text into lines, treating `\r`, `\n`, `\r\n`, and Unicode line separators
+/// as line separators. Matches Python's `str.splitlines()` behavior for standard
+/// line endings, including returning no lines for an empty string.
 fn split_lines(text: &str) -> Vec<String> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+
     let mut result = Vec::new();
     let mut current = String::new();
     let mut chars = text.chars().peekable();
@@ -11664,4 +11669,27 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
         resp = resp.with_findings(findings);
     }
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_lines;
+
+    #[test]
+    fn split_lines_matches_python_for_empty_text() {
+        assert!(split_lines("").is_empty());
+    }
+
+    #[test]
+    fn split_lines_preserves_trailing_empty_line() {
+        assert_eq!(split_lines("a\n"), vec!["a".to_string(), String::new()]);
+    }
+
+    #[test]
+    fn split_lines_treats_crlf_as_one_separator() {
+        assert_eq!(
+            split_lines("a\r\nb\rc"),
+            vec!["a".to_string(), "b".to_string(), "c".to_string()]
+        );
+    }
 }

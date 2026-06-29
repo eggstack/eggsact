@@ -2869,6 +2869,13 @@ fn test_measure_empty() {
     assert_eq!(inner.get("bytes_utf8"), Some(&Value::Number(0.into())));
     assert_eq!(inner.get("codepoints"), Some(&Value::Number(0.into())));
     assert_eq!(inner.get("graphemes"), Some(&Value::Number(0.into())));
+    assert_eq!(inner.get("lines"), Some(&Value::Number(0.into())));
+    assert_eq!(inner.get("nonempty_lines"), Some(&Value::Number(0.into())));
+    assert_eq!(inner.get("blank_lines"), Some(&Value::Number(0.into())));
+    assert_eq!(
+        inner.get("max_line_length_codepoints"),
+        Some(&Value::Number(0.into()))
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

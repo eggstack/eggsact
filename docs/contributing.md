@@ -72,17 +72,24 @@ eggsact/
 ## Adding a New MCP Tool
 
 1. **Implement the function** in `src/mcp/tools.rs`. Follow the existing pattern:
-   take `&Value`, return `ToolResponse`.
+   take `&Value`, validate arguments at the boundary, call a library function when
+   one exists, and return `ToolResponse`.
 
-2. **Add the tool definition** to `list_tools()` in `src/mcp/server.rs`. This defines
-   the JSON schema for the tool's input and output.
+2. **Register the dispatch entry** in `TOOL_HANDLERS` in `src/mcp/server.rs`. This
+   static array routes tool names to implementation functions.
 
-3. **Register the dispatch entry** in `TOOL_HANDLERS` in `src/mcp/server.rs`. This is
-   a static array of `(name, function)` pairs that routes requests.
+3. **Add schema and metadata entries** in `src/mcp/server.rs` and `src/mcp/schemas.rs`.
+   The tool list, schema builder, and `TOOL_METADATA` entry must stay in sync. Run
+   the `tool_registration_tables_are_in_sync` test after editing these tables.
 
-4. **Add parity tests** in `tests/parity/`. Pick the appropriate tier file based on
-   tool complexity, or create a new tier if needed. Use `compare_tool_parity()` to
-   validate against the Python reference.
+4. **Prefer reusable library code** under `src/text/` or `src/calc/` for business
+   logic. Keep `src/mcp/tools.rs` wrappers thin so the same behavior is testable
+   without going through JSON-RPC.
+
+5. **Add tests** at the right layer:
+   - Library behavior: `tests/text/` or `tests/calc/`.
+   - MCP request/response behavior: `tests/mcp/`.
+   - Python reference compatibility: `tests/parity/` using `compare_tool_parity()`.
 
 ## Adding a New Text Processing Function
 
