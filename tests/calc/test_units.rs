@@ -226,6 +226,23 @@ fn test_is_unit_not_unit() {
     assert!(!is_unit("hello"));
 }
 
+// ─── BUG-207: is_unit("b") must resolve to *bit*, not *byte* ──────────
+// Lowercase "b" is the SI symbol for bit and must be distinguished from
+// uppercase "B" (byte). The fallback to_uppercase used to alias "b" → "B".
+
+#[test]
+fn test_bug207_is_unit_lowercase_b_is_bit() {
+    assert!(is_unit("b"), "lowercase 'b' is the SI symbol for bit");
+    assert!(is_unit("B"), "uppercase 'B' is the SI symbol for byte");
+    assert_ne!(
+        get_unit_info("b").unwrap().0,
+        get_unit_info("B").unwrap().0,
+        "BUG-207: 'b' and 'B' must resolve to different units"
+    );
+    assert_eq!(get_unit_info("b").unwrap().0, "bit");
+    assert_eq!(get_unit_info("B").unwrap().0, "B");
+}
+
 // ─── get_unit_info ───────────────────────────────────────────────────
 
 #[test]

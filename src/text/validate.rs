@@ -1880,30 +1880,36 @@ pub fn json_extract(
                 }
             }
             serde_json::Value::Array(arr) => {
-                let index: usize = match decoded.parse() {
-                    Ok(i) => i,
-                    Err(_) => {
-                        return Ok(JsonExtractResult {
-                            valid_json: true,
-                            found: false,
-                            pointer: pointer.to_string(),
-                            value_type: Some("array".to_string()),
-                            value: None,
-                            preview: None,
-                            child_keys: None,
-                            array_length: Some(arr.len()),
-                            truncated: Some(false),
-                            missing_at: Some(path_so_far.clone()),
-                            reason: Some("invalid_pointer_syntax".to_string()),
-                            available_keys: None,
-                            error: None,
-                            line: None,
-                            column: None,
-                            summary: format!(
-                                "Array index expected at {}, got non-integer '{}'",
-                                path_so_far, decoded
-                            ),
-                        });
+                // RFC 6901 §4: "-" is a valid reference token for arrays,
+                // referring to the (non-existent) index past the last element.
+                let index: usize = if decoded == "-" {
+                    arr.len()
+                } else {
+                    match decoded.parse() {
+                        Ok(i) => i,
+                        Err(_) => {
+                            return Ok(JsonExtractResult {
+                                valid_json: true,
+                                found: false,
+                                pointer: pointer.to_string(),
+                                value_type: Some("array".to_string()),
+                                value: None,
+                                preview: None,
+                                child_keys: None,
+                                array_length: Some(arr.len()),
+                                truncated: Some(false),
+                                missing_at: Some(path_so_far.clone()),
+                                reason: Some("invalid_pointer_syntax".to_string()),
+                                available_keys: None,
+                                error: None,
+                                line: None,
+                                column: None,
+                                summary: format!(
+                                    "Array index expected at {}, got non-integer '{}'",
+                                    path_so_far, decoded
+                                ),
+                            });
+                        }
                     }
                 };
                 if index >= arr.len() {
@@ -2280,10 +2286,12 @@ pub fn json_compare(
                         );
                     }
                     if len_a != len_b {
-                        *same_type = false;
+                        // BUG-203: this branch handles objects, not arrays;
+                        // use a dedicated kind and don't flip same_type (both
+                        // values are still objects).
                         diffs.push(JsonCompareDiff {
                             path: path.to_string(),
-                            kind: "array_length_changed".to_string(),
+                            kind: "object_key_count_changed".to_string(),
                             a_type: Some("object".to_string()),
                             b_type: Some("object".to_string()),
                             a_preview: Some(format!("{} keys", len_a)),

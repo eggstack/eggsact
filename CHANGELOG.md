@@ -39,6 +39,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handle the spacing and `per`/`kph` variants.
 - **BUG-LRC-001 / B10**: `line_range_compare` now rejects out-of-range
   line indices with an error instead of panicking.
+- **BUG-201**: `path_normalize` no longer duplicates the drive letter
+  on Windows paths like `C:\foo\bar`; the joined component is stripped
+  of the leading `C:` before being re-prepended.
+- **BUG-202**: `json_extract` recognises RFC 6901's `-` reference
+  token for arrays (the after-last sentinel) and reports
+  `index_out_of_range` instead of `invalid_pointer_syntax`.
+- **BUG-203**: `json_compare` now reports mismatched object key counts
+  as `object_key_count_changed` (not `array_length_changed`) and keeps
+  `same_type` true when both sides are objects.
+- **BUG-204**: Removed the dead `MAX_RESULT_DIGITS` branch in
+  `check_result_value` (the saturating `as i64` cast made the digit
+  cap unreachable); `MAX_RESULT_VALUE` already gates overflow.
+- **BUG-205**: `perm(n, r)` and `comb(n, r)` now use base-1e9
+  big-integer arithmetic so results up to `MAX_PERM_COMB` are exact.
+  Values within the 53-bit f64 mantissa are returned as float; larger
+  values surface via the `__int_result__` sentinel.
+- **BUG-206**: `nextprime` and `prevprime` now enforce the
+  `MAX_PRIME` upper-bound guard that `isprime` already had, closing
+  a denial-of-service surface in the `math_eval` MCP tool.
+- **BUG-207**: `is_unit("b")` correctly resolves to `bit`; the
+  lowercase SI bit symbol is now an explicit alias in `UNIT_ALIASES`,
+  so the uppercase fallback no longer aliases it to byte `B`.
 
 ### Changed
 - Centralized MCP server identity and protocol constants in
@@ -51,6 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 - 33 `test_bug00{1..9}_*` regression tests in
   `eggsact/tests/calc/test_bug_regression.rs`.
+- 10 `test_bug2{01..07}_*` regression tests (Windows drive-letter
+  path normalization, RFC 6901 `/-` array pointer, object key-count
+  diff kind, dead digit-cap removal, perm/comb big-int precision,
+  prime upper-bound guard, lowercase `b` bit alias).
 - Cross-binary parity assertions in
   `eggsact/tests/parity/test_bug_fixes.rs`.
 - 168 edge-case tests in `eggsact/tests/mcp/test_edge_cases.rs`

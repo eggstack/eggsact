@@ -1,11 +1,12 @@
 use eggsact::text::line_range::line_range_extract;
 use eggsact::text::measure::char_category_metrics;
+use eggsact::text::path::path_normalize;
 use eggsact::text::position::text_position;
 use eggsact::text::replace::text_replace_check;
 use eggsact::text::toml::validate_toml;
 use eggsact::text::transform::text_transform;
 use eggsact::text::unicode_policy::unicode_policy_check;
-use eggsact::text::validate::regex_finditer;
+use eggsact::text::validate::{json_compare, json_extract, regex_finditer};
 
 // ─── BUG-007: detect_newline_style empty text ────────────────────────
 // Empty text must report "none", not "LF".
@@ -547,4 +548,78 @@ fn test_text_transform_mixed_case_operation_names() {
 
     let result = text_transform("hello world", &["TITLE_CASE".to_string()]);
     assert_eq!(result.text, "Hello World");
+}
+
+// ─── BUG-201: path_normalize duplicates drive letter on Windows paths ───
+// A drive-letter root like "C:" must appear exactly once after normalization;
+// the previous implementation emitted "C:C:\foo\bar" because the drive letter
+// was both kept as the first split component and then re-prepended.
+
+#[test]
+fn test_bug201_path_normalize_windows_drive_letter() {
+    let result = path_normalize("C:\\foo\\bar", "windows", true, false);
+    assert_eq!(
+        result.normalized, "C:\\foo\\bar",
+        "BUG-201: drive letter should not be duplicated, got: {:?}",
+        result.normalized
+    );
+    assert_eq!(
+        result.components,
+        vec!["C:".to_string(), "foo".to_string(), "bar".to_string()],
+        "BUG-201: components should include the drive letter once"
+    );
+}
+
+// ─── BUG-202: json_extract rejects RFC 6901 "after-last" array pointer "-" ───
+// RFC 6901 §4 defines "-" as a valid reference token referring to the
+// (non-existent) index past the end of an array. The previous implementation
+// reported `invalid_pointer_syntax` instead of treating it as out-of-range.
+
+#[test]
+fn test_bug202_json_extract_after_last_array_pointer() {
+    let result = json_extract("[1, 2, 3]", "/-", 1000).unwrap();
+    assert_eq!(
+        result.reason.as_deref(),
+        Some("index_out_of_range"),
+        "BUG-202: /- should report index_out_of_range, got: {:?}",
+        result.reason
+    );
+    assert_eq!(result.array_length, Some(3));
+    assert!(!result.found);
+}
+
+// ─── BUG-203: json_compare reports array_length_changed for object key count ───
+// When two objects are compared positionally with mismatched key counts,
+// the diff kind must identify it as an object (not array) change, and both
+// sides are still objects so `same_type` stays true.
+
+#[test]
+fn test_bug203_json_compare_object_key_count_changed() {
+    let a = r#"{"a":1}"#;
+    let b = r#"{"a":1,"b":2}"#;
+    let result = json_compare(a, b, false, false, false, false, false, 10).unwrap();
+    let key_diff: Vec<_> = result
+        .diffs
+        .iter()
+        .filter(|d| d.kind == "object_key_count_changed")
+        .collect();
+    assert!(
+        !key_diff.is_empty(),
+        "BUG-203: expected object_key_count_changed diff, got kinds: {:?}",
+        result.diffs.iter().map(|d| &d.kind).collect::<Vec<_>>()
+    );
+    let array_diff: Vec<_> = result
+        .diffs
+        .iter()
+        .filter(|d| d.kind == "array_length_changed")
+        .collect();
+    assert!(
+        array_diff.is_empty(),
+        "BUG-203: object diff must not be tagged array_length_changed, got: {:?}",
+        array_diff
+    );
+    assert!(
+        result.same_type,
+        "BUG-203: same_type should remain true when both values are objects"
+    );
 }

@@ -1352,6 +1352,10 @@ pub static UNIT_ALIASES: LazyLock<HashMap<&'static str, &'static str>> = LazyLoc
     m.insert("bytes", "B");
     m.insert("bit", "bit");
     m.insert("bits", "bit");
+    // BUG-207: lowercase "b" is the SI symbol for *bit*, distinct from
+    // uppercase "B" (byte). Register the explicit alias so the uppercase
+    // fallback doesn't alias "b" → byte.
+    m.insert("b", "bit");
     m.insert("KB", "KB");
     m.insert("kilobyte", "KB");
     m.insert("kilobytes", "KB");

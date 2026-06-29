@@ -31,7 +31,6 @@ impl std::fmt::Display for EvaluationError {
 const MAX_NESTING_DEPTH: usize = 100;
 const MAX_EXPONENT: f64 = 10_000.0;
 const MAX_RESULT_VALUE: f64 = 1e308;
-const MAX_RESULT_DIGITS: usize = 10000;
 const MAX_SHIFT_COUNT: usize = 50_000;
 const MAX_INPUT_LENGTH: usize = 10_000;
 // BUG-001 fix / parity B1: Python's `math.factorial` accepts arbitrarily
@@ -276,17 +275,12 @@ fn format_result(result: f64) -> Result<EvaluateResult, String> {
 }
 
 fn check_result_value(v: f64) -> Result<f64, EvaluationError> {
+    // BUG-204: the digit-length check against MAX_RESULT_DIGITS was unreachable
+    // because `v.abs() as i64` saturates at i64::MAX (19 digits), well below
+    // any reasonable digit cap. MAX_RESULT_VALUE above already gates overflow.
     if v.is_nan() || v.is_infinite() || v.abs() > MAX_RESULT_VALUE {
         Err(EvaluationError::ValueOverflow)
     } else {
-        // Check if integer part has too many digits
-        if v.abs() >= 1.0 && v.abs() < i64::MAX as f64 {
-            let int_part = v.abs() as i64;
-            let digits = int_part.to_string().len();
-            if digits > MAX_RESULT_DIGITS {
-                return Err(EvaluationError::ValueOverflow);
-            }
-        }
         Ok(v)
     }
 }
@@ -1156,11 +1150,14 @@ fn evaluate_function(
             if r > n {
                 return Ok(0.0);
             }
-            let mut result = 1.0;
+            // BUG-205: route through big-integer arithmetic so perm(n, r) is
+            // exact for n up to MAX_PERM_COMB. Surface via __int_result__ when
+            // the value exceeds 2^53 mantissa (where f64 would round).
+            let mut limbs: Vec<u64> = vec![1];
             for i in 0..r as u64 {
-                result *= (n as u64 - i) as f64;
+                multiply_in_place(&mut limbs, n as u64 - i);
             }
-            Ok(result)
+            bigint_or_float(limbs)
         }
         "comb" | "ncr" if args.len() == 2 => {
             let n = args[0] as i64;
@@ -1179,13 +1176,16 @@ fn evaluate_function(
             if r > n {
                 return Ok(0.0);
             }
+            // BUG-205: route through big-integer arithmetic. Interleave the
+            // multiply-by-(n-i) with the exact divide-by-(i+1) so the partial
+            // result never grows beyond n!.
             let r_small = r.min(n - r);
-            let mut result = 1.0;
+            let mut limbs: Vec<u64> = vec![1];
             for i in 0..r_small as u64 {
-                result *= (n as u64 - i) as f64;
-                result /= (i + 1) as f64;
+                multiply_in_place(&mut limbs, n as u64 - i);
+                divide_in_place(&mut limbs, i + 1);
             }
-            Ok(result)
+            bigint_or_float(limbs)
         }
 
         // ── GCD / LCM (variadic) ──
@@ -1466,7 +1466,10 @@ fn evaluate_function(
         }
         "nextprime" | "next_prime" if args.len() == 1 => {
             let n = args[0] as i64;
-            if args[0] != n as f64 || n < 0 {
+            // BUG-206: guard against inputs above MAX_PRIME so the
+            // O(sqrt(n)) trial-division loop can't be turned into a
+            // multi-second (or hung) MCP request.
+            if args[0] != n as f64 || !(0..=MAX_PRIME).contains(&n) {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "nextprime({}) out of range",
                     args[0]
@@ -1476,7 +1479,8 @@ fn evaluate_function(
         }
         "prevprime" | "prev_prime" if args.len() == 1 => {
             let n = args[0] as i64;
-            if args[0] != n as f64 || n <= 2 {
+            // BUG-206: same guard as nextprime/isprime.
+            if args[0] != n as f64 || n <= 2 || n > MAX_PRIME {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "prevprime({}) out of range",
                     args[0]
@@ -1766,6 +1770,15 @@ fn factorial_bigint(n: u64) -> String {
     for i in 2..=n {
         multiply_in_place(&mut limbs, i);
     }
+    limbs_to_string(&limbs)
+}
+
+/// Convert a base-1e9 little-endian big-integer limb vector to a decimal
+/// string.
+fn limbs_to_string(limbs: &[u64]) -> String {
+    if limbs.is_empty() {
+        return "0".to_string();
+    }
     let mut out = limbs.last().copied().unwrap_or(0).to_string();
     for &limb in limbs.iter().rev().skip(1) {
         out.push_str(&format!("{:09}", limb));
@@ -1774,6 +1787,24 @@ fn factorial_bigint(n: u64) -> String {
         out = "0".to_string();
     }
     out
+}
+
+/// BUG-205: take an exact big-integer result and return it either as an
+/// f64 (when the value fits exactly in the 53-bit mantissa) or via the
+/// __int_result__ sentinel (so the MCP layer reports it as type "int").
+fn bigint_or_float(limbs: Vec<u64>) -> Result<f64, EvaluationError> {
+    let s = limbs_to_string(&limbs);
+    // Check 2^53 mantissa by roundtripping through f64.
+    if let Ok(u) = s.parse::<u64>() {
+        let f = u as f64;
+        if f as u64 == u && f.is_finite() {
+            return Ok(f);
+        }
+    }
+    Err(EvaluationError::InvalidOperation(format!(
+        "__int_result__{}",
+        s
+    )))
 }
 
 /// Multiply a base-1e9 little-endian number by a small integer (<= BASE).
@@ -1789,6 +1820,23 @@ fn multiply_in_place(limbs: &mut Vec<u64>, multiplier: u64) {
         limbs.push(carry % 1_000_000_000);
         carry /= 1_000_000_000;
     }
+}
+
+/// Divide a base-1e9 little-endian number by a small integer. The caller
+/// must guarantee the divisor divides the value exactly (i.e. remainder is
+/// zero). Used by comb() to cancel the (i+1) factor at each iteration.
+fn divide_in_place(limbs: &mut Vec<u64>, divisor: u64) {
+    let mut remainder: u64 = 0;
+    for limb in limbs.iter_mut().rev() {
+        let combined = (remainder as u128) * 1_000_000_000u128 + (*limb as u128);
+        *limb = (combined / divisor as u128) as u64;
+        remainder = (combined % divisor as u128) as u64;
+    }
+    while limbs.len() > 1 && *limbs.last().unwrap() == 0 {
+        limbs.pop();
+    }
+    // Remainder is intentionally discarded; comb() guarantees exact division.
+    let _ = remainder;
 }
 
 fn gcd(a: i64, b: i64) -> i64 {

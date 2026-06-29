@@ -406,3 +406,95 @@ fn test_bug004_rect_pi_over_two_yields_imaginary() {
     assert!(val.contains("1)"));
     assert!(val.starts_with("(0"));
 }
+
+// ─── BUG-204: MAX_RESULT_DIGITS branch was unreachable dead code ────
+// After removing the constant, behavior should match Python's: large
+// integers within f64 range are accepted; only NaN/Inf/1e308 cause errors.
+
+#[test]
+fn test_bug204_no_dead_digit_branch() {
+    // BUG-004's existing assertion still holds after the dead branch removal:
+    // 21-digit finite values must be accepted.
+    let result = evaluate("99999999999999999999 + 1");
+    assert!(
+        result.is_ok(),
+        "BUG-204: 21-digit finite value should be accepted, got error: {:?}",
+        result.err()
+    );
+}
+
+// ─── BUG-205: perm/comb silently lose precision for n > ~170 ────────
+// perm/comb must now return exact big-integer results. Small values
+// stay as f64; large values surface as a __int_result__ sentinel so
+// the MCP layer reports type "int" instead of a rounded float.
+
+#[test]
+fn test_bug205_perm_exact_at_overflow_boundary() {
+    // perm(1000, 5) = 990034950024000 — fits exactly in f64.
+    // Before the fix, big results were silently rounded by f64; the new code
+    // returns exact bigint values, which `evaluate` formats as type "int"
+    // for any f64 that happens to be integer-valued.
+    let (val, ty) = evaluate("perm(1000, 5)").unwrap();
+    assert_eq!(
+        ty, "int",
+        "perm(1000, 5) is an integer-valued result, type should be 'int'"
+    );
+    assert_eq!(
+        val, "990034950024000",
+        "BUG-205: perm(1000, 5) should be exactly 990034950024000"
+    );
+}
+
+#[test]
+fn test_bug205_comb_exact_at_53bit_boundary() {
+    // comb(1000, 6) is a 17-digit integer — beyond 2^53 mantissa.
+    // Old code returned a rounded float; new code returns an int.
+    let (val, ty) = evaluate("comb(1000, 6)").unwrap();
+    assert_eq!(
+        ty, "int",
+        "BUG-205: comb(1000, 6) should surface as 'int', got type '{}' val={:?}",
+        ty, val
+    );
+    // Expected: 1000*999*998*997*996*995 / 720.
+    let expected: u128 = 1000 * 999 * 998 * 997 * 996 * 995 / 720;
+    let actual: u128 = val.parse().expect("int result should parse");
+    assert_eq!(
+        actual, expected,
+        "BUG-205: comb(1000, 6) should be exact"
+    );
+}
+
+// ─── BUG-206: nextprime/prevprime skip the MAX_PRIME upper-bound guard ───
+// Inputs > MAX_PRIME must now produce a hard error rather than running
+// an O(sqrt(n)) trial-division loop per candidate.
+
+#[test]
+fn test_bug206_nextprime_rejects_above_max_prime() {
+    // Use a value well above MAX_PRIME = 10^12.
+    let result = evaluate("nextprime(10000000000000)");
+    assert!(
+        result.is_err(),
+        "BUG-206: nextprime(1e13) should be rejected, got: {:?}",
+        result.ok()
+    );
+}
+
+#[test]
+fn test_bug206_prevprime_rejects_above_max_prime() {
+    let result = evaluate("prevprime(10000000000000)");
+    assert!(
+        result.is_err(),
+        "BUG-206: prevprime(1e13) should be rejected, got: {:?}",
+        result.ok()
+    );
+}
+
+#[test]
+fn test_bug206_isprime_still_rejects_above_max_prime() {
+    // Regression: isprime already enforced this guard.
+    let result = evaluate("isprime(10000000000000)");
+    assert!(
+        result.is_err(),
+        "isprime(1e13) should still be rejected"
+    );
+}

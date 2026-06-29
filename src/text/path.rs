@@ -390,7 +390,11 @@ pub fn path_normalize(
         if is_unc_track {
             normalized = format!("\\\\{}", normalized);
         } else if path.len() >= 2 && path.chars().nth(1) == Some(':') {
-            normalized = format!("{}{}", &path[..2], normalized);
+            // The drive letter is already embedded as the first component; strip
+            // it from the joined string before prepending so we don't duplicate.
+            let drive = &path[..2];
+            let tail = normalized.strip_prefix(drive).unwrap_or(normalized.as_str());
+            normalized = format!("{}{}", drive, tail);
         }
     }
 
