@@ -6,7 +6,7 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `server.rs` | ~4,000 | Protocol handling, tool dispatch |
+| `server.rs` | ~1,600 | Protocol handling, tool dispatch |
 | `registry.rs` | varies | Tool registration: ToolSpec declarations (single source of truth) |
 | `tools.rs` | varies | Tool implementation functions (thin wrappers) |
 | `schemas.rs` | varies | JSON-RPC types, ToolResponse, error sanitization |
