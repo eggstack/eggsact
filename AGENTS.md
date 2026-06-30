@@ -34,7 +34,8 @@ src/
     server.rs       # protocol orchestration, stdio loop, dispatch
     registry.rs     # tool registration (ToolSpec declarations, single source of truth)
     protocol.rs     # JSON-RPC types (Request, Response, Error, InitializeResult)
-    response.rs     # ToolResponse, error sanitization
+    response.rs     # ToolResponse, error sanitization, finding() helpers
+    machine_codes.rs # machine-readable response codes (single source of truth)
     runtime.rs      # rate limiter, constants, profile management
     schema_validation.rs # argument validation against tool schemas
     schemas.rs      # re-exports from protocol.rs and response.rs (backward compat)
@@ -73,6 +74,7 @@ Detailed architecture documentation is in `architecture/`:
 - `architecture/overview.md` — directory layout, dependency flow, constants
 - `architecture/calculator.md` — calculator core, NL pipeline, units, constants
 - `architecture/mcp-server.md` — MCP protocol, tool registration, categories, error handling
+- `architecture/machine-codes.md` — machine-readable response codes, finding helpers, severity/verdict constants
 - `architecture/text-library.md` — all 24 text modules, public API, code patterns
 
 ## Skills

@@ -9,6 +9,7 @@ pub mod test_error_structure;
 pub mod test_golden_fixtures;
 pub mod test_hardening_and_gaps;
 pub mod test_lifecycle_and_gaps;
+pub mod test_machine_codes;
 pub mod test_mcp_tools;
 pub mod test_protocol;
 pub mod test_real_tool_use;

@@ -73,6 +73,139 @@ pub fn sanitize_error(msg: &str) -> String {
     result
 }
 
+/// Structured finding severity levels.
+///
+/// These are string constants for use in finding construction helpers.
+/// They serialize as lowercase strings matching the wire format.
+pub mod severity {
+    /// Purely informational; no action required.
+    pub const INFO: &str = "info";
+    /// Minor concern; safe to act on but worth noting.
+    pub const LOW: &str = "low";
+    /// Caution required; may need review before acting.
+    pub const MEDIUM: &str = "medium";
+    /// Significant concern; likely requires investigation.
+    pub const HIGH: &str = "high";
+    /// Critical issue; do not act without resolving.
+    pub const CRITICAL: &str = "critical";
+}
+
+/// Structured finding disposition values.
+pub mod disposition {
+    /// Informational only; no blocking behavior.
+    pub const INFORMATIONAL: &str = "informational";
+    /// Caution — user or model should review before acting.
+    pub const CAUTION: &str = "caution";
+    /// Blocking — tool result should not be acted upon.
+    pub const BLOCKING: &str = "blocking";
+}
+
+/// Composite tool verdict constants.
+pub mod verdict {
+    /// Allowed / safe to proceed.
+    pub const ALLOW: &str = "allow";
+    /// Needs human or model review before proceeding.
+    pub const REVIEW: &str = "review";
+    /// Blocked — do not proceed.
+    pub const BLOCK: &str = "block";
+
+    /// Config is valid.
+    pub const VALID: &str = "valid";
+    /// Config is valid but has warnings.
+    pub const VALID_WITH_WARNINGS: &str = "valid_with_warnings";
+    /// Config is invalid.
+    pub const INVALID: &str = "invalid";
+
+    /// Safe to apply.
+    pub const SAFE_TO_APPLY: &str = "safe_to_apply";
+    /// Safe with warnings.
+    pub const SAFE_WITH_WARNINGS: &str = "safe_with_warnings";
+}
+
+/// Create a structured finding as a `serde_json::Value`.
+///
+/// Findings are serialized as JSON objects with standard fields:
+/// `code`, `severity`, `message`, and optionally `location`, `details`.
+///
+/// # Arguments
+///
+/// * `code` — Machine code constant (e.g. `AMBIGUOUS_REPLACEMENT`).
+/// * `severity` — Severity level (`severity::INFO`, etc.).
+/// * `message` — Human-readable description of the finding.
+/// * `details` — Optional additional structured data.
+pub fn finding(
+    code: &str,
+    severity: &str,
+    message: &str,
+    details: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut f = serde_json::json!({
+        "code": code,
+        "severity": severity,
+        "message": message,
+    });
+    if let Some(d) = details {
+        f["details"] = d;
+    }
+    f
+}
+
+/// Create a structured finding with a source location.
+///
+/// # Arguments
+///
+/// * `code` — Machine code constant.
+/// * `severity` — Severity level.
+/// * `message` — Human-readable description.
+/// * `line` — 1-indexed line number.
+/// * `column` — 1-indexed column number (optional).
+pub fn finding_with_location(
+    code: &str,
+    severity: &str,
+    message: &str,
+    line: usize,
+    column: Option<usize>,
+) -> serde_json::Value {
+    let mut loc = serde_json::json!({
+        "line": line,
+    });
+    if let Some(c) = column {
+        loc["column"] = serde_json::json!(c);
+    }
+    serde_json::json!({
+        "code": code,
+        "severity": severity,
+        "message": message,
+        "location": loc,
+    })
+}
+
+/// Create a finding for a prompt input inspection check.
+///
+/// These findings have a `span` field instead of `location`.
+pub fn prompt_finding(
+    code: &str,
+    severity: &str,
+    message: &str,
+    byte_offset: usize,
+    end_byte_offset: usize,
+    details: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut f = serde_json::json!({
+        "code": code,
+        "severity": severity,
+        "message": message,
+        "span": {
+            "byte_offset": byte_offset,
+            "end_byte_offset": end_byte_offset,
+        },
+    });
+    if let Some(d) = details {
+        f["details"] = d;
+    }
+    f
+}
+
 #[derive(Serialize, Debug)]
 pub struct ToolResponse {
     pub ok: bool,
@@ -138,6 +271,67 @@ impl ToolResponse {
             limits_applied: None,
             findings: None,
             machine_code: None,
+            recommended_next_tool: None,
+        }
+    }
+
+    /// Create an error response with a machine code.
+    ///
+    /// This is the preferred constructor for non-OK tool responses. It ensures
+    /// every error carries a stable machine-readable code.
+    ///
+    /// # Arguments
+    ///
+    /// * `error_type` — Coarse error category (legacy, kept for compat).
+    /// * `machine_code` — Stable machine code from `machine_codes` module.
+    /// * `error` — Human-readable error message.
+    /// * `hints` — Optional help text for the caller.
+    /// * `tool` — Optional tool name.
+    pub fn error_with_code(
+        error_type: &str,
+        machine_code: &str,
+        error: &str,
+        hints: Option<Vec<String>>,
+        tool: Option<&str>,
+    ) -> Self {
+        Self {
+            ok: false,
+            tool: tool.map(String::from),
+            result: None,
+            error_type: Some(error_type.to_string()),
+            error: Some(sanitize_error(error)),
+            hints: Some(
+                hints
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|h| sanitize_error(&h))
+                    .collect(),
+            ),
+            warnings: Some(vec![]),
+            limits_applied: None,
+            findings: None,
+            machine_code: Some(machine_code.to_string()),
+            recommended_next_tool: None,
+        }
+    }
+
+    /// Create a success response with a machine code.
+    pub fn success_with_machine_code(
+        result: serde_json::Value,
+        tool: Option<&str>,
+        machine_code: &str,
+    ) -> Self {
+        Self {
+            ok: true,
+            tool: tool.map(String::from),
+            result: Some(result),
+            error_type: None,
+            error: None,
+            hints: None,
+            warnings: None,
+            limits_applied: None,
+            findings: None,
+            machine_code: Some(machine_code.to_string()),
             recommended_next_tool: None,
         }
     }

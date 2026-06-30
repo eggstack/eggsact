@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
@@ -251,9 +252,9 @@ pub fn identifier_inspect(args: &Value) -> ToolResponse {
         resp = resp.with_findings(envelope_findings);
     }
     if has_collisions {
-        resp = resp.with_machine_code("IDENT_COLLISIONS");
+        resp = resp.with_machine_code(machine_codes::IDENT_COLLISIONS);
     } else if has_invalid {
-        resp = resp.with_machine_code("IDENT_INVALID");
+        resp = resp.with_machine_code(machine_codes::IDENT_INVALID);
     }
     resp
 }
@@ -498,9 +499,9 @@ pub fn identifier_table_inspect(args: &Value) -> ToolResponse {
     }
 
     if has_reserved {
-        resp = resp.with_machine_code("RESERVED_KEYWORDS");
+        resp = resp.with_machine_code(machine_codes::RESERVED_KEYWORDS);
     } else if has_collisions {
-        resp = resp.with_machine_code("IDENT_COLLISIONS");
+        resp = resp.with_machine_code(machine_codes::IDENT_COLLISIONS);
     }
     resp
 }

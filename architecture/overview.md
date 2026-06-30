@@ -17,6 +17,7 @@ eggsact/
 │   │   ├── response.rs     # ToolResponse, error sanitization
 │   │   ├── runtime.rs      # Rate limiter, constants, profile management
 │   │   ├── schema_validation.rs # Argument validation
+│   │   ├── machine_codes.rs # Machine-readable response codes
 │   │   └── schemas.rs      # Re-exports for backward compatibility
 │   ├── tools/              # MCP tool implementations (by category)
 │   │   ├── helpers.rs      # Shared constants, utilities

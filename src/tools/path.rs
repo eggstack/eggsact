@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
@@ -127,9 +128,9 @@ pub fn path_analyze(args: &Value) -> ToolResponse {
         }));
     }
     let machine_code = if has_traversal {
-        Some("PATH_HAS_TRAVERSAL")
+        Some(machine_codes::PATH_HAS_TRAVERSAL)
     } else if is_hidden {
-        Some("PATH_IS_HIDDEN")
+        Some(machine_codes::PATH_IS_HIDDEN)
     } else {
         None
     };

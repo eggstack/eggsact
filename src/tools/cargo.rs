@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
@@ -83,9 +84,9 @@ pub fn cargo_toml_inspect(args: &Value) -> ToolResponse {
         resp = resp.with_findings(envelope_findings);
     }
     if !parse_ok {
-        resp = resp.with_machine_code("CARGO_PARSE_FAILED");
+        resp = resp.with_machine_code(machine_codes::CARGO_PARSE_FAILED);
     } else if has_findings {
-        resp = resp.with_machine_code("CARGO_HAS_FINDINGS");
+        resp = resp.with_machine_code(machine_codes::CARGO_HAS_FINDINGS);
     }
     resp
 }

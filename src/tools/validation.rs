@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::text::{CheckBracketsResult, ValidateJsonResult};
 use crate::tools::helpers::*;
@@ -141,7 +142,7 @@ pub fn validate_json(args: &Value) -> ToolResponse {
                 vec![]
             };
             let machine_code = if !result.valid {
-                Some("JSON_INVALID".to_string())
+                Some(machine_codes::JSON_INVALID.to_string())
             } else {
                 None
             };

@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::protocol::{JsonRpcError, JsonRpcErrorDetail, JsonRpcRequest, JsonRpcResponse};
 use crate::mcp::registry;
 use crate::mcp::response::{sanitize_error, ToolResponse};
@@ -577,8 +578,9 @@ async fn handle_request_async(
                 if cancelled_set.contains(id) {
                     // Remove from cancelled set so reuse of same id won't re-trigger
                     cancelled_set.remove(id);
-                    return Some(wrap_tool_response(&ToolResponse::error(
+                    return Some(wrap_tool_response(&ToolResponse::error_with_code(
                         "cancelled",
+                        machine_codes::CANCELLED,
                         &format!("Tool '{}' request was cancelled", name),
                         None,
                         Some(name),
@@ -643,16 +645,18 @@ async fn handle_request_async(
                     // Check output size
                     let output = python_json_dumps(&tool_response);
                     if output.is_empty() {
-                        Some(wrap_tool_response(&ToolResponse::error(
+                        Some(wrap_tool_response(&ToolResponse::error_with_code(
                             "serialization_error",
+                            machine_codes::SERIALIZATION_ERROR,
                             "Failed to serialize tool response",
                             None,
                             Some(&name_owned),
                         )))
                     } else if output.len() > MAX_OUTPUT_BYTES {
                         Some(wrap_tool_response(
-                            &ToolResponse::error(
+                            &ToolResponse::error_with_code(
                                 "output_too_large",
+                                machine_codes::OUTPUT_TOO_LARGE,
                                 &format!(
                                     "Output exceeds {} bytes and was truncated",
                                     MAX_OUTPUT_BYTES
@@ -679,8 +683,9 @@ async fn handle_request_async(
                     ),
                     request.id.clone(),
                 )),
-                Err(_timeout) => Some(wrap_tool_response(&ToolResponse::error(
+                Err(_timeout) => Some(wrap_tool_response(&ToolResponse::error_with_code(
                     "timeout",
+                    machine_codes::TIMEOUT,
                     &format!(
                         "Tool '{}' execution timed out after {}s",
                         name_owned, MAX_TOOL_TIMEOUT_SECONDS

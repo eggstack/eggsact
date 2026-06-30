@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::response::ToolResponse;
 use crate::text::measure::{char_category_metrics, word_metrics};
 use crate::text::position::{TextPositionResult, TextWindowPosition, TextWindowResult};
@@ -1733,11 +1734,11 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
             .filter_map(|f| f.get("code").and_then(|c| c.as_str()))
             .collect();
         if codes.contains("CONFUSABLE_CHAR") {
-            machine_code = Some("CONFUSABLES_DETECTED".to_string());
+            machine_code = Some(machine_codes::CONFUSABLES_DETECTED.to_string());
         } else if codes.contains("BIDI_CONTROL") {
-            machine_code = Some("BIDI_DETECTED".to_string());
+            machine_code = Some(machine_codes::BIDI_DETECTED.to_string());
         } else if codes.contains("INVISIBLE_CHAR") {
-            machine_code = Some("INVISIBLES_DETECTED".to_string());
+            machine_code = Some(machine_codes::INVISIBLES_DETECTED.to_string());
         }
     }
 
@@ -2959,7 +2960,7 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
 
     let mut subresults: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut all_findings: Vec<serde_json::Value> = Vec::new();
-    let mut machine_codes: Vec<String> = Vec::new();
+    let mut code_list: Vec<String> = Vec::new();
 
     // Helper to safely call sub-tools and record errors (matching Python's try/except pattern)
     let store_subresult = |subresults: &mut serde_json::Map<String, serde_json::Value>,
@@ -3003,8 +3004,8 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         // Check invisibles (Python extracts inv from result["invisibles"])
         if let Some(inv) = r.get("invisibles").and_then(|v| v.as_array()) {
             if !inv.is_empty() {
-                if !machine_codes.contains(&"UNICODE_RISK".to_string()) {
-                    machine_codes.push("UNICODE_RISK".to_string());
+                if !code_list.contains(&machine_codes::UNICODE_RISK.to_string()) {
+                    code_list.push(machine_codes::UNICODE_RISK.to_string());
                 }
                 all_findings.push(serde_json::json!({
                     "code": "HIDDEN_CHARS",
@@ -3016,8 +3017,8 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         // Check confusables
         if let Some(conf) = r.get("confusables").and_then(|v| v.as_array()) {
             if !conf.is_empty() {
-                if !machine_codes.contains(&"UNICODE_RISK".to_string()) {
-                    machine_codes.push("UNICODE_RISK".to_string());
+                if !code_list.contains(&machine_codes::UNICODE_RISK.to_string()) {
+                    code_list.push(machine_codes::UNICODE_RISK.to_string());
                 }
                 all_findings.push(serde_json::json!({
                     "code": "CONFUSABLES",
@@ -3058,8 +3059,8 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                     "severity": sev,
                     "message": msg,
                 }));
-                if sev == "error" && !machine_codes.contains(&"UNICODE_RISK".to_string()) {
-                    machine_codes.push("UNICODE_RISK".to_string());
+                if sev == "error" && !code_list.contains(&machine_codes::UNICODE_RISK.to_string()) {
+                    code_list.push(machine_codes::UNICODE_RISK.to_string());
                 }
             }
         }
@@ -3082,8 +3083,8 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                 "form": normalize,
             }),
         );
-        if changed && !machine_codes.contains(&"NORMALIZATION_DIFF".to_string()) {
-            machine_codes.push("NORMALIZATION_DIFF".to_string());
+        if changed && !code_list.contains(&machine_codes::NORMALIZATION_DIFF.to_string()) {
+            code_list.push(machine_codes::NORMALIZATION_DIFF.to_string());
         }
     }
     // 4. If policy is "prompt", "markdown", or "default", call prompt_input_inspect
@@ -3115,9 +3116,9 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                 if pi_findings.iter().any(|f| {
                     let sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("");
                     sev == "warn" || sev == "error"
-                }) && !machine_codes.contains(&"PROMPT_INJECTION_RISK".to_string())
+                }) && !code_list.contains(&machine_codes::PROMPT_INJECTION_RISK.to_string())
                 {
-                    machine_codes.push("PROMPT_INJECTION_RISK".to_string());
+                    code_list.push(machine_codes::PROMPT_INJECTION_RISK.to_string());
                 }
             }
         }
@@ -3168,8 +3169,8 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                             "message": msg,
                         }));
                     }
-                    if !machine_codes.contains(&"IDENTIFIER_COLLISION_RISK".to_string()) {
-                        machine_codes.push("IDENTIFIER_COLLISION_RISK".to_string());
+                    if !code_list.contains(&machine_codes::IDENTIFIER_COLLISION_RISK.to_string()) {
+                        code_list.push(machine_codes::IDENTIFIER_COLLISION_RISK.to_string());
                     }
                 }
             }
@@ -3193,13 +3194,13 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
 
     // Deduplicate machine codes
     let mut unique_machine_codes: Vec<String> = Vec::new();
-    for mc in &machine_codes {
+    for mc in &code_list {
         if !unique_machine_codes.contains(mc) {
             unique_machine_codes.push(mc.clone());
         }
     }
     let primary_machine_code = if unique_machine_codes.is_empty() {
-        "TEXT_SECURITY_OK".to_string()
+        machine_codes::TEXT_SECURITY_OK.to_string()
     } else {
         unique_machine_codes[0].clone()
     };
@@ -3841,9 +3842,9 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
             .iter()
             .any(|c| c == "HIDDEN_CHAR" || c == "BIDI_CONTROL" || c == "ANSI_ESCAPE")
         {
-            machine_code = Some("PROMPT_HIDDEN_CONTENT".to_string());
+            machine_code = Some(machine_codes::PROMPT_HIDDEN_CONTENT.to_string());
         } else {
-            machine_code = Some("PROMPT_HAS_FLAGS".to_string());
+            machine_code = Some(machine_codes::PROMPT_HAS_FLAGS.to_string());
         }
     }
 

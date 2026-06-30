@@ -31,8 +31,12 @@ The server communicates over stdin/stdout using newline-delimited JSON-RPC 2.0 m
 ### Error Response Format
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"ok\": false, \"tool\": \"math_eval\", \"error_type\": \"input_too_large\", \"error\": \"Expression length 10001 exceeds MAX_EXPRESSION_LENGTH 10000\", \"hints\": [\"Reduce expression length\"]}"}],"isError":true}}
+{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"ok\": false, \"tool\": \"math_eval\", \"error_type\": \"input_too_large\", \"machine_code\": \"INPUT_TOO_LARGE\", \"error\": \"Expression length 10001 exceeds MAX_EXPRESSION_LENGTH 10000\", \"hints\": [\"Reduce expression length\"]}"}],"isError":true}}
 ```
+
+### Machine Codes
+
+Every non-OK tool response includes a `machine_code` field with a stable, machine-readable code from `src/mcp/machine_codes.rs`. Codes enable programmatic routing (retry, skip, escalate) without parsing human-readable error messages. Structured findings use `code`, `severity`, and `message` fields — see `architecture/machine-codes.md` for the full code table, finding helpers, and design rationale.
 
 ### Server Error Format (JSON-RPC level)
 

@@ -64,6 +64,12 @@ Run parity tests:
 cargo test --test lib parity
 ```
 
+## Machine Code Enforcement
+
+The test `test_all_tool_responses_have_machine_code` verifies that every non-OK `ToolResponse` includes a `machine_code` field. If you add a new error path, ensure it uses `error_with_code()` or `.with_machine_code()` — the test will catch missing codes.
+
+See `architecture/machine-codes.md` for the full list of machine codes.
+
 ## Edge Case Test Coverage
 
 `tests/mcp/test_edge_cases.rs` (168 tests) covers:

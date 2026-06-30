@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
@@ -397,7 +398,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     let ok_to_apply = !has_error;
 
     // Determine machine_code and recommended_next_tool (matching Python's first-inserted-wins)
-    let mut machine_codes: Vec<String> = Vec::new();
+    let mut code_list: Vec<String> = Vec::new();
     let mut recommended_next: Option<String> = None;
 
     let has_no_match = findings
@@ -420,30 +421,32 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
         .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("INVALID_RANGE"));
 
     if has_no_match || has_multiple {
-        machine_codes.push("AMBIGUOUS_REPLACEMENT".to_string());
+        code_list.push(machine_codes::AMBIGUOUS_REPLACEMENT.to_string());
         recommended_next = Some("text_diff_explain".to_string());
     }
-    if (has_patch_fail || has_patch_error) && !machine_codes.contains(&"PATCH_FAILED".to_string()) {
-        machine_codes.push("PATCH_FAILED".to_string());
+    if (has_patch_fail || has_patch_error)
+        && !code_list.contains(&machine_codes::PATCH_FAILED.to_string())
+    {
+        code_list.push(machine_codes::PATCH_FAILED.to_string());
     }
-    if has_invalid_range && !machine_codes.contains(&"LINE_RANGE_INVALID".to_string()) {
-        machine_codes.push("LINE_RANGE_INVALID".to_string());
+    if has_invalid_range && !code_list.contains(&machine_codes::LINE_RANGE_INVALID.to_string()) {
+        code_list.push(machine_codes::LINE_RANGE_INVALID.to_string());
     }
     if has_fingerprint {
-        if !machine_codes.contains(&"FINGERPRINT_MISMATCH".to_string()) {
-            machine_codes.push("FINGERPRINT_MISMATCH".to_string());
+        if !code_list.contains(&machine_codes::FINGERPRINT_MISMATCH.to_string()) {
+            code_list.push(machine_codes::FINGERPRINT_MISMATCH.to_string());
         }
         if recommended_next.is_none() {
             recommended_next = Some("text_diff_explain".to_string());
         }
     }
-    if has_error && machine_codes.is_empty() {
-        machine_codes.push("EDIT_FAILED".to_string());
+    if has_error && code_list.is_empty() {
+        code_list.push(machine_codes::EDIT_FAILED.to_string());
     }
-    if machine_codes.is_empty() {
-        machine_codes.push("EDIT_OK".to_string());
+    if code_list.is_empty() {
+        code_list.push(machine_codes::EDIT_OK.to_string());
     }
-    let machine_code_str = machine_codes[0].clone();
+    let machine_code_str = code_list[0].clone();
 
     // Build summary
     let summary = if ok_to_apply {

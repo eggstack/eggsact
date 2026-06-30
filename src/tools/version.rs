@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
@@ -171,9 +172,9 @@ pub fn version_constraint_check(args: &Value) -> ToolResponse {
         resp = resp.with_findings(envelope_findings);
     }
     if !satisfies {
-        resp = resp.with_machine_code("CONSTRAINT_NOT_SATISFIED");
+        resp = resp.with_machine_code(machine_codes::CONSTRAINT_NOT_SATISFIED);
     } else if has_note {
-        resp = resp.with_machine_code("CONSTRAINT_NOTE");
+        resp = resp.with_machine_code(machine_codes::CONSTRAINT_NOTE);
     }
     resp
 }

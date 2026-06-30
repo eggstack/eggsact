@@ -85,6 +85,10 @@ Start the server and connect via JSON-RPC 2.0 over stdio. The server identifies 
 eggsact --mcp
 ```
 
+## Response Contract
+
+Every MCP tool response includes a `machine_code` field (when non-OK) for programmatic routing and classification. Machine codes are defined in `src/mcp/machine_codes.rs`. See `architecture/machine-codes.md` for the full code table and finding helpers.
+
 ## MCP Tools
 
 64 tools across 16 categories. See `architecture/mcp-server.md` for the full reference.

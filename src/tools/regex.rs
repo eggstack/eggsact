@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
@@ -293,7 +294,7 @@ pub fn regex_safety_check_tool(args: &Value) -> ToolResponse {
         .collect();
 
     let machine_code = if risk == "medium" || risk == "high" {
-        Some("REGEX_UNSAFE".to_string())
+        Some(machine_codes::REGEX_UNSAFE.to_string())
     } else {
         None
     };

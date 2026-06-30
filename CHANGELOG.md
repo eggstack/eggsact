@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Phase 3: Stable Response Contracts and Machine Codes**. Every non-OK tool
+  response now carries a machine-readable `machine_code` for programmatic
+  routing.
+  - New `src/mcp/machine_codes.rs` module: single source of truth for all
+    57 machine code constants (UPPER_SNAKE_CASE, parity-compatible with
+    Python `eggcalc`).
+  - New `ToolResponse::error_with_code()` constructor that requires a
+    machine code, ensuring error responses are always machine-routable.
+  - New `ToolResponse::success_with_machine_code()` convenience.
+  - New finding helpers in `src/mcp/response.rs`: `finding()`,
+    `finding_with_location()`, `prompt_finding()` for structured findings
+    with `code`, `severity`, `message`, and `location`/`span`.
+  - New `severity`, `disposition`, and `verdict` constant modules for
+    finding metadata.
+  - All tool files migrated from string-literal machine codes to
+    `machine_codes::*` constants (zero scattered string literals remain).
+  - MCP server-level errors (cancelled, timeout, output_too_large,
+    serialization_error) now carry machine codes.
+  - `helpers.rs` validation error paths now use `error_with_code` with
+    `INVALID_ARGUMENTS` or `INPUT_TOO_LARGE`.
+  - 22 new tests in `tests/mcp/test_machine_codes.rs` covering constants
+    validity, constructor behavior, finding shape, and machine code
+    presence on composite tools.
+  - New `architecture/machine-codes.md` reference doc with full code table,
+    finding helpers, severity/disposition/verdict constants, and composite
+    tool verdict patterns.
+  - Updated `architecture/mcp-server.md`, `.skills/mcp-tools.md`,
+    `.skills/testing.md`, `README.md`, `docs/mcp-tools.md`, and `AGENTS.md`
+    to document the new response contract.
+
 ### Fixed
 - **BUG-001 / B1**: Raised `MAX_FACTORIAL` from 170 → 1000 to match
   Python's `math.factorial` upper bound.

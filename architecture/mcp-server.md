@@ -115,18 +115,43 @@ Defined in `src/mcp/runtime.rs`:
 - `MAX_TOOL_TIMEOUT_SECONDS`: 30
 - `MAX_TOOL_WORKERS`: 16
 
-## Error Handling
+## Response Contract
 
-Tool errors return `ToolResponse` (defined in `src/mcp/response.rs`) with `ok: false`:
+Every tool call returns a `ToolResponse` (defined in `src/mcp/response.rs`) with 11 fields:
+
+| Field | Type | When present |
+|-------|------|-------------|
+| `ok` | bool | always |
+| `tool` | string | always |
+| `result` | object | `ok=true` |
+| `error_type` | string | `ok=false` |
+| `error` | string | `ok=false` |
+| `hints` | string[] | `ok=false` |
+| `warnings` | string[] | optional |
+| `limits_applied` | string[] | optional |
+| `findings` | object[] | optional |
+| `machine_code` | string | when set |
+| `recommended_next_tool` | object | optional |
+
+### Error Responses
+
+Non-OK responses use `ToolResponse::error_with_code()` to include a machine-readable code from `src/mcp/machine_codes.rs`:
 ```json
 {
   "ok": false,
   "tool": "math_eval",
   "error_type": "evaluation_error",
+  "machine_code": "EVALUATION_ERROR",
   "error": "Division by zero",
   "hints": ["Check for zero denominators"]
 }
 ```
+
+### Machine Codes
+
+All machine code constants live in `src/mcp/machine_codes.rs`. See `architecture/machine-codes.md` for the full code table, finding helpers, severity/disposition/verdict constants, and composite tool verdict patterns.
+
+### JSON-RPC Level Errors
 
 JSON-RPC level errors use standard codes (constructed in `src/mcp/protocol.rs`):
 - `-32601`: Method not found

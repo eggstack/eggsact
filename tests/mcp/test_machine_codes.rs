@@ -1,0 +1,466 @@
+//! Tests for machine code infrastructure.
+//!
+//! Verifies:
+//! - Machine code constants are valid and non-empty
+//! - `ToolResponse::error_with_code` produces correct output
+//! - `finding()`, `finding_with_location()`, `prompt_finding()` helpers produce correct output
+//! - Non-OK tool responses include `machine_code`
+//! - Machine code constants match the `ALL` array
+
+use eggsact::mcp::machine_codes;
+use eggsact::mcp::response::{finding, finding_with_location, prompt_finding, ToolResponse};
+use serde_json::Value;
+use std::io::Write;
+use std::process::{Command, Stdio};
+
+fn call_tool(name: &str, args: Value) -> Value {
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {"name": name, "arguments": args},
+        "id": 1
+    })
+    .to_string();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(request.as_bytes()).unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    let response_str = String::from_utf8_lossy(&output.stdout);
+    let response: Value =
+        serde_json::from_str(&response_str).expect("Failed to parse JSON-RPC response");
+    if let Some(content) = response
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c.as_array())
+    {
+        if let Some(first) = content.first() {
+            if let Some(text) = first.get("text").and_then(|t| t.as_str()) {
+                return serde_json::from_str(text).unwrap_or(Value::Null);
+            }
+        }
+    }
+    response.get("result").cloned().unwrap_or(Value::Null)
+}
+
+fn call_tool_error(name: &str, args: Value) -> Value {
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {"name": name, "arguments": args},
+        "id": 1
+    })
+    .to_string();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(request.as_bytes()).unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    let response_str = String::from_utf8_lossy(&output.stdout);
+    let response: Value =
+        serde_json::from_str(&response_str).expect("Failed to parse JSON-RPC response");
+    if let Some(content) = response
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c.as_array())
+    {
+        if let Some(first) = content.first() {
+            if let Some(text) = first.get("text").and_then(|t| t.as_str()) {
+                return serde_json::from_str(text).unwrap_or(Value::Null);
+            }
+        }
+    }
+    response.get("result").cloned().unwrap_or(Value::Null)
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MACHINE CODE CONSTANTS
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_machine_code_constants_are_non_empty() {
+    for code in machine_codes::ALL {
+        assert!(
+            !code.is_empty(),
+            "Machine code constant should not be empty"
+        );
+        assert!(
+            code.chars().all(|c| c.is_ascii_uppercase() || c == '_'),
+            "Machine code '{}' should be UPPER_SNAKE_CASE",
+            code
+        );
+    }
+}
+
+#[test]
+fn test_machine_code_all_contains_key_codes() {
+    let all: Vec<&str> = machine_codes::ALL.to_vec();
+    let expected = vec![
+        machine_codes::OK,
+        machine_codes::CANCELLED,
+        machine_codes::TIMEOUT,
+        machine_codes::OUTPUT_TOO_LARGE,
+        machine_codes::INPUT_TOO_LARGE,
+        machine_codes::SERIALIZATION_ERROR,
+        machine_codes::INVALID_ARGUMENTS,
+        machine_codes::EDIT_OK,
+        machine_codes::EDIT_FAILED,
+        machine_codes::AMBIGUOUS_REPLACEMENT,
+        machine_codes::COMMAND_OK,
+        machine_codes::SHELL_RISK,
+        machine_codes::JSON_INVALID,
+        machine_codes::DATA_EQUAL,
+        machine_codes::DATA_DIFF,
+        machine_codes::PATH_HAS_TRAVERSAL,
+        machine_codes::PATH_IS_HIDDEN,
+        machine_codes::CONFIG_OK,
+        machine_codes::IDENT_COLLISIONS,
+        machine_codes::INVISIBLES_DETECTED,
+        machine_codes::CONFUSABLES_DETECTED,
+        machine_codes::BIDI_DETECTED,
+        machine_codes::TEXT_SECURITY_OK,
+        machine_codes::PROMPT_HIDDEN_CONTENT,
+        machine_codes::REGEX_UNSAFE,
+        machine_codes::CONSTRAINT_NOTE,
+        machine_codes::CONSTRAINT_NOT_SATISFIED,
+        machine_codes::CARGO_PARSE_FAILED,
+    ];
+    for code in &expected {
+        assert!(all.contains(code), "ALL array should contain '{}'", code);
+    }
+}
+
+#[test]
+fn test_severity_constants_are_distinct() {
+    let severities = [
+        machine_codes::severity::INFO,
+        machine_codes::severity::LOW,
+        machine_codes::severity::MEDIUM,
+        machine_codes::severity::HIGH,
+        machine_codes::severity::CRITICAL,
+    ];
+    for s in &severities {
+        assert!(!s.is_empty());
+    }
+    let mut sorted = severities.to_vec();
+    sorted.sort();
+    sorted.dedup();
+    assert_eq!(
+        sorted.len(),
+        severities.len(),
+        "Severity constants should be distinct"
+    );
+}
+
+#[test]
+fn test_disposition_constants_are_distinct() {
+    let dispositions = [
+        machine_codes::disposition::INFORMATIONAL,
+        machine_codes::disposition::CAUTION,
+        machine_codes::disposition::BLOCKING,
+    ];
+    for d in &dispositions {
+        assert!(!d.is_empty());
+    }
+    let mut sorted = dispositions.to_vec();
+    sorted.sort();
+    sorted.dedup();
+    assert_eq!(
+        sorted.len(),
+        dispositions.len(),
+        "Disposition constants should be distinct"
+    );
+}
+
+#[test]
+fn test_verdict_constants_are_distinct() {
+    let verdicts = [
+        machine_codes::verdict::ALLOW,
+        machine_codes::verdict::REVIEW,
+        machine_codes::verdict::BLOCK,
+        machine_codes::verdict::VALID,
+        machine_codes::verdict::VALID_WITH_WARNINGS,
+        machine_codes::verdict::INVALID,
+        machine_codes::verdict::SAFE_TO_APPLY,
+        machine_codes::verdict::SAFE_WITH_WARNINGS,
+    ];
+    for v in &verdicts {
+        assert!(!v.is_empty());
+    }
+    let mut sorted = verdicts.to_vec();
+    sorted.sort();
+    sorted.dedup();
+    assert_eq!(
+        sorted.len(),
+        verdicts.len(),
+        "Verdict constants should be distinct"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TOOL RESPONSE CONSTRUCTORS
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_error_with_code_sets_machine_code() {
+    let resp = ToolResponse::error_with_code(
+        "invalid_arguments",
+        machine_codes::INVALID_ARGUMENTS,
+        "Bad arg",
+        Some(vec!["Fix it".to_string()]),
+        Some("math_eval"),
+    );
+    assert!(!resp.ok);
+    assert_eq!(resp.machine_code.as_deref(), Some("INVALID_ARGUMENTS"));
+    assert_eq!(resp.error_type.as_deref(), Some("invalid_arguments"));
+    assert!(resp.error.unwrap().contains("Bad arg"));
+}
+
+#[test]
+fn test_error_without_code_has_no_machine_code() {
+    let resp = ToolResponse::error(
+        "evaluation_error",
+        "Division by zero",
+        None,
+        Some("math_eval"),
+    );
+    assert!(!resp.ok);
+    assert_eq!(resp.machine_code, None);
+}
+
+#[test]
+fn test_success_with_machine_code() {
+    let resp = ToolResponse::success_with_machine_code(
+        serde_json::json!({"value": 42}),
+        Some("math_eval"),
+        machine_codes::OK,
+    );
+    assert!(resp.ok);
+    assert_eq!(resp.machine_code.as_deref(), Some("OK"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// FINDING HELPERS
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_finding_creates_correct_shape() {
+    let f = finding(
+        machine_codes::AMBIGUOUS_REPLACEMENT,
+        machine_codes::severity::MEDIUM,
+        "Multiple matches found",
+        None,
+    );
+    assert_eq!(f["code"].as_str(), Some("AMBIGUOUS_REPLACEMENT"));
+    assert_eq!(f["severity"].as_str(), Some("medium"));
+    assert_eq!(f["message"].as_str(), Some("Multiple matches found"));
+    assert!(f.get("details").is_none());
+}
+
+#[test]
+fn test_finding_with_details() {
+    let details = serde_json::json!({"match_count": 3});
+    let f = finding(
+        machine_codes::AMBIGUOUS_REPLACEMENT,
+        machine_codes::severity::MEDIUM,
+        "Multiple matches found",
+        Some(details),
+    );
+    assert_eq!(f["details"]["match_count"].as_i64(), Some(3));
+}
+
+#[test]
+fn test_finding_with_location_creates_correct_shape() {
+    let f = finding_with_location(
+        machine_codes::EDIT_FAILED,
+        machine_codes::severity::HIGH,
+        "Patch parse error",
+        42,
+        Some(8),
+    );
+    assert_eq!(f["code"].as_str(), Some("EDIT_FAILED"));
+    assert_eq!(f["severity"].as_str(), Some("high"));
+    assert_eq!(f["location"]["line"].as_u64(), Some(42));
+    assert_eq!(f["location"]["column"].as_u64(), Some(8));
+}
+
+#[test]
+fn test_finding_with_location_no_column() {
+    let f = finding_with_location(
+        machine_codes::EDIT_FAILED,
+        machine_codes::severity::HIGH,
+        "Patch parse error",
+        42,
+        None,
+    );
+    assert_eq!(f["location"]["line"].as_u64(), Some(42));
+    assert!(f["location"].get("column").is_none());
+}
+
+#[test]
+fn test_prompt_finding_creates_correct_shape() {
+    let f = prompt_finding(
+        machine_codes::PROMPT_HIDDEN_CONTENT,
+        machine_codes::severity::MEDIUM,
+        "HTML comment detected",
+        10,
+        25,
+        None,
+    );
+    assert_eq!(f["code"].as_str(), Some("PROMPT_HIDDEN_CONTENT"));
+    assert_eq!(f["severity"].as_str(), Some("medium"));
+    assert_eq!(f["span"]["byte_offset"].as_u64(), Some(10));
+    assert_eq!(f["span"]["end_byte_offset"].as_u64(), Some(25));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TOOL RESPONSE MACHINE_CODE PRESENCE
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_error_response_has_machine_code_for_helpers() {
+    // Test that error_with_code is used on the helpers.rs validation path.
+    // config_preflight with an unparseable TOML triggers an error with machine_code.
+    let r = call_tool_error("config_preflight", serde_json::json!({"text": "[unclosed"}));
+    if r.get("ok") == Some(&Value::Bool(false)) {
+        assert!(
+            r.get("machine_code").is_some(),
+            "Non-OK config_preflight response should have machine_code: {}",
+            r
+        );
+    }
+}
+
+#[test]
+fn test_composite_tool_response_has_machine_code() {
+    // edit_preflight always returns success with machine_code
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "rust",
+            "replacement_mode": "literal"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("machine_code").is_some(),
+        "edit_preflight should have machine_code: {}",
+        r
+    );
+    assert_eq!(r["machine_code"].as_str(), Some("EDIT_OK"));
+}
+
+#[test]
+fn test_command_preflight_has_machine_code() {
+    let r = call_tool(
+        "command_preflight",
+        serde_json::json!({"command": "echo hello"}),
+    );
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("machine_code").is_some(),
+        "command_preflight should have machine_code: {}",
+        r
+    );
+    assert_eq!(r["machine_code"].as_str(), Some("COMMAND_OK"));
+}
+
+#[test]
+fn test_config_preflight_has_machine_code() {
+    let r = call_tool("config_preflight", serde_json::json!({"text": "{}"}));
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("machine_code").is_some(),
+        "config_preflight should have machine_code: {}",
+        r
+    );
+    assert_eq!(r["machine_code"].as_str(), Some("CONFIG_OK"));
+}
+
+#[test]
+fn test_text_security_inspect_has_machine_code() {
+    let r = call_tool(
+        "text_security_inspect",
+        serde_json::json!({"text": "hello world"}),
+    );
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("machine_code").is_some(),
+        "text_security_inspect should have machine_code: {}",
+        r
+    );
+    assert_eq!(r["machine_code"].as_str(), Some("TEXT_SECURITY_OK"));
+}
+
+#[test]
+fn test_structured_data_compare_has_machine_code() {
+    let r = call_tool(
+        "structured_data_compare",
+        serde_json::json!({"a": "1", "b": "1"}),
+    );
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("machine_code").is_some(),
+        "structured_data_compare should have machine_code: {}",
+        r
+    );
+    assert_eq!(r["machine_code"].as_str(), Some("DATA_EQUAL"));
+}
+
+#[test]
+fn test_version_constraint_check_has_machine_code() {
+    // Version that doesn't satisfy the constraint should set machine_code
+    let r = call_tool(
+        "version_constraint_check",
+        serde_json::json!({"version": "2.0.0", "constraint": "^1.0.0"}),
+    );
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("machine_code").is_some(),
+        "version_constraint_check with unsatisfied constraint should have machine_code: {}",
+        r
+    );
+}
+
+#[test]
+fn test_identifier_inspect_has_machine_code_for_collisions() {
+    // Use identifiers that normalize to the same form via casefolding
+    let r = call_tool(
+        "identifier_inspect",
+        serde_json::json!({"identifiers": ["foo", "FOO"], "casefold": true}),
+    );
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("machine_code").is_some(),
+        "identifier_inspect with collisions should have machine_code: {}",
+        r
+    );
+}
+
+#[test]
+fn test_validate_json_invalid_has_machine_code() {
+    // validate_json returns success with findings, not an error
+    let r = call_tool("validate_json", serde_json::json!({"text": "not json"}));
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("machine_code").is_some(),
+        "validate_json with invalid input should have machine_code: {}",
+        r
+    );
+}

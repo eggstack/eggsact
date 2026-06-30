@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
@@ -401,7 +402,7 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
 
     let mut subresults = serde_json::Map::new();
     let mut findings: Vec<serde_json::Value> = Vec::new();
-    let mut machine_codes: Vec<String> = Vec::new();
+    let mut code_list: Vec<String> = Vec::new();
 
     // 1. Always call shell_split
     if platform == "windows" {
@@ -438,13 +439,14 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
                         "message": rf,
                     }));
                 }
-                if !risky.is_empty() && !machine_codes.contains(&"SHELL_RISK".to_string()) {
-                    machine_codes.push("SHELL_RISK".to_string());
+                if !risky.is_empty() && !code_list.contains(&machine_codes::SHELL_RISK.to_string())
+                {
+                    code_list.push(machine_codes::SHELL_RISK.to_string());
                 }
             }
         }
     } else if let Some(ref e) = ss_result.error {
-        machine_codes.push("SHELL_PARSE_ERROR".to_string());
+        code_list.push(machine_codes::SHELL_PARSE_ERROR.to_string());
         findings.push(serde_json::json!({
             "code": "SHELL_PARSE_ERROR",
             "severity": "error",
@@ -501,9 +503,9 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
                 }
                 if has_rs_findings
                     && risk != "none"
-                    && !machine_codes.contains(&"REGEX_RISK".to_string())
+                    && !code_list.contains(&machine_codes::REGEX_RISK.to_string())
                 {
-                    machine_codes.push("REGEX_RISK".to_string());
+                    code_list.push(machine_codes::REGEX_RISK.to_string());
                 }
                 let regex_summary = serde_json::json!({
                     "pattern": pattern.as_str(),
@@ -538,7 +540,7 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
     };
 
     // Build primary machine_code
-    let unique_codes: Vec<String> = machine_codes.into_iter().fold(Vec::new(), |mut acc, c| {
+    let unique_codes: Vec<String> = code_list.into_iter().fold(Vec::new(), |mut acc, c| {
         if !acc.contains(&c) {
             acc.push(c);
         }
@@ -547,7 +549,7 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
     let primary_code = unique_codes
         .first()
         .cloned()
-        .unwrap_or_else(|| "COMMAND_OK".to_string());
+        .unwrap_or_else(|| machine_codes::COMMAND_OK.to_string());
 
     let summary = format!("Command {} ({} finding(s))", verdict, findings.len());
 

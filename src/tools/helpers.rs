@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::text::count_graphemes;
 
@@ -145,8 +146,9 @@ pub(crate) fn _require_str<'a>(
             Some(s) => {
                 let codepoint_len = s.chars().count();
                 if codepoint_len > MAX_TEXT_LENGTH {
-                    return Err(Box::new(ToolResponse::error(
+                    return Err(Box::new(ToolResponse::error_with_code(
                         "input_too_large",
+                        machine_codes::INPUT_TOO_LARGE,
                         &format!(
                             "{} length {} exceeds {}",
                             field, codepoint_len, MAX_TEXT_LENGTH
@@ -157,15 +159,17 @@ pub(crate) fn _require_str<'a>(
                 }
                 Ok(s)
             }
-            None => Err(Box::new(ToolResponse::error(
+            None => Err(Box::new(ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("{} must be a string, got {}", field, json_type_name(v)),
                 None,
                 Some(tool),
             ))),
         },
-        None => Err(Box::new(ToolResponse::error(
+        None => Err(Box::new(ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("{} must be a string, got NoneType", field),
             None,
             Some(tool),
@@ -204,8 +208,9 @@ pub(crate) fn require_non_negative_int_arg(
     tool: &'static str,
 ) -> Result<usize, Box<ToolResponse>> {
     let Some(value) = args.get(field) else {
-        return Err(Box::new(ToolResponse::error(
+        return Err(Box::new(ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Missing '{}' parameter", field),
             None,
             Some(tool),
@@ -216,8 +221,9 @@ pub(crate) fn require_non_negative_int_arg(
         Value::Number(n) if n.is_i64() => match n.as_i64() {
             Some(value) => value,
             None => {
-                return Err(Box::new(ToolResponse::error(
+                return Err(Box::new(ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("{} must be an int, got {}", field, json_type_name(value)),
                     None,
                     Some(tool),
@@ -225,16 +231,18 @@ pub(crate) fn require_non_negative_int_arg(
             }
         },
         Value::Bool(_) => {
-            return Err(Box::new(ToolResponse::error(
+            return Err(Box::new(ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("{} must be an int, got bool", field),
                 None,
                 Some(tool),
             )));
         }
         value => {
-            return Err(Box::new(ToolResponse::error(
+            return Err(Box::new(ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("{} must be an int, got {}", field, json_type_name(value)),
                 None,
                 Some(tool),
@@ -243,8 +251,9 @@ pub(crate) fn require_non_negative_int_arg(
     };
 
     if value_i64 < 0 {
-        return Err(Box::new(ToolResponse::error(
+        return Err(Box::new(ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("{} must be non-negative, got {}", field, value_i64),
             None,
             Some(tool),
@@ -264,8 +273,9 @@ pub(crate) fn validate_line_range_order(
     tool: &'static str,
 ) -> Result<(), Box<ToolResponse>> {
     if start_line > end_line {
-        return Err(Box::new(ToolResponse::error(
+        return Err(Box::new(ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "start_line ({}) must be <= end_line ({})",
                 start_line, end_line
@@ -289,8 +299,9 @@ pub(crate) fn require_array_arg<'a>(
 ) -> Result<&'a Vec<Value>, Box<ToolResponse>> {
     match args.get(field).and_then(|v| v.as_array()) {
         Some(arr) => Ok(arr),
-        None => Err(Box::new(ToolResponse::error(
+        None => Err(Box::new(ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "{} must be a list, got {}",
                 field,
@@ -314,8 +325,9 @@ pub(crate) fn require_list_compare_args(
     let a = match args.get("a").and_then(|v| v.as_array()) {
         Some(arr) => arr,
         None => {
-            return Err(Box::new(ToolResponse::error(
+            return Err(Box::new(ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!(
                     "a and b must be lists, got {} and {}",
                     type_name("a"),
@@ -330,8 +342,9 @@ pub(crate) fn require_list_compare_args(
     let b = match args.get("b").and_then(|v| v.as_array()) {
         Some(arr) => arr,
         None => {
-            return Err(Box::new(ToolResponse::error(
+            return Err(Box::new(ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!(
                     "a and b must be lists, got {} and {}",
                     type_name("a"),
@@ -376,8 +389,9 @@ pub(crate) fn validate_text_count_target(
     count_mode: &str,
 ) -> Option<ToolResponse> {
     if target.is_empty() {
-        return Some(ToolResponse::error(
+        return Some(ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             "target must not be empty",
             Some(vec!["Provide a non-empty target".to_string()]),
             Some("text_count"),
@@ -387,8 +401,9 @@ pub(crate) fn validate_text_count_target(
     match count_mode {
         "codepoint" => {
             if normalized_target.chars().count() != 1 {
-                return Some(ToolResponse::error(
+                return Some(ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     "target must be a single codepoint for count_mode='codepoint' after normalization",
                     Some(vec!["Provide a target that normalizes to one codepoint".to_string()]),
                     Some("text_count"),
@@ -397,8 +412,9 @@ pub(crate) fn validate_text_count_target(
         }
         "grapheme" => {
             if count_graphemes(normalized_target) != 1 {
-                return Some(ToolResponse::error(
+                return Some(ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     "target must be a single grapheme for count_mode='grapheme' after normalization",
                     Some(vec!["Provide a target that normalizes to one grapheme".to_string()]),
                     Some("text_count"),
@@ -406,8 +422,9 @@ pub(crate) fn validate_text_count_target(
             }
         }
         "byte" if normalized_target.len() != 1 || !normalized_target.is_ascii() => {
-            return Some(ToolResponse::error(
+            return Some(ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "target must be a single byte for count_mode='byte' after normalization",
                 Some(vec![
                     "Provide a target that normalizes to one ASCII byte".to_string()

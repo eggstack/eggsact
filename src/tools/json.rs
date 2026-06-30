@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde::Serialize;
@@ -1133,13 +1134,13 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
             "valid_a": valid_a,
             "valid_b": valid_b,
             "findings": findings,
-            "machine_code": "INVALID_INPUT",
+            "machine_code": machine_codes::INVALID_INPUT,
             "summary": "One or both inputs are not valid JSON",
         });
         return ToolResponse::success(result, Some("structured_data_compare"))
             .with_tool("structured_data_compare")
             .with_findings(findings)
-            .with_machine_code("INVALID_INPUT");
+            .with_machine_code(machine_codes::INVALID_INPUT);
     }
 
     let equal = if valid_a && valid_b {
@@ -1217,11 +1218,11 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
     }
 
     let machine_code = if !valid_a || !valid_b {
-        "INVALID_INPUT".to_string()
+        machine_codes::INVALID_INPUT.to_string()
     } else if equal {
-        "DATA_EQUAL".to_string()
+        machine_codes::DATA_EQUAL.to_string()
     } else {
-        "DATA_DIFF".to_string()
+        machine_codes::DATA_DIFF.to_string()
     };
 
     let diff_count = findings

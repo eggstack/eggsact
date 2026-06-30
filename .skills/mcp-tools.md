@@ -40,6 +40,17 @@ ToolMetadata {
 }
 ```
 
+## Machine Codes
+
+Every non-OK `ToolResponse` must carry a `machine_code`. Use constants from `src/mcp/machine_codes.rs` — never string literals.
+
+- Use `ToolResponse::error_with_code(error_type, machine_code, error, hints, tool)` for error responses.
+- Use `.with_machine_code(code)` on a success response when the code conveys meaningful routing info.
+- Use `finding()`, `finding_with_location()`, or `prompt_finding()` (from `src/mcp/response.rs`) to build structured findings with codes and severity.
+- Use `severity::*`, `disposition::*`, and `verdict::*` constants for finding metadata.
+
+See `architecture/machine-codes.md` for the full code table and design rationale.
+
 ## Composite Tools
 
 Tools marked `composite: true` orchestrate calls to other tools internally.

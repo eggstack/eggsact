@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
@@ -253,7 +254,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
 
     let mut subresults = serde_json::Map::new();
     let mut findings: Vec<serde_json::Value> = Vec::new();
-    let mut machine_codes: Vec<String> = Vec::new();
+    let mut code_list: Vec<String> = Vec::new();
     let mut verdict = "valid";
 
     match detected_format {
@@ -265,7 +266,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                 let valid = r.get("valid").and_then(|v| v.as_bool()).unwrap_or(false);
                 if !valid {
                     verdict = "invalid";
-                    machine_codes.push("CONFIG_PARSE_FAILED".to_string());
+                    code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                     findings.push(serde_json::json!({
                         "code": "JSON_PARSE_ERROR",
                         "severity": "error",
@@ -278,7 +279,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                         subresults.insert("validate_schema_light".to_string(), vr.clone());
                         let vs_valid = vr.get("valid").and_then(|v| v.as_bool()).unwrap_or(true);
                         if !vs_valid {
-                            machine_codes.push("CONFIG_SCHEMA_MISMATCH".to_string());
+                            code_list.push(machine_codes::CONFIG_SCHEMA_MISMATCH.to_string());
                             verdict = "valid_with_warnings";
                             if let Some(violations) =
                                 vr.get("violations").and_then(|v| v.as_array())
@@ -320,7 +321,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                     }
                 }
             } else if let Some(ref e) = vj_result.error {
-                machine_codes.push("CONFIG_PARSE_FAILED".to_string());
+                code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                 findings.push(serde_json::json!({
                     "code": "CONFIG_ERROR",
                     "severity": "error",
@@ -340,7 +341,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                     .unwrap_or(false);
                 if !valid {
                     verdict = "invalid";
-                    machine_codes.push("CONFIG_PARSE_FAILED".to_string());
+                    code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                     findings.push(serde_json::json!({
                         "code": "TOML_PARSE_ERROR",
                         "severity": "error",
@@ -353,7 +354,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                     }
                 }
             } else if let Some(ref e) = vt_result.error {
-                machine_codes.push("CONFIG_PARSE_FAILED".to_string());
+                code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                 findings.push(serde_json::json!({
                     "code": "CONFIG_ERROR",
                     "severity": "error",
@@ -368,7 +369,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                 let parse_ok = r.get("parse_ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 if !parse_ok {
                     verdict = "invalid";
-                    machine_codes.push("CONFIG_PARSE_FAILED".to_string());
+                    code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                     if let Some(dv_findings) = r.get("findings").and_then(|v| v.as_array()) {
                         for err in dv_findings {
                             findings.push(serde_json::json!({
@@ -386,7 +387,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                     }
                 }
             } else if let Some(ref e) = dv_result.error {
-                machine_codes.push("CONFIG_PARSE_FAILED".to_string());
+                code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                 findings.push(serde_json::json!({
                     "code": "CONFIG_ERROR",
                     "severity": "error",
@@ -401,7 +402,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                 let parse_ok = r.get("parse_ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 if !parse_ok {
                     verdict = "invalid";
-                    machine_codes.push("CONFIG_PARSE_FAILED".to_string());
+                    code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                     if let Some(iv_findings) = r.get("findings").and_then(|v| v.as_array()) {
                         for err in iv_findings {
                             findings.push(serde_json::json!({
@@ -419,7 +420,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                     }
                 }
             } else if let Some(ref e) = iv_result.error {
-                machine_codes.push("CONFIG_PARSE_FAILED".to_string());
+                code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                 findings.push(serde_json::json!({
                     "code": "CONFIG_ERROR",
                     "severity": "error",
@@ -435,7 +436,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                 let parse_ok = r.get("parse_ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 if !parse_ok {
                     verdict = "invalid";
-                    machine_codes.push("CONFIG_PARSE_FAILED".to_string());
+                    code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                     findings.push(serde_json::json!({
                         "code": "CARGO_PARSE_ERROR",
                         "severity": "error",
@@ -453,7 +454,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                     }
                 }
             } else if let Some(ref e) = ct_result.error {
-                machine_codes.push("CONFIG_PARSE_FAILED".to_string());
+                code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                 findings.push(serde_json::json!({
                     "code": "CONFIG_ERROR",
                     "severity": "error",
@@ -467,17 +468,17 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
     let parse_ok = verdict != "invalid";
 
     let machine_code = if !parse_ok {
-        machine_codes
+        code_list
             .first()
             .cloned()
-            .unwrap_or_else(|| "CONFIG_PARSE_FAILED".to_string())
+            .unwrap_or_else(|| machine_codes::CONFIG_PARSE_FAILED.to_string())
     } else if !findings.is_empty() {
-        machine_codes
+        code_list
             .first()
             .cloned()
-            .unwrap_or_else(|| "CONFIG_HAS_WARNINGS".to_string())
+            .unwrap_or_else(|| machine_codes::CONFIG_HAS_WARNINGS.to_string())
     } else {
-        "CONFIG_OK".to_string()
+        machine_codes::CONFIG_OK.to_string()
     };
 
     let summary = format!(

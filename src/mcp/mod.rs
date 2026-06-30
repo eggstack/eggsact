@@ -1,4 +1,6 @@
 #[doc(hidden)]
+pub mod machine_codes;
+#[doc(hidden)]
 pub mod protocol;
 #[doc(hidden)]
 pub mod registry;
