@@ -1,3 +1,4 @@
+use eggsact::mcp::tools::{list_compare, list_dedupe, list_sort};
 use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -184,6 +185,39 @@ fn test_wrong_type_param_error() {
         "non-number value should return error, got: {}",
         r
     );
+}
+
+#[test]
+fn test_list_tools_return_structured_errors_without_schema_preflight() {
+    let cases = [
+        (
+            "list_compare missing b",
+            list_compare(&serde_json::json!({"a": []})),
+        ),
+        (
+            "list_compare wrong a",
+            list_compare(&serde_json::json!({"a": "not an array", "b": []})),
+        ),
+        (
+            "list_dedupe wrong items",
+            list_dedupe(&serde_json::json!({"items": "not an array"})),
+        ),
+        (
+            "list_sort wrong items",
+            list_sort(&serde_json::json!({"items": "not an array"})),
+        ),
+    ];
+
+    for (label, response) in cases {
+        assert!(!response.ok, "{} should fail", label);
+        assert_eq!(response.error_type.as_deref(), Some("invalid_arguments"));
+        assert!(
+            response.error.as_deref().unwrap_or("").contains("list"),
+            "{} should explain the expected list type: {:?}",
+            label,
+            response.error
+        );
+    }
 }
 
 #[test]

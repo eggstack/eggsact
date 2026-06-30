@@ -14,6 +14,7 @@ The script runs in order:
 3. Run clippy: `cargo clippy --all-targets --all-features`
 4. Run all tests: `cargo test`
 5. Build release: `cargo build --release`
+6. Check crates.io packaging: `cargo package`
 
 ## Pre-Release Checklist
 
@@ -22,14 +23,19 @@ The script runs in order:
 - [ ] No clippy warnings: `cargo clippy --all-targets --all-features`
 - [ ] Parity tests pass: `cargo test --test lib parity`
 - [ ] Confusables data regenerated: `python3 scripts/generate_confusables.py`
+- [ ] Crate packaging succeeds: `cargo package`
 - [ ] Version bumped in `Cargo.toml`
 - [ ] CHANGELOG.md updated
 
 ## Publishing to crates.io
 
 ```bash
+cargo package
 cargo publish
 ```
+
+`cargo package` must be run on a clean worktree. If regenerating confusables changes
+tracked files, commit those generated updates before packaging or publishing.
 
 ## Version Location
 
@@ -41,9 +47,11 @@ Version is defined in `Cargo.toml` and referenced in:
 ## CI Pipeline
 
 CI runs on GitHub Actions (`.github/workflows/ci.yml`):
+- Check formatting
+- Run clippy with warnings denied
 - Build on ubuntu-latest
 - Run tests (unit + integration)
-- Does NOT run `cargo fmt` or `cargo clippy` — those are only enforced via `release.sh`
+- Run `cargo package`
 
 ## Cargo.lock
 

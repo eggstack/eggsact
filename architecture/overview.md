@@ -10,7 +10,7 @@ eggsact/
 │   ├── main.rs             # CLI entry, arg parsing, dispatch
 │   ├── lib.rs              # Library root, re-exports run()/evaluate()
 │   ├── calc/               # Calculator core (3 modules)
-│   ├── mcp/                # MCP server (3 files, ~4k lines in server.rs)
+│   ├── mcp/                # MCP server dispatch, schemas, and tool handlers
 │   └── text/               # Text processing library (24 modules)
 ├── tests/                  # Integration tests
 │   ├── lib.rs              # Test module declarations
@@ -40,7 +40,7 @@ eggsact/
 │   ├── release.md
 │   └── text-processing.md
 ├── Cargo.toml              # Package manifest
-├── release.sh              # Release pipeline
+├── release.sh              # Release pipeline and crate packaging check
 └── build.sh                # Simple build script
 ```
 

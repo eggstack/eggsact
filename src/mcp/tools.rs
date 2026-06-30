@@ -273,6 +273,66 @@ fn validate_line_range_order(
     Ok(())
 }
 
+fn require_array_arg<'a>(
+    args: &'a Value,
+    field: &str,
+    tool: &'static str,
+) -> Result<&'a Vec<Value>, Box<ToolResponse>> {
+    match args.get(field).and_then(|v| v.as_array()) {
+        Some(arr) => Ok(arr),
+        None => Err(Box::new(ToolResponse::error(
+            "invalid_arguments",
+            &format!(
+                "{} must be a list, got {}",
+                field,
+                json_type_name(args.get(field).unwrap_or(&Value::Null))
+            ),
+            None,
+            Some(tool),
+        ))),
+    }
+}
+
+fn require_list_compare_args(
+    args: &Value,
+) -> Result<(&Vec<Value>, &Vec<Value>), Box<ToolResponse>> {
+    let type_name = |field: &str| args.get(field).map(json_type_name).unwrap_or("NoneType");
+
+    let a = match args.get("a").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => {
+            return Err(Box::new(ToolResponse::error(
+                "invalid_arguments",
+                &format!(
+                    "a and b must be lists, got {} and {}",
+                    type_name("a"),
+                    type_name("b")
+                ),
+                None,
+                Some("list_compare"),
+            )));
+        }
+    };
+
+    let b = match args.get("b").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => {
+            return Err(Box::new(ToolResponse::error(
+                "invalid_arguments",
+                &format!(
+                    "a and b must be lists, got {} and {}",
+                    type_name("a"),
+                    type_name("b")
+                ),
+                None,
+                Some("list_compare"),
+            )));
+        }
+    };
+
+    Ok((a, b))
+}
+
 fn unicode_casefold(s: &str) -> String {
     caseless::default_case_fold_str(s)
 }
@@ -2459,57 +2519,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
 }
 
 pub fn list_compare(args: &Value) -> ToolResponse {
-    let a = match args.get("a") {
-        Some(v) => match v.as_array() {
-            Some(arr) => arr,
-            None => {
-                return ToolResponse::error(
-                    "invalid_arguments",
-                    &format!(
-                        "a and b must be lists, got {} and {}",
-                        json_type_name(v),
-                        args.get("b")
-                            .map(|bv| json_type_name(bv))
-                            .unwrap_or("NoneType")
-                    ),
-                    None,
-                    Some("list_compare"),
-                )
-            }
-        },
-        None => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                "a and b must be lists, got NoneType and NoneType",
-                None,
-                Some("list_compare"),
-            )
-        }
-    };
-    let b = match args.get("b") {
-        Some(v) => match v.as_array() {
-            Some(arr) => arr,
-            None => {
-                return ToolResponse::error(
-                    "invalid_arguments",
-                    &format!(
-                        "a and b must be lists, got {} and {}",
-                        json_type_name(args.get("a").unwrap()),
-                        json_type_name(v)
-                    ),
-                    None,
-                    Some("list_compare"),
-                )
-            }
-        },
-        None => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                "a and b must be lists, got NoneType and NoneType",
-                None,
-                Some("list_compare"),
-            )
-        }
+    let (a, b) = match require_list_compare_args(args) {
+        Ok(values) => values,
+        Err(response) => return *response,
     };
 
     if a.len() > MAX_LIST_ITEMS || b.len() > MAX_LIST_ITEMS {
@@ -7766,19 +7778,9 @@ pub fn json_query(args: &Value) -> ToolResponse {
 }
 
 pub fn list_dedupe(args: &Value) -> ToolResponse {
-    let items = match args.get("items").and_then(|v| v.as_array()) {
-        Some(arr) => arr,
-        None => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                &format!(
-                    "items must be a list, got {}",
-                    json_type_name(args.get("items").unwrap_or(&Value::Null))
-                ),
-                None,
-                Some("list_dedupe"),
-            )
-        }
+    let items = match require_array_arg(args, "items", "list_dedupe") {
+        Ok(items) => items,
+        Err(response) => return *response,
     };
     if items.len() > MAX_LIST_ITEMS {
         return ToolResponse::error(
@@ -7904,19 +7906,9 @@ pub fn list_dedupe(args: &Value) -> ToolResponse {
 }
 
 pub fn list_sort(args: &Value) -> ToolResponse {
-    let items = match args.get("items").and_then(|v| v.as_array()) {
-        Some(arr) => arr,
-        None => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                &format!(
-                    "items must be a list, got {}",
-                    json_type_name(args.get("items").unwrap_or(&Value::Null))
-                ),
-                None,
-                Some("list_sort"),
-            )
-        }
+    let items = match require_array_arg(args, "items", "list_sort") {
+        Ok(items) => items,
+        Err(response) => return *response,
     };
     if items.len() > MAX_LIST_ITEMS {
         return ToolResponse::error(

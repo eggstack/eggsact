@@ -15,12 +15,13 @@ cargo test --test lib text           # text tests only
 cargo test --doc                     # doc tests
 cargo fmt --check                    # format check
 cargo clippy --all-targets --all-features  # lint
-./release.sh                         # full pipeline: regenerate data, fmt, clippy, test, release build
+cargo package                        # crates.io packaging dry run
+./release.sh                         # full pipeline: regenerate data, fmt, clippy, test, release build, package
 ```
 
 ## Verification order
 
-`cargo fmt --check` → `cargo clippy --all-targets --all-features` → `cargo test`
+`cargo fmt --check` → `cargo clippy --all-targets --all-features` → `cargo test` → `cargo package`
 
 ## Structure
 
@@ -29,7 +30,7 @@ src/
   main.rs           # CLI entry, arg parsing, dispatch
   lib.rs            # library root, re-exports run()/evaluate()
   calc/             # calculator: evaluator, normalize, units (3 modules)
-  mcp/              # MCP server (server.rs ~4k lines, tools.rs, schemas.rs)
+  mcp/              # MCP server (server.rs dispatch, tools.rs handlers, schemas.rs schemas)
   text/             # text processing library (24 modules)
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text
@@ -67,7 +68,7 @@ Agent task skills in `.skills/`:
 - **`^` is XOR, not exponentiation.** Use `**` for power. This matches Python behavior.
 - **`g` means gram** in unit expressions. Use `gravity` or `standardgravity` for standard gravity.
 - **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. They won't pass without the Python project present.
-- **CI only runs build and test.** `cargo fmt` and `cargo clippy` are only enforced via `release.sh`, not in CI.
+- **CI mirrors release gates.** GitHub Actions runs fmt, clippy, build, tests, and `cargo package`.
 - **`Cargo.lock` is gitignored** but present. This is unusual for a binary crate — don't commit it.
 - **`serde_json` uses `preserve_order`** feature — key order is intentional in serialized JSON.
 - **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_SCHEMA_DETAIL`.

@@ -16,3 +16,6 @@ cargo test
 
 echo "=== Building release ==="
 cargo build --release
+
+echo "=== Checking crates.io package ==="
+cargo package

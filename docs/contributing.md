@@ -30,6 +30,7 @@ path, so run `cargo build` before running parity tests.
 cargo fmt --check        # formatting gate
 cargo clippy --all-targets --all-features
 cargo test               # all tests (unit, integration, parity)
+cargo package            # crates.io package verification
 cargo test --lib         # unit tests within src/ only
 cargo test --test lib parity   # parity tests against Python
 cargo test --doc         # doc tests
@@ -141,4 +142,16 @@ Run the release script from the repository root before tagging or publishing:
 ```
 
 The script regenerates confusable-character data, verifies formatting, runs clippy,
-runs the full test suite, and then builds the optimized binary.
+runs the full test suite, builds the optimized binary, and verifies the crates.io
+package with `cargo package`.
+
+Before publishing, make sure the worktree is clean after `./release.sh`, the version
+in `Cargo.toml` matches the release tag, and `CHANGELOG.md` has an entry for the
+release. Publish with:
+
+```sh
+cargo publish
+```
+
+GitHub Actions mirrors the release gates on pull requests and pushes to `main`: fmt,
+clippy, build, tests, and `cargo package`.

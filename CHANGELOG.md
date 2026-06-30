@@ -74,6 +74,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parser tests, and documented the flag behavior in the CLI guide.
 - Expanded `release.sh` and contributing docs so release builds run formatting,
   clippy, and the full test suite before `cargo build --release`.
+- Added `cargo package` to the release script and GitHub Actions so crates.io
+  packaging is verified before publishing.
+- GitHub Actions now mirrors the documented release gates: formatting, clippy
+  with warnings denied, build, tests, and package verification.
+- Centralized list-argument validation for `list_compare`, `list_dedupe`, and
+  `list_sort` tool handlers to reduce duplicated MCP boundary checks.
 - Refreshed README and MCP reference examples to match current unit output
   and MCP `content` response shape.
 - Aligned README, MCP reference, and architecture category counts with the
@@ -88,6 +94,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prime upper-bound guard, lowercase `b` bit alias).
 - Added `glob_match` regression coverage for invalid bracket ranges that
   previously panicked during regex compilation.
+- Added direct list-tool handler coverage for malformed list arguments that
+  bypass JSON schema preflight.
 - Cross-binary parity assertions in
   `eggsact/tests/parity/test_bug_fixes.rs`.
 - 168 edge-case tests in `eggsact/tests/mcp/test_edge_cases.rs`
