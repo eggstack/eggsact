@@ -116,6 +116,12 @@ fn test_glob_match_range() {
     assert!(result.matches);
 }
 
+#[test]
+fn test_glob_match_invalid_range_does_not_panic() {
+    let result = glob_match("[z-a].txt", "m.txt", "posix", true);
+    assert!(!result.matches);
+}
+
 // ─── UNC path tests ─────────────────────────────────────────────────
 
 #[test]

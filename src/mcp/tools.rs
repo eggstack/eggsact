@@ -197,6 +197,82 @@ pub(crate) fn json_type_name(value: &Value) -> &'static str {
     }
 }
 
+fn require_non_negative_int_arg(
+    args: &Value,
+    field: &str,
+    tool: &'static str,
+) -> Result<usize, Box<ToolResponse>> {
+    let Some(value) = args.get(field) else {
+        return Err(Box::new(ToolResponse::error(
+            "invalid_arguments",
+            &format!("Missing '{}' parameter", field),
+            None,
+            Some(tool),
+        )));
+    };
+
+    let value_i64 = match value {
+        Value::Number(n) if n.is_i64() => match n.as_i64() {
+            Some(value) => value,
+            None => {
+                return Err(Box::new(ToolResponse::error(
+                    "invalid_arguments",
+                    &format!("{} must be an int, got {}", field, json_type_name(value)),
+                    None,
+                    Some(tool),
+                )));
+            }
+        },
+        Value::Bool(_) => {
+            return Err(Box::new(ToolResponse::error(
+                "invalid_arguments",
+                &format!("{} must be an int, got bool", field),
+                None,
+                Some(tool),
+            )));
+        }
+        value => {
+            return Err(Box::new(ToolResponse::error(
+                "invalid_arguments",
+                &format!("{} must be an int, got {}", field, json_type_name(value)),
+                None,
+                Some(tool),
+            )));
+        }
+    };
+
+    if value_i64 < 0 {
+        return Err(Box::new(ToolResponse::error(
+            "invalid_arguments",
+            &format!("{} must be non-negative, got {}", field, value_i64),
+            None,
+            Some(tool),
+        )));
+    }
+
+    Ok(value_i64 as usize)
+}
+
+fn validate_line_range_order(
+    start_line: usize,
+    end_line: usize,
+    tool: &'static str,
+) -> Result<(), Box<ToolResponse>> {
+    if start_line > end_line {
+        return Err(Box::new(ToolResponse::error(
+            "invalid_arguments",
+            &format!(
+                "start_line ({}) must be <= end_line ({})",
+                start_line, end_line
+            ),
+            None,
+            Some(tool),
+        )));
+    }
+
+    Ok(())
+}
+
 fn unicode_casefold(s: &str) -> String {
     caseless::default_case_fold_str(s)
 }
@@ -3541,89 +3617,16 @@ pub fn line_range_extract_tool(args: &Value) -> ToolResponse {
             )
         }
     };
-    // Validate start_line and end_line are integers (not bools)
-    let start_line_i64 = match args.get("start_line") {
-        Some(Value::Number(n)) if n.is_i64() => n.as_i64().unwrap(),
-        Some(Value::Bool(_)) => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                "start_line must be an int, got bool",
-                None,
-                Some("line_range_extract"),
-            );
-        }
-        Some(v) => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                &format!("start_line must be an int, got {}", json_type_name(v)),
-                None,
-                Some("line_range_extract"),
-            );
-        }
-        None => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                "Missing 'start_line' parameter",
-                None,
-                Some("line_range_extract"),
-            );
-        }
+    let start_line = match require_non_negative_int_arg(args, "start_line", "line_range_extract") {
+        Ok(value) => value,
+        Err(response) => return *response,
     };
-    if start_line_i64 < 0 {
-        return ToolResponse::error(
-            "invalid_arguments",
-            &format!("start_line must be non-negative, got {}", start_line_i64),
-            None,
-            Some("line_range_extract"),
-        );
-    }
-    let start_line = start_line_i64 as usize;
-    let end_line_i64 = match args.get("end_line") {
-        Some(Value::Number(n)) if n.is_i64() => n.as_i64().unwrap(),
-        Some(Value::Bool(_)) => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                "end_line must be an int, got bool",
-                None,
-                Some("line_range_extract"),
-            );
-        }
-        Some(v) => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                &format!("end_line must be an int, got {}", json_type_name(v)),
-                None,
-                Some("line_range_extract"),
-            );
-        }
-        None => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                "Missing 'end_line' parameter",
-                None,
-                Some("line_range_extract"),
-            );
-        }
+    let end_line = match require_non_negative_int_arg(args, "end_line", "line_range_extract") {
+        Ok(value) => value,
+        Err(response) => return *response,
     };
-    if end_line_i64 < 0 {
-        return ToolResponse::error(
-            "invalid_arguments",
-            &format!("end_line must be non-negative, got {}", end_line_i64),
-            None,
-            Some("line_range_extract"),
-        );
-    }
-    let end_line = end_line_i64 as usize;
-    if start_line > end_line {
-        return ToolResponse::error(
-            "invalid_arguments",
-            &format!(
-                "start_line ({}) must be <= end_line ({})",
-                start_line, end_line
-            ),
-            None,
-            Some("line_range_extract"),
-        );
+    if let Err(response) = validate_line_range_order(start_line, end_line, "line_range_extract") {
+        return *response;
     }
     let line_base = args.get("line_base").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
     let include_line_numbers = args
@@ -3712,88 +3715,16 @@ pub fn line_range_compare_tool(args: &Value) -> ToolResponse {
             )
         }
     };
-    let start_line_i64 = match args.get("start_line") {
-        Some(Value::Number(n)) if n.is_i64() => n.as_i64().unwrap(),
-        Some(Value::Bool(_)) => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                "start_line must be an int, got bool",
-                None,
-                Some("line_range_compare"),
-            );
-        }
-        Some(v) => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                &format!("start_line must be an int, got {}", json_type_name(v)),
-                None,
-                Some("line_range_compare"),
-            );
-        }
-        None => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                "Missing 'start_line' parameter",
-                None,
-                Some("line_range_compare"),
-            );
-        }
+    let start_line = match require_non_negative_int_arg(args, "start_line", "line_range_compare") {
+        Ok(value) => value,
+        Err(response) => return *response,
     };
-    if start_line_i64 < 0 {
-        return ToolResponse::error(
-            "invalid_arguments",
-            &format!("start_line must be non-negative, got {}", start_line_i64),
-            None,
-            Some("line_range_compare"),
-        );
-    }
-    let start_line = start_line_i64 as usize;
-    let end_line_i64 = match args.get("end_line") {
-        Some(Value::Number(n)) if n.is_i64() => n.as_i64().unwrap(),
-        Some(Value::Bool(_)) => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                "end_line must be an int, got bool",
-                None,
-                Some("line_range_compare"),
-            );
-        }
-        Some(v) => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                &format!("end_line must be an int, got {}", json_type_name(v)),
-                None,
-                Some("line_range_compare"),
-            );
-        }
-        None => {
-            return ToolResponse::error(
-                "invalid_arguments",
-                "Missing 'end_line' parameter",
-                None,
-                Some("line_range_compare"),
-            );
-        }
+    let end_line = match require_non_negative_int_arg(args, "end_line", "line_range_compare") {
+        Ok(value) => value,
+        Err(response) => return *response,
     };
-    if end_line_i64 < 0 {
-        return ToolResponse::error(
-            "invalid_arguments",
-            &format!("end_line must be non-negative, got {}", end_line_i64),
-            None,
-            Some("line_range_compare"),
-        );
-    }
-    let end_line = end_line_i64 as usize;
-    if start_line > end_line {
-        return ToolResponse::error(
-            "invalid_arguments",
-            &format!(
-                "start_line ({}) must be <= end_line ({})",
-                start_line, end_line
-            ),
-            None,
-            Some("line_range_compare"),
-        );
+    if let Err(response) = validate_line_range_order(start_line, end_line, "line_range_compare") {
+        return *response;
     }
     let line_base = args.get("line_base").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
     let comparison_mode = args

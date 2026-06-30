@@ -62,8 +62,10 @@ fn fnmatch_segment(pattern: &str, segment: &str, case_sensitive: bool) -> bool {
     };
 
     let regex_pattern = fnmatch_to_regex(&pattern);
-    let re = Regex::new(&regex_pattern).unwrap();
-    re.is_match(&segment)
+    match Regex::new(&regex_pattern) {
+        Ok(re) => re.is_match(&segment),
+        Err(_) => false,
+    }
 }
 
 fn fnmatch_to_regex(pattern: &str) -> String {

@@ -61,6 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BUG-207**: `is_unit("b")` correctly resolves to `bit`; the
   lowercase SI bit symbol is now an explicit alias in `UNIT_ALIASES`,
   so the uppercase fallback no longer aliases it to byte `B`.
+- **BUG-208**: `glob_match` no longer panics when a malformed glob
+  bracket range translates into an invalid regex; invalid translated
+  segments are treated as non-matches.
 
 ### Changed
 - Centralized MCP server identity and protocol constants in
@@ -73,6 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clippy, and the full test suite before `cargo build --release`.
 - Refreshed README and MCP reference examples to match current unit output
   and MCP `content` response shape.
+- Aligned README, MCP reference, and architecture category counts with the
+  server's `TOOL_METADATA` taxonomy.
 
 ### Tests
 - 33 `test_bug00{1..9}_*` regression tests in
@@ -81,6 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path normalization, RFC 6901 `/-` array pointer, object key-count
   diff kind, dead digit-cap removal, perm/comb big-int precision,
   prime upper-bound guard, lowercase `b` bit alias).
+- Added `glob_match` regression coverage for invalid bracket ranges that
+  previously panicked during regex compilation.
 - Cross-binary parity assertions in
   `eggsact/tests/parity/test_bug_fixes.rs`.
 - 168 edge-case tests in `eggsact/tests/mcp/test_edge_cases.rs`
@@ -126,25 +133,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Statistical functions** (sum, mean, median, std, variance, min, max, product)
 - **Number theory** (gcd, lcm, factorial)
 - **MCP server** (stdio JSON-RPC 2.0, protocol version 2024-11-05, server identity `eggsact`)
-- **64 MCP tools** across 17 categories:
-  - Math & Units (4): math_eval, unit_convert, unit_info, constant_lookup
-  - Text Measurement & Comparison (10): text_measure, text_equal, text_diff_explain, text_inspect, text_count, text_truncate, text_fingerprint, text_hash, text_position, text_window
-  - Text Transformation (4): text_transform, escape_text, unescape_text, text_replace_check
-  - JSON (7): validate_json, json_extract, json_compare, json_canonicalize, json_query, json_shape, validate_schema_light
+- **64 MCP tools** across 16 metadata categories:
+  - Math (4): math_eval, unit_convert, unit_info, constant_lookup
+  - Text (18): text_measure, text_equal, text_diff_explain, text_inspect, text_count, text_truncate, text_fingerprint, text_hash, text_position, text_window, text_transform, text_replace_check, text_security_inspect, escape_text, unescape_text, prompt_input_inspect, line_range_extract, line_range_compare
+  - JSON (6): json_extract, json_compare, json_canonicalize, json_query, json_shape, structured_data_compare
+  - Validation (4): validate_json, validate_brackets, validate_toml, validate_schema_light
+  - Path (5): path_normalize, path_analyze, path_compare, path_scope_check, glob_match
+  - Shell (4): shell_split, shell_quote_join, argv_compare, command_preflight
   - Regex (3): validate_regex, regex_safety_check, regex_finditer
-  - Lists (3): list_compare, list_dedupe, list_sort
-  - Paths (4): path_normalize, path_analyze, path_compare, path_scope_check
-  - Identifiers (3): identifier_analyze, identifier_inspect, identifier_table_inspect
-  - Shell (3): shell_split, shell_quote_join, argv_compare
+  - List (3): list_compare, list_dedupe, list_sort
   - Markdown (2): markdown_structure, code_fence_extract
-  - Config Files (4): dotenv_validate, ini_validate, validate_toml, toml_shape
-  - Patches (2): patch_apply_check, patch_summary
-  - Line Ranges (2): line_range_extract, line_range_compare
-  - Unicode (3): unicode_policy_check, canonicalize_text, prompt_input_inspect
-  - Versioning (3): version_constraint_check, version_compare, cargo_toml_inspect
-  - Glob (1): glob_match
-  - Security (1): validate_brackets
-- **Text processing library** (21 modules): primitives, confusables, diff, measure, validate, transform, position, regex_safety, replace, path, identifier, shell, markdown, glob, config, toml, patch, line_range, unicode_policy, cargo, version
+  - Patch (3): patch_apply_check, patch_summary, edit_preflight
+  - Config (3): dotenv_validate, ini_validate, config_preflight
+  - Identifier (3): identifier_analyze, identifier_inspect, identifier_table_inspect
+  - Unicode (2): unicode_policy_check, canonicalize_text
+  - Version (2): version_constraint_check, version_compare
+  - TOML (1): toml_shape
+  - Cargo (1): cargo_toml_inspect
+- **Text processing library** (24 modules): primitives, confusables, diff, measure, validate, transform, position, regex_safety, replace, path, identifier, shell, markdown, glob, config, toml, patch, line_range, unicode_policy, unicode_tools, inspect_prompt, synthesis, cargo, version
 - **Test suite** with unit, integration, MCP protocol, and Python parity tests
 
 ### Known Differences from Python eggcalc

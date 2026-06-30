@@ -98,7 +98,7 @@ eggsact --mcp
 | `unit_info` | Get metadata about a unit (category, base unit, aliases) |
 | `constant_lookup` | Look up physical or mathematical constants by name |
 
-### Text (17)
+### Text (18)
 
 | Tool | Description |
 |------|-------------|
@@ -118,19 +118,18 @@ eggsact --mcp
 | `unescape_text` | Unescape escaped strings back to their original form |
 | `text_security_inspect` | Composite: aggregate security checks across multiple tools |
 | `prompt_input_inspect` | Detect hidden characters and instruction injection in prompts |
-| `line_range_extract` / `line_range_compare` | Extract and compare line ranges |
+| `line_range_extract` | Extract a line range from text |
+| `line_range_compare` | Compare line ranges between two texts |
 
-### JSON (7)
+### JSON (6)
 
 | Tool | Description |
 |------|-------------|
-| `validate_json` | Validate JSON syntax with error position reporting |
 | `json_extract` | Extract values from JSON by path |
 | `json_compare` | Compare two JSON structures for equality or diff |
 | `json_canonicalize` | Produce canonical JSON for deterministic serialization |
 | `json_query` | Query JSON with a simple dot-path language |
 | `json_shape` | Describe the structure of a JSON document |
-| `validate_schema_light` | Lightweight JSON schema validation |
 | `structured_data_compare` | Composite: compare structured data using JSON tools |
 
 ### Regex (3)
@@ -149,7 +148,16 @@ eggsact --mcp
 | `list_dedupe` | Remove duplicate items from a list |
 | `list_sort` | Sort a list with configurable order and key extraction |
 
-### Paths (4)
+### Validation (4)
+
+| Tool | Description |
+|------|-------------|
+| `validate_json` | Validate JSON syntax with error position reporting |
+| `validate_toml` | Validate TOML syntax |
+| `validate_brackets` | Check bracket balance in text (parens, braces, brackets, angle) |
+| `validate_schema_light` | Lightweight JSON schema validation |
+
+### Paths (5)
 
 | Tool | Description |
 |------|-------------|
@@ -183,15 +191,12 @@ eggsact --mcp
 | `markdown_structure` | Parse markdown headings, lists, and code blocks |
 | `code_fence_extract` | Extract fenced code blocks with language tags |
 
-### Config & Validation (5)
+### Config (3)
 
 | Tool | Description |
 |------|-------------|
 | `dotenv_validate` | Validate `.env` file syntax |
 | `ini_validate` | Validate INI file syntax |
-| `validate_toml` | Validate TOML syntax |
-| `toml_shape` | Describe the structure of a TOML document |
-| `validate_brackets` | Check bracket balance in text (parens, braces, brackets, angle) |
 | `config_preflight` | Composite: pre-check a config file using validation tools |
 
 ### Patches (3)
@@ -202,6 +207,12 @@ eggsact --mcp
 | `patch_summary` | Summarize changes in a unified diff patch |
 | `edit_preflight` | Composite: pre-check an edit operation using text tools |
 
+### TOML (1)
+
+| Tool | Description |
+|------|-------------|
+| `toml_shape` | Describe the structure of a TOML document |
+
 ### Unicode (2)
 
 | Tool | Description |
@@ -209,12 +220,17 @@ eggsact --mcp
 | `unicode_policy_check` | Validate text against named Unicode safety policies |
 | `canonicalize_text` | Normalize text using configurable canonicalization profiles |
 
-### Versioning (3)
+### Versioning (2)
 
 | Tool | Description |
 |------|-------------|
 | `version_constraint_check` | Check if a semver version satisfies a constraint |
 | `version_compare` | Compare two semver versions |
+
+### Cargo (1)
+
+| Tool | Description |
+|------|-------------|
 | `cargo_toml_inspect` | Extract metadata from Cargo.toml files |
 
 ## Math Features

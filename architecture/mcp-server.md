@@ -57,11 +57,11 @@ Returns `Vec<ToolDefinition>` with full input schemas for each tool.
 
 | Category | Count | Tools |
 |----------|-------|-------|
-| text | 17 | text_measure, text_equal, text_diff_explain, text_inspect, text_count, text_truncate, text_fingerprint, text_hash, text_position, text_window, text_transform, text_replace_check, text_security_inspect, escape_text, unescape_text, prompt_input_inspect, line_range_extract, line_range_compare |
-| json | 7 | validate_json, json_extract, json_compare, json_canonicalize, json_query, json_shape, structured_data_compare |
+| text | 18 | text_measure, text_equal, text_diff_explain, text_inspect, text_count, text_truncate, text_fingerprint, text_hash, text_position, text_window, text_transform, text_replace_check, text_security_inspect, escape_text, unescape_text, prompt_input_inspect, line_range_extract, line_range_compare |
+| json | 6 | json_extract, json_compare, json_canonicalize, json_query, json_shape, structured_data_compare |
 | math | 4 | math_eval, unit_convert, unit_info, constant_lookup |
-| validation | 5 | validate_json, validate_brackets, validate_regex, validate_toml, validate_schema_light |
-| path | 4 | path_normalize, path_analyze, path_compare, path_scope_check |
+| validation | 4 | validate_json, validate_brackets, validate_toml, validate_schema_light |
+| path | 5 | path_normalize, path_analyze, path_compare, path_scope_check, glob_match |
 | shell | 4 | shell_split, shell_quote_join, argv_compare, command_preflight |
 | regex | 3 | validate_regex, regex_safety_check, regex_finditer |
 | list | 3 | list_compare, list_dedupe, list_sort |

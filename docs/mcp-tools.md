@@ -89,7 +89,7 @@ Many tools return a `hints` array with suggestions when validation fails:
 
 ## Tool Categories
 
-Tools are grouped into 16 categories covering math, text, JSON, regex, lists, paths, identifiers, shell, markdown, configuration, patches, line ranges, unicode, versioning, and general validation.
+Tools are grouped into 16 metadata categories covering math, text, JSON, validation, regex, lists, paths, identifiers, shell, markdown, configuration, patches, TOML, Unicode, versioning, and Cargo metadata.
 
 ---
 
@@ -1192,44 +1192,44 @@ Compare two structured data strings (JSON or TOML) with configurable comparison 
 
 | # | Tool | Category | Required Params |
 |---|------|----------|-----------------|
-| 1 | `math_eval` | Math & Units | `expression` |
-| 2 | `unit_convert` | Math & Units | `value`, `from_unit`, `to_unit` |
-| 3 | `unit_info` | Math & Units | `unit` |
-| 4 | `constant_lookup` | Math & Units | `name` |
-| 5 | `text_measure` | Text Measurement | `text` |
-| 6 | `text_equal` | Text Measurement | `a`, `b` |
-| 7 | `text_diff_explain` | Text Measurement | `a`, `b` |
-| 8 | `text_inspect` | Text Measurement | `text` |
-| 9 | `text_count` | Text Measurement | `text` |
-| 10 | `text_truncate` | Text Measurement | `text`, `max_graphemes` |
-| 11 | `text_fingerprint` | Text Measurement | `text` |
-| 12 | `text_hash` | Text Measurement | `text` |
-| 13 | `text_position` | Text Measurement | `text` |
-| 14 | `text_window` | Text Measurement | `text`, `position` |
-| 15 | `text_transform` | Text Transformation | `text`, `operations` |
-| 16 | `escape_text` | Text Transformation | `text`, `mode` |
-| 17 | `unescape_text` | Text Transformation | `text`, `mode` |
-| 18 | `text_replace_check` | Text Transformation | `text`, `old`, `new` |
-| 19 | `validate_json` | JSON | `text` |
+| 1 | `math_eval` | Math | `expression` |
+| 2 | `unit_convert` | Math | `value`, `from_unit`, `to_unit` |
+| 3 | `unit_info` | Math | `unit` |
+| 4 | `constant_lookup` | Math | `name` |
+| 5 | `text_measure` | Text | `text` |
+| 6 | `text_equal` | Text | `a`, `b` |
+| 7 | `text_diff_explain` | Text | `a`, `b` |
+| 8 | `text_inspect` | Text | `text` |
+| 9 | `text_count` | Text | `text` |
+| 10 | `text_truncate` | Text | `text`, `max_graphemes` |
+| 11 | `text_fingerprint` | Text | `text` |
+| 12 | `text_hash` | Text | `text` |
+| 13 | `text_position` | Text | `text` |
+| 14 | `text_window` | Text | `text`, `position` |
+| 15 | `text_transform` | Text | `text`, `operations` |
+| 16 | `escape_text` | Text | `text`, `mode` |
+| 17 | `unescape_text` | Text | `text`, `mode` |
+| 18 | `text_replace_check` | Text | `text`, `old`, `new` |
+| 19 | `validate_json` | Validation | `text` |
 | 20 | `json_extract` | JSON | `text` |
 | 21 | `json_compare` | JSON | `a`, `b` |
 | 22 | `json_canonicalize` | JSON | `text` |
 | 23 | `json_query` | JSON | `text` |
 | 24 | `json_shape` | JSON | `text` |
-| 25 | `validate_schema_light` | JSON | `text`, `schema` |
+| 25 | `validate_schema_light` | Validation | `text`, `schema` |
 | 26 | `validate_regex` | Regex | `pattern`, `samples` |
 | 27 | `regex_safety_check` | Regex | `pattern` |
 | 28 | `regex_finditer` | Regex | `pattern`, `text` |
-| 29 | `list_compare` | Lists | `a`, `b` |
-| 30 | `list_dedupe` | Lists | `items` |
-| 31 | `list_sort` | Lists | `items` |
-| 32 | `path_normalize` | Paths | `path` |
-| 33 | `path_analyze` | Paths | `path` |
-| 34 | `path_compare` | Paths | `left`, `right` |
-| 35 | `path_scope_check` | Paths | `root`, `target` |
-| 36 | `identifier_analyze` | Identifiers | `text` |
-| 37 | `identifier_inspect` | Identifiers | `identifiers` |
-| 38 | `identifier_table_inspect` | Identifiers | `identifiers` |
+| 29 | `list_compare` | List | `a`, `b` |
+| 30 | `list_dedupe` | List | `items` |
+| 31 | `list_sort` | List | `items` |
+| 32 | `path_normalize` | Path | `path` |
+| 33 | `path_analyze` | Path | `path` |
+| 34 | `path_compare` | Path | `left`, `right` |
+| 35 | `path_scope_check` | Path | `root`, `target` |
+| 36 | `identifier_analyze` | Identifier | `text` |
+| 37 | `identifier_inspect` | Identifier | `identifiers` |
+| 38 | `identifier_table_inspect` | Identifier | `identifiers` |
 | 39 | `shell_split` | Shell | `command` |
 | 40 | `shell_quote_join` | Shell | `argv` |
 | 41 | `argv_compare` | Shell | _(none required)_ |
@@ -1237,22 +1237,22 @@ Compare two structured data strings (JSON or TOML) with configurable comparison 
 | 43 | `code_fence_extract` | Markdown | `text` |
 | 44 | `dotenv_validate` | Config | `text` |
 | 45 | `ini_validate` | Config | `text` |
-| 46 | `validate_toml` | Config | `text` |
-| 47 | `toml_shape` | Config | `text` |
-| 48 | `patch_apply_check` | Patches | `original_text`, `patch_text` |
-| 49 | `patch_summary` | Patches | `patch_text` |
-| 50 | `line_range_extract` | Line Ranges | `text`, `start_line`, `end_line` |
-| 51 | `line_range_compare` | Line Ranges | `left_text`, `right_text`, `start_line`, `end_line` |
+| 46 | `validate_toml` | Validation | `text` |
+| 47 | `toml_shape` | TOML | `text` |
+| 48 | `patch_apply_check` | Patch | `original_text`, `patch_text` |
+| 49 | `patch_summary` | Patch | `patch_text` |
+| 50 | `line_range_extract` | Text | `text`, `start_line`, `end_line` |
+| 51 | `line_range_compare` | Text | `left_text`, `right_text`, `start_line`, `end_line` |
 | 52 | `unicode_policy_check` | Unicode | `text`, `policy` |
 | 53 | `canonicalize_text` | Unicode | `text`, `profile` |
-| 54 | `prompt_input_inspect` | Unicode | `text` |
-| 55 | `version_constraint_check` | Versioning | `version`, `constraint` |
-| 56 | `version_compare` | Versioning | `a`, `b` |
-| 57 | `cargo_toml_inspect` | Versioning | `text` |
-| 58 | `glob_match` | Other | `pattern`, `path` |
-| 59 | `validate_brackets` | Other | `text` |
-| 60 | `text_security_inspect` | Security | `text` |
-| 61 | `edit_preflight` | Preflight | `file_path`, `old`, `new` |
-| 62 | `command_preflight` | Preflight | `command` |
-| 63 | `config_preflight` | Preflight | `file_path`, `text` |
-| 64 | `structured_data_compare` | Comparison | `left`, `right` |
+| 54 | `prompt_input_inspect` | Text | `text` |
+| 55 | `version_constraint_check` | Version | `version`, `constraint` |
+| 56 | `version_compare` | Version | `a`, `b` |
+| 57 | `cargo_toml_inspect` | Cargo | `text` |
+| 58 | `glob_match` | Path | `pattern`, `path` |
+| 59 | `validate_brackets` | Validation | `text` |
+| 60 | `text_security_inspect` | Text | `text` |
+| 61 | `edit_preflight` | Patch | `file_path`, `old`, `new` |
+| 62 | `command_preflight` | Shell | `command` |
+| 63 | `config_preflight` | Config | `file_path`, `text` |
+| 64 | `structured_data_compare` | JSON | `left`, `right` |

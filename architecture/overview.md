@@ -15,7 +15,7 @@ eggsact/
 ├── tests/                  # Integration tests
 │   ├── lib.rs              # Test module declarations
 │   ├── calc/               # Calculator tests (4 files)
-│   ├── mcp/                # MCP protocol + tool tests (14 files)
+│   ├── mcp/                # MCP protocol + tool tests (17 files)
 │   ├── parity/             # Python/Rust parity tests (12 files)
 │   └── text/               # Text processing tests (24 files)
 ├── scripts/
@@ -78,7 +78,7 @@ main.rs → lib.rs → calc/normalize.rs → calc/evaluator.rs → calc/units.rs
 | MAX_PRIME | varies | `src/calc/evaluator.rs` |
 | MAX_PERM_COMB | varies | `src/calc/evaluator.rs` |
 
-## Dependencies (16 crates)
+## Dependencies (18 crates)
 
 Core: `serde`, `serde_json` (preserve_order), `tokio` (full)
 Math: `fancy-regex`, `regex`
