@@ -212,7 +212,7 @@ fn test_bug004_validate_schema_light_u64_integer() {
         }
     }
     // Verify via source code that get_type_name checks both is_i64() and is_u64()
-    let tools_source = include_str!("../../src/mcp/tools.rs");
+    let tools_source = include_str!("../../src/tools/helpers.rs");
     assert!(
         tools_source.contains("n.is_i64() || n.is_u64()"),
         "BUG-004: get_type_name should check both is_i64() and is_u64()"

@@ -1072,8 +1072,8 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
     let mut subresults = serde_json::Map::new();
     let mut findings: Vec<serde_json::Value> = Vec::new();
 
-    let vj_a = crate::mcp::tools::validate_json(&serde_json::json!({"text": a}));
-    let vj_b = crate::mcp::tools::validate_json(&serde_json::json!({"text": b}));
+    let vj_a = crate::tools::validate_json(&serde_json::json!({"text": a}));
+    let vj_b = crate::tools::validate_json(&serde_json::json!({"text": b}));
 
     let valid_a = vj_a
         .result

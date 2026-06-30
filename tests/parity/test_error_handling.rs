@@ -904,7 +904,7 @@ fn test_float_request_id_rejected() {
 fn test_validate_regex_timeout_message_wording() {
     // Verify the source code uses the ReDoS-aware timeout message.
     // This is a code-level check since triggering an actual 5s timeout is impractical in tests.
-    let source = include_str!("../../src/mcp/tools.rs");
+    let source = include_str!("../../src/tools/regex.rs");
     assert!(
         source.contains("Regex execution exceeded time limit (possible ReDoS)"),
         "validate_regex should use 'Regex execution exceeded time limit (possible ReDoS)' in timeout message"
@@ -935,7 +935,7 @@ fn test_math_eval_timeout_uses_run_with_timeout() {
     // instead of tokio::task::spawn_blocking + handle.block_on (which deadlocks under
     // concurrent load). This is a code-level check since triggering an actual 5s timeout
     // is impractical.
-    let source = include_str!("../../src/mcp/tools.rs");
+    let source = include_str!("../../src/tools/math.rs");
 
     // Find the math_eval function body (between "pub fn math_eval" and the next "pub fn")
     let math_eval_start = source

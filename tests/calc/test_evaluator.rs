@@ -1,5 +1,5 @@
 use eggsact::calc::{evaluate, run};
-use eggsact::mcp::tools::json_canonicalize;
+use eggsact::tools::json_canonicalize;
 use serde_json::json;
 
 fn val(expr: &str) -> f64 {

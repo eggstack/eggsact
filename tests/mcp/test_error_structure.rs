@@ -1,4 +1,4 @@
-use eggsact::mcp::tools::{list_compare, list_dedupe, list_sort};
+use eggsact::tools::{list_compare, list_dedupe, list_sort};
 use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};

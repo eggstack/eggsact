@@ -12,5 +12,3 @@ pub mod schema_validation;
 pub mod schemas;
 #[doc(hidden)]
 pub mod server;
-#[doc(hidden)]
-pub mod tools;

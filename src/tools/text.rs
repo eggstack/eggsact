@@ -2712,7 +2712,7 @@ pub fn text_transform(args: &Value) -> ToolResponse {
 // text_replace_check
 // ---------------------------------------------------------------------------
 
-pub fn text_replace_check(args: &Value) -> ToolResponse {
+pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
@@ -3036,7 +3036,7 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         "human_text"
     };
     let uc_args = serde_json::json!({"text": text, "policy": uc_policy});
-    let uc_result = crate::mcp::tools::unicode_policy_check(&uc_args);
+    let uc_result = crate::tools::unicode_policy_check(&uc_args);
     store_subresult(
         &mut subresults,
         "unicode_policy_check",
@@ -3146,7 +3146,7 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
             .collect();
         if !words.is_empty() {
             let id_args = serde_json::json!({"identifiers": words});
-            let id_result = crate::mcp::tools::identifier_inspect(&id_args);
+            let id_result = crate::tools::identifier_inspect(&id_args);
             store_subresult(
                 &mut subresults,
                 "identifier_inspect",

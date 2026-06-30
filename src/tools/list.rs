@@ -18,6 +18,7 @@ pub fn list_compare(args: &Value) -> ToolResponse {
         );
     }
 
+    // Validate all elements are strings
     let mut total_chars = 0usize;
     let mut errors: Vec<String> = Vec::new();
     for (i, item) in a.iter().enumerate() {
@@ -74,10 +75,12 @@ pub fn list_compare(args: &Value) -> ToolResponse {
         .get("near_match_threshold")
         .and_then(|v| v.as_f64())
         .unwrap_or(2.0);
+    // Match Python: ignore_order defaults to mode != "ordered" when not provided
     let _ignore_order = args
         .get("ignore_order")
         .and_then(|v| v.as_bool())
         .unwrap_or_else(|| mode != "ordered");
+    // Match Python: treat_as_multiset defaults to mode == "multiset" when not provided
     let treat_as_multiset = args
         .get("treat_as_multiset")
         .and_then(|v| v.as_bool())
@@ -123,7 +126,7 @@ pub fn list_compare(args: &Value) -> ToolResponse {
     } else {
         treat_as_multiset
     };
-    let _ignore_order_val = if let Some(v) = args.get("ignore_order").and_then(|v| v.as_bool()) {
+    let ignore_order_val = if let Some(v) = args.get("ignore_order").and_then(|v| v.as_bool()) {
         v
     } else {
         mode != "ordered"
@@ -168,7 +171,10 @@ pub fn list_compare(args: &Value) -> ToolResponse {
     let a_set: std::collections::HashSet<String> = a_transformed.iter().cloned().collect();
     let b_set: std::collections::HashSet<String> = b_transformed.iter().cloned().collect();
 
+    // In set mode, only_in_a/only_in_b use set membership (items not in other set at all)
+    // In multiset mode, use count comparison (items where count_a > count_b)
     let only_a_orig: Vec<Value> = if treat_as_multiset_val {
+        // multiset: use count comparison - items where a count > b count
         a.iter()
             .enumerate()
             .filter(|(i, _)| {
@@ -178,12 +184,14 @@ pub fn list_compare(args: &Value) -> ToolResponse {
             .map(|(_, v)| v.clone())
             .collect()
     } else {
+        // set: use set membership - items not present in b at all
         a.iter()
             .filter(|v| !b_set.contains(&transform(v)))
             .cloned()
             .collect()
     };
     let only_b_orig: Vec<Value> = if treat_as_multiset_val {
+        // multiset: use count comparison - items where b count > a count
         b.iter()
             .enumerate()
             .filter(|(i, _)| {
@@ -193,124 +201,187 @@ pub fn list_compare(args: &Value) -> ToolResponse {
             .map(|(_, v)| v.clone())
             .collect()
     } else {
+        // set: use set membership - items not present in a at all
         b.iter()
             .filter(|v| !a_set.contains(&transform(v)))
             .cloned()
             .collect()
     };
 
-    let intersection: Vec<Value> = if treat_as_multiset_val {
-        let mut result = Vec::new();
-        let mut used_a: Vec<bool> = vec![false; a.len()];
-        let mut used_b: Vec<bool> = vec![false; b.len()];
-        for (ai, at) in a_transformed.iter().enumerate() {
-            for (bi, bt) in b_transformed.iter().enumerate() {
-                if !used_a[ai] && !used_b[bi] && at == bt {
-                    used_a[ai] = true;
-                    used_b[bi] = true;
-                    result.push(a[ai].clone());
-                    break;
-                }
-            }
-        }
-        result
-    } else {
-        let common: std::collections::HashSet<&String> = a_set.intersection(&b_set).collect();
-        let mut result: Vec<Value> = Vec::new();
-        for item in a.iter() {
-            let t = transform(item);
-            if common.contains(&t) {
-                result.push(item.clone());
-            }
-        }
-        result
-    };
+    let duplicates_a: Vec<String>;
+    let duplicates_b: Vec<String>;
+    {
+        duplicates_a = a_counts
+            .iter()
+            .filter(|(_, c)| **c > 1)
+            .map(|(k, _)| k.clone())
+            .collect();
+        duplicates_b = b_counts
+            .iter()
+            .filter(|(_, c)| **c > 1)
+            .map(|(k, _)| k.clone())
+            .collect();
+    }
 
     let mut near_matches: Vec<serde_json::Value> = Vec::new();
-    if include_near_matches && !only_a_orig.is_empty() && !only_b_orig.is_empty() {
-        for (ai, av) in only_a_orig.iter().enumerate() {
-            let a_str = av.as_str().unwrap_or("");
-            for (bi, bv) in only_b_orig.iter().enumerate() {
-                let b_str = bv.as_str().unwrap_or("");
-                let dist = levenshtein_distance(a_str, b_str);
-                let max_len = a_str.chars().count().max(b_str.chars().count());
-                if max_len > 0 && (dist as f64) <= near_match_threshold {
-                    near_matches.push(serde_json::json!({
-                        "left_index": ai,
-                        "right_index": bi,
-                        "left": a_str,
-                        "right": b_str,
-                        "distance": dist,
-                    }));
+    if include_near_matches && near_match_threshold > 0.0 {
+        let threshold_int = near_match_threshold.round() as usize;
+        if threshold_int > 0 {
+            let mut seen_pairs: std::collections::HashSet<(String, String)> =
+                std::collections::HashSet::new();
+            for (i, a_item) in a.iter().enumerate() {
+                let a_t = &a_transformed[i];
+                for (j, b_item) in b.iter().enumerate() {
+                    let b_t = &b_transformed[j];
+                    if a_t == b_t {
+                        continue;
+                    }
+                    let dist = crate::text::levenshtein_distance(a_t, b_t);
+                    if dist > 0 && dist <= threshold_int {
+                        let a_str = a_item.as_str().unwrap_or("");
+                        let b_str = b_item.as_str().unwrap_or("");
+                        let pair = if a_str <= b_str {
+                            (a_str.to_string(), b_str.to_string())
+                        } else {
+                            (b_str.to_string(), a_str.to_string())
+                        };
+                        if !seen_pairs.contains(&pair) {
+                            seen_pairs.insert(pair);
+                            near_matches.push(serde_json::json!({
+                                "a": a_item,
+                                "b": b_item,
+                                "distance": dist,
+                                "classification": "fuzzy"
+                            }));
+                        }
+                        break;
+                    }
                 }
             }
         }
     }
 
-    let summary = if only_a_orig.is_empty() && only_b_orig.is_empty() {
-        "Lists are equivalent".to_string()
+    let same_ordered = ignore_order_val || (a_transformed == b_transformed);
+
+    let same_unordered = if treat_as_multiset_val {
+        a_counts == b_counts
     } else {
-        format!(
-            "{} items only in A, {} items only in B, {} in intersection",
-            only_a_orig.len(),
-            only_b_orig.len(),
-            intersection.len()
-        )
+        a_set == b_set
     };
 
-    let mut resp = ToolResponse::success(
-        serde_json::json!({
-            "mode": mode,
-            "only_in_a": only_a_orig,
-            "only_in_b": only_b_orig,
-            "intersection": intersection,
-            "summary": summary,
-        }),
-        Some("list_compare"),
-    )
-    .with_tool("list_compare");
+    let equal = match mode {
+        "ordered" => same_ordered,
+        "set" => same_unordered && only_a_orig.is_empty() && only_b_orig.is_empty(),
+        _ => same_unordered,
+    };
 
-    if include_near_matches && !near_matches.is_empty() {
-        resp = resp.with_findings(near_matches);
-    }
+    let only_in_a: Vec<Value> = only_a_orig.to_vec();
+    let only_in_b: Vec<Value> = only_b_orig.to_vec();
 
-    resp
-}
+    if mode == "ordered" {
+        let mut aligned: Vec<serde_json::Value> = Vec::new();
+        let max_len = std::cmp::max(a.len(), b.len());
+        let mut first_diff_index: Option<usize> = None;
 
-fn levenshtein_distance(a: &str, b: &str) -> usize {
-    let a_chars: Vec<char> = a.chars().collect();
-    let b_chars: Vec<char> = b.chars().collect();
-    let a_len = a_chars.len();
-    let b_len = b_chars.len();
-
-    if a_len == 0 {
-        return b_len;
-    }
-    if b_len == 0 {
-        return a_len;
-    }
-
-    let mut prev = vec![0usize; b_len + 1];
-    let mut curr = vec![0usize; b_len + 1];
-
-    for (j, item) in prev.iter_mut().enumerate() {
-        *item = j;
-    }
-
-    for i in 1..=a_len {
-        curr[0] = i;
-        for j in 1..=b_len {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] {
-                0
+        for i in 0..max_len {
+            let a_item = if i < a.len() {
+                Some(a[i].clone())
             } else {
-                1
+                None
             };
-            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
-        }
-        std::mem::swap(&mut prev, &mut curr);
-    }
+            let b_item = if i < b.len() {
+                Some(b[i].clone())
+            } else {
+                None
+            };
 
-    prev[b_len]
+            let op = match (&a_item, &b_item) {
+                (Some(_), None) => "delete",
+                (None, Some(_)) => "insert",
+                (Some(a_val), Some(b_val)) if a_transformed.get(i) == b_transformed.get(i) => {
+                    "equal"
+                }
+                _ => "replace",
+            };
+
+            if first_diff_index.is_none() && op != "equal" {
+                first_diff_index = Some(i);
+            }
+
+            let mut entry = serde_json::json!({"op": op});
+            if let Some(ref v) = a_item {
+                entry["a"] = v.clone();
+                entry["a_index"] = Value::from(i);
+            }
+            if let Some(ref v) = b_item {
+                entry["b"] = v.clone();
+                entry["b_index"] = Value::from(i);
+            }
+            aligned.push(entry);
+        }
+
+        let equal_prefix_length = first_diff_index.unwrap_or(a.len());
+
+        ToolResponse::success(
+            serde_json::json!({
+                "equal": equal,
+                "first_diff_index": first_diff_index,
+                "equal_prefix_length": equal_prefix_length,
+                "aligned": aligned,
+                "only_in_a": only_in_a,
+                "only_in_b": only_in_b,
+                "missing_in_a": only_in_b,
+                "missing_in_b": only_in_a,
+                "duplicates_in_a": duplicates_a,
+                "duplicates_in_b": duplicates_b,
+                "near_matches": near_matches,
+            }),
+            Some("list_compare"),
+        )
+        .with_tool("list_compare")
+    } else if mode == "set" {
+        ToolResponse::success(
+            serde_json::json!({
+                "equal": equal,
+                "only_in_a": only_in_a,
+                "only_in_b": only_in_b,
+                "missing_in_a": only_in_b,
+                "missing_in_b": only_in_a,
+                "duplicates_in_a": duplicates_a,
+            "duplicates_in_b": duplicates_b,
+            "near_matches": near_matches,
+            }),
+            Some("list_compare"),
+        )
+        .with_tool("list_compare")
+    } else {
+        let mut count_deltas: serde_json::Map<String, Value> = serde_json::Map::new();
+        let all_keys: std::collections::HashSet<String> =
+            a_counts.keys().chain(b_counts.keys()).cloned().collect();
+        for k in all_keys {
+            let delta =
+                *a_counts.get(&k).unwrap_or(&0) as i64 - *b_counts.get(&k).unwrap_or(&0) as i64;
+            if delta != 0 {
+                count_deltas.insert(k, Value::Number(delta.into()));
+            }
+        }
+
+        ToolResponse::success(
+            serde_json::json!({
+                "equal": equal,
+                "count_deltas": Value::Object(count_deltas),
+                "missing_in_a": only_in_b,
+                "missing_in_b": only_in_a,
+                "duplicates_in_a": duplicates_a,
+                "duplicates_in_b": duplicates_b,
+                "only_in_a": only_in_a,
+                "only_in_b": only_in_b,
+                "near_matches": near_matches,
+            }),
+            Some("list_compare"),
+        )
+        .with_tool("list_compare")
+    }
 }
 
 pub fn list_dedupe(args: &Value) -> ToolResponse {

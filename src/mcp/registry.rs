@@ -1,6 +1,6 @@
-use crate::mcp::schemas::ToolResponse;
+use crate::mcp::response::ToolResponse;
 use crate::mcp::server::ToolDefinition;
-use crate::mcp::tools::*;
+use crate::tools::*;
 use serde_json::Value;
 
 pub type ToolHandler = fn(&Value) -> ToolResponse;

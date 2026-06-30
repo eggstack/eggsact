@@ -231,7 +231,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 "new": new,
                 "mode": "exact",
             });
-            let tr_result = crate::mcp::tools::text_replace_check_tool(&tr_args);
+            let tr_result = crate::tools::text_replace_check_tool(&tr_args);
             if let Some(ref r) = tr_result.result {
                 subresults.insert("text_replace_check".to_string(), r.clone());
                 let match_count = r.get("match_count").and_then(|v| v.as_u64()).unwrap_or(0);

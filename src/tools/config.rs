@@ -347,8 +347,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                         "message": r.get("error").and_then(|v| v.as_str()).unwrap_or("Invalid TOML"),
                     }));
                 } else {
-                    let ts_result =
-                        crate::mcp::tools::toml_shape_tool(&serde_json::json!({"text": text}));
+                    let ts_result = toml_shape_tool(&serde_json::json!({"text": text}));
                     if let Some(ref r) = ts_result.result {
                         subresults.insert("toml_shape".to_string(), r.clone());
                     }
@@ -507,4 +506,116 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
         resp = resp.with_findings(findings);
     }
     resp
+}
+
+pub fn toml_shape_tool(args: &Value) -> ToolResponse {
+    let text = match args.get("text").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => {
+            return ToolResponse::error(
+                "invalid_arguments",
+                "Missing 'text' parameter",
+                None,
+                Some("toml_shape"),
+            )
+        }
+    };
+    let max_tables = match args.get("max_tables") {
+        Some(v) => {
+            if v.is_boolean() || !v.is_number() {
+                return ToolResponse::error(
+                    "invalid_arguments",
+                    &format!(
+                        "max_tables must be an integer, got {}",
+                        match v {
+                            Value::Bool(_) => "bool",
+                            Value::Null => "null",
+                            Value::String(_) =>
+                                return ToolResponse::error(
+                                    "invalid_arguments",
+                                    "max_tables must be an integer, got string",
+                                    None,
+                                    Some("toml_shape")
+                                ),
+                            Value::Array(_) => "array",
+                            Value::Object(_) => "object",
+                            _ => "unknown",
+                        }
+                    ),
+                    None,
+                    Some("toml_shape"),
+                );
+            }
+            if v.as_i64().unwrap_or(0) < 0 {
+                return ToolResponse::error(
+                    "invalid_arguments",
+                    "max_tables must be a non-negative integer",
+                    None,
+                    Some("toml_shape"),
+                );
+            }
+            v.as_u64().unwrap_or(100) as usize
+        }
+        None => 100,
+    };
+    if max_tables == 0 {
+        return ToolResponse::error(
+            "invalid_arguments",
+            "max_tables must be a positive integer",
+            None,
+            Some("toml_shape"),
+        );
+    }
+    let detail = args
+        .get("detail")
+        .and_then(|v| v.as_str())
+        .unwrap_or("normal");
+
+    if text.chars().count() > MAX_TEXT_LENGTH {
+        return ToolResponse::error(
+            "input_too_large",
+            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            None,
+            Some("toml_shape"),
+        );
+    }
+
+    let valid_details = ["summary", "normal", "full"];
+    if !valid_details.contains(&detail) {
+        return ToolResponse::error(
+            "invalid_arguments",
+            &format!("Unsupported detail level: {}", detail),
+            Some(vec![format!("Use one of: {}", valid_details.join(", "))]),
+            Some("toml_shape"),
+        );
+    }
+
+    match crate::text::toml::toml_shape(text, max_tables) {
+        Ok(result) => {
+            if detail == "summary" {
+                ToolResponse::success(
+                    serde_json::json!({
+                        "valid": result.valid,
+                        "truncated": result.truncated,
+                        "summary": result.summary,
+                    }),
+                    Some("toml_shape"),
+                )
+                .with_tool("toml_shape")
+            } else {
+                ToolResponse::success(
+                    serde_json::json!({
+                        "valid": result.valid,
+                        "top_level_keys": result.top_level_keys,
+                        "tables": result.tables,
+                        "truncated": result.truncated,
+                        "summary": result.summary,
+                    }),
+                    Some("toml_shape"),
+                )
+                .with_tool("toml_shape")
+            }
+        }
+        Err(e) => ToolResponse::error("invalid_arguments", &e, None, Some("toml_shape")),
+    }
 }

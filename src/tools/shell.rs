@@ -480,7 +480,7 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
             .collect();
         for pattern in &regex_args {
             let rs_args = serde_json::json!({"pattern": pattern.as_str()});
-            let rs_result = crate::mcp::tools::regex_safety_check_tool(&rs_args);
+            let rs_result = crate::tools::regex_safety_check_tool(&rs_args);
             if let Some(ref r) = rs_result.result {
                 let risk = r.get("risk").and_then(|v| v.as_str()).unwrap_or("none");
                 let mut has_rs_findings = false;
