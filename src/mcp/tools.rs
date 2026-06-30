@@ -277,6 +277,107 @@ fn unicode_casefold(s: &str) -> String {
     caseless::default_case_fold_str(s)
 }
 
+fn normalize_text_count_input(text: &str, normalization: &str) -> String {
+    match normalization {
+        "NFKC" => text.nfkc().collect(),
+        "NFC" => text.nfc().collect(),
+        _ => text.to_string(),
+    }
+}
+
+fn validate_text_count_target(
+    target: &str,
+    normalized_target: &str,
+    count_mode: &str,
+) -> Option<ToolResponse> {
+    if target.is_empty() {
+        return Some(ToolResponse::error(
+            "invalid_arguments",
+            "target must not be empty",
+            Some(vec!["Provide a non-empty target".to_string()]),
+            Some("text_count"),
+        ));
+    }
+
+    match count_mode {
+        "codepoint" => {
+            if normalized_target.chars().count() != 1 {
+                return Some(ToolResponse::error(
+                    "invalid_arguments",
+                    "target must be a single codepoint for count_mode='codepoint' after normalization",
+                    Some(vec!["Provide a target that normalizes to one codepoint".to_string()]),
+                    Some("text_count"),
+                ));
+            }
+        }
+        "grapheme" => {
+            if count_graphemes(normalized_target) != 1 {
+                return Some(ToolResponse::error(
+                    "invalid_arguments",
+                    "target must be a single grapheme for count_mode='grapheme' after normalization",
+                    Some(vec!["Provide a target that normalizes to one grapheme".to_string()]),
+                    Some("text_count"),
+                ));
+            }
+        }
+        "byte" if normalized_target.len() != 1 || !normalized_target.is_ascii() => {
+            return Some(ToolResponse::error(
+                "invalid_arguments",
+                "target must be a single byte for count_mode='byte' after normalization",
+                Some(vec![
+                    "Provide a target that normalizes to one ASCII byte".to_string()
+                ]),
+                Some("text_count"),
+            ));
+        }
+        _ => {}
+    }
+
+    None
+}
+
+fn text_count_matches(work_text: &str, work_target: &str, count_mode: &str) -> (usize, Vec<usize>) {
+    match count_mode {
+        "byte" => {
+            let target_bytes = work_target.as_bytes();
+            let width = target_bytes.len();
+            let positions: Vec<usize> = work_text
+                .as_bytes()
+                .windows(width)
+                .enumerate()
+                .filter_map(|(index, window)| (window == target_bytes).then_some(index))
+                .collect();
+            (positions.len(), positions)
+        }
+        "codepoint" => {
+            let Some(target_char) = work_target.chars().next() else {
+                return (0, Vec::new());
+            };
+            let positions: Vec<usize> = work_text
+                .chars()
+                .enumerate()
+                .filter_map(|(index, c)| (c == target_char).then_some(index))
+                .collect();
+            (positions.len(), positions)
+        }
+        "grapheme" => {
+            let positions: Vec<usize> = work_text
+                .grapheme_indices(true)
+                .filter_map(|(index, grapheme)| (grapheme == work_target).then_some(index))
+                .collect();
+            (positions.len(), positions)
+        }
+        "substring" => {
+            let positions: Vec<usize> = work_text
+                .match_indices(work_target)
+                .map(|(index, _)| index)
+                .collect();
+            (positions.len(), positions)
+        }
+        _ => (0, Vec::new()),
+    }
+}
+
 pub fn math_eval(args: &Value) -> ToolResponse {
     let expression = match _require_str(args, "expression", "math_eval") {
         Ok(s) => s,
@@ -1895,16 +1996,9 @@ pub fn text_count(args: &Value) -> ToolResponse {
         );
     }
 
-    let mut work_text = text.to_string();
-    if normalization != "raw" {
-        work_text = match normalization {
-            "NFKC" => work_text.nfkc().collect::<String>(),
-            _ => work_text.nfc().collect::<String>(),
-        };
-    }
+    let work_text = normalize_text_count_input(text, normalization);
 
     if let Some(target) = target {
-        // Validate target length
         const MAX_TARGET_LENGTH: usize = 1000;
         if target.chars().count() > MAX_TARGET_LENGTH {
             return ToolResponse::error(
@@ -1919,136 +2013,12 @@ pub fn text_count(args: &Value) -> ToolResponse {
             );
         }
 
-        // Validate target cardinality based on count_mode
-        match count_mode {
-            "codepoint" => {
-                if target.chars().count() != 1 {
-                    return ToolResponse::error(
-                        "invalid_arguments",
-                        "target must be a single codepoint for count_mode='codepoint'",
-                        Some(vec!["Provide a single-codepoint target".to_string()]),
-                        Some("text_count"),
-                    );
-                }
-            }
-            "grapheme" => {
-                if count_graphemes(target) != 1 {
-                    return ToolResponse::error(
-                        "invalid_arguments",
-                        "target must be a single grapheme for count_mode='grapheme'",
-                        Some(vec!["Provide a single-grapheme target".to_string()]),
-                        Some("text_count"),
-                    );
-                }
-            }
-            "byte" if (target.len() != 1 || !target.is_ascii()) => {
-                return ToolResponse::error(
-                    "invalid_arguments",
-                    "target must be a single byte for count_mode='byte'",
-                    Some(vec!["Provide a single-byte target".to_string()]),
-                    Some("text_count"),
-                );
-            }
-            _ => {}
+        let work_target = normalize_text_count_input(target, normalization);
+        if let Some(error) = validate_text_count_target(target, &work_target, count_mode) {
+            return error;
         }
 
-        let work_target = match normalization {
-            "NFKC" => target.nfkc().collect::<String>(),
-            "NFC" => target.nfc().collect::<String>(),
-            _ => target.to_string(),
-        };
-
-        let count = match count_mode {
-            "byte" => {
-                if work_target.is_empty() {
-                    0
-                } else {
-                    let text_bytes = work_text.as_bytes();
-                    let target_bytes = work_target.as_bytes();
-                    let tw = target_bytes.len();
-                    if tw == 0 {
-                        0
-                    } else {
-                        text_bytes
-                            .windows(tw)
-                            .filter(|w| *w == target_bytes)
-                            .count()
-                    }
-                }
-            }
-            "codepoint" => {
-                if work_target.is_empty() {
-                    0
-                } else {
-                    let target_char = work_target.chars().next().unwrap();
-                    work_text.chars().filter(|c| *c == target_char).count()
-                }
-            }
-            "grapheme" => {
-                if work_target.is_empty() {
-                    0
-                } else {
-                    work_text
-                        .graphemes(true)
-                        .filter(|g| *g == work_target.as_str())
-                        .count()
-                }
-            }
-            "substring" => work_text.matches(&work_target).count(),
-            _ => 0,
-        };
-
-        // Collect positions
-        let positions: Vec<usize> = match count_mode {
-            "byte" => {
-                if work_target.is_empty() {
-                    vec![]
-                } else {
-                    let text_bytes = work_text.as_bytes();
-                    let target_bytes = work_target.as_bytes();
-                    let tw = target_bytes.len();
-                    if tw == 0 {
-                        vec![]
-                    } else {
-                        text_bytes
-                            .windows(tw)
-                            .enumerate()
-                            .filter(|(_, w)| *w == target_bytes)
-                            .map(|(i, _)| i)
-                            .collect()
-                    }
-                }
-            }
-            "codepoint" => {
-                if work_target.is_empty() {
-                    vec![]
-                } else {
-                    let target_char = work_target.chars().next().unwrap();
-                    work_text
-                        .chars()
-                        .enumerate()
-                        .filter(|(_, c)| *c == target_char)
-                        .map(|(i, _)| i)
-                        .collect()
-                }
-            }
-            "grapheme" => {
-                if work_target.is_empty() {
-                    vec![]
-                } else {
-                    work_text
-                        .grapheme_indices(true)
-                        .filter(|(_, g)| *g == work_target.as_str())
-                        .map(|(i, _)| i)
-                        .collect()
-                }
-            }
-            "substring" => work_text
-                .match_indices(&work_target)
-                .map(|(i, _)| i)
-                .collect(),
-            _ => vec![],
-        };
+        let (count, positions) = text_count_matches(&work_text, &work_target, count_mode);
 
         let text_length_codepoints = match count_mode {
             "grapheme" => crate::text::count_graphemes(&work_text),
@@ -6879,8 +6849,17 @@ pub fn json_compare(args: &Value) -> ToolResponse {
         .with_tool("json_compare");
     }
 
-    let parsed_a = parsed_a.unwrap();
-    let parsed_b = parsed_b.unwrap();
+    let (parsed_a, parsed_b) = match (parsed_a, parsed_b) {
+        (Ok(parsed_a), Ok(parsed_b)) => (parsed_a, parsed_b),
+        _ => {
+            return ToolResponse::error(
+                "parse_error",
+                "Invalid JSON input",
+                None,
+                Some("json_compare"),
+            )
+        }
+    };
 
     let options = JsonCompareOptions {
         ignore_object_order,
@@ -7280,6 +7259,25 @@ fn compare_json_values(
     (equal, state.type_match, state.diffs)
 }
 
+fn json_canonicalize_invalid_response(error: serde_json::Error) -> ToolResponse {
+    ToolResponse::success(
+        serde_json::json!({
+            "valid": false,
+            "canonical": null,
+            "minified": null,
+            "sha256": null,
+            "duplicate_keys": [],
+            "top_level_type": null,
+            "top_level_keys": null,
+            "error": error.to_string(),
+            "line": error.line(),
+            "column": error.column(),
+        }),
+        Some("json_canonicalize"),
+    )
+    .with_tool("json_canonicalize")
+}
+
 pub fn json_canonicalize(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -7347,57 +7345,15 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
     }
 
     let mut duplicate_keys: Vec<String> = Vec::new();
-
-    let parsed = if detect_duplicate_keys {
-        match serde_json::from_str::<serde_json::Value>(text) {
-            Ok(v) => {
+    let parsed = match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(value) => {
+            if detect_duplicate_keys {
                 detect_duplicates_in_json(text, &mut duplicate_keys);
-                Some(v)
             }
-            Err(e) => {
-                return ToolResponse::success(
-                    serde_json::json!({
-                        "valid": false,
-                        "canonical": null,
-                        "minified": null,
-                        "sha256": null,
-                        "duplicate_keys": [],
-                        "top_level_type": null,
-                        "top_level_keys": null,
-                        "error": e.to_string(),
-                        "line": e.line(),
-                        "column": e.column(),
-                    }),
-                    Some("json_canonicalize"),
-                )
-                .with_tool("json_canonicalize");
-            }
+            value
         }
-    } else {
-        match serde_json::from_str::<serde_json::Value>(text) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                return ToolResponse::success(
-                    serde_json::json!({
-                        "valid": false,
-                        "canonical": null,
-                        "minified": null,
-                        "sha256": null,
-                        "duplicate_keys": [],
-                        "top_level_type": null,
-                        "top_level_keys": null,
-                        "error": e.to_string(),
-                        "line": e.line(),
-                        "column": e.column(),
-                    }),
-                    Some("json_canonicalize"),
-                )
-                .with_tool("json_canonicalize");
-            }
-        }
+        Err(error) => return json_canonicalize_invalid_response(error),
     };
-
-    let parsed = parsed.unwrap();
 
     let (top_level_type, top_level_keys) = match &parsed {
         serde_json::Value::Object(map) => (
@@ -10950,15 +10906,19 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
                 {
                     machine_codes.push("REGEX_RISK".to_string());
                 }
-                subresults.entry("regex_safety_check".to_string())
-                    .or_insert_with(|| serde_json::json!([]))
-                    .as_array_mut()
-                    .unwrap()
-                    .push(serde_json::json!({
-                        "pattern": pattern.as_str(),
-                        "findings_count": r.get("findings").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
-                        "risk": risk,
-                    }));
+                let regex_summary = serde_json::json!({
+                    "pattern": pattern.as_str(),
+                    "findings_count": r.get("findings").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+                    "risk": risk,
+                });
+                let regex_subresults = subresults
+                    .entry("regex_safety_check".to_string())
+                    .or_insert_with(|| serde_json::json!([]));
+                if let Some(items) = regex_subresults.as_array_mut() {
+                    items.push(regex_summary);
+                } else {
+                    *regex_subresults = serde_json::json!([regex_summary]);
+                }
             }
         }
     }

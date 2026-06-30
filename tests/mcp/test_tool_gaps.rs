@@ -1716,6 +1716,32 @@ fn test_count_nfc_normalization() {
 }
 
 #[test]
+fn test_count_rejects_nfkc_target_that_expands_in_codepoint_mode() {
+    let result = call_tool(
+        "text_count",
+        serde_json::json!({"text": "office \u{FB03}", "count_mode": "codepoint", "normalization": "NFKC", "target": "\u{FB03}"}),
+    );
+    assert!(
+        is_tool_error(&result),
+        "NFKC-expanded codepoint target should error, got: {}",
+        result
+    );
+}
+
+#[test]
+fn test_count_nfkc_expansion_in_substring_mode() {
+    let result = call_tool(
+        "text_count",
+        serde_json::json!({"text": "\u{FB03} ffi", "count_mode": "substring", "normalization": "NFKC", "target": "ffi"}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    assert_eq!(
+        result.get("result").unwrap().get("count"),
+        Some(&Value::Number(2.into()))
+    );
+}
+
+#[test]
 fn test_count_invalid_mode() {
     let request = serde_json::json!({
         "jsonrpc": "2.0",

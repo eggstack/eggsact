@@ -261,12 +261,14 @@ Count occurrences of a target substring or character with configurable mode and 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `text` | string | yes | -- | Text to search in |
-| `target` | string | no | -- | Substring or character to count. Required when `count_mode` is `"substring"` |
+| `target` | string | no | -- | Non-empty substring or character to count. If omitted, returns a frequency table |
 | `count_mode` | string | no | `"codepoint"` | Counting mode: `"codepoint"`, `"grapheme"`, `"byte"`, `"substring"` |
 | `normalization` | string | no | `"raw"` | Normalization: `"raw"`, `"NFC"`, `"NFKC"` |
 
-**Return (with target):** `{"count": <int>, "target": <string>, "count_mode": <string>}`
-**Return (without target):** `{"frequency": {<char>: <count>}, "count_mode": <string>}`
+For `codepoint`, `grapheme`, and `byte` modes, `target` is validated after the requested normalization. Use `substring` mode when an NFKC target can expand to multiple characters.
+
+**Return (with target):** `{"count": <int>, "positions": [<int>], "target": <string>, "normalization": <string>, "text_length_codepoints": <int>}`
+**Return (without target):** `{<char>: <count>}` frequency table.
 
 ---
 
