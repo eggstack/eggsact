@@ -30,7 +30,31 @@ src/
   main.rs           # CLI entry, arg parsing, dispatch
   lib.rs            # library root, re-exports run()/evaluate()
   calc/             # calculator: evaluator, normalize, units (3 modules)
-  mcp/              # MCP server (server.rs dispatch, tools.rs handlers, schemas.rs schemas, registry.rs tool registry)
+  mcp/              # MCP server protocol, runtime, registry, validation
+    server.rs       # protocol orchestration, stdio loop, dispatch
+    registry.rs     # tool registration (ToolSpec declarations, single source of truth)
+    protocol.rs     # JSON-RPC types (Request, Response, Error, InitializeResult)
+    response.rs     # ToolResponse, error sanitization
+    runtime.rs      # rate limiter, constants, profile management
+    schema_validation.rs # argument validation against tool schemas
+    schemas.rs      # re-exports from protocol.rs and response.rs (backward compat)
+  tools/            # MCP tool implementations (by category)
+    helpers.rs      # shared constants, utilities, helper functions
+    math.rs         # math_eval, unit_convert, unit_info, constant_lookup
+    text.rs         # text_measure, text_equal, text_diff_explain, etc. (18 tools)
+    json.rs         # json_extract, json_compare, json_canonicalize, etc. (6 tools)
+    regex.rs        # validate_regex, regex_safety_check, regex_finditer
+    validation.rs   # validate_json, validate_brackets, validate_toml, validate_schema_light
+    path.rs         # path_normalize, path_analyze, path_compare, glob_match, etc.
+    shell.rs        # shell_split, shell_quote_join, argv_compare, command_preflight
+    list.rs         # list_compare, list_dedupe, list_sort
+    markdown.rs     # markdown_structure, code_fence_extract
+    patch.rs        # patch_apply_check, patch_summary, edit_preflight
+    config.rs       # dotenv_validate, ini_validate, config_preflight
+    identifier.rs   # identifier_analyze, identifier_inspect, identifier_table_inspect
+    unicode.rs      # unicode_policy_check, canonicalize_text
+    version.rs      # version_compare, version_constraint_check
+    cargo.rs        # cargo_toml_inspect
   text/             # text processing library (24 modules)
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text

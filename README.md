@@ -365,10 +365,31 @@ eggsact/
 │   │   └── units.rs         # Unit definitions and conversion factors
 │   ├── mcp/                 # MCP server
 │   │   ├── mod.rs           # Module re-exports
-│   │   ├── server.rs        # stdio JSON-RPC 2.0 server, tool dispatch
+│   │   ├── server.rs        # stdio JSON-RPC 2.0 server, protocol orchestration
 │   │   ├── registry.rs      # Tool registration (ToolSpec declarations, single source of truth)
-│   │   ├── tools.rs         # MCP tool implementations
-│   │   └── schemas.rs       # JSON-RPC type definitions, tool schemas
+│   │   ├── protocol.rs      # JSON-RPC types (Request, Response, Error, InitializeResult)
+│   │   ├── response.rs      # ToolResponse, error sanitization
+│   │   ├── runtime.rs       # Rate limiter, cancelled requests, constants, profile management
+│   │   ├── schema_validation.rs # MCP argument validation against tool schemas
+│   │   └── schemas.rs       # Re-exports from protocol.rs and response.rs (backward compat)
+│   ├── tools/               # MCP tool implementations (by category)
+│   │   ├── mod.rs           # Module re-exports
+│   │   ├── helpers.rs       # Shared constants, utilities, helper functions
+│   │   ├── math.rs          # math_eval, unit_convert, unit_info, constant_lookup
+│   │   ├── text.rs          # text_measure, text_equal, text_diff_explain, etc. (18 tools)
+│   │   ├── json.rs          # json_extract, json_compare, json_canonicalize, etc. (6 tools)
+│   │   ├── regex.rs         # validate_regex, regex_safety_check, regex_finditer
+│   │   ├── validation.rs    # validate_json, validate_brackets, validate_toml, validate_schema_light
+│   │   ├── path.rs          # path_normalize, path_analyze, path_compare, glob_match, etc.
+│   │   ├── shell.rs         # shell_split, shell_quote_join, argv_compare, command_preflight
+│   │   ├── list.rs          # list_compare, list_dedupe, list_sort
+│   │   ├── markdown.rs      # markdown_structure, code_fence_extract
+│   │   ├── patch.rs         # patch_apply_check, patch_summary, edit_preflight
+│   │   ├── config.rs        # dotenv_validate, ini_validate, config_preflight
+│   │   ├── identifier.rs    # identifier_analyze, identifier_inspect, identifier_table_inspect
+│   │   ├── unicode.rs       # unicode_policy_check, canonicalize_text
+│   │   ├── version.rs       # version_compare, version_constraint_check
+│   │   └── cargo.rs         # cargo_toml_inspect
 │   └── text/                # Text processing library (24 modules)
 │       ├── mod.rs           # Module re-exports
 │       ├── primitives.rs    # UTF-8 encoding, codepoint iteration

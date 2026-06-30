@@ -4,13 +4,37 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 
 ## Files
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `server.rs` | ~1,600 | Protocol handling, tool dispatch |
-| `registry.rs` | varies | Tool registration: ToolSpec declarations (single source of truth) |
-| `tools.rs` | varies | Tool implementation functions (thin wrappers) |
-| `schemas.rs` | varies | JSON-RPC types, ToolResponse, error sanitization |
-| `mod.rs` | small | Module re-exports |
+| File | Purpose |
+|------|---------|
+| `server.rs` | Protocol orchestration: stdio read loop, request validation, JSON-RPC dispatch |
+| `registry.rs` | Tool registration: `ToolSpec` declarations (single source of truth) |
+| `protocol.rs` | JSON-RPC types: `JsonRpcRequest`, `JsonRpcResponse`, `InitializeResult`, error constructors |
+| `response.rs` | `ToolResponse` struct, `sanitize_error`, response builders |
+| `runtime.rs` | Rate limiter, cancelled requests, timeout constants, profile management |
+| `schema_validation.rs` | MCP argument validation against tool input schemas |
+| `schemas.rs` | Re-exports from `protocol.rs` and `response.rs` (backward compatibility) |
+| `mod.rs` | Module declarations |
+
+Tool implementations live in `src/tools/` (category modules):
+
+| Module | Tools |
+|--------|-------|
+| `helpers.rs` | Shared constants, utility functions, spawn semaphore |
+| `math.rs` | math_eval, unit_convert, unit_info, constant_lookup |
+| `text.rs` | text_measure, text_equal, text_diff_explain, text_inspect, text_count, text_truncate, text_fingerprint, text_hash, text_position, text_window, text_transform, text_replace_check, text_security_inspect, escape_text, unescape_text, prompt_input_inspect, line_range_extract, line_range_compare |
+| `json.rs` | json_extract, json_compare, json_canonicalize, json_query, json_shape, structured_data_compare |
+| `regex.rs` | validate_regex, regex_safety_check, regex_finditer |
+| `validation.rs` | validate_json, validate_brackets, validate_toml, validate_schema_light |
+| `path.rs` | path_normalize, path_analyze, path_compare, path_scope_check, glob_match |
+| `shell.rs` | shell_split, shell_quote_join, argv_compare, command_preflight |
+| `list.rs` | list_compare, list_dedupe, list_sort |
+| `markdown.rs` | markdown_structure, code_fence_extract |
+| `patch.rs` | patch_apply_check, patch_summary, edit_preflight |
+| `config.rs` | dotenv_validate, ini_validate, config_preflight |
+| `identifier.rs` | identifier_analyze, identifier_inspect, identifier_table_inspect |
+| `unicode.rs` | unicode_policy_check, canonicalize_text |
+| `version.rs` | version_compare, version_constraint_check |
+| `cargo.rs` | cargo_toml_inspect |
 
 ## Protocol
 
@@ -35,12 +59,12 @@ All tool registration lives in `src/mcp/registry.rs` as `ToolSpec` declarations.
 ### ToolSpec
 
 Each tool is declared with a `ToolSpec` entry in the registry, which specifies:
-- **handler**: The function to call (maps to a function in `tools.rs`)
+- **handler**: The function to call (maps to a function in `tools/*.rs`)
 - **category**: Tool grouping (math, text, validation, json, regex, etc.)
 - **tier**: 0=essential, 1=common, 2=advanced, 3=specialized
 - **profiles**: Feature profiles
 - **tags**: Searchable tags
-- **llm_exposure**: "full", "indirect", "internal"
+- **exposure**: "default", "contextual", "expert_only", "harness_only", "hidden"
 - **composite**: Whether tool calls other tools internally
 - **input_schema**: JSON Schema for the tool's input parameters
 - **output_schema**: JSON Schema for the tool's output
@@ -85,6 +109,7 @@ Tools marked `composite: true` orchestrate other tools internally:
 
 ## Rate Limiting
 
+Defined in `src/mcp/runtime.rs`:
 - `MAX_REQUESTS_PER_SECOND`: 10
 - `MAX_CANCELLED_REQUESTS`: 10,000
 - `MAX_TOOL_TIMEOUT_SECONDS`: 30
@@ -92,7 +117,7 @@ Tools marked `composite: true` orchestrate other tools internally:
 
 ## Error Handling
 
-Tool errors return `ToolResponse` with `ok: false`:
+Tool errors return `ToolResponse` (defined in `src/mcp/response.rs`) with `ok: false`:
 ```json
 {
   "ok": false,
@@ -103,7 +128,7 @@ Tool errors return `ToolResponse` with `ok: false`:
 }
 ```
 
-JSON-RPC level errors use standard codes:
+JSON-RPC level errors use standard codes (constructed in `src/mcp/protocol.rs`):
 - `-32601`: Method not found
 - `-32600`: Invalid request
 - `-32602`: Invalid params

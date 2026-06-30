@@ -1,95 +1,20 @@
-use crate::calc::set_mcp_mode;
+use crate::mcp::protocol::{JsonRpcError, JsonRpcErrorDetail, JsonRpcRequest, JsonRpcResponse};
 use crate::mcp::registry;
-use crate::mcp::schemas::*;
-use crate::mcp::tools::*;
+use crate::mcp::response::{sanitize_error, ToolResponse};
+use crate::mcp::runtime::{
+    self, get_active_profile, get_schema_detail, CancelledRequests, RateLimiter, MAX_OUTPUT_BYTES,
+    MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_TIMEOUT_SECONDS,
+    MAX_TOOL_WORKERS, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
+};
+use crate::mcp::schema_validation::validate_arguments;
 use crate::text::levenshtein_distance;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Mutex;
-use tokio::time::Instant;
-
-const MAX_REQUEST_BYTES: usize = 1_000_000;
-const MAX_OUTPUT_BYTES: usize = 1_000_000;
-const MAX_REQUESTS_PER_SECOND: u32 = 10;
-const MAX_REQUEST_ID_LENGTH: usize = 1024;
-const MAX_TOOL_TIMEOUT_SECONDS: u64 = 30;
-const MAX_CANCELLED_REQUESTS: usize = 10_000;
-const MAX_TOOL_WORKERS: usize = 16;
-
-pub const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
-pub const MCP_SERVER_NAME: &str = "eggsact";
-
-const SCHEMA_DETAIL_FULL: &str = "full";
-
-use std::sync::RwLock;
-
-static ACTIVE_PROFILE: LazyLock<RwLock<String>> = LazyLock::new(|| {
-    let profile = std::env::var("EGGCALC_MCP_PROFILE").unwrap_or_else(|_| "full".to_string());
-    if !registry::PROFILE_NAMES.contains(&profile.as_str()) {
-        let available: Vec<&str> = registry::PROFILE_NAMES.to_vec();
-        eprintln!(
-            "Error: Invalid EGGCALC_MCP_PROFILE: {:?}. Available profiles: {}",
-            profile,
-            available.join(", ")
-        );
-        std::process::exit(1);
-    }
-    RwLock::new(profile)
-});
-
-static ACTIVE_SCHEMA_DETAIL: LazyLock<RwLock<String>> = LazyLock::new(|| {
-    let detail = std::env::var("EGGCALC_MCP_SCHEMA_DETAIL")
-        .unwrap_or_else(|_| SCHEMA_DETAIL_FULL.to_string());
-    RwLock::new(detail)
-});
-
-/// Set the active MCP profile. Returns Ok(()) on success, or Err with available profiles on failure.
-pub fn set_active_profile(name: &str) -> Result<(), String> {
-    if !registry::PROFILE_NAMES.contains(&name) {
-        let available: Vec<&str> = registry::PROFILE_NAMES.to_vec();
-        return Err(format!(
-            "Unknown profile: {:?}. Available profiles: {}",
-            name,
-            available.join(", ")
-        ));
-    }
-    let mut profile = ACTIVE_PROFILE.write().map_err(|e| e.to_string())?;
-    *profile = name.to_string();
-    Ok(())
-}
-
-/// Get the currently active MCP profile name.
-pub fn get_active_profile() -> String {
-    let profile = ACTIVE_PROFILE.read().unwrap_or_else(|e| e.into_inner());
-    profile.clone()
-}
-
-/// Set the schema detail level (compact, normal, full).
-pub fn set_schema_detail(level: &str) -> Result<(), String> {
-    if level != "compact" && level != "normal" && level != "full" {
-        return Err(format!(
-            "Invalid schema detail: {:?}. Use compact, normal, or full.",
-            level
-        ));
-    }
-    let mut detail = ACTIVE_SCHEMA_DETAIL.write().map_err(|e| e.to_string())?;
-    *detail = level.to_string();
-    Ok(())
-}
-
-/// Get the current schema detail level.
-pub fn get_schema_detail() -> String {
-    let detail = ACTIVE_SCHEMA_DETAIL
-        .read()
-        .unwrap_or_else(|e| e.into_inner());
-    detail.clone()
-}
 
 fn get_profile_tools(profile: &str) -> Vec<&'static str> {
     registry::tools_for_profile(profile)
@@ -303,402 +228,6 @@ fn find_close_match<'a>(input: &str, tool_names: &[&'a str]) -> Option<&'a str> 
     best.map(|(name, _)| name)
 }
 
-static SCHEMA_CACHE: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
-    let tools = list_tools();
-    let mut map = HashMap::new();
-    for tool in tools {
-        map.insert(tool.name, tool.input_schema);
-    }
-    map
-});
-
-fn validate_property(value: &Value, schema: &Value, path: &str) -> Option<String> {
-    validate_property_inner(value, schema, path, 10)
-}
-
-fn validate_property_inner(
-    value: &Value,
-    schema: &Value,
-    path: &str,
-    max_depth: usize,
-) -> Option<String> {
-    if max_depth == 0 {
-        return Some(format!("Schema nesting too deep at '{}'", path));
-    }
-
-    let obj = match schema.as_object() {
-        Some(o) => o,
-        None => return Some(format!("Schema for '{}' must be an object", path)),
-    };
-
-    let expected_type = obj.get("type")?;
-
-    let type_options: Vec<&str> = match expected_type {
-        Value::String(s) => vec![s.as_str()],
-        Value::Array(arr) => arr.iter().filter_map(|v| v.as_str()).collect(),
-        _ => {
-            return Some(format!(
-                "Argument '{}' has unsupported 'type' (must be a string or list of strings)",
-                path
-            ))
-        }
-    };
-
-    let valid_type = type_options.iter().any(|t| value_matches_type(value, t));
-    if !valid_type {
-        if type_options.len() == 1 {
-            return Some(format!(
-                "Argument '{}' must be {}, got {}",
-                path,
-                type_options[0],
-                json_type_name(value)
-            ));
-        }
-        return Some(format!(
-            "Argument '{}' must be one of [{}], got {}",
-            path,
-            type_options.join(", "),
-            json_type_name(value)
-        ));
-    }
-
-    if type_options
-        .iter()
-        .all(|t| *t == "integer" || *t == "number")
-        && matches!(value, Value::Bool(_))
-    {
-        if type_options.len() == 1 {
-            return Some(format!(
-                "Argument '{}' must be {}, got bool",
-                path, type_options[0]
-            ));
-        }
-        return Some(format!(
-            "Argument '{}' must be one of [{}], got bool",
-            path,
-            type_options.join(", ")
-        ));
-    }
-
-    if let Some(const_val) = obj.get("const") {
-        if value != const_val {
-            return Some(format!(
-                "Argument '{}' must equal {}, got {}",
-                path, const_val, value
-            ));
-        }
-    }
-
-    if let Some(enums) = obj.get("enum").and_then(|v| v.as_array()) {
-        if !enums.iter().any(|e| e == value) {
-            return Some(format!(
-                "Argument '{}' must be one of: {}",
-                path,
-                enums
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-    }
-
-    if type_options.contains(&"string") && value.is_string() {
-        if let Some(s) = value.as_str() {
-            if let Some(min) = obj.get("minLength").and_then(|v| v.as_u64()) {
-                if (s.chars().count() as u64) < min {
-                    return Some(format!(
-                        "Argument '{}' length {} is less than minLength {}",
-                        path,
-                        s.chars().count(),
-                        min
-                    ));
-                }
-            }
-            if let Some(max) = obj.get("maxLength").and_then(|v| v.as_u64()) {
-                if (s.chars().count() as u64) > max {
-                    return Some(format!(
-                        "Argument '{}' length {} exceeds maxLength {}",
-                        path,
-                        s.chars().count(),
-                        max
-                    ));
-                }
-            }
-            if let Some(pattern) = obj.get("pattern").and_then(|v| v.as_str()) {
-                match regex::Regex::new(pattern) {
-                    Ok(re) => {
-                        if re.find(s).is_none() {
-                            return Some(format!(
-                                "Argument '{}' does not match pattern '{}'",
-                                path, pattern
-                            ));
-                        }
-                    }
-                    Err(e) => {
-                        return Some(format!("Argument '{}' has invalid pattern: {}", path, e));
-                    }
-                }
-            }
-        }
-    }
-
-    let is_numeric = type_options
-        .iter()
-        .any(|t| *t == "number" || *t == "integer");
-    let is_not_bool = !matches!(value, Value::Bool(_));
-    if is_numeric && is_not_bool {
-        if let Some(n) = value.as_f64() {
-            if n.is_nan() {
-                return Some(format!(
-                    "Argument '{}' must be a finite number, got NaN",
-                    path
-                ));
-            }
-            if n.is_infinite() {
-                let sign = if n > 0.0 { "+inf" } else { "-inf" };
-                return Some(format!(
-                    "Argument '{}' must be a finite number, got {}",
-                    path, sign
-                ));
-            }
-            if let Some(min) = obj.get("minimum").and_then(|v| v.as_f64()) {
-                if n < min {
-                    return Some(format!(
-                        "Argument '{}' value {} is less than minimum {}",
-                        path, n, min
-                    ));
-                }
-            }
-            if let Some(max) = obj.get("maximum").and_then(|v| v.as_f64()) {
-                if n > max {
-                    return Some(format!(
-                        "Argument '{}' value {} exceeds maximum {}",
-                        path, n, max
-                    ));
-                }
-            }
-            if let Some(excl_min) = obj.get("exclusiveMinimum").and_then(|v| v.as_f64()) {
-                if n <= excl_min {
-                    return Some(format!(
-                        "Argument '{}' value {} must be > exclusiveMinimum {}",
-                        path, n, excl_min
-                    ));
-                }
-            }
-            if let Some(excl_max) = obj.get("exclusiveMaximum").and_then(|v| v.as_f64()) {
-                if n >= excl_max {
-                    return Some(format!(
-                        "Argument '{}' value {} must be < exclusiveMaximum {}",
-                        path, n, excl_max
-                    ));
-                }
-            }
-            if let Some(multiple_of) = obj.get("multipleOf").and_then(|v| v.as_f64()) {
-                if multiple_of > 0.0 {
-                    let remainder = n % multiple_of;
-                    let abs_check = remainder.abs() < 1e-12;
-                    let rel_check = (remainder / multiple_of).abs() < 1e-9;
-                    if !abs_check && !rel_check {
-                        return Some(format!(
-                            "Argument '{}' value {} is not a multiple of {}",
-                            path, n, multiple_of
-                        ));
-                    }
-                }
-            }
-        }
-    }
-
-    if type_options.contains(&"object") && value.is_object() {
-        let value_obj = match value.as_object() {
-            Some(obj) => obj,
-            None => return Some(format!("Expected object at '{}'", path)),
-        };
-        let sub_props = obj.get("properties").and_then(|v| v.as_object());
-        let sub_required = obj.get("required").and_then(|v| v.as_array());
-        let sub_additional = obj
-            .get("additionalProperties")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        let has_sub_schema =
-            sub_props.is_some_and(|p| !p.is_empty()) || sub_required.is_some_and(|r| !r.is_empty());
-
-        if has_sub_schema {
-            if let Some(req) = sub_required {
-                for field in req {
-                    if let Some(field_name) = field.as_str() {
-                        if !value_obj.contains_key(field_name) {
-                            return Some(format!(
-                                "Missing required field '{}' in '{}'",
-                                field_name, path
-                            ));
-                        }
-                    }
-                }
-            }
-
-            if !sub_additional {
-                if let (Some(props), Some(val_obj)) = (sub_props, value.as_object()) {
-                    let unknown: Vec<&String> = val_obj
-                        .keys()
-                        .filter(|k| !props.contains_key(k.as_str()))
-                        .collect();
-                    if !unknown.is_empty() {
-                        return Some(format!(
-                            "Unexpected field(s) in '{}': {}",
-                            path,
-                            unknown
-                                .iter()
-                                .map(|s| s.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ));
-                    }
-                }
-            }
-
-            if let Some(val_obj) = value.as_object() {
-                for (sub_key, sub_val) in val_obj {
-                    if let Some(props) = sub_props {
-                        if let Some(sub_schema) = props.get(sub_key.as_str()) {
-                            let sub_path = format!("{}.{}", path, sub_key);
-                            if let Some(err) = validate_property_inner(
-                                sub_val,
-                                sub_schema,
-                                &sub_path,
-                                max_depth - 1,
-                            ) {
-                                return Some(err);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if type_options.contains(&"array") && value.is_array() {
-        if let Some(arr) = value.as_array() {
-            if let Some(min) = obj.get("minItems").and_then(|v| v.as_u64()) {
-                if (arr.len() as u64) < min {
-                    return Some(format!(
-                        "Argument '{}' has {} items, less than minItems {}",
-                        path,
-                        arr.len(),
-                        min
-                    ));
-                }
-            }
-            if let Some(max) = obj.get("maxItems").and_then(|v| v.as_u64()) {
-                if (arr.len() as u64) > max {
-                    return Some(format!(
-                        "Argument '{}' has {} items, exceeds maxItems {}",
-                        path,
-                        arr.len(),
-                        max
-                    ));
-                }
-            }
-
-            if obj.get("uniqueItems").and_then(|v| v.as_bool()) == Some(true) {
-                let mut seen = HashSet::new();
-                for item in arr {
-                    let s = item.to_string();
-                    if !seen.insert(s) {
-                        return Some(format!(
-                            "Argument '{}' has duplicate items but uniqueItems is True",
-                            path
-                        ));
-                    }
-                }
-            }
-
-            if let Some(items_schema) = obj.get("items") {
-                for (i, item) in arr.iter().enumerate() {
-                    let item_path = format!("{}[{}]", path, i);
-                    if let Some(err) =
-                        validate_property_inner(item, items_schema, &item_path, max_depth - 1)
-                    {
-                        return Some(err);
-                    }
-                }
-            }
-        }
-    }
-
-    None
-}
-
-fn value_matches_type(value: &Value, t: &str) -> bool {
-    match t {
-        "string" => value.is_string(),
-        "number" => value.is_number(),
-        "integer" => value.is_i64() || value.is_u64(),
-        "boolean" => value.is_boolean(),
-        "array" => value.is_array(),
-        "object" => value.is_object(),
-        "null" => value.is_null(),
-        _ => false,
-    }
-}
-
-fn validate_arguments(name: &str, arguments: &Value) -> Option<String> {
-    let schema = SCHEMA_CACHE.get(name)?;
-
-    let obj = arguments.as_object()?;
-
-    let props = schema.get("properties").and_then(|v| v.as_object());
-    let required = schema.get("required").and_then(|v| v.as_array());
-    let additional = schema
-        .get("additionalProperties")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
-    // Match Python's inspect.signature() behavior: report unexpected
-    // keyword arguments before missing required arguments when both apply.
-    if !additional {
-        if let Some(p) = props {
-            let mut unknown: Vec<&String> =
-                obj.keys().filter(|k| !p.contains_key(k.as_str())).collect();
-            unknown.sort();
-            if !unknown.is_empty() {
-                return Some(format!(
-                    "Unexpected argument(s): {}",
-                    unknown
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-        }
-    }
-
-    if let Some(req) = required {
-        for field in req {
-            if let Some(field_name) = field.as_str() {
-                if !obj.contains_key(field_name) {
-                    return Some(format!("Missing required argument: {}", field_name));
-                }
-            }
-        }
-    }
-
-    if let Some(p) = props {
-        for (key, value) in obj {
-            if let Some(prop_schema) = p.get(key.as_str()) {
-                if let Some(err) = validate_property(value, prop_schema, key) {
-                    return Some(err);
-                }
-            }
-        }
-    }
-
-    None
-}
-
 fn escape_ascii_json(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for c in s.chars() {
@@ -775,89 +304,6 @@ fn wrap_tool_response(tool_response: &ToolResponse) -> serde_json::Value {
     }
 }
 
-struct RateLimiter {
-    timestamps: VecDeque<Instant>,
-}
-
-impl RateLimiter {
-    fn new() -> Self {
-        Self {
-            timestamps: VecDeque::new(),
-        }
-    }
-
-    fn check(&mut self) -> bool {
-        let now = Instant::now();
-        while let Some(&front) = self.timestamps.front() {
-            if now.duration_since(front) > Duration::from_secs(1) {
-                self.timestamps.pop_front();
-            } else {
-                break;
-            }
-        }
-        if self.timestamps.len() < MAX_REQUESTS_PER_SECOND as usize {
-            self.timestamps.push_back(now);
-            true
-        } else {
-            false
-        }
-    }
-}
-
-fn truncate_2000(s: &str) -> String {
-    s.chars().take(2000).collect()
-}
-
-struct CancelledRequests {
-    set: HashSet<Value>,
-    order: VecDeque<Value>,
-}
-
-impl CancelledRequests {
-    fn new() -> Self {
-        Self {
-            set: HashSet::new(),
-            order: VecDeque::new(),
-        }
-    }
-
-    fn insert(&mut self, id: Value) {
-        if !self.set.contains(&id) {
-            self.set.insert(id.clone());
-            self.order.push_back(id);
-        }
-        while self.set.len() > MAX_CANCELLED_REQUESTS {
-            if let Some(oldest) = self.order.pop_front() {
-                self.set.remove(&oldest);
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn remove(&mut self, id: &Value) {
-        if self.set.remove(id) {
-            // Best-effort removal from order queue (linear scan)
-            if let Some(pos) = self.order.iter().position(|x| x == id) {
-                self.order.remove(pos);
-            }
-        }
-    }
-
-    fn contains(&self, id: &Value) -> bool {
-        self.set.contains(id)
-    }
-}
-
-// MCP-safe defaults: set once on first request, matching Python's idempotent check.
-static MCP_DEFAULTS_CONFIGURED: AtomicBool = AtomicBool::new(false);
-
-fn ensure_mcp_defaults() {
-    if !MCP_DEFAULTS_CONFIGURED.swap(true, Ordering::SeqCst) {
-        set_mcp_mode();
-    }
-}
-
 fn json_rpc_error(code: i32, message: impl Into<String>, id: Option<Value>) -> Value {
     serde_json::to_value(JsonRpcError {
         jsonrpc: "2.0".to_string(),
@@ -897,18 +343,18 @@ async fn handle_request_async(
 ) -> Option<serde_json::Value> {
     // Ensure MCP-safe evaluator defaults are in effect. Idempotent: a one-time
     // check is enough to set mcp_mode and disable random/side-effect functions.
-    ensure_mcp_defaults();
+    runtime::ensure_mcp_defaults();
 
     match request.method.as_str() {
         "initialize" => Some(
-            serde_json::to_value(InitializeResult {
+            serde_json::to_value(crate::mcp::protocol::InitializeResult {
                 protocol_version: MCP_PROTOCOL_VERSION.to_string(),
-                capabilities: Capabilities {
-                    tools: ToolsCapability {
+                capabilities: crate::mcp::protocol::Capabilities {
+                    tools: crate::mcp::protocol::ToolsCapability {
                         list_changed: false,
                     },
                 },
-                server_info: ServerInfo {
+                server_info: crate::mcp::protocol::ServerInfo {
                     name: MCP_SERVER_NAME.to_string(),
                     version: env!("CARGO_PKG_VERSION").to_string(),
                 },
@@ -1229,7 +675,7 @@ async fn handle_request_async(
                     -32000,
                     format!(
                         "Tool execution error: {}",
-                        truncate_2000(&sanitize_error(&join_err.to_string()))
+                        runtime::truncate_2000(&sanitize_error(&join_err.to_string()))
                     ),
                     request.id.clone(),
                 )),
@@ -1288,10 +734,11 @@ async fn handle_request_async(
             let mut profiles_info = serde_json::Map::new();
             for &name in registry::PROFILE_NAMES {
                 let tool_specs = registry::tools_for_profile(name);
-                let tool_names: Vec<Value> = tool_specs
+                let mut tool_names: Vec<Value> = tool_specs
                     .into_iter()
                     .map(|spec| Value::String(spec.name.to_string()))
                     .collect();
+                tool_names.sort_by(|a, b| a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or("")));
                 profiles_info.insert(
                     name.to_string(),
                     serde_json::json!({
@@ -1507,7 +954,10 @@ pub async fn main() -> ! {
                     };
                     Some(json_rpc_error(
                         -32603,
-                        truncate_2000(&sanitize_error(&format!("Internal error: {}", msg))),
+                        runtime::truncate_2000(&sanitize_error(&format!(
+                            "Internal error: {}",
+                            msg
+                        ))),
                         request.id.clone(),
                     ))
                 }
@@ -1538,6 +988,7 @@ pub async fn main() -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::schema_validation::validate_property_inner;
     use serde_json::json;
     use std::collections::HashSet;
 

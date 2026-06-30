@@ -32,6 +32,7 @@
 pub mod calc;
 pub mod mcp;
 pub mod text;
+pub mod tools;
 
 // Re-export commonly used functions
 pub use calc::evaluate;

@@ -10,7 +10,31 @@ eggsact/
 │   ├── main.rs             # CLI entry, arg parsing, dispatch
 │   ├── lib.rs              # Library root, re-exports run()/evaluate()
 │   ├── calc/               # Calculator core (3 modules)
-│   ├── mcp/                # MCP server dispatch, schemas, tool handlers, and registry
+│   ├── mcp/                # MCP server protocol, runtime, registry, validation
+│   │   ├── server.rs       # Protocol orchestration, stdio loop, dispatch
+│   │   ├── registry.rs     # Tool registration (ToolSpec declarations)
+│   │   ├── protocol.rs     # JSON-RPC types
+│   │   ├── response.rs     # ToolResponse, error sanitization
+│   │   ├── runtime.rs      # Rate limiter, constants, profile management
+│   │   ├── schema_validation.rs # Argument validation
+│   │   └── schemas.rs      # Re-exports for backward compatibility
+│   ├── tools/              # MCP tool implementations (by category)
+│   │   ├── helpers.rs      # Shared constants, utilities
+│   │   ├── math.rs         # Math & unit tools
+│   │   ├── text.rs         # Text processing tools (18)
+│   │   ├── json.rs         # JSON tools (6)
+│   │   ├── regex.rs        # Regex tools (3)
+│   │   ├── validation.rs   # Validation tools (4)
+│   │   ├── path.rs         # Path tools (5)
+│   │   ├── shell.rs        # Shell tools (4)
+│   │   ├── list.rs         # List tools (3)
+│   │   ├── markdown.rs     # Markdown tools (2)
+│   │   ├── patch.rs        # Patch tools (3)
+│   │   ├── config.rs       # Config tools (3)
+│   │   ├── identifier.rs   # Identifier tools (3)
+│   │   ├── unicode.rs      # Unicode tools (2)
+│   │   ├── version.rs      # Version tools (2)
+│   │   └── cargo.rs        # Cargo tool (1)
 │   └── text/               # Text processing library (24 modules)
 ├── tests/                  # Integration tests
 │   ├── lib.rs              # Test module declarations
@@ -48,9 +72,9 @@ eggsact/
 
 ```
 main.rs → lib.rs → calc/normalize.rs → calc/evaluator.rs → calc/units.rs
-                    mcp/server.rs → mcp/tools.rs → text/* modules
-                                            ↓
-                                   mcp/schemas.rs
+                    mcp/server.rs → mcp/protocol.rs, mcp/response.rs, mcp/runtime.rs
+                                 → mcp/schema_validation.rs → mcp/registry.rs
+                                 → tools/* → text/* modules
 ```
 
 ## Data Flow
@@ -59,21 +83,21 @@ main.rs → lib.rs → calc/normalize.rs → calc/evaluator.rs → calc/units.rs
 2. **Library**: `lib.rs` re-exports `run()`, `evaluate()`, `split_at_operators()`
 3. **Natural language**: `run()` → `normalize.rs` (tokenize/normalize) → `evaluator.rs` (evaluate)
 4. **Direct math**: `evaluate()` → `evaluator.rs` (parse + evaluate)
-5. **MCP server**: stdio JSON-RPC 2.0 → `server.rs` dispatches → `tools.rs` → `text/*` modules
+5. **MCP server**: stdio JSON-RPC 2.0 → `server.rs` (protocol orchestration) → `tools/*` (category modules) → `text/*` modules
 
 ## Key Constants
 
 | Constant | Value | Location |
 |----------|-------|----------|
-| MCP_PROTOCOL_VERSION | `"2024-11-05"` | `src/mcp/server.rs` |
-| MCP_SERVER_NAME | `"eggsact"` | `src/mcp/server.rs` |
-| MAX_REQUEST_BYTES | 1,000,000 | `src/mcp/server.rs` |
-| MAX_OUTPUT_BYTES | 1,000,000 | `src/mcp/server.rs` |
-| MAX_TEXT_LENGTH | 100,000 | `src/mcp/tools.rs` |
-| MAX_EXPRESSION_LENGTH | 10,000 | `src/mcp/tools.rs` |
-| MAX_LIST_ITEMS | 10,000 | `src/mcp/tools.rs` |
-| MAX_REGEX_SAMPLES | 100 | `src/mcp/tools.rs` |
-| MAX_PATTERN_LENGTH | 1,000 | `src/mcp/tools.rs` |
+| MCP_PROTOCOL_VERSION | `"2024-11-05"` | `src/mcp/runtime.rs` |
+| MCP_SERVER_NAME | `"eggsact"` | `src/mcp/runtime.rs` |
+| MAX_REQUEST_BYTES | 1,000,000 | `src/mcp/runtime.rs` |
+| MAX_OUTPUT_BYTES | 1,000,000 | `src/mcp/runtime.rs` |
+| MAX_TEXT_LENGTH | 100,000 | `src/tools/helpers.rs` |
+| MAX_EXPRESSION_LENGTH | 10,000 | `src/tools/helpers.rs` |
+| MAX_LIST_ITEMS | 10,000 | `src/tools/helpers.rs` |
+| MAX_REGEX_SAMPLES | 100 | `src/tools/helpers.rs` |
+| MAX_PATTERN_LENGTH | 1,000 | `src/tools/helpers.rs` |
 | MAX_FACTORIAL | 1,000 | `src/calc/evaluator.rs` |
 | MAX_PRIME | varies | `src/calc/evaluator.rs` |
 | MAX_PERM_COMB | varies | `src/calc/evaluator.rs` |

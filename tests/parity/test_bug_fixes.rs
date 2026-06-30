@@ -474,7 +474,7 @@ fn test_bug018_json_extract_missing_array_vs_object() {
 fn test_bug021_sanitize_error_regex_before_ascii_strip() {
     // BUG-021: ASCII stripping must happen BEFORE regex-based path sanitization
     // to match Python behavior (Python does ASCII replacement before regex).
-    let source = include_str!("../../src/mcp/schemas.rs");
+    let source = include_str!("../../src/mcp/response.rs");
     let regex_pos = source
         .find("BARE_PATH_REGEX.replace_all")
         .expect("BARE_PATH_REGEX usage not found");
@@ -490,7 +490,7 @@ fn test_bug021_sanitize_error_regex_before_ascii_strip() {
 #[test]
 fn test_bug022_error_response_no_empty_warnings() {
     // BUG-022: Error responses should include an empty warnings array (matching Python).
-    let source = include_str!("../../src/mcp/schemas.rs");
+    let source = include_str!("../../src/mcp/response.rs");
     // Verify that ToolResponse::error sets warnings to Some(vec![])
     assert!(
         source.contains("warnings: Some(vec![])"),
