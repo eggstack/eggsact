@@ -6,7 +6,8 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `server.rs` | ~4,000 | Protocol handling, tool dispatch, registration tables |
+| `server.rs` | ~4,000 | Protocol handling, tool dispatch |
+| `registry.rs` | varies | Tool registration: ToolSpec declarations (single source of truth) |
 | `tools.rs` | varies | Tool implementation functions (thin wrappers) |
 | `schemas.rs` | varies | JSON-RPC types, ToolResponse, error sanitization |
 | `mod.rs` | small | Module re-exports |
@@ -27,31 +28,27 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | `tools/list` | Returns all 64 tool definitions |
 | `tools/call` | Executes a tool by name |
 
-## Tool Registration (4 Tables)
+## Tool Registration (Single Registry)
 
-All 4 must be kept in sync. A test (`tool_registration_tables_are_in_sync`) catches drift.
+All tool registration lives in `src/mcp/registry.rs` as `ToolSpec` declarations. This is the single source of truth. A test (`tool_registration_tables_are_in_sync`) catches drift.
 
-### 1. TOOL_HANDLERS (line ~30)
+### ToolSpec
 
-Static dispatch table: `&[(&str, ToolHandlerFn)]` mapping tool names to handler functions.
+Each tool is declared with a `ToolSpec` entry in the registry, which specifies:
+- **handler**: The function to call (maps to a function in `tools.rs`)
+- **category**: Tool grouping (math, text, validation, json, regex, etc.)
+- **tier**: 0=essential, 1=common, 2=advanced, 3=specialized
+- **profiles**: Feature profiles
+- **tags**: Searchable tags
+- **llm_exposure**: "full", "indirect", "internal"
+- **composite**: Whether tool calls other tools internally
+- **input_schema**: JSON Schema for the tool's input parameters
+- **output_schema**: JSON Schema for the tool's output
 
-### 2. TOOL_METADATA (line ~97)
+### How tools/list and tools/call work
 
-`LazyLock<HashMap<&'static str, ToolMetadata>>` with rich metadata:
-- `category`: Tool grouping (math, text, validation, json, regex, etc.)
-- `tier`: 0=essential, 1=common, 2=advanced, 3=specialized
-- `profiles`: Feature profiles
-- `tags`: Searchable tags
-- `llm_exposure`: "full", "indirect", "internal"
-- `composite`: Whether tool calls other tools internally
-
-### 3. list_tools_raw() (line ~1379)
-
-Returns `Vec<ToolDefinition>` with full input schemas for each tool.
-
-### 4. OUTPUT_SCHEMAS (line ~1310)
-
-`LazyLock<HashMap<&'static str, Value>>` with JSON Schema for tool output.
+- `tools/list`: Looks up all `ToolSpec` entries in the registry and returns `Vec<ToolDefinition>` with full input schemas.
+- `tools/call`: Looks up the tool by name in the registry to find the handler function, then dispatches to it.
 
 ## Tool Categories (64 tools)
 

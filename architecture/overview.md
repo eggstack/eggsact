@@ -10,7 +10,7 @@ eggsact/
 │   ├── main.rs             # CLI entry, arg parsing, dispatch
 │   ├── lib.rs              # Library root, re-exports run()/evaluate()
 │   ├── calc/               # Calculator core (3 modules)
-│   ├── mcp/                # MCP server dispatch, schemas, and tool handlers
+│   ├── mcp/                # MCP server dispatch, schemas, tool handlers, and registry
 │   └── text/               # Text processing library (24 modules)
 ├── tests/                  # Integration tests
 │   ├── lib.rs              # Test module declarations

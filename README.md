@@ -366,6 +366,7 @@ eggsact/
 │   ├── mcp/                 # MCP server
 │   │   ├── mod.rs           # Module re-exports
 │   │   ├── server.rs        # stdio JSON-RPC 2.0 server, tool dispatch
+│   │   ├── registry.rs      # Tool registration (ToolSpec declarations, single source of truth)
 │   │   ├── tools.rs         # MCP tool implementations
 │   │   └── schemas.rs       # JSON-RPC type definitions, tool schemas
 │   └── text/                # Text processing library (24 modules)
