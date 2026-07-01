@@ -83,6 +83,17 @@ Detailed architecture documentation is in `architecture/`:
 
 `src/agent/` provides an in-process API for calling tools without MCP. `ToolRegistry` wraps the tool registry with profile filtering and `call_json()` dispatch. `src/preflight/` adds typed wrappers (`ConfigPreflight`, `CommandPreflight`, `EditPreflight`) that parse tool responses into structured Rust types.
 
+## Exposure & Audience Model
+
+Tools have typed `ToolExposure` and `ToolListAudience` enums in `src/mcp/registry.rs`:
+
+- **Exposure**: `Default`, `Contextual`, `ExpertOnly`, `HarnessOnly`, `Hidden` — controls which contexts a tool appears in.
+- **Audience**: `Model` (excludes HarnessOnly+Hidden), `Harness` (excludes Hidden), `Debug` (all non-hidden).
+
+Use `tools_for_profile_audience(profile, audience)` for filtered listings. MCP `tools/list` preserves legacy behavior for backward compatibility.
+
+**Codegg guidance**: Use `codegg_core_min` + `Model` audience for ordinary coder-agent sessions. Use `codegg_preflight`/`codegg_shell` + `Harness` audience for automatic preflight checks.
+
 ## Skills
 
 Agent task skills in `.skills/`:

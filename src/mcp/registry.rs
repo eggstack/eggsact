@@ -2376,3 +2376,348 @@ pub fn tool_handler_for(name: &str) -> Option<ToolHandler> {
 pub fn tool_count() -> usize {
     ALL_TOOLS.len()
 }
+
+// ---------------------------------------------------------------------------
+// Audience-aware listing
+// ---------------------------------------------------------------------------
+
+/// Audience for tool listing, controlling which exposure levels are included.
+///
+/// - `Model`: Excludes `HarnessOnly` and `Hidden`. Safe for ordinary model-visible use.
+/// - `Harness`: Includes `HarnessOnly` tools for selected profiles but excludes `Hidden`.
+/// - `Debug`: Includes all non-hidden tools, including `ExpertOnly` and `HarnessOnly`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ToolListAudience {
+    Model,
+    Harness,
+    Debug,
+}
+
+/// Filter tools by profile and audience.
+///
+/// For the `full` profile, hidden tools are always excluded.
+/// For other profiles, only tools in the profile's `profiles` list are included.
+/// The audience then further filters by exposure level.
+pub fn tools_for_profile_audience(
+    profile: &str,
+    audience: ToolListAudience,
+) -> Vec<&'static ToolSpec> {
+    let profile_tools = tools_for_profile(profile);
+    match audience {
+        ToolListAudience::Model => profile_tools
+            .into_iter()
+            .filter(|t| t.exposure != ToolExposure::HarnessOnly)
+            .collect(),
+        ToolListAudience::Harness => profile_tools
+            .into_iter()
+            .filter(|t| t.exposure != ToolExposure::Hidden)
+            .collect(),
+        ToolListAudience::Debug => profile_tools,
+    }
+}
+
+/// Get tool names for a profile and audience combination.
+pub fn tool_names_for_profile_audience(
+    profile: &str,
+    audience: ToolListAudience,
+) -> Vec<&'static str> {
+    tools_for_profile_audience(profile, audience)
+        .into_iter()
+        .map(|spec| spec.name)
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- Enum serialization preserves current strings --
+
+    #[test]
+    fn exposure_enum_serializes_to_expected_strings() {
+        assert_eq!(ToolExposure::Default.as_str(), "default");
+        assert_eq!(ToolExposure::Contextual.as_str(), "contextual");
+        assert_eq!(ToolExposure::ExpertOnly.as_str(), "expert_only");
+        assert_eq!(ToolExposure::HarnessOnly.as_str(), "harness_only");
+        assert_eq!(ToolExposure::Hidden.as_str(), "hidden");
+    }
+
+    #[test]
+    fn cost_enum_serializes_to_expected_strings() {
+        assert_eq!(ToolCost::Cheap.as_str(), "cheap");
+        assert_eq!(ToolCost::Moderate.as_str(), "moderate");
+        assert_eq!(ToolCost::Heavy.as_str(), "heavy");
+    }
+
+    #[test]
+    fn stability_enum_serializes_to_expected_strings() {
+        assert_eq!(ToolStability::Stable.as_str(), "stable");
+        assert_eq!(ToolStability::Deprecated.as_str(), "deprecated");
+        assert_eq!(ToolStability::Experimental.as_str(), "experimental");
+    }
+
+    // -- Every tool has a valid exposure enum (compile-time guarantee via type system) --
+
+    #[test]
+    fn all_tools_have_valid_exposure() {
+        for spec in ALL_TOOLS {
+            // exposure is typed as ToolExposure, so this always has a valid variant.
+            // This test documents the invariant and ensures as_str() works.
+            let _ = spec.exposure.as_str();
+        }
+    }
+
+    // -- Hidden tools excluded from ordinary listing --
+
+    #[test]
+    fn hidden_tools_excluded_from_mcp_definitions() {
+        let definitions = mcp_tool_definitions();
+        for tool in &definitions {
+            assert_ne!(tool.llm_exposure.as_deref(), Some("hidden"));
+        }
+    }
+
+    #[test]
+    fn full_profile_excludes_hidden_tools() {
+        let tools = tools_for_profile("full");
+        for spec in tools {
+            assert_ne!(spec.exposure, ToolExposure::Hidden);
+        }
+    }
+
+    // -- Harness-only tools excluded from model audience lists --
+
+    #[test]
+    fn harness_only_excluded_from_model_audience_default() {
+        let model_tools = tool_names_for_profile_audience("default", ToolListAudience::Model);
+        for spec in ALL_TOOLS {
+            if spec.exposure == ToolExposure::HarnessOnly && spec.profiles.contains(&"default") {
+                assert!(
+                    !model_tools.contains(&spec.name),
+                    "harness_only tool '{}' should not appear in default model audience",
+                    spec.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn harness_only_excluded_from_model_audience_codegg_core_min() {
+        let model_tools =
+            tool_names_for_profile_audience("codegg_core_min", ToolListAudience::Model);
+        for spec in ALL_TOOLS {
+            if spec.exposure == ToolExposure::HarnessOnly
+                && spec.profiles.contains(&"codegg_core_min")
+            {
+                assert!(
+                    !model_tools.contains(&spec.name),
+                    "harness_only tool '{}' should not appear in codegg_core_min model audience",
+                    spec.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn harness_only_excluded_from_model_audience_codegg_core() {
+        let model_tools = tool_names_for_profile_audience("codegg_core", ToolListAudience::Model);
+        for spec in ALL_TOOLS {
+            if spec.exposure == ToolExposure::HarnessOnly && spec.profiles.contains(&"codegg_core")
+            {
+                assert!(
+                    !model_tools.contains(&spec.name),
+                    "harness_only tool '{}' should not appear in codegg_core model audience",
+                    spec.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn harness_only_excluded_from_model_audience_full() {
+        let model_tools = tool_names_for_profile_audience("full", ToolListAudience::Model);
+        for spec in ALL_TOOLS {
+            if spec.exposure == ToolExposure::HarnessOnly {
+                assert!(
+                    !model_tools.contains(&spec.name),
+                    "harness_only tool '{}' should not appear in full model audience",
+                    spec.name
+                );
+            }
+        }
+    }
+
+    // -- Harness audience includes expected preflight tools --
+
+    #[test]
+    fn harness_audience_includes_harness_only_tools() {
+        let harness_tools =
+            tool_names_for_profile_audience("codegg_preflight", ToolListAudience::Harness);
+        // codegg_preflight should include harness-only tools
+        let harness_only_in_profile: Vec<&str> = ALL_TOOLS
+            .iter()
+            .filter(|t| {
+                t.exposure == ToolExposure::HarnessOnly && t.profiles.contains(&"codegg_preflight")
+            })
+            .map(|t| t.name)
+            .collect();
+        for name in &harness_only_in_profile {
+            assert!(
+                harness_tools.contains(name),
+                "harness audience for codegg_preflight should include '{}'",
+                name
+            );
+        }
+    }
+
+    // -- Profile snapshots --
+
+    /// Helper: sorted tool names for a profile+audience.
+    fn snapshot_names(profile: &str, audience: ToolListAudience) -> Vec<String> {
+        let mut names: Vec<String> = tool_names_for_profile_audience(profile, audience)
+            .into_iter()
+            .map(String::from)
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Helper: sorted tool names with exposure for a profile+audience.
+    fn snapshot_with_exposure(profile: &str, audience: ToolListAudience) -> Vec<(String, String)> {
+        let mut items: Vec<(String, String)> = tools_for_profile_audience(profile, audience)
+            .into_iter()
+            .map(|t| (t.name.to_string(), t.exposure.as_str().to_string()))
+            .collect();
+        items.sort_by(|a, b| a.0.cmp(&b.0));
+        items
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_core_min_model() {
+        let names = snapshot_names("codegg_core_min", ToolListAudience::Model);
+        // Snapshot: update intentionally when profiles change
+        assert!(!names.is_empty(), "codegg_core_min model should have tools");
+        // All tools in this snapshot should be non-harness-only
+        for name in &names {
+            let spec = get_tool(name).expect("tool should exist");
+            assert_ne!(
+                spec.exposure,
+                ToolExposure::HarnessOnly,
+                "harness_only tool '{}' in codegg_core_min model snapshot",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_core_model() {
+        let names = snapshot_names("codegg_core", ToolListAudience::Model);
+        assert!(!names.is_empty(), "codegg_core model should have tools");
+        for name in &names {
+            let spec = get_tool(name).expect("tool should exist");
+            assert_ne!(
+                spec.exposure,
+                ToolExposure::HarnessOnly,
+                "harness_only tool '{}' in codegg_core model snapshot",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_preflight_harness() {
+        let items = snapshot_with_exposure("codegg_preflight", ToolListAudience::Harness);
+        assert!(
+            !items.is_empty(),
+            "codegg_preflight harness should have tools"
+        );
+        // Should include at least one harness-only tool
+        let has_harness_only = items.iter().any(|(_, e)| e == "harness_only");
+        assert!(
+            has_harness_only,
+            "codegg_preflight harness should include harness-only tools"
+        );
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_patch_model() {
+        let names = snapshot_names("codegg_patch", ToolListAudience::Model);
+        assert!(!names.is_empty(), "codegg_patch model should have tools");
+        for name in &names {
+            let spec = get_tool(name).expect("tool should exist");
+            assert_ne!(spec.exposure, ToolExposure::HarnessOnly);
+        }
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_config_model() {
+        let names = snapshot_names("codegg_config", ToolListAudience::Model);
+        assert!(!names.is_empty(), "codegg_config model should have tools");
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_unicode_security_model() {
+        let names = snapshot_names("codegg_unicode_security", ToolListAudience::Model);
+        assert!(
+            !names.is_empty(),
+            "codegg_unicode_security model should have tools"
+        );
+        for name in &names {
+            let spec = get_tool(name).expect("tool should exist");
+            assert_ne!(spec.exposure, ToolExposure::HarnessOnly);
+        }
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_shell_model() {
+        let names = snapshot_names("codegg_shell", ToolListAudience::Model);
+        assert!(!names.is_empty(), "codegg_shell model should have tools");
+        for name in &names {
+            let spec = get_tool(name).expect("tool should exist");
+            assert_ne!(spec.exposure, ToolExposure::HarnessOnly);
+        }
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_repo_audit_model() {
+        let names = snapshot_names("codegg_repo_audit", ToolListAudience::Model);
+        assert!(
+            !names.is_empty(),
+            "codegg_repo_audit model should have tools"
+        );
+    }
+
+    #[test]
+    fn profile_snapshot_human_math_model() {
+        let names = snapshot_names("human_math", ToolListAudience::Model);
+        assert!(!names.is_empty(), "human_math model should have tools");
+    }
+
+    #[test]
+    fn profile_snapshot_default_model() {
+        let names = snapshot_names("default", ToolListAudience::Model);
+        assert!(!names.is_empty(), "default model should have tools");
+        for name in &names {
+            let spec = get_tool(name).expect("tool should exist");
+            assert_ne!(spec.exposure, ToolExposure::HarnessOnly);
+        }
+    }
+
+    // -- Invalid profile handling --
+
+    #[test]
+    fn invalid_profile_returns_empty() {
+        let tools = tools_for_profile("nonexistent_profile");
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn invalid_profile_audience_returns_empty() {
+        let tools = tools_for_profile_audience("nonexistent_profile", ToolListAudience::Model);
+        assert!(tools.is_empty());
+    }
+}

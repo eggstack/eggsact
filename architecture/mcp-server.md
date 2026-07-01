@@ -64,10 +64,43 @@ Each tool is declared with a `ToolSpec` entry in the registry, which specifies:
 - **tier**: 0=essential, 1=common, 2=advanced, 3=specialized
 - **profiles**: Feature profiles
 - **tags**: Searchable tags
-- **exposure**: "default", "contextual", "expert_only", "harness_only", "hidden"
+- **exposure**: Typed `ToolExposure` enum (see Exposure Model below)
+- **cost**: Typed `ToolCost` enum (cheap, moderate, heavy)
+- **stability**: Typed `ToolStability` enum (stable, deprecated, experimental)
 - **composite**: Whether tool calls other tools internally
 - **input_schema**: JSON Schema for the tool's input parameters
 - **output_schema**: JSON Schema for the tool's output
+
+### Exposure Model
+
+Tools have a typed `ToolExposure` enum that controls visibility:
+
+| Variant | Serialized | Semantics |
+|---------|-----------|-----------|
+| `Default` | `"default"` | Safe for ordinary model-visible use. Can appear in `default` or `codegg_core_min`. Cheap, easy to explain, unlikely to cause tool overload. |
+| `Contextual` | `"contextual"` | Useful when the workflow calls for the category. Not in smallest default lists; exposed when editing, config work, shell planning, Unicode investigation, or repo audit is active. |
+| `ExpertOnly` | `"expert_only"` | Specialized tools for manager/reviewer/research agents or explicit expert workflows. |
+| `HarnessOnly` | `"harness_only"` | Tools the harness calls automatically but models should not generally see. Safety checks and preflight tools enforced by the harness. |
+| `Hidden` | `"hidden"` | Internal or compatibility tools. Not listed except in debug/developer contexts. |
+
+Serialized strings preserve backward compatibility with existing MCP clients.
+
+### Audience Filtering
+
+`ToolListAudience` controls which exposure levels appear in tool listings:
+
+| Audience | Includes | Excludes |
+|----------|----------|----------|
+| `Model` | Default, Contextual, ExpertOnly | HarnessOnly, Hidden |
+| `Harness` | Default, Contextual, ExpertOnly, HarnessOnly | Hidden |
+| `Debug` | All non-hidden tools | Hidden only |
+
+Use `tools_for_profile_audience(profile, audience)` to get filtered tool lists.
+The in-process agent API (`src/agent/`) should use `Model` audience for ordinary
+coder-agent sessions and `Harness` for automatic preflight checks.
+
+MCP `tools/list` preserves legacy behavior (no audience filter) for backward
+compatibility. The audience filter is available for codegg's in-process API.
 
 ### How tools/list and tools/call work
 
@@ -169,3 +202,37 @@ JSON-RPC level errors use standard codes (constructed in `src/mcp/protocol.rs`):
 | `conversion_error` | Unit conversion impossible |
 | `parse_error` | JSON/TOML parsing failed |
 | `unknown_tool` | Tool name not found |
+
+## Profiles
+
+Profiles control which tools are available. The `full` profile includes all non-hidden tools. Named profiles include specific tool subsets.
+
+### Profile Reference
+
+| Profile | Intended Consumer | Description |
+|---------|------------------|-------------|
+| `full` | Debug, legacy MCP clients | All non-hidden tools. Broadest access. |
+| `default` | General MCP clients | Model-default + some contextual tools. May grow slowly. |
+| `codegg_core_min` | Ordinary coder-agent sessions | Smallest model-visible profile. Reduces hallucination without choice overload. |
+| `codegg_core` | Manager/reviewer agents | Broader model-safe profile for deterministic utility use. |
+| `codegg_preflight` | Harness (automatic checks) | Harness-oriented. Includes harness-only tools. Not for direct model exposure. |
+| `codegg_patch` | Edit harness | Patch/edit-focused. Splits model-visible inspection from harness-only preflight. |
+| `codegg_config` | Config editing workflows | JSON/TOML/config validation and inspection. |
+| `codegg_unicode_security` | Suspicious input ingress | Unicode, hidden-character, confusable, and identifier security checks. |
+| `codegg_shell` | Shell harness | Shell argv and command preflight. Harness use is automatic. |
+| `codegg_repo_audit` | Manager/reviewer/research | Specialized repo inspection. Not default coder-agent exposure. |
+| `human_math` | Direct human utility | Calculator, unit, and constant tools. |
+
+### Codegg Integration Guide
+
+Recommended profile + audience combinations for codegg:
+
+| Workflow | Profile | Audience | Notes |
+|----------|---------|----------|-------|
+| Ordinary coder-agent | `codegg_core_min` | Model | Smallest safe tool list |
+| Edit harness | `codegg_preflight` or `codegg_patch` | Harness | Automatic preflight checks |
+| Shell harness | `codegg_shell` | Harness | Automatic before command execution |
+| Config edits | `codegg_config` | Model or Harness | Depends on whether model calls tools directly |
+| Suspicious input | `codegg_unicode_security` | Model or Harness | Security checks on ingress |
+| Repo audit | `codegg_repo_audit` | Model | Manager/reviewer workflows |
+| Math tasks | `human_math` | Model | Direct calculator use |

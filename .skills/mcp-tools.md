@@ -26,19 +26,41 @@ Use this when adding a new MCP tool or modifying an existing one.
 ## Tool Metadata Schema
 
 ```rust
-ToolMetadata {
-    category: "text",        // category name (matches existing)
-    tier: 0,                 // 0=essential, 1=common, 2=advanced, 3=specialized
-    profiles: &["default"],  // feature profiles
-    tags: &["measure"],      // searchable tags
-    llm_exposure: "full",    // "full", "indirect", "internal"
-    harness_use: true,       // whether to show in tool summaries
-    aliases: &[],            // alternative tool names
-    cost: "cheap",           // "cheap", "moderate", "expensive"
-    stability: "stable",     // "stable", "experimental", "deprecated"
-    composite: false,        // true if this tool calls other tools internally
+ToolSpec {
+    name: "my_tool",
+    description: "What the tool does",
+    handler: my_tool_handler,
+    input_schema: my_tool_input,
+    output_schema: my_tool_output,
+    category: "text",
+    tier: 0,                     // 0=essential, 1=common, 2=advanced, 3=specialized
+    profiles: &["full", "default"],
+    tags: &["text", "measure"],
+    exposure: ToolExposure::Default,  // Default, Contextual, ExpertOnly, HarnessOnly, Hidden
+    harness_use: &["none"],           // or ["edit_preflight"], ["command_preflight"], etc.
+    aliases: &[],
+    cost: ToolCost::Cheap,            // Cheap, Moderate, Heavy
+    stability: ToolStability::Stable, // Stable, Deprecated, Experimental
+    composite: false,
 }
 ```
+
+### Exposure Levels
+
+| Exposure | When to use |
+|----------|-------------|
+| `Default` | Safe, cheap, broadly useful model-visible tools |
+| `Contextual` | Useful when workflow calls for the category |
+| `ExpertOnly` | Specialized tools for manager/reviewer agents |
+| `HarnessOnly` | Harness calls automatically; model should not see |
+| `Hidden` | Internal/compatibility; debug contexts only |
+
+### Audience Filtering
+
+Use `tools_for_profile_audience(profile, audience)` for filtered listings:
+- `Model`: excludes HarnessOnly + Hidden
+- `Harness`: excludes Hidden
+- `Debug`: all non-hidden tools
 
 ## Machine Codes
 
