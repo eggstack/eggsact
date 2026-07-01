@@ -355,6 +355,54 @@ assert_eq!(tokens, vec!["5", "+", "3", "*", "2"]);
 | `"sqrt(144)"` | `evaluate()` or `run()` |
 | `"1km in m"` | `run()` only |
 
+## In-Process Agent API
+
+Call eggsact tools directly from Rust without starting an MCP server. The `ToolRegistry` provides a typed, synchronous API with profile filtering, argument validation, and tool execution.
+
+### Calling tools by name
+
+```rust
+use eggsact::agent::ToolRegistry;
+
+let registry = ToolRegistry::default();
+let response = registry.call_json("text_equal", serde_json::json!({
+    "a": "hello",
+    "b": "hello",
+})).unwrap();
+assert!(response.ok);
+```
+
+### Profile selection
+
+Profiles control which subset of tools is available:
+
+```rust
+use eggsact::agent::{ToolRegistry, Profile};
+
+let registry = ToolRegistry::with_profile(Profile::CodeggCoreMin);
+let tools = registry.available_tools();
+assert!(tools.iter().any(|t| t.name == "math_eval"));
+```
+
+### Typed preflight wrappers
+
+For common workflows, use the typed wrappers in `eggsact::preflight`:
+
+```rust
+use eggsact::preflight::{ConfigPreflight, ConfigPreflightInput, ConfigFormat};
+
+let input = ConfigPreflightInput {
+    text: r#"{"key": "value"}"#.to_string(),
+    format: ConfigFormat::Json,
+    schema: None,
+    strict: false,
+};
+let output = ConfigPreflight::run(&input).unwrap();
+assert!(output.valid);
+```
+
+Available preflight wrappers: `ConfigPreflight`, `CommandPreflight`, `EditPreflight`.
+
 ## Architecture
 
 ```

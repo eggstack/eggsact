@@ -18,6 +18,38 @@
 //! assert_eq!(result, "1024");
 //! ```
 //!
+//! # In-Process Agent API
+//!
+//! Call tools directly without starting an MCP server:
+//!
+//! ```
+//! use eggsact::agent::{ToolRegistry, Profile};
+//!
+//! let registry = ToolRegistry::default();
+//! let response = registry.call_json("text_equal", serde_json::json!({
+//!     "a": "hello",
+//!     "b": "hello",
+//! })).unwrap();
+//! assert!(response.ok);
+//! ```
+//!
+//! # Typed Preflight
+//!
+//! Use typed wrappers for common workflows:
+//!
+//! ```
+//! use eggsact::preflight::{ConfigPreflight, ConfigPreflightInput, ConfigFormat};
+//!
+//! let input = ConfigPreflightInput {
+//!     text: r#"{"key": "value"}"#.to_string(),
+//!     format: ConfigFormat::Json,
+//!     schema: None,
+//!     strict: false,
+//! };
+//! let output = ConfigPreflight::run(&input).unwrap();
+//! assert!(output.valid);
+//! ```
+//!
 //! # MCP Server
 //!
 //! Run as an MCP server via stdio:
@@ -29,8 +61,10 @@
 //! The server accepts JSON-RPC 2.0 requests and provides MCP tools for math,
 //! text processing, structured data, paths, Unicode safety, and more.
 
+pub mod agent;
 pub mod calc;
 pub mod mcp;
+pub mod preflight;
 pub mod text;
 pub mod tools;
 

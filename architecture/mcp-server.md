@@ -72,7 +72,7 @@ Each tool is declared with a `ToolSpec` entry in the registry, which specifies:
 ### How tools/list and tools/call work
 
 - `tools/list`: Looks up all `ToolSpec` entries in the registry and returns `Vec<ToolDefinition>` with full input schemas.
-- `tools/call`: Looks up the tool by name in the registry to find the handler function, then dispatches to it.
+- `tools/call`: Delegates tool lookup, profile checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API.
 
 ## Tool Categories (64 tools)
 

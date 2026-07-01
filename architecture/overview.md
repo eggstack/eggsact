@@ -36,6 +36,8 @@ eggsact/
 │   │   ├── unicode.rs      # Unicode tools (2)
 │   │   ├── version.rs      # Version tools (2)
 │   │   └── cargo.rs        # Cargo tool (1)
+│   ├── agent/              # In-process agent API (ToolRegistry, Profile, call_json)
+│   ├── preflight/          # Typed preflight wrappers (ConfigPreflight, CommandPreflight, EditPreflight)
 │   └── text/               # Text processing library (24 modules)
 ├── tests/                  # Integration tests
 │   ├── lib.rs              # Test module declarations
@@ -57,6 +59,7 @@ eggsact/
 │   ├── overview.md
 │   ├── calculator.md
 │   ├── mcp-server.md
+│   ├── machine-codes.md
 │   └── text-library.md
 ├── .skills/                # Agent task skills
 │   ├── mcp-tools.md
@@ -85,6 +88,7 @@ main.rs → lib.rs → calc/normalize.rs → calc/evaluator.rs → calc/units.rs
 3. **Natural language**: `run()` → `normalize.rs` (tokenize/normalize) → `evaluator.rs` (evaluate)
 4. **Direct math**: `evaluate()` → `evaluator.rs` (parse + evaluate)
 5. **MCP server**: stdio JSON-RPC 2.0 → `server.rs` (protocol orchestration) → `tools/*` (category modules) → `text/*` modules
+6. **In-process agent API**: `agent/ToolRegistry::call_json()` → lookup, profile check, validation (via `prepare_tool_call`) → `tools/*` handlers. No async dispatch; MCP retains timeout/semaphore, agent is synchronous.
 
 ## Key Constants
 

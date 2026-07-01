@@ -361,7 +361,10 @@ fn value_matches_type(value: &Value, t: &str) -> bool {
     }
 }
 
-pub(crate) fn validate_arguments(name: &str, arguments: &Value) -> Option<String> {
+/// Validate tool arguments against the registered input schema.
+///
+/// Returns `None` if valid, or `Some(error_message)` if validation fails.
+pub fn validate_arguments(name: &str, arguments: &Value) -> Option<String> {
     let schema = SCHEMA_CACHE.get(name)?;
 
     let obj = arguments.as_object()?;

@@ -6,7 +6,8 @@ Use this when writing, running, or debugging tests.
 
 ```bash
 cargo test                           # all tests (unit + integration + parity)
-cargo test --lib                     # unit tests in src/ only
+cargo test --lib                     # unit tests in src/ (including agent module)
+cargo test --lib agent               # agent module tests only
 cargo test --test lib mcp            # MCP tests only
 cargo test --test lib parity         # parity tests only
 cargo test --test lib text           # text tests only
@@ -50,6 +51,8 @@ tests/
   text/
     test_<module>.rs          # one file per text module
 ```
+
+Agent module unit tests (`src/agent/mod.rs` inline `#[cfg(test)]`) cover `ToolRegistry` profile filtering, unknown tool errors, argument validation, and `call_json` success paths.
 
 ## Parity Tests
 

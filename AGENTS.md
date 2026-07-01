@@ -57,6 +57,8 @@ src/
     version.rs      # version_compare, version_constraint_check
     cargo.rs        # cargo_toml_inspect
   text/             # text processing library (24 modules)
+  agent/            # in-process agent API (ToolRegistry, Profile, call_json)
+  preflight/        # typed preflight wrappers (ConfigPreflight, CommandPreflight, EditPreflight)
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text
   calc/             # calculator tests (4 files)
@@ -76,6 +78,10 @@ Detailed architecture documentation is in `architecture/`:
 - `architecture/mcp-server.md` — MCP protocol, tool registration, categories, error handling
 - `architecture/machine-codes.md` — machine-readable response codes, finding helpers, severity/verdict constants
 - `architecture/text-library.md` — all 24 text modules, public API, code patterns
+
+## Agent API
+
+`src/agent/` provides an in-process API for calling tools without MCP. `ToolRegistry` wraps the tool registry with profile filtering and `call_json()` dispatch. `src/preflight/` adds typed wrappers (`ConfigPreflight`, `CommandPreflight`, `EditPreflight`) that parse tool responses into structured Rust types.
 
 ## Skills
 

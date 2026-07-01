@@ -1,3 +1,4 @@
+use crate::agent::{ToolCallError, ToolCallOutcome, ToolRegistry};
 use crate::mcp::machine_codes;
 use crate::mcp::protocol::{JsonRpcError, JsonRpcErrorDetail, JsonRpcRequest, JsonRpcResponse};
 use crate::mcp::registry;
@@ -7,7 +8,6 @@ use crate::mcp::runtime::{
     MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_TIMEOUT_SECONDS,
     MAX_TOOL_WORKERS, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
 };
-use crate::mcp::schema_validation::validate_arguments;
 use crate::text::levenshtein_distance;
 use serde::Serialize;
 use serde_json::Value;
@@ -588,45 +588,46 @@ async fn handle_request_async(
                 }
             }
 
-            // Look up the tool handler (exact match only)
-            let canonical_name = name.to_string();
-            let handler = match registry::tool_handler_for(name) {
-                Some(handler) => handler,
-                None => {
-                    // Unknown tool — return -32601 (matching Python)
-                    let tool_names = registry::tool_names();
-                    let tool_name_refs: Vec<&str> = tool_names.to_vec();
-                    let msg = match find_close_match(name, &tool_name_refs) {
-                        Some(m) => format!("Unknown tool: {}. Did you mean: {}?", name, m),
-                        None => format!("Unknown tool: {}", name),
+            // Delegate lookup, profile check, and validation to ToolRegistry
+            let registry = ToolRegistry::default();
+            let handler = match registry.prepare_tool_call(name, &arguments_val) {
+                ToolCallOutcome::Ready { handler } => handler,
+                ToolCallOutcome::PreExecutionError(e) => {
+                    return match e {
+                        ToolCallError::UnknownTool(tool_name) => {
+                            let tool_names = registry::tool_names();
+                            let tool_name_refs: Vec<&str> = tool_names.to_vec();
+                            let msg = match find_close_match(&tool_name, &tool_name_refs) {
+                                Some(m) => format!("Unknown tool: {}. Did you mean: {}?", tool_name, m),
+                                None => format!("Unknown tool: {}", tool_name),
+                            };
+                            Some(method_not_found(msg, request.id.clone()))
+                        }
+                        ToolCallError::ToolUnavailable { tool, profile } => {
+                            Some(json_rpc_error(
+                                -32602,
+                                format!(
+                                    "Tool '{}' is not available in profile '{}'. Use tools/list to see available tools, or switch profile.",
+                                    tool, profile
+                                ),
+                                request.id.clone(),
+                            ))
+                        }
+                        ToolCallError::InvalidArguments(msg) => {
+                            Some(json_rpc_error(
+                                -32602,
+                                format!("Invalid arguments for tool '{}': {}", name, msg),
+                                request.id.clone(),
+                            ))
+                        }
+                        ToolCallError::Internal(msg) => {
+                            Some(json_rpc_error(-32603, msg, request.id.clone()))
+                        }
                     };
-                    return Some(method_not_found(msg, request.id.clone()));
                 }
             };
 
-            // Enforce active profile: reject tools not in the current profile
-            let profile_tools = get_profile_tools(&get_active_profile());
-            if !profile_tools.contains(&&*canonical_name) {
-                return Some(json_rpc_error(
-                    -32602,
-                    format!(
-                        "Tool '{}' is not available in profile '{}'. Use tools/list to see available tools, or switch profile.",
-                        canonical_name,
-                        get_active_profile()
-                    ),
-                    request.id.clone(),
-                ));
-            }
-
-            if let Some(msg) = validate_arguments(&canonical_name, &arguments_val) {
-                return Some(json_rpc_error(
-                    -32602,
-                    format!("Invalid arguments for tool '{}': {}", canonical_name, msg),
-                    request.id.clone(),
-                ));
-            }
-
-            let name_owned = canonical_name.to_string();
+            let name_owned = name.to_string();
             let args_clone = arguments_val.clone();
             let sem = tool_semaphore.clone();
 

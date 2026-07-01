@@ -3,6 +3,7 @@ use crate::mcp::server::ToolDefinition;
 use crate::tools::*;
 use serde_json::Value;
 
+/// Function pointer type for tool handler implementations.
 pub type ToolHandler = fn(&Value) -> ToolResponse;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

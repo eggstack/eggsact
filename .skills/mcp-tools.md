@@ -51,6 +51,10 @@ Every non-OK `ToolResponse` must carry a `machine_code`. Use constants from `src
 
 See `architecture/machine-codes.md` for the full code table and design rationale.
 
+## In-Process Execution Path
+
+`ToolRegistry` (`src/agent/mod.rs`) provides the core tool execution path. Both the MCP server (`src/mcp/server.rs`) and direct Rust callers use it for tool lookup, profile filtering, argument validation, and dispatch. Tool functions themselves live in `src/mcp/tools.rs`; `ToolRegistry` orchestrates calling them.
+
 ## Composite Tools
 
 Tools marked `composite: true` orchestrate calls to other tools internally.
