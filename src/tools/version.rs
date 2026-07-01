@@ -7,8 +7,9 @@ pub fn version_compare_tool(args: &Value) -> ToolResponse {
     let a = match args.get("a").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'a' parameter",
                 None,
                 Some("version_compare"),
@@ -18,8 +19,9 @@ pub fn version_compare_tool(args: &Value) -> ToolResponse {
     let b = match args.get("b").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'b' parameter",
                 None,
                 Some("version_compare"),
@@ -32,8 +34,9 @@ pub fn version_compare_tool(args: &Value) -> ToolResponse {
         .unwrap_or("semver");
 
     if a.chars().count() > MAX_TEXT_LENGTH || b.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Version string exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("version_compare"),
@@ -42,8 +45,9 @@ pub fn version_compare_tool(args: &Value) -> ToolResponse {
 
     let valid_schemes = ["semver", "pep440", "loose"];
     if !valid_schemes.contains(&scheme) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported scheme: {}", scheme),
             Some(vec![format!("Use one of: {}", valid_schemes.join(", "))]),
             Some("version_compare"),
@@ -67,8 +71,9 @@ pub fn version_constraint_check(args: &Value) -> ToolResponse {
     let version = match args.get("version").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'version' parameter",
                 None,
                 Some("version_constraint_check"),
@@ -78,8 +83,9 @@ pub fn version_constraint_check(args: &Value) -> ToolResponse {
     let constraint = match args.get("constraint").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'constraint' parameter",
                 None,
                 Some("version_constraint_check"),
@@ -93,8 +99,9 @@ pub fn version_constraint_check(args: &Value) -> ToolResponse {
 
     let valid_schemes = ["semver", "cargo"];
     if !valid_schemes.contains(&scheme) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported scheme: {}", scheme),
             Some(vec![format!("Use one of: {}", valid_schemes.join(", "))]),
             Some("version_constraint_check"),
@@ -102,8 +109,9 @@ pub fn version_constraint_check(args: &Value) -> ToolResponse {
     }
 
     if version.trim().is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             "Version string is empty",
             Some(vec![
                 "Provide a valid version string like '1.2.3'".to_string()
@@ -112,8 +120,9 @@ pub fn version_constraint_check(args: &Value) -> ToolResponse {
         );
     }
     if constraint.trim().is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             "Constraint string is empty",
             Some(vec![
                 "Provide a valid constraint like '>=1.0' or '^1.2.3'".to_string()
@@ -122,16 +131,18 @@ pub fn version_constraint_check(args: &Value) -> ToolResponse {
         );
     }
     if version.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Input exceeds maximum length of {}", MAX_TEXT_LENGTH),
             None,
             Some("version_constraint_check"),
         );
     }
     if constraint.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Input exceeds maximum length of {}", MAX_TEXT_LENGTH),
             None,
             Some("version_constraint_check"),

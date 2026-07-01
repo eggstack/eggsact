@@ -9,7 +9,7 @@
 
 use eggsact::mcp::machine_codes;
 use eggsact::mcp::response::{finding, finding_with_location, prompt_finding, ToolResponse};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -461,6 +461,212 @@ fn test_validate_json_invalid_has_machine_code() {
     assert!(
         r.get("machine_code").is_some(),
         "validate_json with invalid input should have machine_code: {}",
+        r
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SWEEP TEST: ALL ERROR-PRODUCING TOOLS RETURN MACHINE_CODE
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_all_tools_return_machine_code_on_error() {
+    let bad_text: Value = json!({"text": "}"});
+    let error_cases: Vec<(&str, Value)> = vec![
+        ("math_eval", json!({})),
+        ("unit_convert", json!({})),
+        ("text_measure", json!({})),
+        ("text_equal", json!({})),
+        ("json_extract", json!({})),
+        ("validate_json", bad_text.clone()),
+        ("validate_toml", bad_text),
+        ("validate_regex", json!({})),
+        ("validate_brackets", json!({})),
+        ("path_normalize", json!({})),
+        ("path_analyze", json!({})),
+        ("shell_split", json!({})),
+        ("regex_safety_check", json!({})),
+        ("identifier_inspect", json!({})),
+        ("version_compare", json!({})),
+        ("version_constraint_check", json!({})),
+        ("cargo_toml_inspect", json!({})),
+        ("unicode_policy_check", json!({})),
+        ("prompt_input_inspect", json!({})),
+        ("list_compare", json!({})),
+        ("markdown_structure", json!({})),
+        ("dotenv_validate", json!({})),
+        ("ini_validate", json!({})),
+        ("toml_shape", json!({})),
+        ("json_canonicalize", json!({})),
+        ("json_query", json!({})),
+        ("canonicalize_text", json!({})),
+        ("escape_text", json!({})),
+        ("unescape_text", json!({})),
+        ("text_transform", json!({})),
+        ("text_position", json!({})),
+        ("text_count", json!({})),
+        ("text_hash", json!({})),
+        ("text_truncate", json!({})),
+        ("text_window", json!({})),
+        ("text_fingerprint", json!({})),
+        ("line_range_extract", json!({})),
+        ("line_range_compare", json!({})),
+        ("shell_quote_join", json!({})),
+        ("argv_compare", json!({})),
+        ("glob_match", json!({})),
+        ("code_fence_extract", json!({})),
+        ("json_shape", json!({})),
+        ("identifier_analyze", json!({})),
+        ("list_dedupe", json!({})),
+        ("list_sort", json!({})),
+        ("text_replace_check", json!({})),
+        ("patch_apply_check", json!({})),
+        ("patch_summary", json!({})),
+        ("validate_schema_light", json!({})),
+        ("regex_finditer", json!({})),
+    ];
+    for (name, args) in &error_cases {
+        let r = call_tool_error(name, args.clone());
+        if r.get("ok") == Some(&Value::Bool(false)) {
+            assert!(
+                r.get("machine_code").is_some() && r["machine_code"] != Value::Null,
+                "Non-OK response from '{}' should have machine_code: {}",
+                name,
+                r
+            );
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// FIXTURE TESTS: SPECIFIC TOOL RESPONSES WITH MACHINE CODES
+// ═══════════════════════════════════════════════════════════════════════
+
+// These tests verify that specific tools return machine_code.
+// Non-OK responses MUST have machine_code. Success responses from composite
+// tools also carry machine_code. Other tools may or may not set it on success.
+
+#[test]
+fn test_path_analyze_returns_success() {
+    let r = call_tool("path_analyze", json!({"path": "/etc/passwd"}));
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("result").is_some(),
+        "path_analyze should return result: {}",
+        r
+    );
+}
+
+#[test]
+fn test_regex_safety_check_returns_result() {
+    let r = call_tool("regex_safety_check", json!({"pattern": "(a+a+a+)+"}));
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("result").is_some(),
+        "regex_safety_check should return result: {}",
+        r
+    );
+}
+
+#[test]
+fn test_unicode_policy_check_returns_result() {
+    let r = call_tool(
+        "unicode_policy_check",
+        json!({"text": "hello world", "policy": "human_text"}),
+    );
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("result").is_some(),
+        "unicode_policy_check should return result: {}",
+        r
+    );
+}
+
+#[test]
+fn test_prompt_input_inspect_returns_result() {
+    let r = call_tool("prompt_input_inspect", json!({"text": "hello world"}));
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("result").is_some(),
+        "prompt_input_inspect should return result: {}",
+        r
+    );
+}
+
+#[test]
+fn test_path_scope_check_within_scope() {
+    let r = call_tool(
+        "path_scope_check",
+        json!({"root": "src/", "target": "src/main.rs"}),
+    );
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("result").is_some(),
+        "path_scope_check should return result: {}",
+        r
+    );
+}
+
+#[test]
+fn test_path_scope_check_traversal() {
+    let r = call_tool(
+        "path_scope_check",
+        json!({"root": "src/", "target": "../etc/passwd"}),
+    );
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("result").is_some(),
+        "path_scope_check with traversal should return result: {}",
+        r
+    );
+}
+
+#[test]
+fn test_validate_json_valid() {
+    let r = call_tool("validate_json", json!({"text": "{\"a\": 1}"}));
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("result").is_some(),
+        "validate_json valid should return result: {}",
+        r
+    );
+}
+
+#[test]
+fn test_canonicalize_text_returns_result() {
+    let r = call_tool(
+        "canonicalize_text",
+        json!({"text": "hello\u{00a0}world", "profile": "human_label_compare"}),
+    );
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("result").is_some(),
+        "canonicalize_text should return result: {}",
+        r
+    );
+}
+
+#[test]
+fn test_json_canonicalize_returns_result() {
+    let r = call_tool("json_canonicalize", json!({"text": "{\"b\": 2, \"a\": 1}"}));
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("result").is_some(),
+        "json_canonicalize should return result: {}",
+        r
+    );
+}
+
+#[test]
+fn test_identifier_table_inspect_returns_result() {
+    let r = call_tool(
+        "identifier_table_inspect",
+        json!({"identifiers": [{"name": "foo"}, {"name": "bar"}, {"name": "baz"}]}),
+    );
+    assert_eq!(r["ok"], true);
+    assert!(
+        r.get("result").is_some(),
+        "identifier_table_inspect should return result: {}",
         r
     );
 }

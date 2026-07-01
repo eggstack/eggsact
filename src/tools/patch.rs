@@ -12,8 +12,9 @@ pub fn patch_apply_check(args: &Value) -> ToolResponse {
                 Some(v) => json_type_name(v),
                 None => "NoneType",
             };
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("original_text must be a string, got {}", type_name),
                 None,
                 Some("patch_apply_check"),
@@ -28,8 +29,9 @@ pub fn patch_apply_check(args: &Value) -> ToolResponse {
                 Some(v) => json_type_name(v),
                 None => "NoneType",
             };
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("patch_text must be a string, got {}", type_name),
                 None,
                 Some("patch_apply_check"),
@@ -50,8 +52,9 @@ pub fn patch_apply_check(args: &Value) -> ToolResponse {
     const MAX_PATCH_LENGTH: usize = 100_000;
 
     if original_text.chars().count() > MAX_ORIGINAL_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Original text length {} exceeds maximum of {}",
                 original_text.chars().count(),
@@ -65,8 +68,9 @@ pub fn patch_apply_check(args: &Value) -> ToolResponse {
         );
     }
     if patch_text.chars().count() > MAX_PATCH_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Patch text length {} exceeds maximum of {}",
                 patch_text.chars().count(),
@@ -117,8 +121,9 @@ pub fn patch_summary(args: &Value) -> ToolResponse {
                 Some(v) => json_type_name(v),
                 None => "NoneType",
             };
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("patch_text must be a string, got {}", type_name),
                 None,
                 Some("patch_summary"),
@@ -128,8 +133,9 @@ pub fn patch_summary(args: &Value) -> ToolResponse {
 
     const MAX_PATCH_LENGTH: usize = 100_000;
     if patch_text.chars().count() > MAX_PATCH_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Patch text length {} exceeds maximum of {}",
                 patch_text.chars().count(),
@@ -162,8 +168,9 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     let original = match args.get("original").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'original' parameter",
                 None,
                 Some("edit_preflight"),
@@ -178,8 +185,9 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     let expected_fingerprint = args.get("expected_fingerprint").and_then(|v| v.as_str());
 
     if original.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Original text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("edit_preflight"),
@@ -188,8 +196,9 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
 
     let valid_modes = ["literal", "patch", "line_range"];
     if !valid_modes.contains(&replacement_mode) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "replacement_mode must be one of: {}",
                 valid_modes.join(", ")
@@ -207,8 +216,9 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             let old = match args.get("old").and_then(|v| v.as_str()) {
                 Some(s) => s,
                 None => {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         "literal mode requires both 'old' and 'new'",
                         None,
                         Some("edit_preflight"),
@@ -218,8 +228,9 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             let new = match args.get("new").and_then(|v| v.as_str()) {
                 Some(s) => s,
                 None => {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         "literal mode requires both 'old' and 'new'",
                         None,
                         Some("edit_preflight"),
@@ -255,8 +266,9 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             let patch_text = match args.get("patch").and_then(|v| v.as_str()) {
                 Some(s) => s,
                 None => {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         "patch mode requires 'patch'",
                         None,
                         Some("edit_preflight"),
@@ -303,8 +315,9 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             let start_line = match args.get("start_line").and_then(|v| v.as_u64()) {
                 Some(n) => n as usize,
                 None => {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         "line_range mode requires 'start_line' and 'end_line'",
                         None,
                         Some("edit_preflight"),
@@ -314,8 +327,9 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             let end_line = match args.get("end_line").and_then(|v| v.as_u64()) {
                 Some(n) => n as usize,
                 None => {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         "line_range mode requires 'start_line' and 'end_line'",
                         None,
                         Some("edit_preflight"),

@@ -7,8 +7,9 @@ pub fn cargo_toml_inspect(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("cargo_toml_inspect"),
@@ -25,8 +26,9 @@ pub fn cargo_toml_inspect(args: &Value) -> ToolResponse {
         .unwrap_or(true);
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("cargo_toml_inspect"),

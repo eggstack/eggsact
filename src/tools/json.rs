@@ -8,8 +8,9 @@ pub fn json_extract(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("json_extract"),
@@ -20,8 +21,9 @@ pub fn json_extract(args: &Value) -> ToolResponse {
         Some(v) => match v.as_str() {
             Some(s) => s,
             None => {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("pointer must be a string, got {}", json_type_name(v)),
                     None,
                     Some("json_extract"),
@@ -34,8 +36,9 @@ pub fn json_extract(args: &Value) -> ToolResponse {
         Some(v) => {
             if let Some(n) = v.as_i64() {
                 if n < 0 {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         &format!("max_output_chars must be non-negative, got {}", n),
                         None,
                         Some("json_extract"),
@@ -43,8 +46,9 @@ pub fn json_extract(args: &Value) -> ToolResponse {
                 }
                 n as usize
             } else {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!(
                         "max_output_chars must be a non-negative integer, got {}",
                         json_type_name(v)
@@ -62,8 +66,9 @@ pub fn json_extract(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if !["summary", "normal", "full"].contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec!["Use one of: summary, normal, full".to_string()]),
             Some("json_extract"),
@@ -71,8 +76,9 @@ pub fn json_extract(args: &Value) -> ToolResponse {
     }
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("json_extract"),
@@ -80,8 +86,9 @@ pub fn json_extract(args: &Value) -> ToolResponse {
     }
 
     if pointer.len() > 4096 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("pointer length {} exceeds 4096", pointer.len()),
             None,
             Some("json_extract"),
@@ -89,8 +96,9 @@ pub fn json_extract(args: &Value) -> ToolResponse {
     }
 
     if max_output_chars > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "max_output_chars {} exceeds {}",
                 max_output_chars, MAX_TEXT_LENGTH
@@ -311,8 +319,9 @@ pub fn json_compare(args: &Value) -> ToolResponse {
     let a = match args.get("a").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'a' parameter",
                 None,
                 Some("json_compare"),
@@ -322,8 +331,9 @@ pub fn json_compare(args: &Value) -> ToolResponse {
     let b = match args.get("b").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'b' parameter",
                 None,
                 Some("json_compare"),
@@ -357,8 +367,9 @@ pub fn json_compare(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if !["summary", "normal", "full"].contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec!["Use one of: summary, normal, full".to_string()]),
             Some("json_compare"),
@@ -366,16 +377,18 @@ pub fn json_compare(args: &Value) -> ToolResponse {
     }
 
     if max_diffs < 0 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("max_diffs must be non-negative, got {}", max_diffs),
             None,
             Some("json_compare"),
         );
     }
     if max_diffs > 10_000 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("max_diffs {} exceeds 10000", max_diffs),
             None,
             Some("json_compare"),
@@ -447,8 +460,9 @@ pub fn json_compare(args: &Value) -> ToolResponse {
     let (parsed_a, parsed_b) = match (parsed_a, parsed_b) {
         (Ok(parsed_a), Ok(parsed_b)) => (parsed_a, parsed_b),
         _ => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "parse_error",
+                machine_codes::JSON_INVALID,
                 "Invalid JSON input",
                 None,
                 Some("json_compare"),
@@ -521,8 +535,9 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("json_canonicalize"),
@@ -536,8 +551,9 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
     let indent_raw = args.get("indent").and_then(|v| v.as_i64());
     let indent = match indent_raw {
         Some(v) if v < 0 => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("indent must be 0-100 or None, got {}", v),
                 Some(vec![
                     "Use a value between 0-100 or None for minified".to_string()
@@ -562,8 +578,9 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
         .unwrap_or(false);
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("json_canonicalize"),
@@ -572,8 +589,9 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
 
     if let Some(indent_val) = indent {
         if indent_val > 100 {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("indent must be 0-100 or None, got {}", indent_val),
                 Some(vec![
                     "Use a value between 0-100 or None for minified".to_string()
@@ -616,8 +634,9 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
         {
             let mut serializer = serde_json::Serializer::with_formatter(&mut buf, formatter);
             if let Err(e) = canonical_data.serialize(&mut serializer) {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "serialization_error",
+                    machine_codes::INTERNAL_ERROR,
                     &e.to_string(),
                     None,
                     Some("json_canonicalize"),
@@ -627,8 +646,9 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
         match String::from_utf8(buf) {
             Ok(s) => s,
             Err(e) => {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "serialization_error",
+                    machine_codes::INTERNAL_ERROR,
                     &format!("invalid UTF-8 output: {}", e),
                     None,
                     Some("json_canonicalize"),
@@ -672,8 +692,9 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
             let mut serializer =
                 serde_json::Serializer::with_formatter(&mut buf, PythonStyleFormatter);
             if let Err(e) = canonical_data.serialize(&mut serializer) {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "serialization_error",
+                    machine_codes::INTERNAL_ERROR,
                     &e.to_string(),
                     None,
                     Some("json_canonicalize"),
@@ -683,8 +704,9 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
         match String::from_utf8(buf) {
             Ok(s) => s,
             Err(e) => {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "serialization_error",
+                    machine_codes::INTERNAL_ERROR,
                     &format!("invalid UTF-8 output: {}", e),
                     None,
                     Some("json_canonicalize"),
@@ -711,8 +733,9 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
             let mut serializer =
                 serde_json::Serializer::with_formatter(&mut buf, compact_formatter);
             if let Err(e) = canonical_data.serialize(&mut serializer) {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "serialization_error",
+                    machine_codes::INTERNAL_ERROR,
                     &e.to_string(),
                     None,
                     Some("json_canonicalize"),
@@ -722,8 +745,9 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
         match String::from_utf8(buf) {
             Ok(s) => s,
             Err(e) => {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "serialization_error",
+                    machine_codes::INTERNAL_ERROR,
                     &format!("invalid UTF-8 output: {}", e),
                     None,
                     Some("json_canonicalize"),
@@ -764,8 +788,9 @@ pub fn json_query(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("json_query"),
@@ -775,8 +800,9 @@ pub fn json_query(args: &Value) -> ToolResponse {
     let pointer = args.get("pointer").and_then(|v| v.as_str()).unwrap_or("");
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("json_query"),
@@ -903,8 +929,9 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("json_shape"),
@@ -919,8 +946,9 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
         .unwrap_or(5) as usize;
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("json_shape"),
@@ -928,8 +956,9 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
     }
 
     if max_depth < 1 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("max_depth must be at least 1, got {}", max_depth),
             Some(vec!["Set max_depth to 1 or higher".to_string()]),
             Some("json_shape"),
@@ -937,8 +966,9 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
     }
 
     if max_keys < 1 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("max_keys must be at least 1, got {}", max_keys),
             Some(vec!["Set max_keys to 1 or higher".to_string()]),
             Some("json_shape"),
@@ -946,8 +976,9 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
     }
 
     if max_array_items < 1 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "max_array_items must be at least 1, got {}",
                 max_array_items
@@ -962,8 +993,9 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
     const MAX_SHAPE_ARRAY_ITEMS: usize = 10_000;
 
     if max_depth > MAX_SHAPE_DEPTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("max_depth {} exceeds {}", max_depth, MAX_SHAPE_DEPTH),
             None,
             Some("json_shape"),
@@ -971,8 +1003,9 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
     }
 
     if max_keys > MAX_SHAPE_KEYS {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("max_keys {} exceeds {}", max_keys, MAX_SHAPE_KEYS),
             None,
             Some("json_shape"),
@@ -980,8 +1013,9 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
     }
 
     if max_array_items > MAX_SHAPE_ARRAY_ITEMS {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "max_array_items {} exceeds {}",
                 max_array_items, MAX_SHAPE_ARRAY_ITEMS
@@ -1002,7 +1036,13 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
             Some("json_shape"),
         )
         .with_tool("json_shape"),
-        Err(e) => ToolResponse::error("invalid_arguments", &e, None, Some("json_shape")),
+        Err(e) => ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            &e,
+            None,
+            Some("json_shape"),
+        ),
     }
 }
 
@@ -1010,8 +1050,9 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
     let a = match args.get("a").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'a' parameter",
                 None,
                 Some("structured_data_compare"),
@@ -1021,8 +1062,9 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
     let b = match args.get("b").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'b' parameter",
                 None,
                 Some("structured_data_compare"),
@@ -1044,16 +1086,18 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
     let max_diffs = args.get("max_diffs").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
     if a.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Input 'a' exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("structured_data_compare"),
         );
     }
     if b.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Input 'b' exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("structured_data_compare"),
@@ -1062,8 +1106,9 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
 
     let valid_formats = ["json"];
     if !valid_formats.contains(&format) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("format must be 'json' (got '{}')", format),
             None,
             Some("structured_data_compare"),

@@ -550,8 +550,9 @@ pub fn text_measure(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("text_measure"),
@@ -560,8 +561,9 @@ pub fn text_measure(args: &Value) -> ToolResponse {
 
     let valid_details = ["summary", "normal", "full"];
     if !valid_details.contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec![format!("Use one of: {}", valid_details.join(", "))]),
             Some("text_measure"),
@@ -765,8 +767,9 @@ pub fn text_equal(args: &Value) -> ToolResponse {
         .unwrap_or(false);
 
     if !["raw", "NFC", "NFD", "NFKC", "NFKD"].contains(&normalization) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported normalization form: {}", normalization),
             Some(vec![format!("Use one of: raw, NFC, NFD, NFKC, NFKD")]),
             Some("text_equal"),
@@ -954,8 +957,9 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
     };
     let max_diffs = args.get("max_diffs").and_then(|v| v.as_i64()).unwrap_or(20);
     if max_diffs < 0 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("max_diffs must be non-negative, got {}", max_diffs),
             None,
             Some("text_diff_explain"),
@@ -976,8 +980,9 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if max_diffs > 10000 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("max_diffs {} exceeds 10000", max_diffs),
             None,
             Some("text_diff_explain"),
@@ -985,8 +990,9 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
     }
 
     if a.chars().count() > MAX_TEXT_LENGTH || b.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Input exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("text_diff_explain"),
@@ -995,8 +1001,9 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
 
     let valid_details = ["summary", "normal", "full"];
     if !valid_details.contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec![format!("Use one of: {}", valid_details.join(", "))]),
             Some("text_diff_explain"),
@@ -1233,8 +1240,9 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
 
     let valid_details = ["summary", "normal", "full"];
     if !valid_details.contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec![format!("Use one of: {}", valid_details.join(", "))]),
             Some("text_inspect"),
@@ -1243,8 +1251,9 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
 
     let valid_norms = ["none", "NFC", "NFD", "NFKC", "NFKD"];
     if !valid_norms.contains(&normalize_form) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported normalization form: {}", normalize_form),
             Some(vec![format!("Use one of: {}", valid_norms.join(", "))]),
             Some("text_inspect"),
@@ -1252,8 +1261,9 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
     }
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("text_inspect"),
@@ -1766,8 +1776,9 @@ pub fn text_count(args: &Value) -> ToolResponse {
         Some(v) => match v.as_str() {
             Some(s) => Some(s),
             None => {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("target must be a string, got {}", json_type_name(v)),
                     None,
                     Some("text_count"),
@@ -1786,8 +1797,9 @@ pub fn text_count(args: &Value) -> ToolResponse {
         .unwrap_or("raw");
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("text_count"),
@@ -1796,8 +1808,9 @@ pub fn text_count(args: &Value) -> ToolResponse {
 
     let valid_count_modes = ["codepoint", "grapheme", "byte", "substring"];
     if !valid_count_modes.contains(&count_mode) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported count_mode: {}", count_mode),
             Some(vec![format!(
                 "Use one of: {}",
@@ -1808,8 +1821,9 @@ pub fn text_count(args: &Value) -> ToolResponse {
     }
 
     if !["raw", "NFC", "NFKC"].contains(&normalization) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported normalization form: {}", normalization),
             Some(vec![format!("Use one of: raw, NFC, NFKC")]),
             Some("text_count"),
@@ -1821,8 +1835,9 @@ pub fn text_count(args: &Value) -> ToolResponse {
     if let Some(target) = target {
         const MAX_TARGET_LENGTH: usize = 1000;
         if target.chars().count() > MAX_TARGET_LENGTH {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "input_too_large",
+                machine_codes::INPUT_TOO_LARGE,
                 &format!(
                     "target length {} exceeds {}",
                     target.chars().count(),
@@ -1873,8 +1888,9 @@ pub fn text_truncate(args: &Value) -> ToolResponse {
         Some(v) => match v.as_str() {
             Some(s) => s,
             None => {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("text must be a string, got {}", json_type_name(v)),
                     None,
                     Some("text_truncate"),
@@ -1882,8 +1898,9 @@ pub fn text_truncate(args: &Value) -> ToolResponse {
             }
         },
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "text must be a string, got NoneType",
                 None,
                 Some("text_truncate"),
@@ -1893,8 +1910,9 @@ pub fn text_truncate(args: &Value) -> ToolResponse {
     let max_graphemes = match args.get("max_graphemes").and_then(|v| v.as_i64()) {
         Some(n) => n,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'max_graphemes' parameter",
                 None,
                 Some("text_truncate"),
@@ -1903,8 +1921,9 @@ pub fn text_truncate(args: &Value) -> ToolResponse {
     };
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "text length {} exceeds {}",
                 text.chars().count(),
@@ -1919,8 +1938,9 @@ pub fn text_truncate(args: &Value) -> ToolResponse {
     }
 
     if max_graphemes < 0 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("max_graphemes must be non-negative, got {}", max_graphemes),
             Some(vec!["Set max_graphemes to 0 or higher".to_string()]),
             Some("text_truncate"),
@@ -1963,8 +1983,9 @@ pub fn text_fingerprint_tool(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("text_fingerprint"),
@@ -1972,8 +1993,9 @@ pub fn text_fingerprint_tool(args: &Value) -> ToolResponse {
         }
     };
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("text_fingerprint"),
@@ -1999,8 +2021,9 @@ pub fn text_fingerprint_tool(args: &Value) -> ToolResponse {
 
     let valid_unicode = ["raw", "NFC", "NFD", "NFKC", "NFKD"];
     if !valid_unicode.contains(&unicode) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported unicode normalization: {}", unicode),
             Some(vec![format!("Use one of: {}", valid_unicode.join(", "))]),
             Some("text_fingerprint"),
@@ -2009,8 +2032,9 @@ pub fn text_fingerprint_tool(args: &Value) -> ToolResponse {
 
     let valid_newline = ["raw", "LF"];
     if !valid_newline.contains(&newline) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported newline normalization: {}", newline),
             Some(vec![format!("Use one of: {}", valid_newline.join(", "))]),
             Some("text_fingerprint"),
@@ -2046,8 +2070,9 @@ pub fn text_hash(args: &Value) -> ToolResponse {
     let algorithms = match args.get("algorithms") {
         Some(Value::Array(arr)) => {
             if arr.len() > 10 {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("algorithms list length {} exceeds 10", arr.len()),
                     None,
                     Some("text_hash"),
@@ -2060,8 +2085,9 @@ pub fn text_hash(args: &Value) -> ToolResponse {
                 .map(|(i, _)| i)
                 .collect();
             if !non_str_indices.is_empty() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     "All algorithms must be strings",
                     Some(vec![format!(
                         "Non-string items at indices: {:?}",
@@ -2076,8 +2102,9 @@ pub fn text_hash(args: &Value) -> ToolResponse {
         }
         None => vec!["sha256".to_string()],
         _ => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!(
                     "algorithms must be a list, got {}",
                     json_type_name(args.get("algorithms").unwrap_or(&Value::Null))
@@ -2097,8 +2124,9 @@ pub fn text_hash(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if !["summary", "normal", "full"].contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec!["Use one of: summary, normal, full".to_string()]),
             Some("text_hash"),
@@ -2157,8 +2185,9 @@ pub fn text_hash(args: &Value) -> ToolResponse {
         .iter()
         .any(|e| e.replace(['-', '_'], "") == enc_lower);
     if !known {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Invalid encoding: {}", encoding),
             Some(vec![
                 "Use a valid encoding name like 'utf-8', 'ascii', 'latin-1'".to_string(),
@@ -2168,8 +2197,9 @@ pub fn text_hash(args: &Value) -> ToolResponse {
     }
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "text length {} exceeds MAX_TEXT_LENGTH {}",
                 text.chars().count(),
@@ -2217,8 +2247,9 @@ pub fn text_position(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("text_position"),
@@ -2257,8 +2288,9 @@ pub fn text_position(args: &Value) -> ToolResponse {
 
     let valid_details = ["summary", "normal", "full"];
     if !valid_details.contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec![format!("Use one of: {}", valid_details.join(", "))]),
             Some("text_position"),
@@ -2266,16 +2298,18 @@ pub fn text_position(args: &Value) -> ToolResponse {
     }
 
     if line_base != 0 && line_base != 1 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("line_base must be 0 or 1, got {}", line_base),
             Some(vec!["Set line_base to 0 or 1".to_string()]),
             Some("text_position"),
         );
     }
     if column_base != 0 && column_base != 1 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("column_base must be 0 or 1, got {}", column_base),
             Some(vec!["Set column_base to 0 or 1".to_string()]),
             Some("text_position"),
@@ -2283,8 +2317,9 @@ pub fn text_position(args: &Value) -> ToolResponse {
     }
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "text length {} exceeds MAX_TEXT_LENGTH {}",
                 text.chars().count(),
@@ -2310,8 +2345,9 @@ pub fn text_position(args: &Value) -> ToolResponse {
     );
 
     if !result.valid {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             result.error.as_deref().unwrap_or("Invalid position"),
             None,
             Some("text_position"),
@@ -2352,8 +2388,9 @@ pub fn text_window(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("text_window"),
@@ -2363,8 +2400,9 @@ pub fn text_window(args: &Value) -> ToolResponse {
     let position = match args.get("position").and_then(|v| v.as_object()) {
         Some(obj) => obj.clone(),
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'position' parameter",
                 None,
                 Some("text_window"),
@@ -2375,16 +2413,18 @@ pub fn text_window(args: &Value) -> ToolResponse {
         Some(v) => {
             if let Some(n) = v.as_i64() {
                 if n < 0 {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         &format!("context_lines must be non-negative, got {}", n),
                         Some(vec!["Set context_lines to 0 or higher".to_string()]),
                         Some("text_window"),
                     );
                 }
                 if n > 10000 {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         &format!("context_lines {} exceeds 10000", n),
                         None,
                         Some("text_window"),
@@ -2392,8 +2432,9 @@ pub fn text_window(args: &Value) -> ToolResponse {
                 }
                 n as usize
             } else {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!(
                         "context_lines must be an integer, got {}",
                         json_type_name(v)
@@ -2411,8 +2452,9 @@ pub fn text_window(args: &Value) -> ToolResponse {
         .unwrap_or(true);
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "text length {} exceeds MAX_TEXT_LENGTH {}",
                 text.chars().count(),
@@ -2438,8 +2480,9 @@ pub fn text_window(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("codepoint_index");
     if !valid_kinds.contains(&pos_kind) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unknown position kind: {}", pos_kind),
             Some(vec![format!("Use one of: {}", valid_kinds.join(", "))]),
             Some("text_window"),
@@ -2459,16 +2502,18 @@ pub fn text_window(args: &Value) -> ToolResponse {
         if let Some(v) = position.get(*key) {
             if let Some(n) = v.as_i64() {
                 if n < 0 || n as usize > max_pos {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         &format!("position.{}={} out of range [0, {}]", key, n, max_pos),
                         None,
                         Some("text_window"),
                     );
                 }
             } else if v.is_boolean() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!(
                         "position.{} must be an integer, got {}",
                         key,
@@ -2482,8 +2527,9 @@ pub fn text_window(args: &Value) -> ToolResponse {
                     Some("text_window"),
                 );
             } else {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!(
                         "position.{} must be an integer, got {}",
                         key,
@@ -2572,8 +2618,9 @@ pub fn text_transform(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("text_transform"),
@@ -2587,8 +2634,9 @@ pub fn text_transform(args: &Value) -> ToolResponse {
                 match v.as_str() {
                     Some(s) => ops.push(s.to_string()),
                     None => {
-                        return ToolResponse::error(
+                        return ToolResponse::error_with_code(
                             "invalid_arguments",
+                            machine_codes::INVALID_ARGUMENTS,
                             &format!(
                                 "operations list items must be strings, operation {} is {}",
                                 i,
@@ -2603,8 +2651,9 @@ pub fn text_transform(args: &Value) -> ToolResponse {
             ops
         }
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'operations' parameter",
                 None,
                 Some("text_transform"),
@@ -2617,8 +2666,9 @@ pub fn text_transform(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "text length {} exceeds MAX_TEXT_LENGTH {}",
                 text.chars().count(),
@@ -2633,8 +2683,9 @@ pub fn text_transform(args: &Value) -> ToolResponse {
     }
 
     if operations.len() > 100 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "operations list too large ({} items, max 100)",
                 operations.len()
@@ -2666,8 +2717,9 @@ pub fn text_transform(args: &Value) -> ToolResponse {
         }
     }
     if !unknown_ops.is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unknown operation(s): {}", unknown_ops.join(", ")),
             Some(vec![format!(
                 "Valid operations: {}",
@@ -2678,8 +2730,9 @@ pub fn text_transform(args: &Value) -> ToolResponse {
     }
 
     if !["summary", "normal", "full"].contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec![format!("Use one of: summary, normal, full")]),
             Some("text_transform"),
@@ -2717,8 +2770,9 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("text_replace_check"),
@@ -2728,8 +2782,9 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
     let old = match args.get("old").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'old' parameter",
                 None,
                 Some("text_replace_check"),
@@ -2739,8 +2794,9 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
     let new = match args.get("new").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'new' parameter",
                 None,
                 Some("text_replace_check"),
@@ -2768,8 +2824,9 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
     let max_preview_chars = if let Some(v) = args.get("max_preview_chars") {
         if let Some(n) = v.as_i64() {
             if n < 0 {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("max_preview_chars must be non-negative, got {}", n),
                     None,
                     Some("text_replace_check"),
@@ -2777,8 +2834,9 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
             }
             n as usize
         } else {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "max_preview_chars must be an integer",
                 None,
                 Some("text_replace_check"),
@@ -2790,8 +2848,9 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
 
     const MAX_PREVIEW_CHARS: usize = 100_000;
     if max_preview_chars > MAX_PREVIEW_CHARS {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "max_preview_chars {} exceeds {}",
                 max_preview_chars, MAX_PREVIEW_CHARS
@@ -2802,8 +2861,9 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
     }
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("text_replace_check"),
@@ -2811,8 +2871,9 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
     }
 
     if old.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("old exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("text_replace_check"),
@@ -2820,8 +2881,9 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
     }
 
     if new.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("new exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("text_replace_check"),
@@ -2830,8 +2892,9 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
 
     let valid_modes = ["exact", "nfc", "nfkc", "casefold", "whitespace_collapse"];
     if !valid_modes.contains(&mode) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported mode: {}", mode),
             Some(vec![format!("Use one of: {}", valid_modes.join(", "))]),
             Some("text_replace_check"),
@@ -2840,8 +2903,9 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
 
     let valid_newline_policies = ["preserve", "normalize_lf", "normalize_crlf"];
     if !valid_newline_policies.contains(&newline_policy) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported newline_policy: {}", newline_policy),
             Some(vec![format!(
                 "Use one of: {}",
@@ -2879,7 +2943,13 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
             Some("text_replace_check"),
         )
         .with_tool("text_replace_check"),
-        Err(e) => ToolResponse::error("invalid_arguments", &e, None, Some("text_replace_check")),
+        Err(e) => ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            &e,
+            None,
+            Some("text_replace_check"),
+        ),
     }
 }
 
@@ -2891,8 +2961,9 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("text_security_inspect"),
@@ -2917,8 +2988,9 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         .unwrap_or("summary");
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("text_security_inspect"),
@@ -2927,8 +2999,9 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
 
     let valid_policies = ["default", "source_code", "prompt", "markdown", "identifier"];
     if !valid_policies.contains(&policy) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("policy must be one of: {}", valid_policies.join(", ")),
             None,
             Some("text_security_inspect"),
@@ -2937,8 +3010,9 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
 
     let valid_normalizations = ["none", "NFC", "NFD", "NFKC", "NFKD"];
     if !valid_normalizations.contains(&normalize) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported normalize form: {}", normalize),
             Some(vec![format!(
                 "Use one of: {}",
@@ -2950,8 +3024,9 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
 
     let valid_details = ["summary", "normal", "full"];
     if !valid_details.contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec![format!("Use one of: {}", valid_details.join(", "))]),
             Some("text_security_inspect"),
@@ -3275,8 +3350,9 @@ pub fn escape_text(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if !["summary", "normal", "full"].contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec!["Use one of: summary, normal, full".to_string()]),
             Some("escape_text"),
@@ -3284,8 +3360,9 @@ pub fn escape_text(args: &Value) -> ToolResponse {
     }
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "text length {} exceeds MAX_TEXT_LENGTH {}",
                 text.chars().count(),
@@ -3311,8 +3388,9 @@ pub fn escape_text(args: &Value) -> ToolResponse {
         "url_component",
     ];
     if !valid_modes.contains(&mode) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported escape mode: {}", mode),
             Some(vec![format!("Valid modes: {}", valid_modes.join(", "))]),
             Some("escape_text"),
@@ -3344,7 +3422,13 @@ pub fn escape_text(args: &Value) -> ToolResponse {
                 .with_tool("escape_text")
             }
         }
-        Err(e) => ToolResponse::error("internal_error", &e, None, Some("escape_text")),
+        Err(e) => ToolResponse::error_with_code(
+            "internal_error",
+            machine_codes::INTERNAL_ERROR,
+            &e,
+            None,
+            Some("escape_text"),
+        ),
     }
 }
 
@@ -3367,8 +3451,9 @@ pub fn unescape_text(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if !["summary", "normal", "full"].contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec!["Use one of: summary, normal, full".to_string()]),
             Some("unescape_text"),
@@ -3376,8 +3461,9 @@ pub fn unescape_text(args: &Value) -> ToolResponse {
     }
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "text length {} exceeds MAX_TEXT_LENGTH {}",
                 text.chars().count(),
@@ -3398,8 +3484,9 @@ pub fn unescape_text(args: &Value) -> ToolResponse {
         "url_component",
     ];
     if !valid_modes.contains(&mode) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported unescape mode: {}", mode),
             Some(vec![format!("Valid modes: {}", valid_modes.join(", "))]),
             Some("unescape_text"),
@@ -3441,8 +3528,9 @@ pub fn line_range_extract_tool(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!(
                     "text must be a string, got {}",
                     json_type_name(args.get("text").unwrap_or(&Value::Null))
@@ -3475,8 +3563,9 @@ pub fn line_range_extract_tool(args: &Value) -> ToolResponse {
 
     let char_count = text.chars().count();
     if char_count > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "text length {} exceeds MAX_TEXT_LENGTH {}",
                 char_count, MAX_TEXT_LENGTH
@@ -3517,7 +3606,13 @@ pub fn line_range_extract_tool(args: &Value) -> ToolResponse {
             Some("line_range_extract"),
         )
         .with_tool("line_range_extract"),
-        Err(e) => ToolResponse::error("invalid_arguments", &e, None, Some("line_range_extract")),
+        Err(e) => ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            &e,
+            None,
+            Some("line_range_extract"),
+        ),
     }
 }
 
@@ -3529,8 +3624,9 @@ pub fn line_range_compare_tool(args: &Value) -> ToolResponse {
     let left_text = match args.get("left_text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!(
                     "left_text must be a string, got {}",
                     json_type_name(args.get("left_text").unwrap_or(&Value::Null))
@@ -3543,8 +3639,9 @@ pub fn line_range_compare_tool(args: &Value) -> ToolResponse {
     let right_text = match args.get("right_text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!(
                     "right_text must be a string, got {}",
                     json_type_name(args.get("right_text").unwrap_or(&Value::Null))
@@ -3574,8 +3671,9 @@ pub fn line_range_compare_tool(args: &Value) -> ToolResponse {
     for (label, t) in [("left_text", left_text), ("right_text", right_text)] {
         let char_count = t.chars().count();
         if char_count > MAX_TEXT_LENGTH {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "input_too_large",
+                machine_codes::INPUT_TOO_LARGE,
                 &format!(
                     "{} length {} exceeds MAX_TEXT_LENGTH {}",
                     label, char_count, MAX_TEXT_LENGTH
@@ -3591,8 +3689,9 @@ pub fn line_range_compare_tool(args: &Value) -> ToolResponse {
 
     let valid_modes = ["exact", "ignore_trailing_whitespace", "normalize_newlines"];
     if !valid_modes.contains(&comparison_mode) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported comparison_mode: {}", comparison_mode),
             Some(vec![format!("Use one of: {}", valid_modes.join(", "))]),
             Some("line_range_compare"),
@@ -3618,7 +3717,13 @@ pub fn line_range_compare_tool(args: &Value) -> ToolResponse {
             Some("line_range_compare"),
         )
         .with_tool("line_range_compare"),
-        Err(e) => ToolResponse::error("invalid_arguments", &e, None, Some("line_range_compare")),
+        Err(e) => ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            &e,
+            None,
+            Some("line_range_compare"),
+        ),
     }
 }
 
@@ -3630,8 +3735,9 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("prompt_input_inspect"),
@@ -3640,8 +3746,9 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
     };
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Input length {} exceeds MAX_TEXT_LENGTH {}",
                 text.chars().count(),
@@ -3681,8 +3788,9 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
                 }
             }
             if !invalid.is_empty() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("Unknown check(s): {}", invalid.join(", ")),
                     Some(vec![format!(
                         "Valid checks: {}",
@@ -3695,8 +3803,9 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
         }
         None => all_check_set.iter().map(|s| s.to_string()).collect(),
         _ => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "checks must be a list of strings",
                 None,
                 Some("prompt_input_inspect"),
@@ -3715,8 +3824,9 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
                 })
                 .collect();
             if patterns.len() > MAX_LIST_ITEMS {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "input_too_large",
+                    machine_codes::INPUT_TOO_LARGE,
                     &format!(
                         "phrase_patterns count {} exceeds MAX_LIST_ITEMS {}",
                         patterns.len(),
@@ -3730,8 +3840,9 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
         }
         None => None,
         _ => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!(
                     "phrase_patterns must be a list, got {}",
                     json_type_name(args.get("phrase_patterns").unwrap())

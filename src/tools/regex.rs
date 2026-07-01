@@ -9,8 +9,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
         Some(v) => match v.as_str() {
             Some(s) => s,
             None => {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("pattern must be a string, got {}", json_type_name(v)),
                     None,
                     Some("validate_regex"),
@@ -18,8 +19,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
             }
         },
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "pattern must be a string, got NoneType",
                 None,
                 Some("validate_regex"),
@@ -29,16 +31,18 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
     let samples = match args.get("samples") {
         Some(Value::Array(arr)) => arr,
         Some(v) => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("samples must be a list, got {}", json_type_name(v)),
                 None,
                 Some("validate_regex"),
             )
         }
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "samples must be a list, got NoneType",
                 None,
                 Some("validate_regex"),
@@ -55,8 +59,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
                 .map(|(i, _)| i)
                 .collect();
             if !non_str_flags.is_empty() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     "All flags must be strings",
                     Some(vec![format!(
                         "Non-string items at indices: {:?}",
@@ -70,8 +75,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
                 .collect()
         }
         Some(v) => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("flags must be a list, got {}", json_type_name(v)),
                 None,
                 Some("validate_regex"),
@@ -94,8 +100,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
     let ascii = args.get("ascii").and_then(|v| v.as_bool()).unwrap_or(false);
 
     if samples.len() > MAX_REGEX_SAMPLES {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Number of samples {} exceeds MAX_REGEX_SAMPLES {}",
                 samples.len(),
@@ -110,8 +117,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
     }
 
     if pattern.chars().count() > MAX_PATTERN_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Pattern length {} exceeds MAX_PATTERN_LENGTH {}",
                 pattern.chars().count(),
@@ -133,8 +141,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
         .map(|(i, _)| i)
         .collect();
     if !non_str_indices.is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             "All samples must be strings",
             Some(vec![format!(
                 "Non-string items at indices: {:?}",
@@ -153,8 +162,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
         .map(|(i, _)| i)
         .collect();
     if !long_samples.is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Sample(s) at indices {:?} exceed MAX_REGEX_SAMPLE_LENGTH {}",
                 long_samples, MAX_REGEX_SAMPLE_LENGTH
@@ -176,8 +186,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
         .collect();
 
     if total_chars > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Total sample size {} characters exceeds MAX_TEXT_LENGTH {}",
                 total_chars, MAX_TEXT_LENGTH
@@ -192,8 +203,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
 
     let safety = crate::text::regex_safety_check(pattern);
     if safety.risk == "medium" || safety.risk == "high" {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "unsafe_pattern",
+            machine_codes::REGEX_UNSAFE,
             &format!(
                 "Pattern has {} risk of catastrophic backtracking",
                 safety.risk
@@ -223,8 +235,9 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
     }) {
         Ok(r) => r,
         Err(_timeout) => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "timeout",
+                machine_codes::REGEX_UNSAFE,
                 "Regex execution exceeded time limit (possible ReDoS)",
                 Some(vec!["Try a simpler pattern or fewer samples".to_string()]),
                 Some("validate_regex"),
@@ -255,8 +268,9 @@ pub fn regex_safety_check_tool(args: &Value) -> ToolResponse {
     let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'pattern' parameter",
                 None,
                 Some("regex_safety_check"),
@@ -265,8 +279,9 @@ pub fn regex_safety_check_tool(args: &Value) -> ToolResponse {
     };
 
     if pattern.chars().count() > MAX_PATTERN_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Pattern exceeds {} chars", MAX_PATTERN_LENGTH),
             Some(vec![format!(
                 "Maximum pattern length is {} characters",
@@ -336,8 +351,9 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
                 .map(|(i, _)| i)
                 .collect();
             if !non_str_flags.is_empty() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     "All flags must be strings",
                     Some(vec![format!(
                         "Non-string items at indices: {:?}",
@@ -353,8 +369,9 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
             )
         }
         Some(v) => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("flags must be a list, got {}", json_type_name(v)),
                 None,
                 Some("regex_finditer"),
@@ -367,16 +384,18 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_u64())
         .unwrap_or(MAX_MATCHES_REGEX as u64) as usize;
     if max_matches < 1 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("max_matches must be at least 1, got {}", max_matches),
             Some(vec!["Set max_matches to 1 or higher".to_string()]),
             Some("regex_finditer"),
         );
     }
     if max_matches > MAX_MATCHES_HARD_CAP {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "max_matches {} exceeds maximum of {}",
                 max_matches, MAX_MATCHES_HARD_CAP
@@ -400,8 +419,9 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
 
     let char_count = text.chars().count();
     if char_count > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             Some(vec![format!(
                 "Maximum input length is {} characters",
@@ -412,8 +432,9 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
     }
 
     if pattern.chars().count() > MAX_PATTERN_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Pattern length {} exceeds MAX_PATTERN_LENGTH {}",
                 pattern.chars().count(),
@@ -429,8 +450,9 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
 
     let safety = crate::text::regex_safety_check(pattern);
     if safety.risk == "medium" || safety.risk == "high" {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "unsafe_pattern",
+            machine_codes::REGEX_UNSAFE,
             &format!(
                 "Pattern has {} risk of catastrophic backtracking",
                 safety.risk
@@ -458,8 +480,9 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
     }) {
         Ok(r) => r,
         Err(_timeout) => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "timeout",
+                machine_codes::REGEX_UNSAFE,
                 "Regex execution exceeded time limit (possible ReDoS)",
                 Some(vec![
                     "Try a simpler pattern or reduce max_matches".to_string()

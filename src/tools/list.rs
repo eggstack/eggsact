@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
@@ -10,8 +11,9 @@ pub fn list_compare(args: &Value) -> ToolResponse {
     };
 
     if a.len() > MAX_LIST_ITEMS || b.len() > MAX_LIST_ITEMS {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("List length exceeds MAX_LIST_ITEMS {}", MAX_LIST_ITEMS),
             Some(vec![format!("Maximum {} items per list", MAX_LIST_ITEMS)]),
             Some("list_compare"),
@@ -36,8 +38,9 @@ pub fn list_compare(args: &Value) -> ToolResponse {
         }
     }
     if !errors.is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             "All list elements must be strings",
             Some(errors.into_iter().take(10).collect()),
             Some("list_compare"),
@@ -46,8 +49,9 @@ pub fn list_compare(args: &Value) -> ToolResponse {
 
     let max_total_chars = MAX_TEXT_LENGTH * 2;
     if total_chars > max_total_chars {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Total string length {} exceeds maximum", total_chars),
             Some(vec![format!(
                 "Maximum combined string length is {} characters",
@@ -88,8 +92,9 @@ pub fn list_compare(args: &Value) -> ToolResponse {
 
     let valid_modes = ["ordered", "set", "multiset"];
     if !valid_modes.contains(&mode) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported mode: {}", mode),
             Some(vec![format!("Use one of: {}", valid_modes.join(", "))]),
             Some("list_compare"),
@@ -98,8 +103,9 @@ pub fn list_compare(args: &Value) -> ToolResponse {
 
     let valid_normalizations = ["raw", "NFC", "NFD", "NFKC", "NFKD"];
     if !valid_normalizations.contains(&normalization) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported normalization form: {}", normalization),
             Some(vec![format!(
                 "Use one of: {}",
@@ -110,8 +116,9 @@ pub fn list_compare(args: &Value) -> ToolResponse {
     }
 
     if near_match_threshold < 0.0 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "near_match_threshold must be non-negative, got {}",
                 near_match_threshold
@@ -390,8 +397,9 @@ pub fn list_dedupe(args: &Value) -> ToolResponse {
         Err(response) => return *response,
     };
     if items.len() > MAX_LIST_ITEMS {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("items length {} exceeds {}", items.len(), MAX_LIST_ITEMS),
             None,
             Some("list_dedupe"),
@@ -414,8 +422,9 @@ pub fn list_dedupe(args: &Value) -> ToolResponse {
         .map(|(i, _)| i)
         .collect();
     if !non_str_indices.is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             "All items elements must be strings",
             Some(vec![format!(
                 "Non-string items at indices: {:?}",
@@ -435,8 +444,9 @@ pub fn list_dedupe(args: &Value) -> ToolResponse {
         .map(|(i, _)| i)
         .collect();
     if !oversized_indices.is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("items exceed max length {}", MAX_TEXT_LENGTH),
             Some(vec![format!(
                 "Oversized items at indices: {:?}",
@@ -448,8 +458,9 @@ pub fn list_dedupe(args: &Value) -> ToolResponse {
 
     let valid_normalizations = ["raw", "NFC", "NFD", "NFKC", "NFKD"];
     if !valid_normalizations.contains(&normalization) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported normalization form: {}", normalization),
             Some(vec![format!(
                 "Use one of: {}",
@@ -517,8 +528,9 @@ pub fn list_sort(args: &Value) -> ToolResponse {
         Err(response) => return *response,
     };
     if items.len() > MAX_LIST_ITEMS {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("items length {} exceeds {}", items.len(), MAX_LIST_ITEMS),
             None,
             Some("list_sort"),
@@ -545,8 +557,9 @@ pub fn list_sort(args: &Value) -> ToolResponse {
         .map(|(i, _)| i)
         .collect();
     if !non_str_indices.is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             "All items elements must be strings",
             Some(vec![format!(
                 "Non-string items at indices: {:?}",
@@ -566,8 +579,9 @@ pub fn list_sort(args: &Value) -> ToolResponse {
         .map(|(i, _)| i)
         .collect();
     if !oversized_indices.is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("items exceed max length {}", MAX_TEXT_LENGTH),
             Some(vec![format!(
                 "Oversized items at indices: {:?}",
@@ -579,8 +593,9 @@ pub fn list_sort(args: &Value) -> ToolResponse {
 
     let valid_normalizations = ["raw", "NFC", "NFD", "NFKC", "NFKD"];
     if !valid_normalizations.contains(&normalization) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported normalization form: {}", normalization),
             Some(vec![format!(
                 "Use one of: {}",

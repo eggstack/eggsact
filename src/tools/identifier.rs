@@ -7,8 +7,9 @@ pub fn identifier_analyze(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("identifier_analyze"),
@@ -26,8 +27,9 @@ pub fn identifier_analyze(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("identifier_analyze"),
@@ -36,8 +38,9 @@ pub fn identifier_analyze(args: &Value) -> ToolResponse {
 
     let valid_details = ["summary", "normal", "full"];
     if !valid_details.contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec![format!("Use one of: {}", valid_details.join(", "))]),
             Some("identifier_analyze"),
@@ -48,8 +51,9 @@ pub fn identifier_analyze(args: &Value) -> ToolResponse {
         let valid_languages = ["python", "rust", "javascript", "env"];
         for lang in langs {
             if !valid_languages.contains(&lang.as_str()) {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("Unsupported language: {}", lang),
                     Some(vec![format!("Use one of: {}", valid_languages.join(", "))]),
                     Some("identifier_analyze"),
@@ -102,8 +106,9 @@ pub fn identifier_inspect(args: &Value) -> ToolResponse {
         Some(arr) => {
             for item in arr.iter() {
                 if !item.is_string() {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         &format!(
                             "Each identifier must be a string, got {}",
                             json_type_name(item)
@@ -122,8 +127,9 @@ pub fn identifier_inspect(args: &Value) -> ToolResponse {
                 Some(v) => json_type_name(v),
                 None => "NoneType",
             };
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("identifiers must be a list, got {}", type_name),
                 None,
                 Some("identifier_inspect"),
@@ -148,8 +154,9 @@ pub fn identifier_inspect(args: &Value) -> ToolResponse {
         .unwrap_or(true);
 
     if identifiers.len() > MAX_LIST_ITEMS {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Number of identifiers {} exceeds MAX_LIST_ITEMS {}",
                 identifiers.len(),
@@ -162,8 +169,9 @@ pub fn identifier_inspect(args: &Value) -> ToolResponse {
 
     for ident in &identifiers {
         if ident.chars().count() > MAX_TEXT_LENGTH {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "input_too_large",
+                machine_codes::INPUT_TOO_LARGE,
                 &format!(
                     "Identifier length {} exceeds MAX_TEXT_LENGTH {}",
                     ident.chars().count(),
@@ -187,8 +195,9 @@ pub fn identifier_inspect(args: &Value) -> ToolResponse {
         "json_key",
     ];
     if !valid_languages.contains(&language) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported language: {}", language),
             Some(vec![format!("Use one of: {}", valid_languages.join(", "))]),
             Some("identifier_inspect"),
@@ -197,8 +206,9 @@ pub fn identifier_inspect(args: &Value) -> ToolResponse {
 
     let valid_normalizations = ["raw", "NFC", "NFD", "NFKC", "NFKD"];
     if !valid_normalizations.contains(&normalization) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported normalization form: {}", normalization),
             Some(vec![format!(
                 "Use one of: {}",
@@ -358,8 +368,9 @@ pub fn identifier_table_inspect(args: &Value) -> ToolResponse {
                 }
             }
             if !bad_entries.is_empty() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     "Malformed identifier entries",
                     Some(bad_entries.into_iter().take(10).collect()),
                     Some("identifier_table_inspect"),
@@ -368,8 +379,9 @@ pub fn identifier_table_inspect(args: &Value) -> ToolResponse {
             valid_entries
         }
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'identifiers' parameter",
                 None,
                 Some("identifier_table_inspect"),
@@ -395,8 +407,9 @@ pub fn identifier_table_inspect(args: &Value) -> ToolResponse {
             .filter(|c| !valid_checks.contains(c))
             .collect();
         if !invalid.is_empty() {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("Unknown check(s): {}", invalid.join(", ")),
                 Some(vec![format!("Valid checks: {}", valid_checks.join(", "))]),
                 Some("identifier_table_inspect"),
@@ -413,8 +426,9 @@ pub fn identifier_table_inspect(args: &Value) -> ToolResponse {
     };
 
     if identifiers.len() > MAX_LIST_ITEMS {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Number of identifiers {} exceeds MAX_LIST_ITEMS",
                 identifiers.len()
@@ -433,8 +447,9 @@ pub fn identifier_table_inspect(args: &Value) -> ToolResponse {
         "json_key",
     ];
     if !valid_languages.contains(&language) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported language: {}", language),
             Some(vec![format!("Use one of: {}", valid_languages.join(", "))]),
             Some("identifier_table_inspect"),

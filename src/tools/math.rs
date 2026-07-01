@@ -2,6 +2,7 @@ use crate::calc::units::{
     convert_temperature, get_conversion_factor, get_unit_info, is_unit, PHYSICAL_CONSTANTS,
 };
 use crate::calc::{run, RunError};
+use crate::mcp::machine_codes;
 use crate::mcp::response::ToolResponse;
 use crate::tools::helpers::{
     _require_str, contains_true_division, json_type_name, run_with_timeout,
@@ -17,8 +18,9 @@ pub fn math_eval(args: &Value) -> ToolResponse {
     };
 
     if expression.chars().count() > MAX_EXPRESSION_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Expression length {} exceeds maximum {}",
                 expression.chars().count(),
@@ -34,8 +36,9 @@ pub fn math_eval(args: &Value) -> ToolResponse {
     let _permit = match try_acquire_spawn_permit() {
         Some(p) => p,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "timeout",
+                machine_codes::TIMEOUT,
                 &format!(
                     "Could not acquire spawn slot after {}s (all {} slots busy)",
                     SPAWN_ACQUIRE_TIMEOUT, MAX_CONCURRENT_SPAWNED
@@ -49,8 +52,9 @@ pub fn math_eval(args: &Value) -> ToolResponse {
     let eval_result = match run_with_timeout(Duration::from_secs(30), move || run(&expr_owned)) {
         Ok(r) => r,
         Err(_timeout) => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "timeout",
+                machine_codes::TIMEOUT,
                 "Expression evaluation timed out after 30 seconds",
                 Some(vec!["Try a simpler expression".to_string()]),
                 Some("math_eval"),
@@ -114,15 +118,22 @@ pub fn math_eval(args: &Value) -> ToolResponse {
                     Some(vec!["Check expression syntax".to_string()]),
                 ),
             };
-            ToolResponse::error(error_type, &e.to_string(), suggestions, Some("math_eval"))
+            ToolResponse::error_with_code(
+                error_type,
+                machine_codes::INVALID_ARGUMENTS,
+                &e.to_string(),
+                suggestions,
+                Some("math_eval"),
+            )
         }
     }
 }
 
 pub fn unit_convert(args: &Value) -> ToolResponse {
     if let Some(Value::Bool(_)) = args.get("value") {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "value must be a finite number, got {}",
                 json_type_name(args.get("value").unwrap())
@@ -134,8 +145,9 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
     let value = match args.get("value").and_then(|v| v.as_f64()) {
         Some(v) => v,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'value' parameter",
                 None,
                 Some("unit_convert"),
@@ -143,8 +155,9 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
         }
     };
     if !value.is_finite() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Value must be a finite number, got {}", value),
             None,
             Some("unit_convert"),
@@ -153,8 +166,9 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
     let from_unit = match args.get("from_unit").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'from_unit' parameter",
                 None,
                 Some("unit_convert"),
@@ -164,8 +178,9 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
     let to_unit = match args.get("to_unit").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'to_unit' parameter",
                 None,
                 Some("unit_convert"),
@@ -174,16 +189,18 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
     };
 
     if !is_unit(from_unit) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unknown unit: {}", from_unit),
             None,
             Some("unit_convert"),
         );
     }
     if !is_unit(to_unit) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unknown unit: {}", to_unit),
             None,
             Some("unit_convert"),
@@ -196,8 +213,9 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
     let ((_, from_cat), (_, to_cat)) = match (&from_info, &to_info) {
         (Some(f), Some(t)) => (f, t),
         _ => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "conversion_error",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!(
                     "Cannot determine category for unit(s): from='{}', to='{}'",
                     from_unit, to_unit
@@ -208,8 +226,9 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
         }
     };
     if from_cat != to_cat {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "conversion_error",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "Cannot convert between incompatible categories: {} ({}) -> {} ({})",
                 from_cat, from_unit, to_cat, to_unit
@@ -223,8 +242,9 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
         match convert_temperature(value, from_unit, to_unit) {
             Ok(result) => {
                 if !result.is_finite() {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "conversion_error",
+                        machine_codes::INVALID_ARGUMENTS,
                         &format!("Conversion result is not finite: {}", result),
                         None,
                         Some("unit_convert"),
@@ -242,7 +262,13 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
                 .with_tool("unit_convert");
             }
             Err(e) => {
-                return ToolResponse::error("conversion_error", &e, None, Some("unit_convert"));
+                return ToolResponse::error_with_code(
+                    "conversion_error",
+                    machine_codes::INVALID_ARGUMENTS,
+                    &e,
+                    None,
+                    Some("unit_convert"),
+                );
             }
         }
     }
@@ -251,8 +277,9 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
         Ok(factor) => {
             let result = value * factor;
             if !result.is_finite() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "conversion_error",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("Conversion result is not finite: {}", result),
                     None,
                     Some("unit_convert"),
@@ -269,7 +296,13 @@ pub fn unit_convert(args: &Value) -> ToolResponse {
             )
             .with_tool("unit_convert")
         }
-        Err(e) => ToolResponse::error("conversion_error", &e, None, Some("unit_convert")),
+        Err(e) => ToolResponse::error_with_code(
+            "conversion_error",
+            machine_codes::INVALID_ARGUMENTS,
+            &e,
+            None,
+            Some("unit_convert"),
+        ),
     }
 }
 
@@ -277,8 +310,9 @@ pub fn unit_info(args: &Value) -> ToolResponse {
     let unit = match args.get("unit").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'unit' parameter",
                 None,
                 Some("unit_info"),
@@ -298,8 +332,9 @@ pub fn unit_info(args: &Value) -> ToolResponse {
         )
         .with_tool("unit_info")
     } else {
-        ToolResponse::error(
+        ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unknown unit: {}", unit),
             None,
             Some("unit_info"),
@@ -311,8 +346,9 @@ pub fn constant_lookup(args: &Value) -> ToolResponse {
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'name' parameter",
                 None,
                 Some("constant_lookup"),
@@ -333,8 +369,9 @@ pub fn constant_lookup(args: &Value) -> ToolResponse {
         )
         .with_tool("constant_lookup")
     } else {
-        ToolResponse::error(
+        ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unknown constant: {}", name),
             None,
             Some("constant_lookup"),

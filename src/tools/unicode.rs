@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
@@ -6,8 +7,9 @@ pub fn unicode_policy_check(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("unicode_policy_check"),
@@ -17,8 +19,9 @@ pub fn unicode_policy_check(args: &Value) -> ToolResponse {
     let policy = match args.get("policy").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'policy' parameter",
                 None,
                 Some("unicode_policy_check"),
@@ -28,8 +31,9 @@ pub fn unicode_policy_check(args: &Value) -> ToolResponse {
     let normalization = args.get("normalization").and_then(|v| v.as_str());
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("unicode_policy_check"),
@@ -45,8 +49,9 @@ pub fn unicode_policy_check(args: &Value) -> ToolResponse {
         "domain_like",
     ];
     if !valid_policies.contains(&policy) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported policy: {}", policy),
             Some(vec![format!("Use one of: {}", valid_policies.join(", "))]),
             Some("unicode_policy_check"),
@@ -56,8 +61,9 @@ pub fn unicode_policy_check(args: &Value) -> ToolResponse {
     if let Some(ref n) = normalization {
         let valid_normalizations = ["raw", "NFC", "NFD", "NFKC", "NFKD"];
         if !valid_normalizations.contains(n) {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("Unsupported normalization form: {}", n),
                 Some(vec![format!(
                     "Use one of: {}",
@@ -87,8 +93,9 @@ pub fn canonicalize_text(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("canonicalize_text"),
@@ -98,8 +105,9 @@ pub fn canonicalize_text(args: &Value) -> ToolResponse {
     let profile = match args.get("profile").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'profile' parameter",
                 None,
                 Some("canonicalize_text"),
@@ -112,8 +120,9 @@ pub fn canonicalize_text(args: &Value) -> ToolResponse {
         .unwrap_or(false);
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("canonicalize_text"),
@@ -128,8 +137,9 @@ pub fn canonicalize_text(args: &Value) -> ToolResponse {
         "path_segment_compare",
     ];
     if !valid_profiles.contains(&profile) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported profile: {}", profile),
             Some(vec![format!("Use one of: {}", valid_profiles.join(", "))]),
             Some("canonicalize_text"),

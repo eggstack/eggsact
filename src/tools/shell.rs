@@ -7,8 +7,9 @@ pub fn shell_split(args: &Value) -> ToolResponse {
     let command = match args.get("command").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'command' parameter",
                 None,
                 Some("shell_split"),
@@ -25,8 +26,9 @@ pub fn shell_split(args: &Value) -> ToolResponse {
         .unwrap_or(true);
 
     if command.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Command exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("shell_split"),
@@ -35,8 +37,9 @@ pub fn shell_split(args: &Value) -> ToolResponse {
 
     let valid_shells = ["posix"];
     if !valid_shells.contains(&shell) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported shell: {}", shell),
             Some(vec!["Use one of: posix".to_string()]),
             Some("shell_split"),
@@ -70,8 +73,9 @@ pub fn shell_quote_join(args: &Value) -> ToolResponse {
     let argv_raw = match args.get("argv").and_then(|v| v.as_array()) {
         Some(arr) => arr,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'argv' parameter",
                 None,
                 Some("shell_quote_join"),
@@ -84,8 +88,9 @@ pub fn shell_quote_join(args: &Value) -> ToolResponse {
         .unwrap_or("posix");
 
     if argv_raw.len() > MAX_LIST_ITEMS {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("argv length {} exceeds MAX_LIST_ITEMS", argv_raw.len()),
             None,
             Some("shell_quote_join"),
@@ -99,8 +104,9 @@ pub fn shell_quote_join(args: &Value) -> ToolResponse {
         .map(|(i, _)| i)
         .collect();
     if !non_str_indices.is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             "All argv elements must be strings",
             Some(vec![format!(
                 "Non-string items at indices: {:?}",
@@ -119,8 +125,9 @@ pub fn shell_quote_join(args: &Value) -> ToolResponse {
         .map(|(i, _)| i)
         .collect();
     if !oversized_indices.is_empty() {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("argv items exceed max length {}", MAX_TEXT_LENGTH),
             Some(vec![format!(
                 "Oversized items at indices: {:?}",
@@ -138,8 +145,9 @@ pub fn shell_quote_join(args: &Value) -> ToolResponse {
 
     let valid_shells = ["posix"];
     if !valid_shells.contains(&shell) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported shell: {}", shell),
             Some(vec![format!("Use one of: {}", valid_shells.join(", "))]),
             Some("shell_quote_join"),
@@ -165,8 +173,9 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
     let left_argv = match args.get("left_argv").and_then(|v| v.as_array()) {
         Some(arr) => {
             if arr.len() > MAX_LIST_ITEMS {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "input_too_large",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("left_argv length {} exceeds {}", arr.len(), MAX_LIST_ITEMS),
                     None,
                     Some("argv_compare"),
@@ -179,8 +188,9 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
                 .map(|(i, _)| i)
                 .collect();
             if !non_str.is_empty() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     "All left_argv elements must be strings",
                     Some(vec![format!(
                         "Non-string items at indices: {:?}",
@@ -199,8 +209,9 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
                 .map(|(i, _)| i)
                 .collect();
             if !oversized.is_empty() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "input_too_large",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("left_argv items exceed max length {}", MAX_TEXT_LENGTH),
                     Some(vec![format!(
                         "Oversized items at indices: {:?}",
@@ -220,8 +231,9 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
     let right_argv = match args.get("right_argv").and_then(|v| v.as_array()) {
         Some(arr) => {
             if arr.len() > MAX_LIST_ITEMS {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "input_too_large",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("right_argv length {} exceeds {}", arr.len(), MAX_LIST_ITEMS),
                     None,
                     Some("argv_compare"),
@@ -234,8 +246,9 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
                 .map(|(i, _)| i)
                 .collect();
             if !non_str.is_empty() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     "All right_argv elements must be strings",
                     Some(vec![format!(
                         "Non-string items at indices: {:?}",
@@ -254,8 +267,9 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
                 .map(|(i, _)| i)
                 .collect();
             if !oversized.is_empty() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "input_too_large",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!("right_argv items exceed max length {}", MAX_TEXT_LENGTH),
                     Some(vec![format!(
                         "Oversized items at indices: {:?}",
@@ -279,8 +293,9 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
 
     let valid_shells = ["posix"];
     if !valid_shells.contains(&shell) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported shell: {}", shell),
             Some(vec![format!("Use one of: {}", valid_shells.join(", "))]),
             Some("argv_compare"),
@@ -296,7 +311,13 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
         } else {
             "Provide exactly one of left_command or left_argv"
         };
-        return ToolResponse::error("invalid_arguments", msg, None, Some("argv_compare"));
+        return ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            msg,
+            None,
+            Some("argv_compare"),
+        );
     }
     if right_both {
         let msg = if right_command.is_some() && right_argv.is_some() {
@@ -304,13 +325,20 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
         } else {
             "Provide exactly one of right_command or right_argv"
         };
-        return ToolResponse::error("invalid_arguments", msg, None, Some("argv_compare"));
+        return ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            msg,
+            None,
+            Some("argv_compare"),
+        );
     }
 
     if let Some(cmd) = left_command {
         if cmd.chars().count() > MAX_TEXT_LENGTH {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "input_too_large",
+                machine_codes::INVALID_ARGUMENTS,
                 "Left command exceeds MAX_TEXT_LENGTH",
                 None,
                 Some("argv_compare"),
@@ -319,8 +347,9 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
     }
     if let Some(cmd) = right_command {
         if cmd.chars().count() > MAX_TEXT_LENGTH {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "input_too_large",
+                machine_codes::INVALID_ARGUMENTS,
                 "Right command exceeds MAX_TEXT_LENGTH",
                 None,
                 Some("argv_compare"),
@@ -353,8 +382,9 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
     let command = match args.get("command").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'command' parameter",
                 None,
                 Some("command_preflight"),
@@ -372,8 +402,9 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
     let _working_directory = args.get("working_directory").and_then(|v| v.as_str());
 
     if command.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Command exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("command_preflight"),
@@ -382,8 +413,9 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
 
     let valid_platforms = ["posix", "windows", "auto"];
     if !valid_platforms.contains(&platform) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported platform: {}", platform),
             Some(vec![format!("Use one of: {}", valid_platforms.join(", "))]),
             Some("command_preflight"),
@@ -392,8 +424,9 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
 
     let valid_policies = ["default", "strict", "permissive"];
     if !valid_policies.contains(&policy) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported policy: {}", policy),
             Some(vec![format!("Use one of: {}", valid_policies.join(", "))]),
             Some("command_preflight"),
@@ -406,8 +439,9 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
 
     // 1. Always call shell_split
     if platform == "windows" {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "unsupported_platform",
+            machine_codes::UNSUPPORTED_FEATURE,
             "Windows shell splitting is not supported; only 'posix' is available",
             Some(vec!["Use platform='posix' or platform='auto'".to_string()]),
             Some("command_preflight"),

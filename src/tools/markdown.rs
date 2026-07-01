@@ -1,3 +1,4 @@
+use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
@@ -6,8 +7,9 @@ pub fn markdown_structure(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("markdown_structure"),
@@ -32,8 +34,9 @@ pub fn markdown_structure(args: &Value) -> ToolResponse {
         .unwrap_or(true);
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("markdown_structure"),
@@ -67,8 +70,9 @@ pub fn code_fence_extract(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("code_fence_extract"),
@@ -82,8 +86,9 @@ pub fn code_fence_extract(args: &Value) -> ToolResponse {
         .unwrap_or(true);
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("code_fence_extract"),

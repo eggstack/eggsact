@@ -7,8 +7,9 @@ pub fn path_normalize_tool(args: &Value) -> ToolResponse {
     let path = match args.get("path").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'path' parameter",
                 None,
                 Some("path_normalize"),
@@ -30,8 +31,9 @@ pub fn path_normalize_tool(args: &Value) -> ToolResponse {
 
     let valid_platforms = ["posix", "windows"];
     if !valid_platforms.contains(&platform) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported platform: {}", platform),
             Some(vec![format!("Use one of: {}", valid_platforms.join(", "))]),
             Some("path_normalize"),
@@ -60,8 +62,9 @@ pub fn path_analyze(args: &Value) -> ToolResponse {
     let path = match args.get("path").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'path' parameter",
                 None,
                 Some("path_analyze"),
@@ -75,8 +78,9 @@ pub fn path_analyze(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if path.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "Path length {} exceeds MAX_TEXT_LENGTH {}",
                 path.chars().count(),
@@ -89,8 +93,9 @@ pub fn path_analyze(args: &Value) -> ToolResponse {
 
     let valid_styles = ["auto", "posix", "windows"];
     if !valid_styles.contains(&style) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported style: {}", style),
             Some(vec![format!("Use one of: {}", valid_styles.join(", "))]),
             Some("path_analyze"),
@@ -99,8 +104,9 @@ pub fn path_analyze(args: &Value) -> ToolResponse {
 
     let valid_details = ["summary", "normal", "full"];
     if !valid_details.contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec![format!("Use one of: {}", valid_details.join(", "))]),
             Some("path_analyze"),
@@ -190,8 +196,9 @@ pub fn path_compare(args: &Value) -> ToolResponse {
     let left = match args.get("left").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'left' parameter",
                 None,
                 Some("path_compare"),
@@ -201,8 +208,9 @@ pub fn path_compare(args: &Value) -> ToolResponse {
     let right = match args.get("right").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'right' parameter",
                 None,
                 Some("path_compare"),
@@ -227,16 +235,18 @@ pub fn path_compare(args: &Value) -> ToolResponse {
         .unwrap_or(true);
 
     if left.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             "Left path exceeds MAX_TEXT_LENGTH",
             None,
             Some("path_compare"),
         );
     }
     if right.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             "Right path exceeds MAX_TEXT_LENGTH",
             None,
             Some("path_compare"),
@@ -245,8 +255,9 @@ pub fn path_compare(args: &Value) -> ToolResponse {
 
     let valid_platforms = ["posix", "windows"];
     if !valid_platforms.contains(&platform) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported platform: {}", platform),
             Some(vec![format!("Use one of: {}", valid_platforms.join(", "))]),
             Some("path_compare"),
@@ -279,8 +290,9 @@ pub fn path_scope_check(args: &Value) -> ToolResponse {
     let root = match args.get("root").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'root' parameter",
                 None,
                 Some("path_scope_check"),
@@ -290,8 +302,9 @@ pub fn path_scope_check(args: &Value) -> ToolResponse {
     let target = match args.get("target").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'target' parameter",
                 None,
                 Some("path_scope_check"),
@@ -308,16 +321,18 @@ pub fn path_scope_check(args: &Value) -> ToolResponse {
         .unwrap_or(true);
 
     if root.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             "Root path exceeds MAX_TEXT_LENGTH",
             None,
             Some("path_scope_check"),
         );
     }
     if target.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             "Target path exceeds MAX_TEXT_LENGTH",
             None,
             Some("path_scope_check"),
@@ -326,8 +341,9 @@ pub fn path_scope_check(args: &Value) -> ToolResponse {
 
     let valid_platforms = ["posix", "windows"];
     if !valid_platforms.contains(&platform) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported platform: {}", platform),
             Some(vec![format!("Use one of: {}", valid_platforms.join(", "))]),
             Some("path_scope_check"),
@@ -355,8 +371,9 @@ pub fn glob_match_tool(args: &Value) -> ToolResponse {
     let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'pattern' parameter",
                 None,
                 Some("glob_match"),
@@ -366,8 +383,9 @@ pub fn glob_match_tool(args: &Value) -> ToolResponse {
     let path = match args.get("path").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'path' parameter",
                 None,
                 Some("glob_match"),
@@ -384,8 +402,9 @@ pub fn glob_match_tool(args: &Value) -> ToolResponse {
         .unwrap_or(true);
 
     if pattern.chars().count() > MAX_TEXT_LENGTH || path.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             "Pattern or path exceeds maximum length",
             None,
             Some("glob_match"),
@@ -394,8 +413,9 @@ pub fn glob_match_tool(args: &Value) -> ToolResponse {
 
     let valid_platforms = ["posix", "windows"];
     if !valid_platforms.contains(&platform) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported platform: {}", platform),
             Some(vec![format!("Use one of: {}", valid_platforms.join(", "))]),
             Some("glob_match"),

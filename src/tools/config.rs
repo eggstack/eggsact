@@ -8,8 +8,9 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("dotenv_validate"),
@@ -30,8 +31,9 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
         .unwrap_or("warn");
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("dotenv_validate"),
@@ -40,8 +42,9 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
 
     let valid_policies = ["warn", "error", "allow"];
     if !valid_policies.contains(&duplicate_policy) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported duplicate_policy: {}", duplicate_policy),
             Some(vec![format!("Use one of: {}", valid_policies.join(", "))]),
             Some("dotenv_validate"),
@@ -49,8 +52,9 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
     }
 
     if key_pattern.len() > 1000 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             "key_pattern exceeds 1000 chars",
             None,
             Some("dotenv_validate"),
@@ -59,16 +63,18 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
 
     let safety = crate::text::regex_safety::regex_safety_check(key_pattern);
     if !safety.valid_pattern {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             "key_pattern is not a valid regular expression",
             Some(vec!["Fix the regex syntax in key_pattern".to_string()]),
             Some("dotenv_validate"),
         );
     }
     if safety.risk == "medium" || safety.risk == "high" {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "unsafe_pattern",
+            machine_codes::INVALID_ARGUMENTS,
             &format!(
                 "key_pattern has {} risk of catastrophic backtracking",
                 safety.risk
@@ -84,8 +90,9 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
     // Reject inline flags in pattern (e.g., (?s), (?i), (?x))
     let inline_flag_re = regex::Regex::new(r"\(\?([aiLmsux]+)\)").unwrap();
     if let Some(m) = inline_flag_re.find(key_pattern) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
     "unsafe_pattern",
+    machine_codes::INVALID_ARGUMENTS,
     &format!("key_pattern contains inline flags '{}'; use the explicit boolean parameters instead", m.as_str()),
     Some(vec!["Remove inline flags and use ignore_case, multiline, dotall parameters".to_string()]),
     Some("dotenv_validate")
@@ -107,8 +114,9 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
     }) {
         Ok(r) => r,
         Err(_timeout) => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "timeout",
+                machine_codes::UNSUPPORTED_FEATURE,
                 "Regex execution exceeded time limit (possible ReDoS)",
                 Some(vec!["Try a simpler key_pattern or shorter text".to_string()]),
                 Some("dotenv_validate"),
@@ -135,8 +143,9 @@ pub fn ini_validate(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("ini_validate"),
@@ -149,8 +158,9 @@ pub fn ini_validate(args: &Value) -> ToolResponse {
         .unwrap_or("warn");
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("ini_validate"),
@@ -159,8 +169,9 @@ pub fn ini_validate(args: &Value) -> ToolResponse {
 
     let valid_policies = ["warn", "error", "allow"];
     if !valid_policies.contains(&duplicate_policy) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported duplicate_policy: {}", duplicate_policy),
             Some(vec![format!("Use one of: {}", valid_policies.join(", "))]),
             Some("ini_validate"),
@@ -187,8 +198,9 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("config_preflight"),
@@ -206,8 +218,9 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
         .unwrap_or(false);
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("config_preflight"),
@@ -216,8 +229,9 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
 
     let valid_formats = ["auto", "json", "toml", "dotenv", "ini", "cargo_toml"];
     if !valid_formats.contains(&format) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported format: {}", format),
             Some(vec![format!("Use one of: {}", valid_formats.join(", "))]),
             Some("config_preflight"),
@@ -513,8 +527,9 @@ pub fn toml_shape_tool(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("toml_shape"),
@@ -524,16 +539,18 @@ pub fn toml_shape_tool(args: &Value) -> ToolResponse {
     let max_tables = match args.get("max_tables") {
         Some(v) => {
             if v.is_boolean() || !v.is_number() {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!(
                         "max_tables must be an integer, got {}",
                         match v {
                             Value::Bool(_) => "bool",
                             Value::Null => "null",
                             Value::String(_) =>
-                                return ToolResponse::error(
+                                return ToolResponse::error_with_code(
                                     "invalid_arguments",
+                                    machine_codes::INVALID_ARGUMENTS,
                                     "max_tables must be an integer, got string",
                                     None,
                                     Some("toml_shape")
@@ -548,8 +565,9 @@ pub fn toml_shape_tool(args: &Value) -> ToolResponse {
                 );
             }
             if v.as_i64().unwrap_or(0) < 0 {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     "max_tables must be a non-negative integer",
                     None,
                     Some("toml_shape"),
@@ -560,8 +578,9 @@ pub fn toml_shape_tool(args: &Value) -> ToolResponse {
         None => 100,
     };
     if max_tables == 0 {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             "max_tables must be a positive integer",
             None,
             Some("toml_shape"),
@@ -573,8 +592,9 @@ pub fn toml_shape_tool(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("toml_shape"),
@@ -583,8 +603,9 @@ pub fn toml_shape_tool(args: &Value) -> ToolResponse {
 
     let valid_details = ["summary", "normal", "full"];
     if !valid_details.contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec![format!("Use one of: {}", valid_details.join(", "))]),
             Some("toml_shape"),
@@ -617,6 +638,12 @@ pub fn toml_shape_tool(args: &Value) -> ToolResponse {
                 .with_tool("toml_shape")
             }
         }
-        Err(e) => ToolResponse::error("invalid_arguments", &e, None, Some("toml_shape")),
+        Err(e) => ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            &e,
+            None,
+            Some("toml_shape"),
+        ),
     }
 }

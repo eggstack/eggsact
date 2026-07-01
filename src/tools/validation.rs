@@ -19,8 +19,9 @@ pub fn validate_brackets(args: &Value) -> ToolResponse {
         const MAX_PAIRS: usize = 64;
         const MAX_PAIR_LEN: usize = 16;
         if pairs_obj.len() > MAX_PAIRS {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "input_too_large",
+                machine_codes::INPUT_TOO_LARGE,
                 &format!(
                     "pairs dict length {} exceeds maximum of 64",
                     pairs_obj.len()
@@ -34,8 +35,9 @@ pub fn validate_brackets(args: &Value) -> ToolResponse {
             let val_str = match v.as_str() {
                 Some(s) => s,
                 None => {
-                    return ToolResponse::error(
+                    return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         &format!(
                             "pairs keys and values must be strings, got String -> {}",
                             json_type_name(v)
@@ -46,8 +48,9 @@ pub fn validate_brackets(args: &Value) -> ToolResponse {
                 }
             };
             if k.len() > MAX_PAIR_LEN || val_str.len() > MAX_PAIR_LEN {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                     "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
                     &format!(
                         "pairs key/value length must be <= 16, got {}/{}",
                         k.len(),
@@ -58,8 +61,9 @@ pub fn validate_brackets(args: &Value) -> ToolResponse {
                 );
             }
             if k.chars().count() > 1 || val_str.chars().count() > 1 {
-                return ToolResponse::error(
+                return ToolResponse::error_with_code(
                         "invalid_arguments",
+                        machine_codes::INVALID_ARGUMENTS,
                         &format!(
                             "pairs key/value must be single characters, got key '{}' ({} chars) and value '{}' ({} chars)",
                             k, k.chars().count(), val_str, val_str.chars().count()
@@ -75,8 +79,9 @@ pub fn validate_brackets(args: &Value) -> ToolResponse {
         map
     } else if let Some(v) = pairs_val {
         // pairs was provided but is not a dict — return type error like Python
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("pairs must be a dict or None, got {}", json_type_name(v)),
             None,
             Some("validate_brackets"),
@@ -101,7 +106,13 @@ pub fn validate_brackets(args: &Value) -> ToolResponse {
             )
             .with_tool("validate_brackets")
         }
-        Err(e) => ToolResponse::error("invalid_arguments", &e, None, Some("validate_brackets")),
+        Err(e) => ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            &e,
+            None,
+            Some("validate_brackets"),
+        ),
     }
 }
 
@@ -167,7 +178,13 @@ pub fn validate_json(args: &Value) -> ToolResponse {
             }
             resp
         }
-        Err(e) => ToolResponse::error("invalid_arguments", &e, None, Some("validate_json")),
+        Err(e) => ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            &e,
+            None,
+            Some("validate_json"),
+        ),
     }
 }
 
@@ -175,8 +192,9 @@ pub fn validate_toml_tool(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("validate_toml"),
@@ -189,8 +207,9 @@ pub fn validate_toml_tool(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("validate_toml"),
@@ -199,8 +218,9 @@ pub fn validate_toml_tool(args: &Value) -> ToolResponse {
 
     let valid_details = ["summary", "normal", "full"];
     if !valid_details.contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec![format!("Use one of: {}", valid_details.join(", "))]),
             Some("validate_toml"),
@@ -235,7 +255,13 @@ pub fn validate_toml_tool(args: &Value) -> ToolResponse {
                 .with_tool("validate_toml")
             }
         }
-        Err(e) => ToolResponse::error("invalid_arguments", &e, None, Some("validate_toml")),
+        Err(e) => ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            &e,
+            None,
+            Some("validate_toml"),
+        ),
     }
 }
 
@@ -243,8 +269,9 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 "Missing 'text' parameter",
                 None,
                 Some("validate_schema_light"),
@@ -257,8 +284,9 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
         .unwrap_or("normal");
     let valid_details = ["summary", "normal", "full"];
     if !valid_details.contains(&detail) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
             Some(vec![format!("Use one of: {}", valid_details.join(", "))]),
             Some("validate_schema_light"),
@@ -273,8 +301,9 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                 Some(v) => json_type_name(v),
                 None => "NoneType",
             };
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("schema must be a dict, got {}", type_name),
                 None,
                 Some("validate_schema_light"),
@@ -286,8 +315,9 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
     let schema_json =
         serde_json::to_string(&serde_json::Value::Object(schema.clone())).unwrap_or_default();
     if schema_json.len() > MAX_SCHEMA_SIZE {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Schema JSON size {} bytes exceeds limit of {} bytes",
                 schema_json.len(),
@@ -299,8 +329,9 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
     }
 
     if text.chars().count() > MAX_TEXT_LENGTH {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "text length {} exceeds {}",
                 text.chars().count(),
@@ -314,8 +345,9 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
     let data: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(e) => {
-            return ToolResponse::error(
+            return ToolResponse::error_with_code(
                 "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
                 &format!("Invalid JSON: {}", e),
                 Some(vec!["Provide valid JSON".to_string()]),
                 Some("validate_schema_light"),
@@ -663,8 +695,9 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
         }
     }
     if let Err(e) = check_schema_depth(&schema_value, 0) {
-        return ToolResponse::error(
+        return ToolResponse::error_with_code(
             "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("schema nesting too deep (max {}): {}", MAX_SCHEMA_DEPTH, e),
             None,
             Some("validate_schema_light"),
