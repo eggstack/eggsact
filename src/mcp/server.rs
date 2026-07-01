@@ -1,15 +1,15 @@
 use crate::agent::{ToolCallError, ToolCallOutcome, ToolRegistry};
 use crate::mcp::machine_codes;
-use crate::mcp::protocol::{JsonRpcError, JsonRpcErrorDetail, JsonRpcRequest, JsonRpcResponse};
+use crate::mcp::protocol::{
+    invalid_request, json_rpc_error, method_not_found, JsonRpcRequest, JsonRpcResponse,
+};
 use crate::mcp::registry;
-use crate::mcp::response::{sanitize_error, ToolResponse};
+use crate::mcp::response::{python_json_dumps, sanitize_error, wrap_tool_response, ToolResponse};
 use crate::mcp::runtime::{
     self, get_active_profile, get_schema_detail, CancelledRequests, RateLimiter, MAX_OUTPUT_BYTES,
     MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_TIMEOUT_SECONDS,
     MAX_TOOL_WORKERS, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
 };
-use crate::text::levenshtein_distance;
-use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -24,311 +24,8 @@ fn get_profile_tools(profile: &str) -> Vec<&'static str> {
         .collect()
 }
 
-fn list_tools() -> Vec<ToolDefinition> {
-    registry::mcp_tool_definitions()
-}
-
 pub fn mcp_tool_count() -> usize {
     registry::tool_count()
-}
-
-fn compact_input_schema(schema: &Value) -> Value {
-    let obj = match schema.as_object() {
-        Some(o) => o,
-        None => return schema.clone(),
-    };
-
-    let mut compact = serde_json::Map::new();
-    compact.insert(
-        "type".to_string(),
-        obj.get("type")
-            .cloned()
-            .unwrap_or_else(|| Value::String("object".to_string())),
-    );
-
-    // Compact each property: keep only whitelist of keys (matching Python)
-    if let Some(props) = obj.get("properties").and_then(|v| v.as_object()) {
-        let mut compact_props = serde_json::Map::new();
-        for (prop_name, prop_def) in props {
-            if let Some(prop_obj) = prop_def.as_object() {
-                let mut cp = serde_json::Map::new();
-                // Keep type
-                if let Some(t) = prop_obj.get("type") {
-                    cp.insert("type".to_string(), t.clone());
-                }
-                // Keep enum
-                if let Some(e) = prop_obj.get("enum") {
-                    cp.insert("enum".to_string(), e.clone());
-                }
-                // Keep required sub-fields
-                if let Some(r) = prop_obj.get("required") {
-                    cp.insert("required".to_string(), r.clone());
-                }
-                // Keep items for arrays
-                if let Some(items) = prop_obj.get("items") {
-                    cp.insert("items".to_string(), items.clone());
-                }
-                // Keep numeric constraints
-                for key in &[
-                    "minimum",
-                    "maximum",
-                    "exclusiveMinimum",
-                    "exclusiveMaximum",
-                    "minLength",
-                    "maxLength",
-                    "pattern",
-                    "minItems",
-                    "maxItems",
-                    "multipleOf",
-                ] {
-                    if let Some(v) = prop_obj.get(*key) {
-                        cp.insert(key.to_string(), v.clone());
-                    }
-                }
-                // Truncated description
-                if let Some(desc) = prop_obj.get("description").and_then(|v| v.as_str()) {
-                    let truncated = if desc.chars().count() > 80 {
-                        format!("{}...", desc.chars().take(77).collect::<String>())
-                    } else {
-                        desc.to_string()
-                    };
-                    cp.insert("description".to_string(), Value::String(truncated));
-                }
-                compact_props.insert(prop_name.clone(), Value::Object(cp));
-            } else {
-                compact_props.insert(prop_name.clone(), prop_def.clone());
-            }
-        }
-        compact.insert("properties".to_string(), Value::Object(compact_props));
-    }
-
-    // Keep required at top level
-    if let Some(req) = obj.get("required") {
-        compact.insert("required".to_string(), req.clone());
-    }
-
-    Value::Object(compact)
-}
-
-fn compact_output_schema(schema: &Value) -> Value {
-    let obj = match schema.as_object() {
-        Some(o) => o,
-        None => return serde_json::json!({"type": "object"}),
-    };
-
-    let mut compact_output = serde_json::json!({"type": obj.get("type").unwrap_or(&Value::String("object".to_string()))});
-    if let Some(props) = obj.get("properties").and_then(|v| v.as_object()) {
-        let mut compact_props = serde_json::Map::new();
-        for (key, prop) in props {
-            let mut compact_prop = serde_json::json!({});
-            if let Some(t) = prop.get("type") {
-                compact_prop["type"] = t.clone();
-            }
-            if let Some(e) = prop.get("enum") {
-                compact_prop["enum"] = e.clone();
-            }
-            compact_props.insert(key.clone(), compact_prop);
-        }
-        compact_output["properties"] = Value::Object(compact_props);
-    }
-
-    compact_output
-}
-
-#[derive(Serialize, Debug, Clone)]
-pub struct ToolMetadata {
-    pub category: &'static str,
-    pub tier: u8,
-    pub profiles: &'static [&'static str],
-    pub tags: &'static [&'static str],
-    pub llm_exposure: &'static str,
-    pub harness_use: &'static [&'static str],
-    pub aliases: &'static [&'static str],
-    pub cost: &'static str,
-    pub stability: &'static str,
-    pub composite: bool,
-}
-
-#[derive(Serialize)]
-pub struct ToolDefinition {
-    pub name: String,
-    pub description: String,
-    #[serde(rename = "inputSchema")]
-    pub input_schema: Value,
-    #[serde(rename = "outputSchema", skip_serializing_if = "Option::is_none")]
-    pub output_schema: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tier: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tags: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub deprecated: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub category: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub llm_exposure: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cost: Option<String>,
-}
-
-fn find_close_match<'a>(input: &str, tool_names: &[&'a str]) -> Option<&'a str> {
-    if input.len() > 200 {
-        return None;
-    }
-    let lower_input = input.to_lowercase();
-
-    // First check for exact case-insensitive match
-    for &name in tool_names {
-        if name.to_lowercase() == lower_input {
-            return Some(name);
-        }
-    }
-
-    // Check for word boundary matches (both directions, like Python)
-    fn at_word_boundary(sub: &str, s: &str) -> bool {
-        if let Some(idx) = s.find(sub) {
-            if idx == 0 {
-                return true;
-            }
-            s.as_bytes().get(idx - 1) == Some(&b'_') || s.as_bytes().get(idx - 1) == Some(&b'-')
-        } else {
-            false
-        }
-    }
-
-    let mut best_boundary: Option<(&str, usize)> = None;
-    for &name in tool_names {
-        let lower_name = name.to_lowercase();
-        if at_word_boundary(&lower_input, &lower_name)
-            || at_word_boundary(&lower_name, &lower_input)
-        {
-            // Python returns the shortest tool name when there are ties
-            let is_shorter = match best_boundary {
-                Some((best_name, _)) => name.len() < best_name.len(),
-                None => true,
-            };
-            if is_shorter {
-                best_boundary = Some((name, 0));
-            }
-        }
-    }
-    if let Some((name, _)) = best_boundary {
-        return Some(name);
-    }
-
-    // Compute edit distance with threshold
-    let mut best: Option<(&str, usize)> = None;
-    for &name in tool_names {
-        let dist = levenshtein_distance(input, name);
-        let threshold = input.chars().count().min(name.chars().count()) / 2;
-        if dist <= threshold && best.is_none_or(|(_, best_dist)| dist < best_dist) {
-            best = Some((name, dist));
-        }
-    }
-
-    best.map(|(name, _)| name)
-}
-
-fn escape_ascii_json(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    for c in s.chars() {
-        if c.is_ascii() {
-            result.push(c);
-        } else {
-            let mut utf16 = [0u16; 2];
-            for unit in c.encode_utf16(&mut utf16).iter() {
-                result.push_str(&format!("\\u{:04x}", unit));
-            }
-        }
-    }
-    result
-}
-
-fn python_json_dumps<T: Serialize>(value: &T) -> String {
-    struct PythonStyleFormatter;
-
-    impl serde_json::ser::Formatter for PythonStyleFormatter {
-        fn begin_array_value<W: std::io::Write + ?Sized>(
-            &mut self,
-            writer: &mut W,
-            first: bool,
-        ) -> std::io::Result<()> {
-            if first {
-                Ok(())
-            } else {
-                writer.write_all(b", ")
-            }
-        }
-
-        fn begin_object_key<W: std::io::Write + ?Sized>(
-            &mut self,
-            writer: &mut W,
-            first: bool,
-        ) -> std::io::Result<()> {
-            if first {
-                Ok(())
-            } else {
-                writer.write_all(b", ")
-            }
-        }
-
-        fn begin_object_value<W: std::io::Write + ?Sized>(
-            &mut self,
-            writer: &mut W,
-        ) -> std::io::Result<()> {
-            writer.write_all(b": ")
-        }
-    }
-
-    let mut buf = Vec::new();
-    {
-        let mut serializer = serde_json::Serializer::with_formatter(&mut buf, PythonStyleFormatter);
-        if value.serialize(&mut serializer).is_err() {
-            return String::new();
-        }
-    }
-    let serialized = String::from_utf8(buf).unwrap_or_default();
-    escape_ascii_json(&serialized)
-}
-
-fn wrap_tool_response(tool_response: &ToolResponse) -> serde_json::Value {
-    let text = python_json_dumps(tool_response);
-    if tool_response.ok {
-        serde_json::json!({
-            "content": [{"type": "text", "text": text}],
-        })
-    } else {
-        serde_json::json!({
-            "content": [{"type": "text", "text": text}],
-            "isError": true,
-        })
-    }
-}
-
-fn json_rpc_error(code: i32, message: impl Into<String>, id: Option<Value>) -> Value {
-    serde_json::to_value(JsonRpcError {
-        jsonrpc: "2.0".to_string(),
-        error: JsonRpcErrorDetail {
-            code,
-            message: message.into(),
-        },
-        id,
-    })
-    .unwrap_or_else(|_| {
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "error": {"code": -32603, "message": "Internal error: failed to serialize error response"},
-            "id": null
-        })
-    })
-}
-
-fn invalid_request(message: impl Into<String>, id: Option<Value>) -> Value {
-    json_rpc_error(-32600, message, id)
-}
-
-fn method_not_found(message: impl Into<String>, id: Option<Value>) -> Value {
-    json_rpc_error(-32601, message, id)
 }
 
 fn write_json_line(value: &Value) {
@@ -476,7 +173,7 @@ async fn handle_request_async(
             let profile_tools = get_profile_tools(effective_profile);
             let profile_set: HashSet<&str> = profile_tools.into_iter().collect();
 
-            let mut tools = list_tools();
+            let mut tools = registry::mcp_tool_definitions();
 
             // Filter by profile
             tools.retain(|t| profile_set.contains(t.name.as_str()));
@@ -515,10 +212,10 @@ async fn handle_request_async(
                         tool.description.push_str("...");
                     }
                     // Compact input schema: strip defaults, truncate property descriptions
-                    tool.input_schema = compact_input_schema(&tool.input_schema);
+                    tool.input_schema = registry::compact_input_schema(&tool.input_schema);
                     // Compact output schema: keep top-level keys/types only
                     if let Some(ref output) = tool.output_schema.clone() {
-                        tool.output_schema = Some(compact_output_schema(output));
+                        tool.output_schema = Some(registry::compact_output_schema(output));
                     }
                     // Python compact mode: drops tier and tags, keeps category/llm_exposure/cost
                     tool.tier = None;
@@ -597,7 +294,7 @@ async fn handle_request_async(
                         ToolCallError::UnknownTool(tool_name) => {
                             let tool_names = registry::tool_names();
                             let tool_name_refs: Vec<&str> = tool_names.to_vec();
-                            let msg = match find_close_match(&tool_name, &tool_name_refs) {
+                            let msg = match registry::find_close_match(&tool_name, &tool_name_refs) {
                                 Some(m) => format!("Unknown tool: {}. Did you mean: {}?", tool_name, m),
                                 None => format!("Unknown tool: {}", tool_name),
                             };

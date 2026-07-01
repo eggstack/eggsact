@@ -18,7 +18,12 @@ eggsact/
 │   │   ├── runtime.rs      # Rate limiter, constants, profile management
 │   │   ├── schema_validation.rs # Argument validation
 │   │   ├── machine_codes.rs # Machine-readable response codes
-│   │   └── schemas.rs      # Re-exports for backward compatibility
+│   │   └── schemas/        # JSON-schema builders per tool category
+│   │       ├── mod.rs      # Module declarations + re-exports
+│   │       ├── math.rs
+│   │       ├── text.rs
+│   │       ├── json.rs
+│   │       └── ... (one submodule per category)
 │   ├── tools/              # MCP tool implementations (by category)
 │   │   ├── helpers.rs      # Shared constants, utilities
 │   │   ├── math.rs         # Math & unit tools
@@ -72,14 +77,25 @@ eggsact/
 └── build.sh                # Simple build script
 ```
 
+## Concurrency Model
+
+The MCP stdio server is serial at the read-loop level (one request at a time).
+`MAX_TOOL_WORKERS` limits concurrent tool executions within a single dispatch
+but does not imply concurrent request reads. The in-process agent API
+(`src/agent/`) is synchronous and avoids IPC overhead.
+
 ## Module Dependency Flow
 
 ```
 main.rs → lib.rs → calc/normalize.rs → calc/evaluator.rs → calc/units.rs
                     mcp/server.rs → mcp/protocol.rs, mcp/response.rs, mcp/runtime.rs
-                                 → mcp/schema_validation.rs → mcp/registry.rs
-                                 → tools/* → text/* modules
+                                 → mcp/schema_validation.rs
+                    mcp/registry.rs → tools/* → text/* modules
 ```
+
+`ToolDefinition` lives in `registry.rs` (not `server.rs`). `ToolResponse::error`
+is hidden/deprecated; use `error_without_code_for_legacy_tests_only` only in
+legacy test code — all new code must use `error_with_code()`.
 
 ## Data Flow
 

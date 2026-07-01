@@ -12,7 +12,7 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | `response.rs` | `ToolResponse` struct, `sanitize_error`, response builders |
 | `runtime.rs` | Rate limiter, cancelled requests, timeout constants, profile management |
 | `schema_validation.rs` | MCP argument validation against tool input schemas |
-| `schemas.rs` | Re-exports from `protocol.rs` and `response.rs` (backward compatibility) |
+| `schemas/` | JSON-schema builders per tool category (math, text, json, regex, etc.) |
 | `mod.rs` | Module declarations |
 
 Tool implementations live in `src/tools/` (category modules):
@@ -99,6 +99,12 @@ Use `tools_for_profile_audience(profile, audience)` to get filtered tool lists.
 The in-process agent API (`src/agent/`) should use `Model` audience for ordinary
 coder-agent sessions and `Harness` for automatic preflight checks.
 
+**In-process API (`src/agent/`)**: The `ToolRegistry` exposes a
+`ToolAudience` enum mirroring `ToolListAudience`. Use
+`available_tools_model_safe()` (equivalent to `available_tools_for_audience(ToolAudience::Model)`)
+for model-facing codegg integrations, or
+`with_profile_and_audience(profile, ToolAudience::Harness)` for harness checks.
+
 MCP `tools/list` preserves legacy behavior (no audience filter) for backward
 compatibility. The audience filter is available for codegg's in-process API.
 
@@ -139,6 +145,28 @@ Tools marked `composite: true` orchestrate other tools internally:
 | `command_preflight` | Pre-checks a shell command using shell/identifier tools |
 | `config_preflight` | Pre-checks a config file using validation tools |
 | `structured_data_compare` | Uses json_compare and list tools for structured data |
+
+## Concurrency Model
+
+The MCP stdio server is effectively **serial at the read-loop level**. The read
+loop in `server.rs` reads one request from stdin, dispatches it synchronously,
+then reads the next request. There is no concurrent read of multiple requests.
+
+`MAX_TOOL_WORKERS` (16) limits the number of concurrent blocking tool
+executions *within* a single dispatch. This matters for composite tools that
+call other tools internally, but it does **not** imply fully concurrent MCP
+request reads. The semaphore is a back-pressure mechanism, not a concurrency
+driver.
+
+**If true concurrent request handling is needed** (e.g. out-of-order JSON-RPC
+responses), the read loop would need to be restructured to spawn a task per
+request. A TODO/note for this is tracked under the assumption that the
+serial model is sufficient for codegg's use cases.
+
+For high-throughput preflight calls, codegg should use the **in-process agent
+API** (`src/agent/`) rather than the MCP stdio server. The agent API
+(`ToolRegistry::call_json()`) is synchronous and avoids the serialization and
+IPC overhead of the stdio transport.
 
 ## Rate Limiting
 

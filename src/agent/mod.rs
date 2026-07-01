@@ -34,7 +34,7 @@
 //! assert!(output.valid);
 //! ```
 
-use crate::mcp::registry::{self, ToolExposure, ToolSpec};
+use crate::mcp::registry::{self, ToolExposure, ToolListAudience, ToolSpec};
 use crate::mcp::response::ToolResponse;
 use crate::mcp::schema_validation;
 use serde_json::Value;
@@ -92,9 +92,20 @@ impl Profile {
         }
     }
 
+    /// Create an explicit custom profile by name.
+    ///
+    /// Use this when you intentionally want a profile not in the built-in set.
+    /// For parsing user input, prefer [`from_str_opt`](Self::from_str_opt)
+    /// which rejects unknown names.
+    pub fn custom(name: impl Into<String>) -> Self {
+        Profile::Custom(name.into())
+    }
+
     /// Parse a profile from a string name.
     ///
-    /// Returns `None` for unknown profile names.
+    /// Returns `Some` only for known built-in profile names.
+    /// Returns `None` for unknown names. To construct a custom profile
+    /// explicitly, use [`Profile::custom(name)`](Self::custom).
     pub fn from_str_opt(name: &str) -> Option<Self> {
         match name {
             "full" => Some(Profile::Full),
@@ -108,7 +119,7 @@ impl Profile {
             "codegg_shell" => Some(Profile::CodeggShell),
             "codegg_repo_audit" => Some(Profile::CodeggRepoAudit),
             "human_math" => Some(Profile::HumanMath),
-            other => Some(Profile::Custom(other.to_string())),
+            _ => None,
         }
     }
 }
@@ -116,6 +127,33 @@ impl Profile {
 impl fmt::Display for Profile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+/// Audience for tool listing, controlling which exposure levels are included.
+///
+/// - `Model`: Excludes `HarnessOnly` and `Hidden`. Safe for ordinary
+///   model-facing codegg integrations.
+/// - `Harness`: Includes `HarnessOnly` tools for selected profiles but
+///   excludes `Hidden`. For automatic preflight checks.
+/// - `Debug`: Includes all non-hidden tools, including `ExpertOnly`
+///   and `HarnessOnly`. Internal/debug listing only.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ToolAudience {
+    #[default]
+    Model,
+    Harness,
+    Debug,
+}
+
+impl ToolAudience {
+    /// Convert to the MCP registry's `ToolListAudience`.
+    pub fn as_registry_audience(self) -> ToolListAudience {
+        match self {
+            ToolAudience::Model => ToolListAudience::Model,
+            ToolAudience::Harness => ToolListAudience::Harness,
+            ToolAudience::Debug => ToolListAudience::Debug,
+        }
     }
 }
 
@@ -208,8 +246,8 @@ impl ToolSpecView {
 /// In-process tool registry for calling eggsact tools directly.
 ///
 /// `ToolRegistry` provides a synchronous, typed API over the consolidated
-/// tool registry. It supports profile filtering, argument validation, and
-/// direct tool execution without starting an MCP server.
+/// tool registry. It supports profile filtering, audience filtering,
+/// argument validation, and direct tool execution without starting an MCP server.
 ///
 /// # Example
 ///
@@ -222,21 +260,42 @@ impl ToolSpecView {
 /// })).unwrap();
 /// assert!(response.ok);
 /// ```
+///
+/// For model-facing codegg integrations, use [`available_tools_model_safe`]
+/// to exclude harness-only tools from the listing:
+///
+/// ```
+/// use eggsact::agent::ToolRegistry;
+///
+/// let registry = ToolRegistry::default();
+/// let model_tools = registry.available_tools_model_safe();
+/// // model_tools excludes HarnessOnly and Hidden tools
+/// ```
 pub struct ToolRegistry {
     profile: Profile,
+    audience: ToolAudience,
 }
 
 impl ToolRegistry {
-    /// Create a registry with the default (full) profile.
+    /// Create a registry with the default (full) profile and Model audience.
     pub fn new() -> Self {
         Self {
             profile: Profile::Full,
+            audience: ToolAudience::Model,
         }
     }
 
-    /// Create a registry with a specific profile.
+    /// Create a registry with a specific profile (defaults to Model audience).
     pub fn with_profile(profile: Profile) -> Self {
-        Self { profile }
+        Self {
+            profile,
+            audience: ToolAudience::Model,
+        }
+    }
+
+    /// Create a registry with a specific profile and audience.
+    pub fn with_profile_and_audience(profile: Profile, audience: ToolAudience) -> Self {
+        Self { profile, audience }
     }
 
     /// Get the active profile for this registry.
@@ -244,13 +303,38 @@ impl ToolRegistry {
         &self.profile
     }
 
-    /// List all tools available in the current profile.
+    /// Get the active audience for this registry.
+    pub fn audience(&self) -> ToolAudience {
+        self.audience
+    }
+
+    /// List all tools available in the current profile (legacy, not model-safe).
+    ///
+    /// This method only filters out `Hidden` tools. For model-facing codegg
+    /// integrations, prefer [`available_tools_model_safe`] or
+    /// [`available_tools_for_audience`] to also exclude `HarnessOnly` tools.
     pub fn available_tools(&self) -> Vec<ToolView> {
         registry::tools_for_profile(self.profile.as_str())
             .into_iter()
             .filter(|spec| spec.exposure != ToolExposure::Hidden)
             .map(ToolView::from_spec)
             .collect()
+    }
+
+    /// List tools for a specific audience.
+    pub fn available_tools_for_audience(&self, audience: ToolAudience) -> Vec<ToolView> {
+        registry::tools_for_profile_audience(self.profile.as_str(), audience.as_registry_audience())
+            .into_iter()
+            .map(ToolView::from_spec)
+            .collect()
+    }
+
+    /// List tools safe for ordinary model-facing codegg integrations.
+    ///
+    /// Equivalent to `available_tools_for_audience(ToolAudience::Model)`.
+    /// Excludes `HarnessOnly` and `Hidden` tools.
+    pub fn available_tools_model_safe(&self) -> Vec<ToolView> {
+        self.available_tools_for_audience(ToolAudience::Model)
     }
 
     /// Get detailed information about a specific tool.
@@ -459,6 +543,131 @@ mod tests {
             Profile::from_str_opt("codegg_core"),
             Some(Profile::CodeggCore)
         );
-        assert!(Profile::from_str_opt("nonexistent").is_some()); // Custom
+        assert_eq!(Profile::from_str_opt("nonexistent"), None);
+        assert_eq!(Profile::from_str_opt("coddeg_core_typo"), None);
+    }
+
+    #[test]
+    fn profile_custom_constructor() {
+        let p = Profile::custom("my_custom");
+        assert_eq!(p, Profile::Custom("my_custom".to_string()));
+        assert_eq!(p.as_str(), "my_custom");
+        assert_eq!(p.to_string(), "my_custom");
+        // custom() allows any name including known ones
+        let p2 = Profile::custom("full");
+        assert_eq!(p2, Profile::Custom("full".to_string()));
+    }
+
+    #[test]
+    fn tool_audience_default_is_model() {
+        let registry = ToolRegistry::default();
+        assert_eq!(registry.audience(), ToolAudience::Model);
+    }
+
+    #[test]
+    fn tool_audience_getter_returns_constructor_value() {
+        let registry =
+            ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+        assert_eq!(registry.audience(), ToolAudience::Harness);
+    }
+
+    #[test]
+    fn model_safe_excludes_harness_only_tools() {
+        let registry = ToolRegistry::default();
+        let model_tools = registry.available_tools_model_safe();
+        let harness_only_names: Vec<String> = registry::tools_for_profile("full")
+            .into_iter()
+            .filter(|t| t.exposure == ToolExposure::HarnessOnly)
+            .map(|t| t.name.to_string())
+            .collect();
+        for name in &harness_only_names {
+            assert!(
+                !model_tools.iter().any(|t| t.name == *name),
+                "harness_only tool '{}' should not appear in model-safe listing",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn model_safe_is_subset_of_available_tools() {
+        let registry = ToolRegistry::default();
+        let all_tools = registry.available_tools();
+        let model_tools = registry.available_tools_model_safe();
+        assert!(model_tools.len() <= all_tools.len());
+        for tool in &model_tools {
+            assert!(
+                all_tools.iter().any(|t| t.name == tool.name),
+                "model-safe tool '{}' should also appear in available_tools()",
+                tool.name
+            );
+        }
+    }
+
+    #[test]
+    fn harness_audience_includes_harness_only_tools() {
+        let registry = ToolRegistry::with_profile(Profile::CodeggPreflight);
+        let harness_tools = registry.available_tools_for_audience(ToolAudience::Harness);
+        let harness_only_in_profile: Vec<String> = registry::tools_for_profile("codegg_preflight")
+            .into_iter()
+            .filter(|t| t.exposure == ToolExposure::HarnessOnly)
+            .map(|t| t.name.to_string())
+            .collect();
+        assert!(
+            !harness_only_in_profile.is_empty(),
+            "codegg_preflight should have harness-only tools"
+        );
+        for name in &harness_only_in_profile {
+            assert!(
+                harness_tools.iter().any(|t| t.name == *name),
+                "harness audience for codegg_preflight should include '{}'",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn harness_audience_for_codegg_core_min_excludes_harness_only() {
+        let registry = ToolRegistry::with_profile(Profile::CodeggCoreMin);
+        let harness_tools = registry.available_tools_for_audience(ToolAudience::Harness);
+        for spec in registry::tools_for_profile("codegg_core_min") {
+            if spec.exposure == ToolExposure::HarnessOnly {
+                assert!(
+                    !harness_tools.iter().any(|t| t.name == spec.name),
+                    "harness audience for codegg_core_min should not include harness-only '{}'",
+                    spec.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn debug_audience_includes_all_non_hidden() {
+        let registry = ToolRegistry::default();
+        let debug_tools = registry.available_tools_for_audience(ToolAudience::Debug);
+        let all_non_hidden: Vec<String> = registry::tools_for_profile("full")
+            .into_iter()
+            .filter(|t| t.exposure != ToolExposure::Hidden)
+            .map(|t| t.name.to_string())
+            .collect();
+        assert_eq!(debug_tools.len(), all_non_hidden.len());
+    }
+
+    #[test]
+    fn with_profile_and_audience_combines_both() {
+        let registry =
+            ToolRegistry::with_profile_and_audience(Profile::CodeggPreflight, ToolAudience::Model);
+        assert_eq!(registry.profile(), &Profile::CodeggPreflight);
+        assert_eq!(registry.audience(), ToolAudience::Model);
+        let tools = registry.available_tools_model_safe();
+        for spec in registry::tools_for_profile("codegg_preflight") {
+            if spec.exposure == ToolExposure::HarnessOnly {
+                assert!(
+                    !tools.iter().any(|t| t.name == spec.name),
+                    "Model audience for codegg_preflight should not include harness-only '{}'",
+                    spec.name
+                );
+            }
+        }
     }
 }

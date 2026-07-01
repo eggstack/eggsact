@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ToolAudience enum** in `src/agent/` with `Model`, `Harness`, `Debug` variants.
+  `ToolRegistry` gains `with_profile_and_audience()`, `available_tools_for_audience()`,
+  and `available_tools_model_safe()` for audience-aware tool listings.
+- **Profile snapshot tests** for all 11 named profiles verifying tool counts
+  and composition (`tests/mcp/test_hardening_and_gaps.rs`).
+- **Strict profile parsing**: `Profile::from_str_opt` returns `None` for unknown
+  names; `Profile::custom(name)` constructs explicit custom profiles.
+- **Deprecated `ToolResponse::error`**: renamed to
+  `error_without_code_for_legacy_tests_only` (hidden). All new code must use
+  `error_with_code()`.
+- **Concurrency Model docs**: documented serial stdio read-loop semantics and
+  `MAX_TOOL_WORKERS` scope in `architecture/mcp-server.md` and `architecture/overview.md`.
+
+### Changed
 - **Phase 3: Stable Response Contracts and Machine Codes**. Every non-OK tool
   response now carries a machine-readable `machine_code` for programmatic
   routing.

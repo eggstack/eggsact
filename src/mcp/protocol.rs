@@ -1,4 +1,31 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+pub fn json_rpc_error(code: i32, message: impl Into<String>, id: Option<Value>) -> Value {
+    serde_json::to_value(JsonRpcError {
+        jsonrpc: "2.0".to_string(),
+        error: JsonRpcErrorDetail {
+            code,
+            message: message.into(),
+        },
+        id,
+    })
+    .unwrap_or_else(|_| {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "error": {"code": -32603, "message": "Internal error: failed to serialize error response"},
+            "id": null
+        })
+    })
+}
+
+pub fn invalid_request(message: impl Into<String>, id: Option<Value>) -> Value {
+    json_rpc_error(-32600, message, id)
+}
+
+pub fn method_not_found(message: impl Into<String>, id: Option<Value>) -> Value {
+    json_rpc_error(-32601, message, id)
+}
 
 #[derive(Deserialize, Debug)]
 pub struct JsonRpcRequest {

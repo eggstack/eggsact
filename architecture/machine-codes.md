@@ -30,7 +30,7 @@ Every tool call returns a `ToolResponse` (serialized as JSON) with these 11 fiel
 |-------------|-------------|
 | `ToolResponse::success(result, tool)` | Successful result (no machine code needed) |
 | `ToolResponse::success_with_machine_code(result, tool, code)` | Success with an explicit code |
-| `ToolResponse::error(type, error, hints, tool)` | Legacy error constructor (no machine code) |
+| `ToolResponse::error_without_code_for_legacy_tests_only(type, error, hints, tool)` | **Deprecated/hidden** — legacy error constructor (no machine code). Do not use in new code. |
 | `ToolResponse::error_with_code(type, code, error, hints, tool)` | **Preferred** error constructor — ensures machine code is set |
 | `.with_machine_code(code)` | Add a machine code to any response via builder |
 | `.with_findings(findings)` | Attach structured findings |
@@ -69,6 +69,21 @@ These constants are defined in `src/mcp/machine_codes.rs` (and re-exported from 
 ## Composite Tool Verdicts
 
 Composite tools (`edit_preflight`, `command_preflight`, `config_preflight`, `text_security_inspect`, `structured_data_compare`) emit a `verdict` field in their `result` object. Verdicts use the `verdict` constants above. Composite tools also emit a `machine_code` at the top level to summarize the overall outcome (e.g. `COMMAND_OK`, `SHELL_RISK`, `CONFIG_OK`, `TEXT_SECURITY_OK`).
+
+## Category-Prefixed Aliases
+
+Common error codes have category-prefixed aliases for use by orchestration layers (e.g. codegg) that prefer a uniform `CATEGORY_DETAIL` naming pattern. The Rust constant name differs but the string value is identical to the original, so they are wire-compatible.
+
+| Alias Constant | Original Constant | String Value |
+|----------------|-------------------|--------------|
+| `COMMON_CANCELLED` | `CANCELLED` | `"CANCELLED"` |
+| `COMMON_TIMEOUT` | `TIMEOUT` | `"TIMEOUT"` |
+| `COMMON_OUTPUT_TOO_LARGE` | `OUTPUT_TOO_LARGE` | `"OUTPUT_TOO_LARGE"` |
+| `COMMON_INPUT_TOO_LARGE` | `INPUT_TOO_LARGE` | `"INPUT_TOO_LARGE"` |
+| `COMMON_INTERNAL_ERROR` | `INTERNAL_ERROR` | `"INTERNAL_ERROR"` |
+| `COMMON_INVALID_ARGUMENTS` | `INVALID_ARGUMENTS` | `"INVALID_ARGUMENTS"` |
+
+These aliases are included in the `ALL` array and are interchangeable with their originals at the wire level.
 
 ## Full Code Table
 

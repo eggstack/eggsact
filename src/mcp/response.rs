@@ -2,6 +2,82 @@ use regex;
 use serde::Serialize;
 use std::sync::LazyLock;
 
+pub fn escape_ascii_json(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c.is_ascii() {
+            result.push(c);
+        } else {
+            let mut utf16 = [0u16; 2];
+            for unit in c.encode_utf16(&mut utf16).iter() {
+                result.push_str(&format!("\\u{:04x}", unit));
+            }
+        }
+    }
+    result
+}
+
+pub fn python_json_dumps<T: Serialize>(value: &T) -> String {
+    struct PythonStyleFormatter;
+
+    impl serde_json::ser::Formatter for PythonStyleFormatter {
+        fn begin_array_value<W: std::io::Write + ?Sized>(
+            &mut self,
+            writer: &mut W,
+            first: bool,
+        ) -> std::io::Result<()> {
+            if first {
+                Ok(())
+            } else {
+                writer.write_all(b", ")
+            }
+        }
+
+        fn begin_object_key<W: std::io::Write + ?Sized>(
+            &mut self,
+            writer: &mut W,
+            first: bool,
+        ) -> std::io::Result<()> {
+            if first {
+                Ok(())
+            } else {
+                writer.write_all(b", ")
+            }
+        }
+
+        fn begin_object_value<W: std::io::Write + ?Sized>(
+            &mut self,
+            writer: &mut W,
+        ) -> std::io::Result<()> {
+            writer.write_all(b": ")
+        }
+    }
+
+    let mut buf = Vec::new();
+    {
+        let mut serializer = serde_json::Serializer::with_formatter(&mut buf, PythonStyleFormatter);
+        if value.serialize(&mut serializer).is_err() {
+            return String::new();
+        }
+    }
+    let serialized = String::from_utf8(buf).unwrap_or_default();
+    escape_ascii_json(&serialized)
+}
+
+pub fn wrap_tool_response(tool_response: &ToolResponse) -> serde_json::Value {
+    let text = python_json_dumps(tool_response);
+    if tool_response.ok {
+        serde_json::json!({
+            "content": [{"type": "text", "text": text}],
+        })
+    } else {
+        serde_json::json!({
+            "content": [{"type": "text", "text": text}],
+            "isError": true,
+        })
+    }
+}
+
 static SANITIZE_REGEXES: LazyLock<Vec<(&'static str, regex::Regex, &'static str)>> =
     LazyLock::new(|| {
         vec![
@@ -248,7 +324,12 @@ impl ToolResponse {
         }
     }
 
-    pub fn error(
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use `error_with_code` instead. Non-OK tool responses must carry a machine_code."
+    )]
+    #[doc(hidden)]
+    pub fn error_without_code_for_legacy_tests_only(
         error_type: &str,
         error: &str,
         hints: Option<Vec<String>>,

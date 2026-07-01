@@ -374,14 +374,25 @@ assert!(response.ok);
 
 ### Profile selection
 
-Profiles control which subset of tools is available:
+Profiles control which subset of tools is available. `Profile::from_str_opt` is
+strict — it returns `None` for unknown names. Use `Profile::custom(name)` for
+custom profiles.
 
 ```rust
-use eggsact::agent::{ToolRegistry, Profile};
+use eggsact::agent::{ToolRegistry, Profile, ToolAudience};
 
 let registry = ToolRegistry::with_profile(Profile::CodeggCoreMin);
 let tools = registry.available_tools();
 assert!(tools.iter().any(|t| t.name == "math_eval"));
+
+// Model-safe tool listing
+let model_tools = registry.available_tools_model_safe();
+
+// Harness audience for preflight checks
+let harness_registry = ToolRegistry::with_profile_and_audience(
+    Profile::CodeggPreflight,
+    ToolAudience::Harness,
+);
 ```
 
 ### Typed preflight wrappers
@@ -423,7 +434,9 @@ eggsact/
 │   │   ├── response.rs      # ToolResponse, error sanitization
 │   │   ├── runtime.rs       # Rate limiter, cancelled requests, constants, profile management
 │   │   ├── schema_validation.rs # MCP argument validation against tool schemas
-│   │   └── schemas.rs       # Re-exports from protocol.rs and response.rs (backward compat)
+│   │   └── schemas/         # JSON-schema builders per tool category
+│   │       ├── mod.rs       # Module declarations + re-exports
+│   │       └── ...          # One submodule per tool category
 │   ├── tools/               # MCP tool implementations (by category)
 │   │   ├── mod.rs           # Module re-exports
 │   │   ├── helpers.rs       # Shared constants, utilities, helper functions

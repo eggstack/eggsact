@@ -17,12 +17,12 @@ cargo package                        # release/package verification
 
 ## Verification Order
 
-Always run in this order:
+Always run in this order (CI mirrors this exactly):
 ```bash
 cargo fmt --check                    # format gate
-cargo clippy --all-targets --all-features  # lint
-cargo test                           # all tests
-cargo package                        # crates.io package verification
+cargo clippy --all-targets --all-features -- -D warnings  # lint (warnings denied)
+cargo test --verbose                 # all tests
+cargo package --verbose              # crates.io package verification
 ```
 
 ## Test Structure

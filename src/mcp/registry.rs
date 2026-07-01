@@ -1,7 +1,31 @@
 use crate::mcp::response::ToolResponse;
-use crate::mcp::server::ToolDefinition;
+use crate::mcp::schemas::*;
+use crate::text::levenshtein_distance;
 use crate::tools::*;
+use serde::Serialize;
 use serde_json::Value;
+
+#[derive(Serialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "inputSchema")]
+    pub input_schema: Value,
+    #[serde(rename = "outputSchema", skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deprecated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_exposure: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost: Option<String>,
+}
 
 /// Function pointer type for tool handler implementations.
 pub type ToolHandler = fn(&Value) -> ToolResponse;
@@ -77,1116 +101,6 @@ pub struct ToolSpec {
     pub cost: ToolCost,
     pub stability: ToolStability,
     pub composite: bool,
-}
-
-// ---------------------------------------------------------------------------
-// Input schema functions
-// ---------------------------------------------------------------------------
-
-fn math_eval_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "expression": {"type": "string", "description": "Math expression to evaluate (e.g., '5 + 3', '30m + 100ft', 'five plus three')", "maxLength": 10000}
-        },
-        "required": ["expression"]
-    })
-}
-
-fn unit_convert_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "value": {"type": "number", "description": "Numeric value to convert (must be finite; NaN and infinity are rejected)"},
-            "from_unit": {"type": "string", "description": "Source unit (e.g., 'km', 'ft', 'kg')"},
-            "to_unit": {"type": "string", "description": "Target unit (e.g., 'm', 'in', 'lb')"}
-        },
-        "required": ["value", "from_unit", "to_unit"]
-    })
-}
-
-fn unit_info_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {"unit": {"type": "string", "description": "Unit name or alias (e.g., 'km', 'kilogram', '℃')"}},
-        "required": ["unit"]
-    })
-}
-
-fn constant_lookup_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {"name": {"type": "string", "description": "Constant name (e.g., 'avogadro', 'planck', 'c', 'G')"}},
-        "required": ["name"]
-    })
-}
-
-fn text_measure_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input string to measure"},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal", "description": "Detail level for output"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn text_equal_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "a": {"type": "string", "description": "First string"},
-            "b": {"type": "string", "description": "Second string"},
-            "normalization": {"type": "string", "enum": ["raw", "NFC", "NFD", "NFKC", "NFKD"], "default": "raw", "description": "Unicode normalization form"},
-            "casefold": {"type": "boolean", "default": false, "description": "Use casefolded comparison"},
-            "trim": {"type": "boolean", "default": false, "description": "Trim whitespace"},
-            "ignore_newline_style": {"type": "boolean", "default": false, "description": "Normalize different newline styles before comparison"},
-            "ignore_trailing_whitespace": {"type": "boolean", "default": false, "description": "Ignore trailing whitespace on each line"},
-            "ignore_final_newline": {"type": "boolean", "default": false, "description": "Ignore trailing newline at end of strings"}
-        },
-        "required": ["a", "b"]
-    })
-}
-
-fn text_diff_explain_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "a": {"type": "string", "description": "First string"},
-            "b": {"type": "string", "description": "Second string"},
-            "max_diffs": {"type": "integer", "default": 20, "minimum": 0, "maximum": 10000, "description": "Maximum diff spans to return"},
-            "include_codepoints": {"type": "boolean", "default": true, "description": "Include codepoint details"},
-            "include_context": {"type": "boolean", "default": true, "description": "Include context notes"},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal", "description": "Detail level: summary (compact), normal, or full"}
-        },
-        "required": ["a", "b"]
-    })
-}
-
-fn text_inspect_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input string to inspect"},
-            "include_codepoints": {"type": "boolean", "default": true, "description": "Include codepoint details in invisibles"},
-            "include_confusables": {"type": "boolean", "default": true, "description": "Check for confusables"},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal", "description": "Detail level: summary (compact), normal, or full"},
-            "normalize": {"type": "string", "enum": ["none", "NFC", "NFD", "NFKC", "NFKD"], "default": "none", "description": "Normalization form to analyze"},
-            "compare_normalized": {"type": "boolean", "default": false, "description": "Report both original and normalized analysis"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn text_count_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input string"},
-            "target": {"type": ["string", "null"], "default": null, "description": "Single character to count (None for frequency table)"},
-            "count_mode": {"type": "string", "enum": ["codepoint", "grapheme", "byte", "substring"], "default": "codepoint", "description": "Count mode: codepoint (Python str), grapheme (user-perceived), byte (UTF-8), substring"},
-            "normalization": {"type": "string", "enum": ["raw", "NFC", "NFKC"], "default": "raw", "description": "Unicode normalization form"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn text_truncate_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input string to truncate"},
-            "max_graphemes": {"type": "integer", "minimum": 0, "maximum": 1000000, "description": "Maximum number of grapheme clusters to return"}
-        },
-        "required": ["text", "max_graphemes"]
-    })
-}
-
-fn text_transform_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input string to transform"},
-            "operations": {"type": "array", "items": {"type": "string"}, "description": "Operations to apply: normalize_nfc, normalize_nfd, normalize_nfkc, normalize_nfkd, casefold, trim, trim_trailing_whitespace, normalize_newlines_lf, ensure_final_newline, strip_final_newline, remove_zero_width, remove_bidi_controls, visible_repr", "maxItems": 100},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["text", "operations"]
-    })
-}
-
-fn validate_brackets_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input string"},
-            "pairs": {"type": "object", "description": "Bracket pair mapping (default: () [] {} <>)"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn validate_json_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {"text": {"type": "string", "description": "Input string to validate as JSON"}},
-        "required": ["text"]
-    })
-}
-
-fn validate_regex_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "pattern": {"type": "string", "description": "Regular expression pattern", "maxLength": 1000},
-            "samples": {"type": "array", "items": {"type": "string"}, "description": "List of strings to test against", "maxItems": 100},
-            "flags": {"type": "array", "items": {"type": "string"}, "description": "Flag names (IGNORECASE, MULTILINE, etc.)", "maxItems": 10},
-            "ignore_case": {"type": "boolean", "default": false, "description": "Use IGNORECASE flag"},
-            "multiline": {"type": "boolean", "default": false, "description": "Use MULTILINE flag"},
-            "dotall": {"type": "boolean", "default": false, "description": "Use DOTALL flag"},
-            "ascii": {"type": "boolean", "default": false, "description": "Use ASCII flag"}
-        },
-        "required": ["pattern", "samples"]
-    })
-}
-
-fn list_compare_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "a": {"type": "array", "items": {"type": "string"}, "description": "First list", "maxItems": 10000},
-            "b": {"type": "array", "items": {"type": "string"}, "description": "Second list", "maxItems": 10000},
-            "mode": {"type": "string", "enum": ["ordered", "set", "multiset"], "default": "set", "description": "Comparison mode: ordered (first diff, aligned ops), set (presence only), multiset (count deltas)"},
-            "casefold": {"type": "boolean", "default": false, "description": "Casefold elements before comparison"},
-            "normalization": {"type": "string", "enum": ["raw", "NFC", "NFD", "NFKC", "NFKD"], "default": "NFC", "description": "Unicode normalization form"},
-            "trim": {"type": "boolean", "default": false, "description": "Trim whitespace from each element"},
-            "include_near_matches": {"type": "boolean", "default": false, "description": "Include near matches (fuzzy matching)"},
-            "near_match_threshold": {"type": "integer", "default": 2, "description": "Maximum edit distance for near matches"},
-            "ignore_order": {"type": "boolean", "description": "Legacy: use mode=set or mode=multiset instead"},
-            "treat_as_multiset": {"type": "boolean", "description": "Legacy: use mode=multiset instead"},
-        },
-        "required": ["a", "b"]
-    })
-}
-
-fn validate_toml_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "TOML document string to validate"},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn json_extract_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "JSON document string"},
-            "pointer": {"type": "string", "default": "", "description": "RFC 6901 JSON Pointer path (e.g., /dependencies/tokio)"},
-            "max_output_chars": {"type": "integer", "default": 4000},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn json_compare_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "a": {"type": "string", "description": "First JSON document"},
-            "b": {"type": "string", "description": "Second JSON document"},
-            "ignore_object_order": {"type": "boolean", "default": true},
-            "ignore_array_order": {"type": "boolean", "default": false},
-            "numeric_string_equivalence": {"type": "boolean", "default": false},
-            "casefold_keys": {"type": "boolean", "default": false},
-            "max_diffs": {"type": "integer", "default": 50, "minimum": 0, "maximum": 10000},
-            "treat_missing_null_as_equal": {"type": "boolean", "default": false},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["a", "b"]
-    })
-}
-
-fn text_position_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string"},
-            "byte_offset": {"type": "integer", "minimum": 0, "maximum": 1000000000},
-            "codepoint_index": {"type": "integer", "minimum": 0, "maximum": 1000000000},
-            "line": {"type": "integer", "minimum": 0, "maximum": 1000000000},
-            "column": {"type": "integer", "minimum": 0, "maximum": 1000000000},
-            "utf16_offset": {"type": "integer", "minimum": 0, "maximum": 1000000000},
-            "line_base": {"type": "integer", "default": 1, "minimum": 0, "maximum": 1},
-            "column_base": {"type": "integer", "default": 1, "minimum": 0, "maximum": 1},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn text_hash_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string"},
-            "algorithms": {"type": "array", "items": {"type": "string"}, "default": ["sha256"], "description": "Hash algorithms (sha256, sha1, md5, crc32)", "maxItems": 10},
-            "encoding": {"type": "string", "default": "utf-8"},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn escape_text_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string"},
-            "mode": {"type": "string", "enum": ["json_string", "python_string", "rust_string", "posix_shell_single", "regex_literal", "markdown_inline_code", "markdown_code_block", "html_text", "url_component"]},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["text", "mode"]
-    })
-}
-
-fn unescape_text_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string"},
-            "mode": {"type": "string", "enum": ["json_string", "python_string", "unicode_escape", "url_component"]},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["text", "mode"]
-    })
-}
-
-fn identifier_analyze_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string"},
-            "languages": {"type": "array", "items": {"type": "string"}, "default": ["python", "rust", "javascript", "env"], "description": "Languages to check (python, rust, javascript, env)"},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn regex_finditer_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "pattern": {"type": "string", "description": "Regular expression pattern", "maxLength": 1000},
-            "text": {"type": "string", "description": "Input string to search"},
-            "flags": {"type": "array", "items": {"type": "string"}, "description": "Flag names (IGNORECASE, MULTILINE, DOTALL, etc.)", "maxItems": 10},
-            "max_matches": {"type": "integer", "default": 100, "maximum": 1000, "description": "Maximum matches to return"},
-            "include_line_column": {"type": "boolean", "default": true, "description": "Include line and column info"},
-            "include_groups": {"type": "boolean", "default": true, "description": "Include capture groups"}
-        },
-        "required": ["pattern", "text"]
-    })
-}
-
-fn regex_safety_check_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "pattern": {"type": "string", "description": "Regular expression pattern to check"}
-        },
-        "required": ["pattern"]
-    })
-}
-
-fn validate_schema_light_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "JSON document to validate"},
-            "schema": {"type": "object", "description": "Schema to validate against"},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["text", "schema"]
-    })
-}
-
-fn path_normalize_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "Path string to normalize"},
-            "platform": {"type": "string", "enum": ["posix", "windows"], "default": "posix", "description": "Platform semantics to use"},
-            "collapse_dot_segments": {"type": "boolean", "default": true, "description": "Collapse dot and dot-dot segments"},
-            "preserve_trailing_separator": {"type": "boolean", "default": false, "description": "Preserve trailing separator"}
-        },
-        "required": ["path"]
-    })
-}
-
-fn path_analyze_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "path": {"type": "string"},
-            "style": {"type": "string", "enum": ["auto", "posix", "windows"], "default": "auto"},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["path"]
-    })
-}
-
-fn path_compare_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "left": {"type": "string", "description": "First path string"},
-            "right": {"type": "string", "description": "Second path string"},
-            "platform": {"type": "string", "enum": ["posix", "windows"], "default": "posix", "description": "Platform semantics"},
-            "case_sensitive": {"type": "boolean", "default": true, "description": "Case-sensitive comparison"},
-            "normalize_separators": {"type": "boolean", "default": true, "description": "Normalize path separators"},
-            "collapse_dot_segments": {"type": "boolean", "default": true, "description": "Collapse . and .. segments"}
-        },
-        "required": ["left", "right"]
-    })
-}
-
-fn path_scope_check_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "root": {"type": "string", "description": "Root directory path"},
-            "target": {"type": "string", "description": "Target path to check"},
-            "platform": {"type": "string", "enum": ["posix", "windows"], "default": "posix", "description": "Platform semantics"},
-            "case_sensitive": {"type": "boolean", "default": true, "description": "Case-sensitive comparison"}
-        },
-        "required": ["root", "target"]
-    })
-}
-
-fn json_shape_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "JSON document string to analyze"},
-            "max_depth": {"type": "integer", "default": 4, "description": "Maximum depth for nested structure"},
-            "max_keys": {"type": "integer", "default": 100, "description": "Maximum keys to show per object"},
-            "max_array_items": {"type": "integer", "default": 5, "description": "Maximum array item previews"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn text_window_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input string to analyze"},
-            "position": {
-                "type": "object",
-                "description": "Position specification with kind and value",
-                "properties": {
-                    "kind": {"type": "string", "enum": ["byte_offset", "codepoint_index", "grapheme_index", "line_column"]},
-                    "value": {"type": "integer", "description": "Value for byte_offset, codepoint_index, or grapheme_index"},
-                    "byte_offset": {"type": "integer", "description": "UTF-8 byte offset (alternative to value)"},
-                    "codepoint_index": {"type": "integer", "description": "Codepoint index (alternative to value)"},
-                    "grapheme_index": {"type": "integer", "description": "Grapheme index (alternative to value)"},
-                    "line": {"type": "integer", "description": "Line number for line_column kind"},
-                    "column": {"type": "integer", "description": "Column number for line_column kind"},
-                    "line_base": {"type": "integer", "default": 1, "description": "Base for line numbers (1 for 1-based)"},
-                    "column_base": {"type": "integer", "default": 1, "description": "Base for column numbers (1 for 1-based)"}
-                },
-                "required": ["kind"]
-            },
-            "context_lines": {"type": "integer", "default": 2, "description": "Number of context lines before and after"},
-            "include_visible_repr": {"type": "boolean", "default": true, "description": "Include visible representation of the line"}
-        },
-        "required": ["text", "position"]
-    })
-}
-
-fn json_canonicalize_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input JSON string to canonicalize"},
-            "sort_keys": {"type": "boolean", "default": true, "description": "Sort object keys alphabetically"},
-            "trailing_newline": {"type": "boolean", "default": false, "description": "Add a trailing newline to the canonical form"},
-            "indent": {"type": ["integer", "null"], "description": "Indentation spaces (null for minified)"},
-            "ensure_ascii": {"type": "boolean", "default": false, "description": "Use ASCII escaping for non-ASCII characters"},
-            "detect_duplicate_keys": {"type": "boolean", "default": true, "description": "Report duplicate keys in the input"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn json_query_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "JSON document string"},
-            "pointer": {"type": "string", "default": "", "description": "RFC 6901 JSON Pointer path (e.g., /foo/bar/0)"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn glob_match_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "pattern": {"type": "string", "description": "Glob pattern to match (e.g., src/**/*.rs)"},
-            "path": {"type": "string", "description": "Path string to match against"},
-            "platform": {"type": "string", "enum": ["posix", "windows"], "default": "posix", "description": "Path platform"},
-            "case_sensitive": {"type": "boolean", "default": true, "description": "Case-sensitive matching"}
-        },
-        "required": ["pattern", "path"]
-    })
-}
-
-fn text_fingerprint_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input string to fingerprint"},
-            "unicode": {"type": "string", "enum": ["raw", "NFC", "NFD", "NFKC", "NFKD"], "default": "raw", "description": "Unicode normalization form"},
-            "newline": {"type": "string", "enum": ["raw", "LF"], "default": "raw", "description": "Newline normalization"},
-            "trim_final_newline": {"type": "boolean", "default": false, "description": "Remove trailing newline before hashing"},
-            "casefold": {"type": "boolean", "default": false, "description": "Apply casefolding before hashing"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn identifier_inspect_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "identifiers": {"type": "array", "items": {"type": "string"}, "description": "List of identifier strings to inspect", "maxItems": 10000},
-            "language": {"type": "string", "enum": ["generic", "python", "rust", "javascript", "typescript", "json_key"], "default": "generic", "description": "Language for validation"},
-            "normalization": {"type": "string", "enum": ["raw", "NFC", "NFD", "NFKC", "NFKD"], "default": "NFC", "description": "Unicode normalization form"},
-            "casefold": {"type": "boolean", "default": false, "description": "Apply casefolding for collision detection"},
-            "check_confusables": {"type": "boolean", "default": true, "description": "Check for confusable characters"}
-        },
-        "required": ["identifiers"]
-    })
-}
-
-fn version_compare_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "a": {"type": "string", "description": "First version string"},
-            "b": {"type": "string", "description": "Second version string"},
-            "scheme": {"type": "string", "enum": ["semver", "pep440", "loose"], "default": "semver", "description": "Version scheme"}
-        },
-        "required": ["a", "b"]
-    })
-}
-
-fn toml_shape_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "TOML document string"},
-            "max_tables": {"type": "integer", "default": 100, "minimum": 1, "maximum": 100000, "description": "Maximum tables to return"},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "normal"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn list_dedupe_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "items": {"type": "array", "items": {"type": "string"}, "description": "List of strings to dedupe", "maxItems": 10000},
-            "normalization": {"type": "string", "enum": ["raw", "NFC", "NFD", "NFKC", "NFKD"], "default": "NFC"},
-            "casefold": {"type": "boolean", "default": false, "description": "Apply casefolding before comparison"},
-            "stable": {"type": "boolean", "default": true, "description": "Accepted for compatibility; deduplication keeps first occurrence order"}
-        },
-        "required": ["items"]
-    })
-}
-
-fn list_sort_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "items": {"type": "array", "items": {"type": "string"}, "description": "List of strings to sort", "maxItems": 10000},
-            "normalization": {"type": "string", "enum": ["raw", "NFC", "NFD", "NFKC", "NFKD"], "default": "NFC"},
-            "casefold": {"type": "boolean", "default": false, "description": "Apply casefolding for sorting"},
-            "reverse": {"type": "boolean", "default": false, "description": "Sort in descending order"},
-            "stable": {"type": "boolean", "default": true, "description": "Accepted for compatibility; Python sorting is always stable"}
-        },
-        "required": ["items"]
-    })
-}
-
-fn text_replace_check_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Source text to search in"},
-            "old": {"type": "string", "description": "Text to find"},
-            "new": {"type": "string", "description": "Replacement text"},
-            "mode": {"type": "string", "enum": ["exact", "nfc", "nfkc", "casefold", "whitespace_collapse"], "default": "exact", "description": "Matching mode"},
-            "expected_count": {"type": "integer", "description": "Expected number of matches (optional)"},
-            "allow_multiple": {"type": "boolean", "default": false, "description": "If False and more than one match, add a finding"},
-            "newline_policy": {"type": "string", "enum": ["preserve", "normalize_lf", "normalize_crlf"], "default": "preserve", "description": "How to handle newlines"},
-            "return_preview": {"type": "boolean", "default": false, "description": "If True, include before/after text previews"},
-            "max_preview_chars": {"type": "integer", "default": 2000, "description": "Maximum characters in preview output"}
-        },
-        "required": ["text", "old", "new"]
-    })
-}
-
-fn line_range_extract_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input text"},
-            "start_line": {"type": "integer", "minimum": 0, "maximum": 100000000, "description": "First line to extract"},
-            "end_line": {"type": "integer", "minimum": 0, "maximum": 100000000, "description": "Last line to extract (inclusive)"},
-            "line_base": {"type": "integer", "default": 1, "minimum": 0, "maximum": 1, "description": "Base for line numbers (1 for 1-based, 0 for 0-based)"},
-            "include_line_numbers": {"type": "boolean", "default": false, "description": "Include line number in each line dict"},
-            "include_fingerprint": {"type": "boolean", "default": true, "description": "Compute SHA-256 fingerprint of extracted text"}
-        },
-        "required": ["text", "start_line", "end_line"]
-    })
-}
-
-fn line_range_compare_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "left_text": {"type": "string", "description": "First text input"},
-            "right_text": {"type": "string", "description": "Second text input"},
-            "start_line": {"type": "integer", "minimum": 0, "maximum": 100000000, "description": "First line to compare"},
-            "end_line": {"type": "integer", "minimum": 0, "maximum": 100000000, "description": "Last line to compare (inclusive)"},
-            "line_base": {"type": "integer", "default": 1, "minimum": 0, "maximum": 1, "description": "Base for line numbers"},
-            "comparison_mode": {"type": "string", "enum": ["exact", "ignore_trailing_whitespace", "normalize_newlines"], "default": "exact", "description": "Comparison mode"}
-        },
-        "required": ["left_text", "right_text", "start_line", "end_line"]
-    })
-}
-
-fn shell_split_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "command": {"type": "string", "description": "The shell command string to parse"},
-            "shell": {"type": "string", "enum": ["posix"], "default": "posix", "description": "Shell dialect (only posix is supported)"},
-            "detect_risky_features": {"type": "boolean", "default": true, "description": "Whether to detect risky lexical features"}
-        },
-        "required": ["command"]
-    })
-}
-
-fn shell_quote_join_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "argv": {"type": "array", "items": {"type": "string"}, "description": "List of argument strings to join", "maxItems": 10000},
-            "shell": {"type": "string", "enum": ["posix"], "default": "posix", "description": "Shell dialect (only posix is supported)"}
-        },
-        "required": ["argv"]
-    })
-}
-
-fn argv_compare_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "left_command": {"type": "string", "description": "Left command string to parse and compare"},
-            "right_command": {"type": "string", "description": "Right command string to parse and compare"},
-            "left_argv": {"type": "array", "items": {"type": "string"}, "description": "Left pre-parsed argv list", "maxItems": 10000},
-            "right_argv": {"type": "array", "items": {"type": "string"}, "description": "Right pre-parsed argv list", "maxItems": 10000},
-            "shell": {"type": "string", "enum": ["posix"], "default": "posix", "description": "Shell dialect (only posix is supported)"}
-        },
-        "required": []
-    })
-}
-
-fn markdown_structure_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Markdown text to analyze"},
-            "include_sections": {"type": "boolean", "default": true, "description": "Include heading detection"},
-            "include_links": {"type": "boolean", "default": true, "description": "Include link detection"},
-            "include_code_fences": {"type": "boolean", "default": true, "description": "Include code fence detection"},
-            "include_html_comments": {"type": "boolean", "default": true, "description": "Include HTML comment detection"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn code_fence_extract_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Markdown text to scan"},
-            "language": {"type": "string", "description": "Optional language filter (case-insensitive)"},
-            "include_content": {"type": "boolean", "default": true, "description": "Include block content in output"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn dotenv_validate_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": ".env file content to validate"},
-            "allow_export": {"type": "boolean", "default": true, "description": "Allow export KEY=VALUE syntax"},
-            "key_pattern": {"type": "string", "default": "^[A-Za-z_][A-Za-z0-9_]*$", "description": "Regex pattern keys must match"},
-            "duplicate_policy": {"type": "string", "enum": ["warn", "error", "allow"], "default": "warn", "description": "How to handle duplicate keys"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn ini_validate_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "INI file content to validate"},
-            "duplicate_policy": {"type": "string", "enum": ["warn", "error", "allow"], "default": "warn", "description": "How to handle duplicate keys/sections"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn patch_apply_check_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "original_text": {"type": "string", "description": "The original source text to apply the patch to"},
-            "patch_text": {"type": "string", "description": "The unified diff patch text"},
-            "strict": {"type": "boolean", "default": true, "description": "If True, context lines must match exactly"},
-            "return_result_fingerprint": {"type": "boolean", "default": true, "description": "If True, compute SHA-256 fingerprint of the result"},
-            "return_result_text": {"type": "boolean", "default": false, "description": "If True, include the resulting text (bounded to 50000 chars)"}
-        },
-        "required": ["original_text", "patch_text"]
-    })
-}
-
-fn patch_summary_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {"patch_text": {"type": "string", "description": "The unified diff text to summarize"}},
-        "required": ["patch_text"]
-    })
-}
-
-fn unicode_policy_check_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input text to check"},
-            "policy": {"type": "string", "enum": ["identifier_strict", "filename_safe", "source_code", "human_text", "json_key", "domain_like"], "description": "Policy to apply"},
-            "normalization": {"type": "string", "enum": ["raw", "NFC", "NFD", "NFKC", "NFKD"], "description": "Normalization form (default: policy-specific)"}
-        },
-        "required": ["text", "policy"]
-    })
-}
-
-fn canonicalize_text_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input text to canonicalize"},
-            "profile": {"type": "string", "enum": ["source_file_identity", "identifier_compare", "human_label_compare", "json_key_compare", "path_segment_compare"], "description": "Canonicalization profile to apply"},
-            "return_mapping": {"type": "boolean", "default": false, "description": "If True, include a character mapping of changes"}
-        },
-        "required": ["text", "profile"]
-    })
-}
-
-fn identifier_table_inspect_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "identifiers": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string", "description": "Identifier name (required)"}, "kind": {"type": "string", "description": "Optional kind/category"}, "file": {"type": "string", "description": "Source file path"}, "line": {"type": "integer", "description": "Line number"}}, "required": ["name"]}, "description": "List of identifier entries to inspect", "maxItems": 10000},
-            "language": {"type": "string", "enum": ["generic", "python", "rust", "javascript", "typescript", "json_key"], "default": "python", "description": "Target language for reserved keyword checking"},
-            "checks": {"type": "array", "items": {"type": "string"}, "description": "Subset of checks: casefold, normalization, confusable, style, reserved, mixed_style"}
-        },
-        "required": ["identifiers"]
-    })
-}
-
-fn version_constraint_check_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "version": {"type": "string", "description": "Version string to check (e.g., '1.2.3', '0.5.0-beta.1')"},
-            "constraint": {"type": "string", "description": "Version constraint (e.g., '>=1.0,<2.0', '^1.2.3', '~0.5', '1.*')"},
-            "scheme": {"type": "string", "enum": ["semver", "cargo"], "default": "semver", "description": "Versioning scheme to use for parsing and evaluation"}
-        },
-        "required": ["version", "constraint"]
-    })
-}
-
-fn cargo_toml_inspect_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "The Cargo.toml content to inspect"},
-            "check_workspace": {"type": "boolean", "default": true, "description": "Whether to analyze [workspace] section"},
-            "check_dependencies": {"type": "boolean", "default": true, "description": "Whether to analyze dependency sections"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn prompt_input_inspect_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "The text to inspect for red flags"},
-            "checks": {"type": "array", "items": {"type": "string"}, "description": "Subset of checks to run: unicode_hidden, bidi, html_comments, markdown_links, ansi_escapes, terminal_controls, base64_like_blobs, instruction_phrases, long_minified_lines"},
-            "phrase_patterns": {"type": ["array", "null"], "items": {"type": "string"}, "description": "Optional literal strings or safe regexes to detect as instruction-like phrases. Pass null for no custom patterns."}
-        },
-        "required": ["text"]
-    })
-}
-
-fn text_security_inspect_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Input text to inspect"},
-            "policy": {"type": "string", "enum": ["default", "source_code", "prompt", "markdown", "identifier"], "default": "default", "description": "Security policy to apply"},
-            "normalize": {"type": "string", "enum": ["none", "NFC", "NFD", "NFKC", "NFKD"], "default": "none", "description": "Normalization form to analyze"},
-            "compare_normalized": {"type": "boolean", "default": false, "description": "Report both original and normalized analysis"},
-            "detail": {"type": "string", "enum": ["summary", "normal", "full"], "default": "summary", "description": "Detail level: summary (compact verdict only), normal, or full (includes subresults)"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn edit_preflight_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "original": {"type": "string", "description": "Original source text"},
-            "replacement_mode": {"type": "string", "enum": ["literal", "patch", "line_range"], "default": "literal", "description": "Edit mode: literal (old/new), patch (unified diff), or line_range"},
-            "old": {"type": "string", "description": "Text to find (literal mode)"},
-            "new": {"type": "string", "description": "Replacement text (literal mode)"},
-            "patch": {"type": "string", "description": "Unified diff patch (patch mode)"},
-            "start_line": {"type": "integer", "description": "First line (line_range mode)"},
-            "end_line": {"type": "integer", "description": "Last line inclusive (line_range mode)"},
-            "expected_fingerprint": {"type": "string", "description": "Expected SHA-256 fingerprint for verification"},
-            "strict": {"type": "boolean", "default": true, "description": "Strict mode for patch matching"}
-        },
-        "required": ["original"]
-    })
-}
-
-fn command_preflight_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "command": {"type": "string", "description": "Command string to analyze"},
-            "platform": {"type": "string", "enum": ["posix", "windows", "auto"], "default": "posix", "description": "Target platform"},
-            "policy": {"type": "string", "enum": ["default", "strict", "permissive"], "default": "default", "description": "Analysis policy"},
-            "working_directory": {"type": "string", "description": "Working directory context (informational)"}
-        },
-        "required": ["command"]
-    })
-}
-
-fn config_preflight_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Config text to validate"},
-            "format": {"type": "string", "enum": ["auto", "json", "toml", "dotenv", "ini", "cargo_toml"], "default": "auto", "description": "Config format (auto-detect if not specified)"},
-            "schema": {"type": "object", "description": "Optional JSON schema for validation"},
-            "strict": {"type": "boolean", "default": false, "description": "Strict validation mode"}
-        },
-        "required": ["text"]
-    })
-}
-
-fn structured_data_compare_input() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "a": {"type": "string", "description": "First JSON string"},
-            "b": {"type": "string", "description": "Second JSON string"},
-            "format": {"type": "string", "enum": ["json"], "default": "json", "description": "Data format (json only for now)"},
-            "ignore_object_order": {"type": "boolean", "default": true, "description": "Ignore object key order"},
-            "ignore_array_order": {"type": "boolean", "default": false, "description": "Sort arrays before comparison"},
-            "max_diffs": {"type": "integer", "default": 50, "description": "Maximum differences to report"}
-        },
-        "required": ["a", "b"]
-    })
-}
-
-// ---------------------------------------------------------------------------
-// Output schema functions
-// ---------------------------------------------------------------------------
-
-fn math_eval_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"value":{"type":"string","description":"Evaluation result as string"},"type":{"type":"string","description":"Python type name of the result"},"unit":{"type":["string","null"],"description":"Unit name (only when result has units)"},"display":{"type":["string","null"],"description":"Human-readable result with units (only when result has units)"}}})
-}
-
-fn unit_convert_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"value":{"type":"number","description":"Converted value"},"from_unit":{"type":"string"},"to_unit":{"type":"string"},"factor":{"type":["number","null"],"description":"Conversion factor used (null for temperature conversions)"}}})
-}
-
-fn unit_info_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"unit":{"type":"string"},"canonical":{"type":"string","description":"Canonical unit name"},"category":{"type":"string","description":"Unit category (e.g., 'length', 'mass', 'temperature')"},"is_valid":{"type":"boolean"}}})
-}
-
-fn constant_lookup_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"name":{"type":"string"},"value":{"type":"number","description":"Constant value"},"symbol":{"type":"string","description":"Display symbol (e.g., 'N_A', 'h', 'c')"},"display_name":{"type":"string","description":"Human-readable name"}}})
-}
-
-fn text_measure_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"bytes_utf8":{"type":"integer"},"codepoints":{"type":"integer"},"graphemes":{"type":"integer"},"words":{"type":"integer"},"unique_words_casefolded":{"type":"integer"},"lines":{"type":"integer"},"nonempty_lines":{"type":"integer"},"blank_lines":{"type":"integer"},"max_line_length_codepoints":{"type":"integer"},"chars_no_whitespace":{"type":"integer"},"ascii":{"type":"integer"},"non_ascii":{"type":"integer"},"letters":{"type":"integer"},"digits":{"type":"integer"},"punctuation":{"type":"integer"},"symbols":{"type":"integer"},"spaces":{"type":"integer"},"control_chars":{"type":"integer"},"combining_marks":{"type":"integer"},"invisible_chars":{"type":"integer"},"newline_style":{"type":"string"},"ends_with_newline":{"type":"boolean"},"normalization":{"type":"object"},"unicode_risks":{"type":"object"},"warnings":{"type":"array"}}})
-}
-
-fn text_equal_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"equal":{"type":"boolean"},"mode":{"type":"object"},"raw_equal":{"type":"boolean"},"nfc_equal":{"type":"boolean"},"nfd_equal":{"type":"boolean"},"nfkc_equal":{"type":"boolean"},"nfkd_equal":{"type":"boolean"},"casefold_equal":{"type":"boolean"},"byte_equal":{"type":"boolean"},"lengths":{"type":"object"},"first_difference":{"type":["object","null"]},"classification":{"type":"string"}}})
-}
-
-fn text_diff_explain_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"equal":{"type":"boolean"},"classification":{"type":"string"},"summary":{"type":"object"},"a_metrics":{"type":"object"},"b_metrics":{"type":"object"},"diffs":{"type":"array"},"security_findings":{"type":"array"},"agent_instruction":{"type":"string"}}})
-}
-
-fn text_inspect_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"safe_repr":{"type":"string"},"metrics":{"type":"object"},"normalization":{"type":"object"},"normalization_diff":{"type":"boolean"},"normals_repr":{"type":["string","null"]},"invisibles":{"type":"array"},"bidi_controls":{"type":"array"},"mixed_scripts":{"type":"object"},"confusables":{"type":"array"},"warnings":{"type":"array"},"limits_applied":{"type":"array"},"normalize":{"type":"string"},"compare_normalized":{"type":"boolean"},"original":{"type":"object"},"normalized":{"type":["object","null"]},"normalization_findings":{"type":"array"}}})
-}
-
-fn text_count_output() -> Value {
-    serde_json::json!({"type":"object","description":"With target: {count, positions, target, normalization, text_length_codepoints}. Without target: character frequency table as {char: count} pairs.","properties":{"count":{"type":"integer"},"positions":{"type":"array"},"target":{"type":["string","null"]},"normalization":{"type":["string","null"]},"text_length_codepoints":{"type":"integer"}}})
-}
-
-fn text_truncate_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"text":{"type":"string","description":"Result string (truncated if truncation occurred)"},"original_graphemes":{"type":"integer","description":"Original grapheme count"},"truncated_graphemes":{"type":"integer","description":"Grapheme count in result"},"truncated":{"type":"boolean","description":"True if text was truncated"}}})
-}
-
-fn text_transform_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"changed":{"type":"boolean"},"text":{"type":"string"},"operations_applied":{"type":"array","items":{"type":"string"}},"removed":{"type":"array"},"warnings":{"type":"array","items":{"type":"string"}},"summary":{"type":"string"}}})
-}
-
-fn validate_brackets_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"balanced":{"type":"boolean"},"unmatched_openers":{"type":"array"},"unmatched_closers":{"type":"array"}}})
-}
-
-fn validate_json_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid":{"type":"boolean"},"error":{"type":["string","null"]},"line":{"type":["integer","null"]},"column":{"type":["integer","null"]},"position":{"type":["integer","null"]},"type":{"type":["string","null"]},"top_level_keys":{"type":["array","null"],"items":{"type":"string"}}}})
-}
-
-fn validate_regex_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid_pattern":{"type":"boolean"},"results":{"type":"array"},"error":{"type":["string","null"]},"flags_used":{"type":"object"}}})
-}
-
-fn list_compare_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"equal":{"type":"boolean"},"first_diff_index":{"type":["integer","null"],"description":"Index of first difference (ordered mode)"},"equal_prefix_length":{"type":"integer","description":"Length of equal prefix (ordered mode)"},"aligned":{"type":"array","description":"Aligned operations (ordered mode)"},"count_deltas":{"type":"object","description":"Count differences (multiset mode)"},"only_in_a":{"type":"array"},"only_in_b":{"type":"array"},"missing_in_a":{"type":"array","description":"Alias for only_in_b"},"missing_in_b":{"type":"array","description":"Alias for only_in_a"},"duplicates_in_a":{"type":"array"},"duplicates_in_b":{"type":"array"},"near_matches":{"type":"array","description":"Items that differ only by edit distance"}}})
-}
-
-fn validate_toml_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid":{"type":"boolean"},"error":{"type":["string","null"]},"line":{"type":["integer","null"]},"column":{"type":["integer","null"]},"position":{"type":["integer","null"]},"type":{"type":["string","null"]},"top_level_keys":{"type":["array","null"]},"tables":{"type":["array","null"]}}})
-}
-
-fn json_extract_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid_json":{"type":"boolean"},"found":{"type":"boolean"},"pointer":{"type":"string"},"value_type":{"type":["string","null"]},"value":{"description":"Extracted value"},"preview":{"type":["string","null"]},"child_keys":{"type":["array","null"],"items":{"type":"string"}},"array_length":{"type":["integer","null"]},"truncated":{"type":"boolean"},"missing_at":{"type":["string","null"]},"reason":{"type":["string","null"]},"available_keys":{"type":["array","null"],"items":{"type":"string"}},"error":{"type":["string","null"]},"line":{"type":["integer","null"]},"column":{"type":["integer","null"]},"summary":{"type":"string"}}})
-}
-
-fn json_compare_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid_json_a":{"type":"boolean"},"valid_json_b":{"type":"boolean"},"equal":{"type":"boolean"},"same_type":{"type":"boolean"},"diff_count":{"type":"integer"},"diffs":{"type":"array","description":"List of differences"},"truncated":{"type":"boolean"},"summary":{"type":"string"}}})
-}
-
-fn text_position_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid":{"type":"boolean"},"byte_offset":{"type":["integer","null"]},"codepoint_index":{"type":["integer","null"]},"utf16_offset":{"type":["integer","null"]},"line":{"type":["integer","null"]},"column":{"type":["integer","null"]},"line_base":{"type":"integer"},"column_base":{"type":"integer"},"char":{"type":["string","null"]},"codepoint":{"type":["string","null"]},"name":{"type":["string","null"]},"line_text_preview":{"type":["string","null"]},"error":{"type":["string","null"]},"summary":{"type":"string"}}})
-}
-
-fn text_hash_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"encoding":{"type":"string"},"bytes":{"type":"integer"},"codepoints":{"type":"integer"},"hashes":{"type":"object","description":"Map of algorithm to hash value"},"warnings":{"type":"array","items":{"type":"string"}},"summary":{"type":"string"}}})
-}
-
-fn escape_text_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"mode":{"type":"string"},"escaped":{"type":"string"},"changed":{"type":"boolean"},"summary":{"type":"string"}}})
-}
-
-fn unescape_text_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"mode":{"type":"string"},"unescaped":{"type":"string"},"changed":{"type":"boolean"},"error":{"type":["string","null"]},"summary":{"type":"string"}}})
-}
-
-fn identifier_analyze_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"text":{"type":"string"},"classification":{"type":"string"},"python_valid":{"type":"boolean"},"python_keyword":{"type":"boolean"},"rust_valid":{"type":["boolean","null"]},"javascript_valid":{"type":["boolean","null"]},"env_valid":{"type":"boolean"},"suggestions":{"type":"object","description":"Map of language to suggested name"},"warnings":{"type":"array","items":{"type":"string"}},"summary":{"type":"string"}}})
-}
-
-fn regex_finditer_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid_pattern":{"type":"boolean"},"matches":{"type":"array","description":"List of regex matches with positions and groups"},"truncated":{"type":"boolean"},"match_count":{"type":"integer"},"error":{"type":["string","null"]}}})
-}
-
-fn regex_safety_check_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid_pattern":{"type":"boolean"},"risk":{"type":"string","enum":["low","medium","high"]},"findings":{"type":"array","description":"Safety findings with kind, span, and message","items":{"type":"object","properties":{"kind":{"type":"string"},"span":{"type":"array","items":{"type":"integer"}},"message":{"type":"string"}}}}}})
-}
-
-fn validate_schema_light_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid":{"type":"boolean"},"violations":{"type":"array","description":"Schema violations with path and message","items":{"type":"object","properties":{"path":{"type":"string"},"message":{"type":"string"},"value_type":{"type":["string","null"]},"expected_type":{"type":["string","null"]}}}},"truncated":{"type":"boolean"},"summary":{"type":"string"}}})
-}
-
-fn path_normalize_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"normalized":{"type":"string"},"is_absolute":{"type":"boolean"},"components":{"type":"array","items":{"type":"string"}},"warnings":{"type":"array","items":{"type":"string"}}}})
-}
-
-fn path_analyze_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"input":{"type":"string"},"style":{"type":"string"},"absolute":{"type":"boolean"},"has_traversal":{"type":"boolean"},"components":{"type":"array","items":{"type":"string"}},"parent":{"type":["string","null"]},"name":{"type":["string","null"]},"stem":{"type":["string","null"]},"suffix":{"type":["string","null"]},"suffixes":{"type":"array","items":{"type":"string"}},"hidden":{"type":"boolean"},"normalized_lexical":{"type":"string"},"warnings":{"type":"array","items":{"type":"string"}},"summary":{"type":"string"}}})
-}
-
-fn path_compare_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"equal":{"type":"boolean","description":"Whether paths are equal under normalization"},"left_normalized":{"type":"string","description":"Normalized left path"},"right_normalized":{"type":"string","description":"Normalized right path"},"differences":{"type":"array","description":"List of differences found"},"findings":{"type":"array","description":"Normalization notes"}}})
-}
-
-fn path_scope_check_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"inside_root":{"type":"boolean","description":"Whether target is lexically inside root"},"root_normalized":{"type":"string","description":"Normalized root path"},"target_normalized":{"type":"string","description":"Normalized target path"},"relative_path":{"type":"string","description":"Relative path from root to target (if inside)"},"escapes_via_dotdot":{"type":"boolean","description":"Whether target contains parent traversal"},"absolute_target":{"type":"string","description":"Absolute form of target"},"findings":{"type":"array","description":"Analysis notes"}}})
-}
-
-fn json_shape_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid":{"type":"boolean"},"shape":{"type":["object","null"],"description":"Nested shape structure with type, keys, and counts","properties":{"type":{"type":"string"},"keys":{"type":["object","null"]},"key_count":{"type":["integer","null"]},"item_types":{"type":["array","null"]},"item_count":{"type":["integer","null"]}}},"truncated":{"type":"boolean"},"summary":{"type":"string"}}})
-}
-
-fn text_window_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"position":{"type":"object","description":"Resolved position with byte_offset, codepoint_index, grapheme_index, line, column"},"line_text":{"type":"string"},"line_visible_repr":{"type":"string"},"before":{"type":"array","description":"Context lines before"},"after":{"type":"array","description":"Context lines after"},"newline_style":{"type":"string"},"at_codepoint":{"type":["object","null"]},"warnings":{"type":"array","items":{"type":"string"}}}})
-}
-
-fn json_canonicalize_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid":{"type":"boolean"},"canonical":{"type":["string","null"]},"minified":{"type":["string","null"]},"sha256":{"type":["string","null"]},"duplicate_keys":{"type":"array","items":{"type":"string"}},"top_level_type":{"type":["string","null"]},"top_level_keys":{"type":["array","null"],"items":{"type":"string"}},"error":{"type":["string","null"]},"line":{"type":["integer","null"]},"column":{"type":["integer","null"]}}})
-}
-
-fn json_query_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"found":{"type":"boolean"},"pointer":{"type":"string"},"value":{"description":"Extracted value"},"type":{"type":["string","null"]},"missing_at":{"type":["string","null"]},"reason":{"type":["string","null"]},"error":{"type":["string","null"]},"line":{"type":["integer","null"]},"column":{"type":["integer","null"]}}})
-}
-
-fn glob_match_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"matches":{"type":"boolean"},"normalized_pattern":{"type":"string"},"normalized_path":{"type":"string"},"matched_segment":{"type":["string","null"]},"unmatched_segment":{"type":["string","null"]},"summary":{"type":"string"}}})
-}
-
-fn text_fingerprint_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"sha256":{"type":"string"},"bytes_utf8":{"type":"integer"},"codepoints":{"type":"integer"},"graphemes":{"type":"integer"},"newline_style":{"type":"string"},"normalization":{"type":"object","description":"Normalization state details"},"summary":{"type":"string"}}})
-}
-
-fn identifier_inspect_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"identifiers":{"type":"array","description":"Per-identifier analysis with raw, normalized, valid, scripts, and issues"},"collisions":{"type":"array","description":"Detected collisions between identifiers"}}})
-}
-
-fn version_compare_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"comparison":{"type":"integer","description":"Comparison result: -1 (a < b), 0 (equal), 1 (a > b)"},"valid":{"type":"boolean","description":"Whether versions are valid for the scheme"},"scheme":{"type":"string"},"summary":{"type":"string"}}})
-}
-
-fn toml_shape_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid":{"type":"boolean"},"top_level_keys":{"type":["array","null"],"items":{"type":"string"}},"tables":{"type":["array","null"],"items":{"type":"string"}},"truncated":{"type":"boolean"},"summary":{"type":"string"}}})
-}
-
-fn list_dedupe_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"items":{"type":"array","items":{"type":"string"}},"original_count":{"type":"integer"},"deduped_count":{"type":"integer"},"duplicates_removed":{"type":"integer"}}})
-}
-
-fn list_sort_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"items":{"type":"array","items":{"type":"string"}},"original_count":{"type":"integer"},"sorted_count":{"type":"integer"}}})
-}
-
-fn text_replace_check_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"match_count":{"type":"integer","description":"Number of matches found"},"unique_match":{"type":"boolean","description":"True if exactly one match"},"expected_count_met":{"type":"boolean","description":"True if match count matches expected_count"},"would_change":{"type":"boolean","description":"True if replacement would change text"},"positions":{"type":"array","description":"Match positions with byte offsets and line/column"},"changed_text_fingerprint":{"type":"string","description":"SHA-256 fingerprint of changed text"},"newline_style_before":{"type":"string"},"newline_style_after":{"type":"string"},"preview_before":{"type":"string"},"preview_after":{"type":"string"},"findings":{"type":"array","description":"Warnings and info messages"}}})
-}
-
-fn line_range_extract_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"line_count_total":{"type":"integer","description":"Total line count in input"},"start_line":{"type":"integer"},"end_line":{"type":"integer"},"valid_range":{"type":"boolean","description":"True if range is within bounds"},"text":{"type":"string","description":"Extracted text with original line separators preserved"},"lines":{"type":"array","description":"Structured line list"},"byte_start":{"type":"integer","description":"UTF-8 byte offset of start"},"byte_end":{"type":"integer","description":"UTF-8 byte offset of end"},"char_start":{"type":"integer","description":"Codepoint index of start"},"char_end":{"type":"integer","description":"Codepoint index of end"},"newline_style":{"type":"string"},"ends_with_newline":{"type":"boolean"},"fingerprint":{"type":"string"},"findings":{"type":"array"}}})
-}
-
-fn line_range_compare_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"equal":{"type":"boolean","description":"True if ranges are equal under the chosen mode"},"left_fingerprint":{"type":"string","description":"SHA-256 fingerprint of left range"},"right_fingerprint":{"type":"string","description":"SHA-256 fingerprint of right range"},"diff_summary":{"type":"string","description":"Human-readable diff summary"},"first_difference":{"type":"object","description":"First differing line (if any)"}}})
-}
-
-fn shell_split_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"parse_ok":{"type":"boolean","description":"True if the command parsed successfully"},"argv":{"type":"array","items":{"type":"string"},"description":"Parsed argument tokens"},"argc":{"type":"integer","description":"Number of arguments"},"features":{"type":"object","description":"Detected risky features","properties":{"has_pipe":{"type":"boolean"},"has_redirection":{"type":"boolean"},"has_command_substitution":{"type":"boolean"},"has_variable_expansion":{"type":"boolean"},"has_glob_pattern":{"type":"boolean"},"has_control_operator":{"type":"boolean"},"has_unbalanced_quotes":{"type":"boolean"}}},"findings":{"type":"array","items":{"type":"string"},"description":"Analysis notes and warnings"}}})
-}
-
-fn shell_quote_join_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"command":{"type":"string","description":"Safely quoted command string"},"roundtrip_ok":{"type":"boolean","description":"True if shell_split(quote_join(argv)) produces equivalent argv"},"findings":{"type":"array","items":{"type":"string"},"description":"Analysis notes"}}})
-}
-
-fn argv_compare_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"argv_equal":{"type":"boolean","description":"True if parsed argv lists are identical"},"left_argv":{"type":"array","items":{"type":"string"},"description":"Resolved left argv"},"right_argv":{"type":"array","items":{"type":"string"},"description":"Resolved right argv"},"first_difference":{"type":"integer","description":"Index of first differing token, or null if equal"},"findings":{"type":"array","items":{"type":"string"},"description":"Analysis notes"}}})
-}
-
-fn markdown_structure_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"headings":{"type":"array","description":"Headings with level, text, line, slug"},"code_fences":{"type":"array","description":"Code fences with language, lines, closed state"},"links":{"type":"array","description":"Links with visible text, target, mismatch flags"},"html_comments":{"type":"array","description":"HTML comments with text and position"},"frontmatter":{"type":"object","description":"Frontmatter detection (present, format, line range)"},"tables_detected":{"type":"boolean","description":"Whether Markdown tables were detected"},"findings":{"type":"array","items":{"type":"string"},"description":"Warnings and findings"}}})
-}
-
-fn code_fence_extract_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"blocks":{"type":"array","description":"Extracted code blocks with index, language, lines, content, fingerprint"},"unclosed_fences":{"type":"array","description":"Unclosed code fences found"},"findings":{"type":"array","items":{"type":"string"},"description":"Warnings and findings"}}})
-}
-
-fn dotenv_validate_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"parse_ok":{"type":"boolean","description":"True if no parse errors found"},"entries":{"type":"array","description":"Parsed entries with key, value, quote_style, line"},"duplicates":{"type":"array","description":"Duplicate key entries with line numbers"},"invalid_lines":{"type":"array","description":"Lines that failed to parse"},"requires_quoting":{"type":"array","description":"Keys whose values contain spaces and should be quoted"},"contains_expansion_syntax":{"type":"array","description":"Keys with ${VAR} or $VAR expansion syntax"},"findings":{"type":"array","items":{"type":"string"},"description":"Human-readable findings"}}})
-}
-
-fn ini_validate_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"parse_ok":{"type":"boolean","description":"True if no parse errors found"},"sections":{"type":"array","description":"Ordered list of section names"},"keys_by_section":{"type":"object","description":"Keys grouped by section"},"duplicates":{"type":"array","description":"Duplicate keys/sections with line numbers"},"invalid_lines":{"type":"array","description":"Lines that failed to parse"},"findings":{"type":"array","items":{"type":"string"},"description":"Human-readable findings"}}})
-}
-
-fn patch_apply_check_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"patch_parse_ok":{"type":"boolean","description":"True if patch parsed successfully"},"applies":{"type":"boolean","description":"True if all hunks applied cleanly"},"hunks_total":{"type":"integer","description":"Total number of hunks in patch"},"hunks_applied":{"type":"integer","description":"Number of hunks that applied successfully"},"hunks_failed":{"type":"integer","description":"Number of hunks that failed to apply"},"failed_hunks":{"type":"array","description":"Details of each failed hunk","items":{"type":"object","properties":{"hunk_index":{"type":"integer"},"old_start":{"type":"integer"},"old_count":{"type":"integer"},"expected_context":{"type":"array","items":{"type":"string"}},"actual_context":{"type":"array","items":{"type":"string"}},"reason":{"type":"string"}}}},"affected_line_ranges":{"type":"array","description":"Line ranges affected by successful hunks","items":{"type":"object","properties":{"start":{"type":"integer"},"end":{"type":"integer"}}}},"newline_style_before":{"type":"string","description":"Newline style in original text"},"newline_style_after":{"type":"string","description":"Newline style in result text"},"result_fingerprint":{"type":"string","description":"SHA-256 of the result text"},"result_text":{"type":["string","null"],"description":"Resulting text if requested"},"findings":{"type":"array","items":{"type":"string"},"description":"Analysis notes and warnings"}}})
-}
-
-fn patch_summary_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"files_changed":{"type":"integer","description":"Number of files changed"},"hunks_total":{"type":"integer","description":"Total number of hunks across all files"},"additions":{"type":"integer","description":"Total number of added lines"},"deletions":{"type":"integer","description":"Total number of deleted lines"},"renames_detected":{"type":"array","description":"Detected file renames","items":{"type":"object","properties":{"from":{"type":"string"},"to":{"type":"string"}}}},"binary_patch_detected":{"type":"boolean","description":"True if binary patch content detected"},"line_ranges_by_file":{"type":"object","description":"Line ranges affected per file","additionalProperties":{"type":"array","items":{"type":"object","properties":{"start":{"type":"integer"},"end":{"type":"integer"}}}}},"findings":{"type":"array","items":{"type":"string"},"description":"Analysis notes and warnings"}}})
-}
-
-fn unicode_policy_check_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"pass_":{"type":"boolean","description":"True if text passes the policy (no errors)"},"policy":{"type":"string","description":"Policy name that was applied"},"normalized_form":{"type":"string","description":"Text after normalization"},"findings":{"type":"array","description":"Policy findings with rule, severity, and message","items":{"type":"object","properties":{"rule":{"type":"string"},"severity":{"type":"string"},"message":{"type":"string"}}}},"summary":{"type":"string","description":"Human-readable summary"}}})
-}
-
-fn canonicalize_text_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"text":{"type":"string","description":"Canonicalized text"},"changed":{"type":"boolean","description":"True if text was modified"},"operations_applied":{"type":"array","description":"List of operations applied"},"fingerprint_before":{"type":"string","description":"SHA-256 of original text"},"fingerprint_after":{"type":"string","description":"SHA-256 of canonicalized text"},"mapping":{"type":"array","description":"Character mapping if return_mapping was True"},"findings":{"type":"array","items":{"type":"string"},"description":"Analysis notes and warnings"}}})
-}
-
-fn identifier_table_inspect_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"count":{"type":"integer","description":"Number of identifiers inspected"},"collisions":{"type":"array","description":"Detected collisions","items":{"type":"object","properties":{"kind":{"type":"string"},"names":{"type":"array","items":{"type":"string"}},"detail":{"type":"string"}}}},"reserved_keyword_hits":{"type":"array","description":"Identifiers matching reserved keywords","items":{"type":"object","properties":{"name":{"type":"string"},"language":{"type":"string"},"file":{"type":"string"},"line":{"type":"integer"}}}},"mixed_style_groups":{"type":"array","description":"Groups with mixed naming styles","items":{"type":"object","properties":{"stripped":{"type":"string"},"names":{"type":"array","items":{"type":"string"}},"styles":{"type":"array","items":{"type":"string"}}}}},"findings":{"type":"array","items":{"type":"string"}}}})
-}
-
-fn version_constraint_check_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"satisfies":{"type":"boolean","description":"Whether the version satisfies the constraint"},"parsed_version":{"type":"object","description":"Parsed version components"},"parsed_constraint":{"type":"object","description":"Parsed constraint components"},"scheme":{"type":"string","description":"Versioning scheme used"},"explanation":{"type":"string","description":"Human-readable explanation"},"findings":{"type":"array","items":{"type":"string"},"description":"Analysis notes and warnings"}}})
-}
-
-fn cargo_toml_inspect_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"parse_ok":{"type":"boolean","description":"Whether TOML parsed successfully"},"package":{"type":"object","description":"Package metadata from [package] section","properties":{"name":{"type":"string"},"version":{"type":"string"},"edition":{"type":"string"},"license":{"type":"string"},"repository":{"type":"string"},"readme":{"type":"string"}}},"workspace":{"type":"object","description":"Workspace section information","properties":{"present":{"type":"boolean"},"members":{"type":"array","items":{"type":"string"}},"exclude":{"type":"array","items":{"type":"string"}}}},"dependencies":{"type":"object","description":"Dependencies by section"},"path_dependencies":{"type":"array","items":{"type":"string"},"description":"Extracted path dependency values"},"suspicious_dependency_names":{"type":"array","items":{"type":"string"},"description":"Dependency names with suspicious patterns"},"duplicate_or_confusable_dependency_names":{"type":"array","items":{"type":"string"},"description":"Dependency names that normalize to the same form"},"findings":{"type":"array","items":{"type":"string"},"description":"Structural findings and warnings"}}})
-}
-
-fn prompt_input_inspect_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"findings":{"type":"array","description":"Structured findings with code, severity, message, span, and details","items":{"type":"object","properties":{"code":{"type":"string"},"severity":{"type":"string"},"message":{"type":"string"},"span":{"type":"object"},"details":{"type":"object"}}}},"summary":{"type":"string","description":"Human-readable summary"},"risk_score":{"type":"integer","description":"Deterministic risk score"},"recommended_next_tool":{"type":["string","array"],"description":"Recommended follow-up tool(s)"},"text_length":{"type":"integer","description":"Input text length"},"checks_run":{"type":"array","items":{"type":"string"},"description":"Checks that were executed"},"findings_truncated":{"type":"boolean","description":"True if findings were truncated due to limits"}}})
-}
-
-fn text_security_inspect_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"verdict":{"type":"string","enum":["allow","review","block"]},"policy":{"type":"string"},"findings":{"type":"array"},"machine_code":{"type":"string"},"normalized_changed":{"type":"boolean"},"recommended_action":{"type":"string"},"summary":{"type":"string"},"subresults":{"type":"object"}}})
-}
-
-fn edit_preflight_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"ok_to_apply":{"type":"boolean"},"mode":{"type":"string"},"findings":{"type":"array"},"machine_code":{"type":"string"},"recommended_next_tool":{"type":["string","null"]},"summary":{"type":"string"},"subresults":{"type":"object"}}})
-}
-
-fn command_preflight_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"verdict":{"type":"string","enum":["allow","review","block"]},"command":{"type":"string"},"platform":{"type":"string"},"policy":{"type":"string"},"findings":{"type":"array"},"machine_code":{"type":"string"},"summary":{"type":"string"},"subresults":{"type":"object"}}})
-}
-
-fn config_preflight_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid":{"type":"boolean"},"verdict":{"type":"string","enum":["valid","valid_with_warnings","invalid"]},"format":{"type":"string"},"findings":{"type":"array"},"machine_code":{"type":"string"},"summary":{"type":"string"},"subresults":{"type":"object"}}})
-}
-
-fn structured_data_compare_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"equal":{"type":"boolean"},"valid_a":{"type":"boolean"},"valid_b":{"type":"boolean"},"findings":{"type":"array"},"machine_code":{"type":"string"},"summary":{"type":"string"},"subresults":{"type":"object"}}})
 }
 
 // ---------------------------------------------------------------------------
@@ -2427,6 +1341,155 @@ pub fn tool_names_for_profile_audience(
         .collect()
 }
 
+pub fn compact_input_schema(schema: &Value) -> Value {
+    let obj = match schema.as_object() {
+        Some(o) => o,
+        None => return schema.clone(),
+    };
+
+    let mut compact = serde_json::Map::new();
+    compact.insert(
+        "type".to_string(),
+        obj.get("type")
+            .cloned()
+            .unwrap_or_else(|| Value::String("object".to_string())),
+    );
+
+    if let Some(props) = obj.get("properties").and_then(|v| v.as_object()) {
+        let mut compact_props = serde_json::Map::new();
+        for (prop_name, prop_def) in props {
+            if let Some(prop_obj) = prop_def.as_object() {
+                let mut cp = serde_json::Map::new();
+                if let Some(t) = prop_obj.get("type") {
+                    cp.insert("type".to_string(), t.clone());
+                }
+                if let Some(e) = prop_obj.get("enum") {
+                    cp.insert("enum".to_string(), e.clone());
+                }
+                if let Some(r) = prop_obj.get("required") {
+                    cp.insert("required".to_string(), r.clone());
+                }
+                if let Some(items) = prop_obj.get("items") {
+                    cp.insert("items".to_string(), items.clone());
+                }
+                for key in &[
+                    "minimum",
+                    "maximum",
+                    "exclusiveMinimum",
+                    "exclusiveMaximum",
+                    "minLength",
+                    "maxLength",
+                    "pattern",
+                    "minItems",
+                    "maxItems",
+                    "multipleOf",
+                ] {
+                    if let Some(v) = prop_obj.get(*key) {
+                        cp.insert(key.to_string(), v.clone());
+                    }
+                }
+                if let Some(desc) = prop_obj.get("description").and_then(|v| v.as_str()) {
+                    let truncated = if desc.chars().count() > 80 {
+                        format!("{}...", desc.chars().take(77).collect::<String>())
+                    } else {
+                        desc.to_string()
+                    };
+                    cp.insert("description".to_string(), Value::String(truncated));
+                }
+                compact_props.insert(prop_name.clone(), Value::Object(cp));
+            } else {
+                compact_props.insert(prop_name.clone(), prop_def.clone());
+            }
+        }
+        compact.insert("properties".to_string(), Value::Object(compact_props));
+    }
+
+    if let Some(req) = obj.get("required") {
+        compact.insert("required".to_string(), req.clone());
+    }
+
+    Value::Object(compact)
+}
+
+pub fn compact_output_schema(schema: &Value) -> Value {
+    let obj = match schema.as_object() {
+        Some(o) => o,
+        None => return serde_json::json!({"type": "object"}),
+    };
+
+    let mut compact_output = serde_json::json!({"type": obj.get("type").unwrap_or(&Value::String("object".to_string()))});
+    if let Some(props) = obj.get("properties").and_then(|v| v.as_object()) {
+        let mut compact_props = serde_json::Map::new();
+        for (key, prop) in props {
+            let mut compact_prop = serde_json::json!({});
+            if let Some(t) = prop.get("type") {
+                compact_prop["type"] = t.clone();
+            }
+            if let Some(e) = prop.get("enum") {
+                compact_prop["enum"] = e.clone();
+            }
+            compact_props.insert(key.clone(), compact_prop);
+        }
+        compact_output["properties"] = Value::Object(compact_props);
+    }
+
+    compact_output
+}
+
+pub fn find_close_match<'a>(input: &str, tool_names: &[&'a str]) -> Option<&'a str> {
+    if input.len() > 200 {
+        return None;
+    }
+    let lower_input = input.to_lowercase();
+
+    for &name in tool_names {
+        if name.to_lowercase() == lower_input {
+            return Some(name);
+        }
+    }
+
+    fn at_word_boundary(sub: &str, s: &str) -> bool {
+        if let Some(idx) = s.find(sub) {
+            if idx == 0 {
+                return true;
+            }
+            s.as_bytes().get(idx - 1) == Some(&b'_') || s.as_bytes().get(idx - 1) == Some(&b'-')
+        } else {
+            false
+        }
+    }
+
+    let mut best_boundary: Option<(&str, usize)> = None;
+    for &name in tool_names {
+        let lower_name = name.to_lowercase();
+        if at_word_boundary(&lower_input, &lower_name)
+            || at_word_boundary(&lower_name, &lower_input)
+        {
+            let is_shorter = match best_boundary {
+                Some((best_name, _)) => name.len() < best_name.len(),
+                None => true,
+            };
+            if is_shorter {
+                best_boundary = Some((name, 0));
+            }
+        }
+    }
+    if let Some((name, _)) = best_boundary {
+        return Some(name);
+    }
+
+    let mut best: Option<(&str, usize)> = None;
+    for &name in tool_names {
+        let dist = levenshtein_distance(input, name);
+        let threshold = input.chars().count().min(name.chars().count()) / 2;
+        if dist <= threshold && best.is_none_or(|(_, best_dist)| dist < best_dist) {
+            best = Some((name, dist));
+        }
+    }
+
+    best.map(|(name, _)| name)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -2575,6 +1638,10 @@ mod tests {
     }
 
     // -- Profile snapshots --
+    //
+    // These are exact snapshots of critical codegg-facing profile+audience
+    // combinations. Update intentionally when profile contents change.
+    // Keep sorted alphabetically before snapshotting (see snapshot_names helper).
 
     /// Helper: sorted tool names for a profile+audience.
     fn snapshot_names(profile: &str, audience: ToolListAudience) -> Vec<String> {
@@ -2586,108 +1653,231 @@ mod tests {
         names
     }
 
-    /// Helper: sorted tool names with exposure for a profile+audience.
-    fn snapshot_with_exposure(profile: &str, audience: ToolListAudience) -> Vec<(String, String)> {
-        let mut items: Vec<(String, String)> = tools_for_profile_audience(profile, audience)
-            .into_iter()
-            .map(|t| (t.name.to_string(), t.exposure.as_str().to_string()))
-            .collect();
-        items.sort_by(|a, b| a.0.cmp(&b.0));
-        items
-    }
-
     #[test]
     fn profile_snapshot_codegg_core_min_model() {
-        let names = snapshot_names("codegg_core_min", ToolListAudience::Model);
-        // Snapshot: update intentionally when profiles change
-        assert!(!names.is_empty(), "codegg_core_min model should have tools");
-        // All tools in this snapshot should be non-harness-only
-        for name in &names {
-            let spec = get_tool(name).expect("tool should exist");
-            assert_ne!(
-                spec.exposure,
-                ToolExposure::HarnessOnly,
-                "harness_only tool '{}' in codegg_core_min model snapshot",
-                name
-            );
-        }
+        let actual = snapshot_names("codegg_core_min", ToolListAudience::Model);
+        let expected = vec![
+            "command_preflight",
+            "config_preflight",
+            "edit_preflight",
+            "text_replace_check",
+            "text_security_inspect",
+            "validate_json",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn profile_snapshot_codegg_core_model() {
-        let names = snapshot_names("codegg_core", ToolListAudience::Model);
-        assert!(!names.is_empty(), "codegg_core model should have tools");
-        for name in &names {
-            let spec = get_tool(name).expect("tool should exist");
-            assert_ne!(
-                spec.exposure,
-                ToolExposure::HarnessOnly,
-                "harness_only tool '{}' in codegg_core model snapshot",
-                name
-            );
-        }
+        let actual = snapshot_names("codegg_core", ToolListAudience::Model);
+        let expected = vec![
+            "cargo_toml_inspect",
+            "command_preflight",
+            "config_preflight",
+            "edit_preflight",
+            "identifier_inspect",
+            "path_normalize",
+            "structured_data_compare",
+            "text_diff_explain",
+            "text_equal",
+            "text_fingerprint",
+            "text_inspect",
+            "text_replace_check",
+            "text_security_inspect",
+            "validate_json",
+            "validate_toml",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn profile_snapshot_codegg_preflight_harness() {
-        let items = snapshot_with_exposure("codegg_preflight", ToolListAudience::Harness);
-        assert!(
-            !items.is_empty(),
-            "codegg_preflight harness should have tools"
-        );
-        // Should include at least one harness-only tool
-        let has_harness_only = items.iter().any(|(_, e)| e == "harness_only");
-        assert!(
-            has_harness_only,
-            "codegg_preflight harness should include harness-only tools"
+        let actual = snapshot_names("codegg_preflight", ToolListAudience::Harness);
+        let expected = vec![
+            "command_preflight",
+            "config_preflight",
+            "edit_preflight",
+            "patch_apply_check",
+            "path_scope_check",
+            "prompt_input_inspect",
+            "shell_split",
+            "text_security_inspect",
+            "unicode_policy_check",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn profile_snapshot_codegg_patch_model() {
-        let names = snapshot_names("codegg_patch", ToolListAudience::Model);
-        assert!(!names.is_empty(), "codegg_patch model should have tools");
-        for name in &names {
-            let spec = get_tool(name).expect("tool should exist");
-            assert_ne!(spec.exposure, ToolExposure::HarnessOnly);
-        }
+        let actual = snapshot_names("codegg_patch", ToolListAudience::Model);
+        let expected = vec![
+            "edit_preflight",
+            "line_range_compare",
+            "line_range_extract",
+            "patch_summary",
+            "text_diff_explain",
+            "text_replace_check",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_patch_harness() {
+        let actual = snapshot_names("codegg_patch", ToolListAudience::Harness);
+        let expected = vec![
+            "edit_preflight",
+            "line_range_compare",
+            "line_range_extract",
+            "patch_apply_check",
+            "patch_summary",
+            "text_diff_explain",
+            "text_replace_check",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn profile_snapshot_codegg_config_model() {
-        let names = snapshot_names("codegg_config", ToolListAudience::Model);
-        assert!(!names.is_empty(), "codegg_config model should have tools");
+        let actual = snapshot_names("codegg_config", ToolListAudience::Model);
+        let expected = vec![
+            "config_preflight",
+            "dotenv_validate",
+            "ini_validate",
+            "json_canonicalize",
+            "json_compare",
+            "json_extract",
+            "structured_data_compare",
+            "toml_shape",
+            "validate_json",
+            "validate_schema_light",
+            "validate_toml",
+            "version_compare",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
+        );
     }
 
     #[test]
-    fn profile_snapshot_codegg_unicode_security_model() {
-        let names = snapshot_names("codegg_unicode_security", ToolListAudience::Model);
-        assert!(
-            !names.is_empty(),
-            "codegg_unicode_security model should have tools"
+    fn profile_snapshot_codegg_config_harness() {
+        let actual = snapshot_names("codegg_config", ToolListAudience::Harness);
+        let expected = vec![
+            "config_preflight",
+            "dotenv_validate",
+            "ini_validate",
+            "json_canonicalize",
+            "json_compare",
+            "json_extract",
+            "structured_data_compare",
+            "toml_shape",
+            "validate_json",
+            "validate_schema_light",
+            "validate_toml",
+            "version_compare",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
         );
-        for name in &names {
-            let spec = get_tool(name).expect("tool should exist");
-            assert_ne!(spec.exposure, ToolExposure::HarnessOnly);
-        }
     }
 
     #[test]
     fn profile_snapshot_codegg_shell_model() {
-        let names = snapshot_names("codegg_shell", ToolListAudience::Model);
-        assert!(!names.is_empty(), "codegg_shell model should have tools");
-        for name in &names {
-            let spec = get_tool(name).expect("tool should exist");
-            assert_ne!(spec.exposure, ToolExposure::HarnessOnly);
-        }
+        let actual = snapshot_names("codegg_shell", ToolListAudience::Model);
+        let expected = vec![
+            "argv_compare",
+            "command_preflight",
+            "regex_safety_check",
+            "shell_quote_join",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_shell_harness() {
+        let actual = snapshot_names("codegg_shell", ToolListAudience::Harness);
+        let expected = vec![
+            "argv_compare",
+            "command_preflight",
+            "regex_safety_check",
+            "shell_quote_join",
+            "shell_split",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_unicode_security_model() {
+        let actual = snapshot_names("codegg_unicode_security", ToolListAudience::Model);
+        let expected = vec![
+            "canonicalize_text",
+            "identifier_inspect",
+            "text_inspect",
+            "text_position",
+            "text_security_inspect",
+            "text_transform",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn profile_snapshot_codegg_unicode_security_harness() {
+        let actual = snapshot_names("codegg_unicode_security", ToolListAudience::Harness);
+        let expected = vec![
+            "canonicalize_text",
+            "identifier_inspect",
+            "prompt_input_inspect",
+            "text_inspect",
+            "text_position",
+            "text_security_inspect",
+            "text_transform",
+            "unicode_policy_check",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn profile_snapshot_codegg_repo_audit_model() {
-        let names = snapshot_names("codegg_repo_audit", ToolListAudience::Model);
-        assert!(
-            !names.is_empty(),
-            "codegg_repo_audit model should have tools"
+        let actual = snapshot_names("codegg_repo_audit", ToolListAudience::Model);
+        let expected = vec![
+            "cargo_toml_inspect",
+            "code_fence_extract",
+            "identifier_table_inspect",
+            "json_shape",
+            "markdown_structure",
+            "text_fingerprint",
+        ];
+        assert_eq!(
+            actual,
+            expected.into_iter().map(String::from).collect::<Vec<_>>()
         );
     }
 

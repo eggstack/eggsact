@@ -8,6 +8,7 @@
 //! - Machine code constants match the `ALL` array
 
 use eggsact::mcp::machine_codes;
+use eggsact::mcp::registry;
 use eggsact::mcp::response::{finding, finding_with_location, prompt_finding, ToolResponse};
 use serde_json::{json, Value};
 use std::io::Write;
@@ -231,8 +232,9 @@ fn test_error_with_code_sets_machine_code() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_error_without_code_has_no_machine_code() {
-    let resp = ToolResponse::error(
+    let resp = ToolResponse::error_without_code_for_legacy_tests_only(
         "evaluation_error",
         "Division by zero",
         None,
@@ -668,5 +670,30 @@ fn test_identifier_table_inspect_returns_result() {
         r.get("result").is_some(),
         "identifier_table_inspect should return result: {}",
         r
+    );
+}
+
+#[test]
+fn every_non_ok_tool_response_has_machine_code() {
+    let empty = serde_json::json!({});
+    let mut failures = Vec::new();
+
+    for spec in registry::ALL_TOOLS {
+        let handler = spec.handler;
+        let resp = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handler(&empty)));
+        if let Ok(response) = resp {
+            if !response.ok && response.machine_code.is_none() {
+                failures.push(format!(
+                    "{}: error_type={:?}, error={:?}",
+                    spec.name, response.error_type, response.error
+                ));
+            }
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "Non-OK tool responses without machine_code:\n{}",
+        failures.join("\n")
     );
 }

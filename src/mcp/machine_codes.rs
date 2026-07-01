@@ -7,6 +7,14 @@
 //! Code naming convention: `CATEGORY_SPECIFIC_DETAIL` (UPPER_SNAKE_CASE).
 //! Category prefixes group related codes and match the Python `eggcalc` server.
 //!
+//! # Category-Prefixed Aliases
+//!
+//! Common error codes have category-prefixed aliases (e.g. `COMMON_INVALID_ARGUMENTS`
+//! for `INVALID_ARGUMENTS`). These are wire-compatible: the Rust constant name differs
+//! but the string value is identical, so callers can use either name interchangeably.
+//! The aliases exist so that codegg and other orchestration layers can reference
+//! codes using a consistent `CATEGORY_DETAIL` pattern even for server-level errors.
+//!
 //! # Design Notes
 //!
 //! The plan's dotted taxonomy (`edit.safe_to_apply`, etc.) is documented as a
@@ -37,6 +45,17 @@ pub const UNSUPPORTED_FEATURE: &str = "UNSUPPORTED_FEATURE";
 pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
 /// The tool received arguments that do not match its schema.
 pub const INVALID_ARGUMENTS: &str = "INVALID_ARGUMENTS";
+
+// ---------------------------------------------------------------------------
+// Category-prefixed aliases for common error codes
+// ---------------------------------------------------------------------------
+
+pub const COMMON_CANCELLED: &str = "CANCELLED";
+pub const COMMON_TIMEOUT: &str = "TIMEOUT";
+pub const COMMON_OUTPUT_TOO_LARGE: &str = "OUTPUT_TOO_LARGE";
+pub const COMMON_INPUT_TOO_LARGE: &str = "INPUT_TOO_LARGE";
+pub const COMMON_INTERNAL_ERROR: &str = "INTERNAL_ERROR";
+pub const COMMON_INVALID_ARGUMENTS: &str = "INVALID_ARGUMENTS";
 
 // ---------------------------------------------------------------------------
 // Edit / Patch
@@ -317,4 +336,10 @@ pub const ALL: &[&str] = &[
     TOML_INVALID,
     TEXT_EQUAL,
     TEXT_NOT_EQUAL,
+    COMMON_CANCELLED,
+    COMMON_TIMEOUT,
+    COMMON_OUTPUT_TOO_LARGE,
+    COMMON_INPUT_TOO_LARGE,
+    COMMON_INTERNAL_ERROR,
+    COMMON_INVALID_ARGUMENTS,
 ];
