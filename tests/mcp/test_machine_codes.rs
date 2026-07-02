@@ -471,6 +471,74 @@ fn test_validate_json_invalid_has_machine_code() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// SOURCE GUARD: LEGACY ERROR CONSTRUCTOR NOT IN PRODUCTION CODE
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn source_guard_rejects_legacy_error_in_production() {
+    let legacy_fn = "error_without_code_for_legacy_tests_only(";
+    let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut violations = Vec::new();
+
+    fn walk_rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk_rs_files(&path, out);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    out.push(path);
+                }
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    walk_rs_files(&src_dir, &mut files);
+
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    for file in &files {
+        let rel = file.strip_prefix(manifest_dir).unwrap_or(file);
+        let content = std::fs::read_to_string(file).unwrap_or_default();
+
+        if !content.contains(legacy_fn) {
+            continue;
+        }
+
+        // Allow the definition site in response.rs
+        if rel == std::path::Path::new("src/mcp/response.rs") {
+            continue;
+        }
+
+        // Allow calls inside #[cfg(test)] modules (inline test modules in src/)
+        // by checking if every occurrence is preceded by #[cfg(test)] context.
+        let mut allowed = true;
+        for (idx, _) in content.match_indices(legacy_fn) {
+            // Look backwards for the nearest `mod tests` or `#[cfg(test)]`
+            let preceding = &content[..idx];
+            let has_test_module = preceding.contains("#[cfg(test)]");
+            if !has_test_module {
+                allowed = false;
+                break;
+            }
+        }
+
+        if !allowed {
+            violations.push(format!("  {}", rel.display()));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Found `error_without_code_for_legacy_tests_only(` in production source files:\n{}\n\
+         This function is #[cfg(test)]-gated and must only appear in response.rs (definition) \
+         or test code. Use `error_with_code()` for all non-OK tool responses.",
+        violations.join("\n")
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // SWEEP TEST: ALL ERROR-PRODUCING TOOLS RETURN MACHINE_CODE
 // ═══════════════════════════════════════════════════════════════════════
 
