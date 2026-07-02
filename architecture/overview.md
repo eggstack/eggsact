@@ -12,7 +12,11 @@ eggsact/
 │   ├── calc/               # Calculator core (3 modules)
 │   ├── mcp/                # MCP server protocol, runtime, registry, validation
 │   │   ├── server.rs       # Protocol orchestration, stdio loop, dispatch
-│   │   ├── registry.rs     # Tool registration (ToolSpec declarations)
+│   │   ├── registry/         # Tool registration (ToolSpec declarations, single source of truth)
+│   │   │   ├── mod.rs        # Re-exports, tests
+│   │   │   ├── types.rs      # ToolDefinition, ToolSpec, enums
+│   │   │   ├── all_tools.rs  # ALL_TOOLS constant, PROFILE_NAMES
+│   │   │   └── listing.rs    # Filtering, audience, schema compaction, suggestions
 │   │   ├── protocol.rs     # JSON-RPC types
 │   │   ├── response.rs     # ToolResponse, error sanitization
 │   │   ├── runtime.rs      # Rate limiter, constants, profile management
@@ -90,10 +94,11 @@ but does not imply concurrent request reads. The in-process agent API
 main.rs → lib.rs → calc/normalize.rs → calc/evaluator.rs → calc/units.rs
                     mcp/server.rs → mcp/protocol.rs, mcp/response.rs, mcp/runtime.rs
                                  → mcp/schema_validation.rs
-                    mcp/registry.rs → tools/* → text/* modules
+                    mcp/registry/ → registry/types.rs, registry/all_tools.rs, registry/listing.rs
+                                 → tools/* → text/* modules
 ```
 
-`ToolDefinition` lives in `registry.rs` (not `server.rs`). `ToolResponse::error`
+`ToolDefinition` lives in `registry/types.rs` (not `server.rs`). `ToolResponse::error`
 is hidden/deprecated; use `error_without_code_for_legacy_tests_only` only in
 legacy test code — all new code must use `error_with_code()`.
 

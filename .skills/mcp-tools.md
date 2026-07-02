@@ -10,7 +10,7 @@ Use this when adding a new MCP tool or modifying an existing one.
    - Call reusable library code from `src/text/` or `src/calc/`
    - Return `ToolResponse` (from `src/mcp/schemas.rs`)
 
-2. **Add a `ToolSpec` entry** in `src/mcp/registry.rs` — this is the single source of truth for tool registration. It defines the handler, category, tier, tags, profiles, input schema, and output schema all in one place.
+2. **Add a `ToolSpec` entry** in `src/mcp/registry/all_tools.rs` — this is the single source of truth for tool registration. It defines the handler, category, tier, tags, profiles, input schema, and output schema all in one place.
 
 3. **Run the invariant test** to verify sync:
    ```bash
@@ -88,6 +88,6 @@ These are implemented in `src/text/synthesis.rs` and wrapped in `src/mcp/tools.r
 1. Create `src/text/<module>.rs` with the implementation
 2. Add `pub mod <module>;` to `src/text/mod.rs` and re-export key functions
 3. Add MCP tool wrapper in `src/mcp/tools.rs`
-4. Add a `ToolSpec` entry in `src/mcp/registry.rs`
+4. Add a `ToolSpec` entry in `src/mcp/registry/all_tools.rs`
 5. Add tests in `tests/text/test_<module>.rs`
 6. Update `architecture/text-library.md` if significant

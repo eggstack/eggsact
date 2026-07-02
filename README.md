@@ -429,7 +429,11 @@ eggsact/
 │   ├── mcp/                 # MCP server
 │   │   ├── mod.rs           # Module re-exports
 │   │   ├── server.rs        # stdio JSON-RPC 2.0 server, protocol orchestration
-│   │   ├── registry.rs      # Tool registration (ToolSpec declarations, single source of truth)
+│   │   ├── registry/          # Tool registration (ToolSpec declarations, single source of truth)
+│   │   │   ├── mod.rs         # Re-exports, tests
+│   │   │   ├── types.rs       # ToolDefinition, ToolSpec, enums
+│   │   │   ├── all_tools.rs   # ALL_TOOLS constant, PROFILE_NAMES
+│   │   │   └── listing.rs     # Filtering, audience, schema compaction, suggestions
 │   │   ├── protocol.rs      # JSON-RPC types (Request, Response, Error, InitializeResult)
 │   │   ├── response.rs      # ToolResponse, error sanitization
 │   │   ├── runtime.rs       # Rate limiter, cancelled requests, constants, profile management
