@@ -12,11 +12,16 @@ eggsact/
 │   ├── calc/               # Calculator core (3 modules)
 │   ├── mcp/                # MCP server protocol, runtime, registry, validation
 │   │   ├── server.rs       # Protocol orchestration, stdio loop, dispatch
-│   │   ├── registry/         # Tool registration (ToolSpec declarations, single source of truth)
+│   │   ├── registry/         # Tool registration: aggregation, listing, types
 │   │   │   ├── mod.rs        # Re-exports, tests
 │   │   │   ├── types.rs      # ToolDefinition, ToolSpec, enums
-│   │   │   ├── all_tools.rs  # ALL_TOOLS constant, PROFILE_NAMES
+│   │   │   ├── all_tools.rs  # ALL_TOOLS aggregation from specs/, PROFILE_NAMES
 │   │   │   └── listing.rs    # Filtering, audience, schema compaction, suggestions
+│   │   ├── specs/            # ToolSpec declarations per tool category
+│   │   │   ├── mod.rs        # Re-exports all category slices
+│   │   │   ├── math.rs       # MATH_TOOLS
+│   │   │   ├── text.rs       # TEXT_TOOLS
+│   │   │   └── ... (one file per category)
 │   │   ├── protocol.rs     # JSON-RPC types
 │   │   ├── response.rs     # ToolResponse, error sanitization
 │   │   ├── runtime.rs      # Rate limiter, constants, profile management
@@ -95,6 +100,7 @@ main.rs → lib.rs → calc/normalize.rs → calc/evaluator.rs → calc/units.rs
                     mcp/server.rs → mcp/protocol.rs, mcp/response.rs, mcp/runtime.rs
                                  → mcp/schema_validation.rs
                     mcp/registry/ → registry/types.rs, registry/all_tools.rs, registry/listing.rs
+                                 → specs/* (category ToolSpec declarations)
                                  → tools/* → text/* modules
 ```
 

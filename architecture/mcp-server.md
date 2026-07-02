@@ -7,7 +7,8 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | File | Purpose |
 |------|---------|
 | `server.rs` | Protocol orchestration: stdio read loop, request validation, JSON-RPC dispatch |
-| `registry/` | Tool registration: `ToolSpec` declarations (single source of truth) |
+| `registry/` | Tool registration: aggregation, listing, types |
+| `specs/` | `ToolSpec` declarations per tool category (single source of truth) |
 | `protocol.rs` | JSON-RPC types: `JsonRpcRequest`, `JsonRpcResponse`, `InitializeResult`, error constructors |
 | `response.rs` | `ToolResponse` struct, `sanitize_error`, response builders |
 | `runtime.rs` | Rate limiter, cancelled requests, timeout constants, profile management |
@@ -54,7 +55,7 @@ Tool implementations live in `src/tools/` (category modules):
 
 ## Tool Registration (Single Registry)
 
-All tool registration lives in `src/mcp/registry/all_tools.rs` as `ToolSpec` declarations. This is the single source of truth. A test (`tool_registration_tables_are_in_sync`) catches drift.
+All tool registration lives in `src/mcp/specs/<category>.rs` as `ToolSpec` declarations — one file per tool category. `src/mcp/registry/all_tools.rs` aggregates them into the combined `ALL_TOOLS` using `LazyLock`. Adding a new tool requires editing only the relevant category file in `specs/`.
 
 ### ToolSpec
 

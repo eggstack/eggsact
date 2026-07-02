@@ -681,7 +681,7 @@ fn every_non_ok_tool_response_has_machine_code() {
     let empty = serde_json::json!({});
     let mut failures = Vec::new();
 
-    for spec in registry::ALL_TOOLS {
+    for spec in registry::all_tools_list() {
         let handler = spec.handler;
         let resp = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handler(&empty)));
         if let Ok(response) = resp {

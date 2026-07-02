@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::text::levenshtein_distance;
 use serde_json::Value;
 
-use super::all_tools::{ALL_TOOLS, PROFILE_NAMES};
+use super::all_tools::{all_tools as all_tools_slice, PROFILE_NAMES};
 use super::types::{ToolExposure, ToolStability};
 
 // ---------------------------------------------------------------------------
@@ -11,25 +11,25 @@ use super::types::{ToolExposure, ToolStability};
 // ---------------------------------------------------------------------------
 
 pub fn all_tools() -> &'static [super::types::ToolSpec] {
-    ALL_TOOLS
+    all_tools_slice()
 }
 
 pub fn get_tool(name: &str) -> Option<&'static super::types::ToolSpec> {
-    ALL_TOOLS.iter().find(|t| t.name == name)
+    all_tools_slice().iter().find(|t| t.name == name)
 }
 
 pub fn tool_names() -> Vec<&'static str> {
-    ALL_TOOLS.iter().map(|t| t.name).collect()
+    all_tools_slice().iter().map(|t| t.name).collect()
 }
 
 pub fn tools_for_profile(profile: &str) -> Vec<&'static super::types::ToolSpec> {
     if profile == "full" {
-        return ALL_TOOLS
+        return all_tools_slice()
             .iter()
             .filter(|t| t.exposure != ToolExposure::Hidden)
             .collect();
     }
-    ALL_TOOLS
+    all_tools_slice()
         .iter()
         .filter(|t| t.profiles.contains(&profile))
         .collect()
@@ -44,7 +44,7 @@ pub fn tool_handler_for(name: &str) -> Option<super::types::ToolHandler> {
 }
 
 pub fn tool_count() -> usize {
-    ALL_TOOLS.len()
+    all_tools_slice().len()
 }
 
 pub fn input_schema_for(name: &str) -> Option<Value> {
@@ -60,7 +60,7 @@ pub fn output_schema_for(name: &str) -> Option<Value> {
 // ---------------------------------------------------------------------------
 
 pub fn mcp_tool_definitions() -> Vec<super::types::ToolDefinition> {
-    ALL_TOOLS
+    all_tools_slice()
         .iter()
         .filter(|t| t.exposure != ToolExposure::Hidden)
         .map(|spec| {

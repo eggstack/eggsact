@@ -2,7 +2,7 @@ mod all_tools;
 mod listing;
 mod types;
 
-pub use all_tools::{ALL_TOOLS, PROFILE_NAMES};
+pub use all_tools::{all_tools as all_tools_vec, PROFILE_NAMES};
 pub use listing::{
     all_tools as all_tools_list, available_profiles, compact_input_schema, compact_output_schema,
     find_close_match, get_tool, input_schema_for, list_tool_definitions, mcp_tool_definitions,
@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn all_tools_have_valid_exposure() {
-        for spec in ALL_TOOLS {
+        for spec in all_tools_vec() {
             // exposure is typed as ToolExposure, so this always has a valid variant.
             // This test documents the invariant and ensures as_str() works.
             let _ = spec.exposure.as_str();
@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn harness_only_excluded_from_model_audience_default() {
         let model_tools = tool_names_for_profile_audience("default", ToolListAudience::Model);
-        for spec in ALL_TOOLS {
+        for spec in all_tools_vec() {
             if spec.exposure == ToolExposure::HarnessOnly && spec.profiles.contains(&"default") {
                 assert!(
                     !model_tools.contains(&spec.name),
@@ -89,7 +89,7 @@ mod tests {
     fn harness_only_excluded_from_model_audience_codegg_core_min() {
         let model_tools =
             tool_names_for_profile_audience("codegg_core_min", ToolListAudience::Model);
-        for spec in ALL_TOOLS {
+        for spec in all_tools_vec() {
             if spec.exposure == ToolExposure::HarnessOnly
                 && spec.profiles.contains(&"codegg_core_min")
             {
@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn harness_only_excluded_from_model_audience_codegg_core() {
         let model_tools = tool_names_for_profile_audience("codegg_core", ToolListAudience::Model);
-        for spec in ALL_TOOLS {
+        for spec in all_tools_vec() {
             if spec.exposure == ToolExposure::HarnessOnly && spec.profiles.contains(&"codegg_core")
             {
                 assert!(
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn harness_only_excluded_from_model_audience_full() {
         let model_tools = tool_names_for_profile_audience("full", ToolListAudience::Model);
-        for spec in ALL_TOOLS {
+        for spec in all_tools_vec() {
             if spec.exposure == ToolExposure::HarnessOnly {
                 assert!(
                     !model_tools.contains(&spec.name),
@@ -138,7 +138,7 @@ mod tests {
         let harness_tools =
             tool_names_for_profile_audience("codegg_preflight", ToolListAudience::Harness);
         // codegg_preflight should include harness-only tools
-        let harness_only_in_profile: Vec<&str> = ALL_TOOLS
+        let harness_only_in_profile: Vec<&str> = all_tools_vec()
             .iter()
             .filter(|t| {
                 t.exposure == ToolExposure::HarnessOnly && t.profiles.contains(&"codegg_preflight")
