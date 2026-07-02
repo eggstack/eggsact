@@ -121,6 +121,15 @@ MCP `tools/call` rejects harness-only tools for ordinary model-facing calls.
 Harness-oriented execution should use the in-process API with explicit
 `Harness` audience.
 
+**No per-call profile override**: `tools/call` intentionally does NOT accept
+a `profile` parameter in its arguments. The active profile is set once at
+server startup via the `EGGCALC_MCP_PROFILE` environment variable and applies
+to all subsequent `tools/call` and `tools/list` requests. (`tools/list` does
+accept a `profile` parameter for filtering, but that only affects which tools
+appear in the listing, not which profile `tools/call` enforces.) This matches
+the in-process API where each `ToolRegistry` instance is bound to one
+profile at construction time via `with_profile_and_audience`.
+
 ### How tools/list and tools/call work
 
 - `tools/list`: Validates MCP parameters in `server.rs`, builds a `ToolListOptions`, and delegates to `registry::list_tool_definitions()` in `registry/listing.rs`. The registry handles profile filtering, name/tier/tag filtering, schema compaction, and deprecated-field normalization. MCP retains parameter validation and profile resolution.

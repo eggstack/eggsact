@@ -1916,6 +1916,99 @@ fn test_tools_call_rejects_harness_only_for_model_audience() {
     );
 }
 
+#[test]
+fn test_tools_call_accepts_harness_only_for_harness_audience() {
+    // In-process test: harness audience must accept a HarnessOnly tool.
+    // shell_split is HarnessOnly and in the full profile.
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+    let result = registry.call_json("shell_split", serde_json::json!({"command": "echo hi"}));
+    assert!(
+        result.is_ok(),
+        "shell_split must be accepted by harness audience, got: {:?}",
+        result.err().map(|e| e.to_string())
+    );
+    assert!(result.unwrap().ok, "shell_split result should be ok");
+}
+
+#[test]
+fn test_in_process_audience_listing_and_dispatch_agree_for_model() {
+    // For every tool in available_tools_for_current_audience(Model),
+    // prepare_tool_call must agree (i.e. not reject for audience reasons).
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
+    let tools = registry.available_tools_for_current_audience();
+    assert!(!tools.is_empty(), "Model audience should have tools");
+    for view in &tools {
+        match registry.prepare_tool_call(&view.name, &serde_json::json!({})) {
+            eggsact::agent::ToolCallOutcome::Ready { .. } => {}
+            eggsact::agent::ToolCallOutcome::PreExecutionError(e) => {
+                let msg = e.to_string();
+                assert!(
+                    !msg.contains("audience") && !msg.contains("exposure"),
+                    "Model listing includes '{}' but dispatch rejects for audience: {}",
+                    view.name,
+                    msg
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_in_process_audience_listing_and_dispatch_agree_for_harness() {
+    // For every tool in available_tools_for_current_audience(Harness),
+    // prepare_tool_call must agree (i.e. not reject for audience reasons).
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+    let tools = registry.available_tools_for_current_audience();
+    assert!(
+        tools.len()
+            > tools
+                .iter()
+                .filter(|v| v.exposure != "harness_only")
+                .count(),
+        "Harness audience should list more tools than model audience (includes HarnessOnly)"
+    );
+    for view in &tools {
+        match registry.prepare_tool_call(&view.name, &serde_json::json!({})) {
+            eggsact::agent::ToolCallOutcome::Ready { .. } => {}
+            eggsact::agent::ToolCallOutcome::PreExecutionError(e) => {
+                let msg = e.to_string();
+                assert!(
+                    !msg.contains("audience") && !msg.contains("exposure"),
+                    "Harness listing includes '{}' but dispatch rejects for audience: {}",
+                    view.name,
+                    msg
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_harness_audience_includes_tools_model_excludes() {
+    // HarnessOnly tools must appear in harness listing but not in model listing.
+    let model = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
+    let harness = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+    let model_names: std::collections::HashSet<String> = model
+        .available_tools_for_current_audience()
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    let harness_names: std::collections::HashSet<String> = harness
+        .available_tools_for_current_audience()
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    // shell_split is HarnessOnly and in the full profile.
+    assert!(
+        !model_names.contains("shell_split"),
+        "Model audience must NOT include shell_split"
+    );
+    assert!(
+        harness_names.contains("shell_split"),
+        "Harness audience MUST include shell_split"
+    );
+}
+
 // --- Compatibility mode integration tests ---
 
 #[test]

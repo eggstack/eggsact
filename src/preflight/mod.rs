@@ -2322,6 +2322,49 @@ mod tests {
     }
 
     #[test]
+    fn strict_findings_unknown_severity_maps_to_other() {
+        // Strict parsing requires `code`/`severity`/`message` as strings, but
+        // unknown severity strings should still parse as `Other` (not error).
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow"
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK")
+        .with_findings(vec![serde_json::json!({
+            "code": "MY_CODE",
+            "severity": "nonexistent_level_xyz",
+            "message": "test message"
+        })]);
+        let output = EditPreflight::parse_response(response).unwrap();
+        assert_eq!(output.findings.len(), 1);
+        assert_eq!(output.findings[0].code, "MY_CODE");
+        assert_eq!(
+            output.findings[0].severity_enum(),
+            FindingSeverity::Other("nonexistent_level_xyz".to_string())
+        );
+    }
+
+    #[test]
+    fn strict_findings_non_string_severity_fails_closed() {
+        // Number severity (instead of string) MUST fail closed — strict
+        // parsing requires string-shaped severity.
+        let v = serde_json::json!({
+            "code": "X",
+            "severity": 42,
+            "message": "test message"
+        });
+        let err = Finding::try_from_value_strict(&v, "edit_preflight").unwrap_err();
+        assert!(
+            matches!(err, PreflightError::ContractViolation { field, .. } if field == "finding.severity")
+        );
+    }
+
+    #[test]
     fn command_preflight_strict_findings_fails_on_malformed() {
         let response = ToolResponse::success(
             serde_json::json!({

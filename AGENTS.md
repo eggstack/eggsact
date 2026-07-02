@@ -135,6 +135,8 @@ Tools have typed `ToolExposure` and `ToolListAudience` enums in `src/mcp/registr
 
 Use `tools_for_profile_audience(profile, audience)` for filtered listings. Both `tools/list` and `tools/call` enforce profile membership. `tools/call` also enforces audience/exposure compatibility via `ToolRegistry::prepare_tool_call` — the active profile is resolved from `get_active_profile()` and Model audience is used by default. MCP `tools/call` rejects harness-only tools for model audience.
 
+**No per-call profile override**: `tools/call` intentionally does NOT accept a `profile` parameter in its arguments. The active profile is set once at server startup via the `EGGCALC_MCP_PROFILE` environment variable and applies to all subsequent `tools/call` requests. (`tools/list` accepts a `profile` parameter for filtering the listing, but that does not change which profile `tools/call` enforces.) This matches the in-process API where each `ToolRegistry` is bound to one profile at construction time.
+
 **Codegg guidance**: Use `codegg_core_min` + `Model` audience for ordinary coder-agent sessions. Use `codegg_preflight`/`codegg_shell` + `Harness` audience for automatic preflight checks via the in-process API (`ToolRegistry::with_profile_and_audience`).
 
 Profile snapshot tests (`tests/mcp/test_hardening_and_gaps.rs`) verify that all 11 named profiles exist and their tool lists match expected tool counts.
