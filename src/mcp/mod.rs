@@ -1,3 +1,4 @@
+pub mod compat;
 #[doc(hidden)]
 pub mod machine_codes;
 #[doc(hidden)]

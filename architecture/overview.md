@@ -12,6 +12,7 @@ eggsact/
 │   ├── calc/               # Calculator core (3 modules)
 │   ├── mcp/                # MCP server protocol, runtime, registry, validation
 │   │   ├── server.rs       # Protocol orchestration, stdio loop, dispatch
+│   │   ├── compat.rs       # CompatibilityMode enum (EggcalcPython vs StrictNative)
 │   │   ├── registry/         # Tool registration: aggregation, listing, types
 │   │   │   ├── mod.rs        # Re-exports, tests
 │   │   │   ├── types.rs      # ToolDefinition, ToolSpec, enums
@@ -74,7 +75,8 @@ eggsact/
 │   ├── calculator.md
 │   ├── mcp-server.md
 │   ├── machine-codes.md
-│   └── text-library.md
+│   ├── text-library.md
+│   └── compatibility.md
 ├── .skills/                # Agent task skills
 │   ├── mcp-tools.md
 │   ├── testing.md
@@ -115,7 +117,7 @@ legacy test code — all new code must use `error_with_code()`.
 3. **Natural language**: `run()` → `normalize.rs` (tokenize/normalize) → `evaluator.rs` (evaluate)
 4. **Direct math**: `evaluate()` → `evaluator.rs` (parse + evaluate)
 5. **MCP server**: stdio JSON-RPC 2.0 → `server.rs` (protocol orchestration) → `tools/*` (category modules) → `text/*` modules
-6. **In-process agent API**: `agent/ToolRegistry::call_json()` → lookup, profile check, audience/exposure check, validation (via `prepare_tool_call`) → `tools/*` handlers. No async dispatch; MCP retains timeout/semaphore, agent is synchronous.
+6. **In-process agent API**: `agent/ToolRegistry::call_json()` → lookup, profile check, audience/exposure check, validation (via `prepare_tool_call`) → `tools/*` handlers. No async dispatch; MCP retains timeout/semaphore, agent is synchronous. Uses `StrictNative` validation by default; MCP server uses `EggcalcPython`.
 
 ## Key Constants
 

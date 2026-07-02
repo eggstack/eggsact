@@ -1,4 +1,5 @@
 use crate::agent::{Profile, ToolAudience, ToolCallError, ToolCallOutcome, ToolRegistry};
+use crate::mcp::compat::CompatibilityMode;
 use crate::mcp::machine_codes;
 use crate::mcp::protocol::{
     invalid_request, json_rpc_error, method_not_found, JsonRpcRequest, JsonRpcResponse,
@@ -242,7 +243,8 @@ async fn handle_request_async(
             let active_profile = get_active_profile();
             let profile = Profile::from_str_opt(&active_profile)
                 .unwrap_or_else(|| Profile::custom(&active_profile));
-            let registry = ToolRegistry::with_profile_and_audience(profile, ToolAudience::Model);
+            let registry = ToolRegistry::with_profile_and_audience(profile, ToolAudience::Model)
+                .with_compat_mode(CompatibilityMode::EggcalcPython);
             let handler = match registry.prepare_tool_call(name, &arguments_val) {
                 ToolCallOutcome::Ready { handler } => handler,
                 ToolCallOutcome::PreExecutionError(e) => {
@@ -662,6 +664,7 @@ pub async fn main() -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::compat::CompatibilityMode;
     use crate::mcp::schema_validation::validate_property_inner;
     use serde_json::json;
     use std::collections::HashSet;
@@ -703,7 +706,13 @@ mod tests {
     #[test]
     fn test_bug018_pattern_matches_anywhere_in_string() {
         let schema = json!({"type": "string", "pattern": "[0-9]+"});
-        let result = validate_property_inner(&json!("abc123"), &schema, "test", 10);
+        let result = validate_property_inner(
+            &json!("abc123"),
+            &schema,
+            "test",
+            10,
+            CompatibilityMode::EggcalcPython,
+        );
         assert!(
             result.is_none(),
             "pattern [0-9]+ should match 'abc123' at position 3, got: {:?}",
@@ -714,7 +723,13 @@ mod tests {
     #[test]
     fn test_bug018_pattern_anchored_accepts() {
         let schema = json!({"type": "string", "pattern": "^[A-Z]"});
-        let result = validate_property_inner(&json!("Hello"), &schema, "test", 10);
+        let result = validate_property_inner(
+            &json!("Hello"),
+            &schema,
+            "test",
+            10,
+            CompatibilityMode::EggcalcPython,
+        );
         assert!(
             result.is_none(),
             "pattern ^[A-Z] should match 'Hello', got: {:?}",
@@ -725,14 +740,26 @@ mod tests {
     #[test]
     fn test_bug018_pattern_anchored_rejects() {
         let schema = json!({"type": "string", "pattern": "^[A-Z]"});
-        let result = validate_property_inner(&json!("hello"), &schema, "test", 10);
+        let result = validate_property_inner(
+            &json!("hello"),
+            &schema,
+            "test",
+            10,
+            CompatibilityMode::EggcalcPython,
+        );
         assert!(result.is_some(), "pattern ^[A-Z] should reject 'hello'");
     }
 
     #[test]
     fn test_bug018_pattern_no_match_rejects() {
         let schema = json!({"type": "string", "pattern": "^[0-9]+$"});
-        let result = validate_property_inner(&json!("abc123def"), &schema, "test", 10);
+        let result = validate_property_inner(
+            &json!("abc123def"),
+            &schema,
+            "test",
+            10,
+            CompatibilityMode::EggcalcPython,
+        );
         assert!(
             result.is_some(),
             "pattern ^[0-9]+$ should reject 'abc123def'"
@@ -742,7 +769,13 @@ mod tests {
     #[test]
     fn test_bug019_multipleof_relative_tolerance() {
         let schema = json!({"type": "number", "multipleOf": 3.0});
-        let result = validate_property_inner(&json!(9.000000001), &schema, "test", 10);
+        let result = validate_property_inner(
+            &json!(9.000000001),
+            &schema,
+            "test",
+            10,
+            CompatibilityMode::EggcalcPython,
+        );
         assert!(
             result.is_none(),
             "9.000000001 should pass multipleOf 3.0 with relative tolerance, got: {:?}",
@@ -753,7 +786,13 @@ mod tests {
     #[test]
     fn test_bug019_multipleof_exact_value() {
         let schema = json!({"type": "number", "multipleOf": 5.0});
-        let result = validate_property_inner(&json!(15.0), &schema, "test", 10);
+        let result = validate_property_inner(
+            &json!(15.0),
+            &schema,
+            "test",
+            10,
+            CompatibilityMode::EggcalcPython,
+        );
         assert!(
             result.is_none(),
             "15.0 should pass multipleOf 5.0, got: {:?}",
@@ -764,7 +803,13 @@ mod tests {
     #[test]
     fn test_bug019_multipleof_rejects_non_multiple() {
         let schema = json!({"type": "number", "multipleOf": 3.0});
-        let result = validate_property_inner(&json!(7.5), &schema, "test", 10);
+        let result = validate_property_inner(
+            &json!(7.5),
+            &schema,
+            "test",
+            10,
+            CompatibilityMode::EggcalcPython,
+        );
         assert!(result.is_some(), "7.5 should fail multipleOf 3.0");
     }
 
@@ -774,7 +819,13 @@ mod tests {
         // Due to f64 precision, use a large value that IS a clean multiple:
         // 3000000000.0 = 3.0 * 1000000000.0
         let schema = json!({"type": "number", "multipleOf": 3.0});
-        let result = validate_property_inner(&json!(3000000000.0), &schema, "test", 10);
+        let result = validate_property_inner(
+            &json!(3000000000.0),
+            &schema,
+            "test",
+            10,
+            CompatibilityMode::EggcalcPython,
+        );
         assert!(
             result.is_none(),
             "3000000000.0 should pass multipleOf 3.0, got: {:?}",

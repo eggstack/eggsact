@@ -40,6 +40,8 @@ use crate::mcp::schema_validation;
 use serde_json::Value;
 use std::fmt;
 
+pub use crate::mcp::compat::CompatibilityMode;
+
 /// Typed profile selection for tool filtering.
 ///
 /// Profiles control which subset of tools is available. Each profile
@@ -309,28 +311,51 @@ impl ToolSpecView {
 pub struct ToolRegistry {
     profile: Profile,
     audience: ToolAudience,
+    compat_mode: CompatibilityMode,
 }
 
 impl ToolRegistry {
     /// Create a registry with the default (full) profile and Model audience.
+    ///
+    /// Uses [`CompatibilityMode::StrictNative`] by default.
     pub fn new() -> Self {
         Self {
             profile: Profile::Full,
             audience: ToolAudience::Model,
+            compat_mode: CompatibilityMode::default(),
         }
     }
 
     /// Create a registry with a specific profile (defaults to Model audience).
+    ///
+    /// Uses [`CompatibilityMode::StrictNative`] by default.
     pub fn with_profile(profile: Profile) -> Self {
         Self {
             profile,
             audience: ToolAudience::Model,
+            compat_mode: CompatibilityMode::default(),
         }
     }
 
     /// Create a registry with a specific profile and audience.
+    ///
+    /// Uses [`CompatibilityMode::StrictNative`] by default.
     pub fn with_profile_and_audience(profile: Profile, audience: ToolAudience) -> Self {
-        Self { profile, audience }
+        Self {
+            profile,
+            audience,
+            compat_mode: CompatibilityMode::default(),
+        }
+    }
+
+    /// Set the compatibility mode for this registry.
+    ///
+    /// Use [`CompatibilityMode::EggcalcPython`] to preserve Python-parity
+    /// behavior (Python-style type names in error messages, bool-as-int
+    /// coercion). The default is [`CompatibilityMode::StrictNative`].
+    pub fn with_compat_mode(mut self, compat_mode: CompatibilityMode) -> Self {
+        self.compat_mode = compat_mode;
+        self
     }
 
     /// Get the active profile for this registry.
@@ -341,6 +366,11 @@ impl ToolRegistry {
     /// Get the active audience for this registry.
     pub fn audience(&self) -> ToolAudience {
         self.audience
+    }
+
+    /// Get the active compatibility mode for this registry.
+    pub fn compat_mode(&self) -> CompatibilityMode {
+        self.compat_mode
     }
 
     /// List all tools available in the current profile (legacy, not model-safe).
@@ -438,7 +468,7 @@ impl ToolRegistry {
         }
 
         // 4. Validate arguments
-        if let Some(msg) = schema_validation::validate_arguments(name, args) {
+        if let Some(msg) = schema_validation::validate_arguments(name, args, self.compat_mode) {
             return ToolCallOutcome::PreExecutionError(ToolCallError::InvalidArguments(msg));
         }
 

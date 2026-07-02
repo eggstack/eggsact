@@ -13,6 +13,7 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | `response.rs` | `ToolResponse` struct, `sanitize_error`, response builders |
 | `runtime.rs` | Rate limiter, cancelled requests, timeout constants, profile management |
 | `schema_validation.rs` | MCP argument validation against tool input schemas |
+| `compat.rs` | `CompatibilityMode` enum (EggcalcPython vs StrictNative) |
 | `schemas/` | JSON-schema builders per tool category (math, text, json, regex, etc.) |
 | `mod.rs` | Module declarations |
 
@@ -123,7 +124,7 @@ Harness-oriented execution should use the in-process API with explicit
 ### How tools/list and tools/call work
 
 - `tools/list`: Validates MCP parameters in `server.rs`, builds a `ToolListOptions`, and delegates to `registry::list_tool_definitions()` in `registry/listing.rs`. The registry handles profile filtering, name/tier/tag filtering, schema compaction, and deprecated-field normalization. MCP retains parameter validation and profile resolution.
-- `tools/call`: Resolves the active profile from `get_active_profile()` and creates a `ToolRegistry` with `Model` audience. Delegates tool lookup, profile checking, audience/exposure checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API.
+- `tools/call`: Resolves the active profile from `get_active_profile()` and creates a `ToolRegistry` with `Model` audience and `EggcalcPython` compatibility mode (Python-parity error messages). Delegates tool lookup, profile checking, audience/exposure checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API. The in-process agent API defaults to `StrictNative` mode (standard JSON Schema error messages).
 
 ## Tool Categories (64 tools)
 

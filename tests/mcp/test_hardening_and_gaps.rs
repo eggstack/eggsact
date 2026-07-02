@@ -15,7 +15,7 @@ use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use eggsact::agent::{Profile, ToolAudience, ToolRegistry};
+use eggsact::agent::{CompatibilityMode, Profile, ToolAudience, ToolRegistry};
 
 fn mcp_request(request: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
@@ -1929,5 +1929,139 @@ fn test_tools_call_rejects_harness_only_for_model_audience() {
         msg.contains("exposure") || msg.contains("not available") || msg.contains("audience"),
         "Error should mention audience/exposure issue, got: {}",
         msg
+    );
+}
+
+// --- Compatibility mode integration tests ---
+
+#[test]
+fn test_tool_registry_default_uses_strict_native() {
+    let registry = ToolRegistry::new();
+    assert_eq!(registry.compat_mode(), CompatibilityMode::StrictNative);
+}
+
+#[test]
+fn test_tool_registry_with_eggcalc_python_compat() {
+    let registry = ToolRegistry::new().with_compat_mode(CompatibilityMode::EggcalcPython);
+    assert_eq!(registry.compat_mode(), CompatibilityMode::EggcalcPython);
+}
+
+#[test]
+fn test_strict_native_rejects_wrong_type_with_json_schema_names() {
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness)
+        .with_compat_mode(CompatibilityMode::StrictNative);
+    let result = registry.call_json("text_measure", serde_json::json!({"text": 42}));
+    assert!(
+        result.is_err(),
+        "StrictNative should reject int for string field"
+    );
+    let err = result.unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("string"),
+        "error should mention 'string', got: {msg}"
+    );
+    assert!(
+        msg.contains("integer"),
+        "error should mention 'integer', got: {msg}"
+    );
+}
+
+#[test]
+fn test_eggcalc_python_rejects_wrong_type_with_python_names() {
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness)
+        .with_compat_mode(CompatibilityMode::EggcalcPython);
+    let result = registry.call_json("text_measure", serde_json::json!({"text": 42}));
+    assert!(
+        result.is_err(),
+        "EggcalcPython should reject int for string field"
+    );
+    let err = result.unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("str"),
+        "error should mention 'str', got: {msg}"
+    );
+    assert!(
+        msg.contains("int"),
+        "error should mention 'int', got: {msg}"
+    );
+}
+
+#[test]
+fn test_strict_native_null_error_uses_null_not_nonetype() {
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness)
+        .with_compat_mode(CompatibilityMode::StrictNative);
+    let result = registry.call_json("text_measure", serde_json::json!({"text": null}));
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("null"),
+        "StrictNative error should mention 'null', got: {msg}"
+    );
+    assert!(
+        !msg.contains("NoneType"),
+        "StrictNative error should NOT mention 'NoneType', got: {msg}"
+    );
+}
+
+#[test]
+fn test_eggcalc_python_null_error_uses_nonetype_not_null() {
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness)
+        .with_compat_mode(CompatibilityMode::EggcalcPython);
+    let result = registry.call_json("text_measure", serde_json::json!({"text": null}));
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("NoneType"),
+        "EggcalcPython error should mention 'NoneType', got: {msg}"
+    );
+    assert!(
+        !msg.contains("\"null\""),
+        "EggcalcPython error should NOT mention 'null' as a type, got: {msg}"
+    );
+}
+
+#[test]
+fn test_strict_native_bool_for_integer_field() {
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness)
+        .with_compat_mode(CompatibilityMode::StrictNative);
+    let result = registry.call_json(
+        "text_diff_explain",
+        serde_json::json!({"a": "a", "b": "b", "max_diffs": true}),
+    );
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("boolean"),
+        "StrictNative should say 'boolean', got: {msg}"
+    );
+    assert!(
+        msg.contains("integer"),
+        "StrictNative should say 'integer', got: {msg}"
+    );
+}
+
+#[test]
+fn test_eggcalc_python_bool_for_integer_field() {
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness)
+        .with_compat_mode(CompatibilityMode::EggcalcPython);
+    let result = registry.call_json(
+        "text_diff_explain",
+        serde_json::json!({"a": "a", "b": "b", "max_diffs": true}),
+    );
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("bool"),
+        "EggcalcPython should say 'bool', got: {msg}"
+    );
+    assert!(
+        msg.contains("int"),
+        "EggcalcPython should say 'int', got: {msg}"
     );
 }

@@ -40,6 +40,7 @@ src/
   calc/             # calculator: evaluator, normalize, units (3 modules)
   mcp/              # MCP server protocol, runtime, registry, validation
     server.rs       # protocol orchestration, stdio loop, dispatch
+    compat.rs       # CompatibilityMode enum (EggcalcPython vs StrictNative)
     registry/       # tool registration (ToolSpec declarations, single source of truth)
       mod.rs        # re-exports, tests
       types.rs      # ToolDefinition, ToolSpec, enums
@@ -98,6 +99,7 @@ Detailed architecture documentation is in `architecture/`:
 - `architecture/mcp-server.md` — MCP protocol, tool registration, categories, error handling
 - `architecture/machine-codes.md` — machine-readable response codes, finding helpers, severity/verdict constants
 - `architecture/text-library.md` — all 24 text modules, public API, code patterns
+- `architecture/compatibility.md` — compatibility mode (EggcalcPython vs StrictNative), behavior differences
 
 ## Agent API
 
@@ -107,6 +109,7 @@ Detailed architecture documentation is in `architecture/`:
 - **`ToolAudience`** enum (`Model`, `Harness`, `Debug`) controls which exposure levels appear in tool listings and which tools may be executed. Use `available_tools_model_safe()` for model-facing integrations. `ToolAudience::can_execute_exposure()` enforces audience at dispatch time.
 - **`Profile::from_str_opt`** is strict — returns `None` for unknown names. Use `Profile::custom(name)` to construct a custom profile explicitly.
 - **`ToolResponse::error`** has been renamed to `error_without_code_for_legacy_tests_only` (deprecated/hidden). Use `error_with_code()` instead.
+- **`CompatibilityMode`** enum (`EggcalcPython`, `StrictNative`) controls validation behavior. `StrictNative` is the default for in-process API; MCP server uses `EggcalcPython`. See `architecture/compatibility.md`.
 
 ## Exposure & Audience Model
 

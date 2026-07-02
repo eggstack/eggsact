@@ -1,3 +1,4 @@
+use crate::mcp::compat::CompatibilityMode;
 use crate::mcp::registry;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -12,25 +13,46 @@ static SCHEMA_CACHE: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
     map
 });
 
-pub(crate) fn json_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "NoneType",
-        Value::Bool(_) => "bool",
-        Value::Number(n) => {
-            if n.is_i64() || n.is_u64() {
-                "int"
-            } else {
-                "float"
+pub(crate) fn json_type_name(value: &Value, compat: CompatibilityMode) -> &'static str {
+    match compat {
+        CompatibilityMode::EggcalcPython => match value {
+            Value::Null => "NoneType",
+            Value::Bool(_) => "bool",
+            Value::Number(n) => {
+                if n.is_i64() || n.is_u64() {
+                    "int"
+                } else {
+                    "float"
+                }
             }
-        }
-        Value::String(_) => "str",
-        Value::Array(_) => "list",
-        Value::Object(_) => "dict",
+            Value::String(_) => "str",
+            Value::Array(_) => "list",
+            Value::Object(_) => "dict",
+        },
+        CompatibilityMode::StrictNative => match value {
+            Value::Null => "null",
+            Value::Bool(_) => "boolean",
+            Value::Number(n) => {
+                if n.is_i64() || n.is_u64() {
+                    "integer"
+                } else {
+                    "number"
+                }
+            }
+            Value::String(_) => "string",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
+        },
     }
 }
 
-pub(crate) fn validate_property(value: &Value, schema: &Value, path: &str) -> Option<String> {
-    validate_property_inner(value, schema, path, 10)
+pub(crate) fn validate_property(
+    value: &Value,
+    schema: &Value,
+    path: &str,
+    compat: CompatibilityMode,
+) -> Option<String> {
+    validate_property_inner(value, schema, path, 10, compat)
 }
 
 pub(crate) fn validate_property_inner(
@@ -38,6 +60,7 @@ pub(crate) fn validate_property_inner(
     schema: &Value,
     path: &str,
     max_depth: usize,
+    compat: CompatibilityMode,
 ) -> Option<String> {
     if max_depth == 0 {
         return Some(format!("Schema nesting too deep at '{}'", path));
@@ -68,14 +91,14 @@ pub(crate) fn validate_property_inner(
                 "Argument '{}' must be {}, got {}",
                 path,
                 type_options[0],
-                json_type_name(value)
+                json_type_name(value, compat)
             ));
         }
         return Some(format!(
             "Argument '{}' must be one of [{}], got {}",
             path,
             type_options.join(", "),
-            json_type_name(value)
+            json_type_name(value, compat)
         ));
     }
 
@@ -286,6 +309,7 @@ pub(crate) fn validate_property_inner(
                                 sub_schema,
                                 &sub_path,
                                 max_depth - 1,
+                                compat,
                             ) {
                                 return Some(err);
                             }
@@ -335,9 +359,13 @@ pub(crate) fn validate_property_inner(
             if let Some(items_schema) = obj.get("items") {
                 for (i, item) in arr.iter().enumerate() {
                     let item_path = format!("{}[{}]", path, i);
-                    if let Some(err) =
-                        validate_property_inner(item, items_schema, &item_path, max_depth - 1)
-                    {
+                    if let Some(err) = validate_property_inner(
+                        item,
+                        items_schema,
+                        &item_path,
+                        max_depth - 1,
+                        compat,
+                    ) {
                         return Some(err);
                     }
                 }
@@ -364,7 +392,11 @@ fn value_matches_type(value: &Value, t: &str) -> bool {
 /// Validate tool arguments against the registered input schema.
 ///
 /// Returns `None` if valid, or `Some(error_message)` if validation fails.
-pub fn validate_arguments(name: &str, arguments: &Value) -> Option<String> {
+pub fn validate_arguments(
+    name: &str,
+    arguments: &Value,
+    compat: CompatibilityMode,
+) -> Option<String> {
     let schema = SCHEMA_CACHE.get(name)?;
 
     let obj = arguments.as_object()?;
@@ -407,7 +439,7 @@ pub fn validate_arguments(name: &str, arguments: &Value) -> Option<String> {
     if let Some(p) = props {
         for (key, value) in obj {
             if let Some(prop_schema) = p.get(key.as_str()) {
-                if let Some(err) = validate_property(value, prop_schema, key) {
+                if let Some(err) = validate_property(value, prop_schema, key, compat) {
                     return Some(err);
                 }
             }
@@ -415,4 +447,272 @@ pub fn validate_arguments(name: &str, arguments: &Value) -> Option<String> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn json_type_name_eggcalc_python_uses_python_names() {
+        assert_eq!(
+            json_type_name(&json!(null), CompatibilityMode::EggcalcPython),
+            "NoneType"
+        );
+        assert_eq!(
+            json_type_name(&json!(true), CompatibilityMode::EggcalcPython),
+            "bool"
+        );
+        assert_eq!(
+            json_type_name(&json!(42), CompatibilityMode::EggcalcPython),
+            "int"
+        );
+        assert_eq!(
+            json_type_name(&json!(2.5), CompatibilityMode::EggcalcPython),
+            "float"
+        );
+        assert_eq!(
+            json_type_name(&json!("hi"), CompatibilityMode::EggcalcPython),
+            "str"
+        );
+        assert_eq!(
+            json_type_name(&json!([1]), CompatibilityMode::EggcalcPython),
+            "list"
+        );
+        assert_eq!(
+            json_type_name(&json!({"a": 1}), CompatibilityMode::EggcalcPython),
+            "dict"
+        );
+    }
+
+    #[test]
+    fn json_type_name_strict_native_uses_json_schema_names() {
+        assert_eq!(
+            json_type_name(&json!(null), CompatibilityMode::StrictNative),
+            "null"
+        );
+        assert_eq!(
+            json_type_name(&json!(true), CompatibilityMode::StrictNative),
+            "boolean"
+        );
+        assert_eq!(
+            json_type_name(&json!(42), CompatibilityMode::StrictNative),
+            "integer"
+        );
+        assert_eq!(
+            json_type_name(&json!(2.5), CompatibilityMode::StrictNative),
+            "number"
+        );
+        assert_eq!(
+            json_type_name(&json!("hi"), CompatibilityMode::StrictNative),
+            "string"
+        );
+        assert_eq!(
+            json_type_name(&json!([1]), CompatibilityMode::StrictNative),
+            "array"
+        );
+        assert_eq!(
+            json_type_name(&json!({"a": 1}), CompatibilityMode::StrictNative),
+            "object"
+        );
+    }
+
+    #[test]
+    fn strict_native_error_uses_json_schema_type_names() {
+        let schema = json!({"type": "string"});
+        let err = validate_property_inner(
+            &json!(42),
+            &schema,
+            "arg",
+            10,
+            CompatibilityMode::StrictNative,
+        )
+        .expect("should fail");
+        assert!(
+            err.contains("string"),
+            "error should mention 'string', got: {err}"
+        );
+        assert!(
+            err.contains("integer"),
+            "error should mention 'integer', got: {err}"
+        );
+    }
+
+    #[test]
+    fn eggcalc_python_error_uses_python_type_names() {
+        let schema = json!({"type": "string"});
+        let err = validate_property_inner(
+            &json!(42),
+            &schema,
+            "arg",
+            10,
+            CompatibilityMode::EggcalcPython,
+        )
+        .expect("should fail");
+        assert!(
+            err.contains("str"),
+            "error should mention 'str', got: {err}"
+        );
+        assert!(
+            err.contains("int"),
+            "error should mention 'int', got: {err}"
+        );
+    }
+
+    #[test]
+    fn strict_native_rejects_bool_for_integer() {
+        let schema = json!({"type": "integer"});
+        let err = validate_property_inner(
+            &json!(true),
+            &schema,
+            "arg",
+            10,
+            CompatibilityMode::StrictNative,
+        )
+        .expect("should fail");
+        assert!(
+            err.contains("boolean"),
+            "error should mention 'boolean', got: {err}"
+        );
+        assert!(
+            err.contains("integer"),
+            "error should mention 'integer', got: {err}"
+        );
+    }
+
+    #[test]
+    fn eggcalc_python_rejects_bool_for_integer() {
+        let schema = json!({"type": "integer"});
+        let err = validate_property_inner(
+            &json!(true),
+            &schema,
+            "arg",
+            10,
+            CompatibilityMode::EggcalcPython,
+        )
+        .expect("should fail");
+        assert!(
+            err.contains("bool"),
+            "error should mention 'bool', got: {err}"
+        );
+        assert!(
+            err.contains("int"),
+            "error should mention 'int', got: {err}"
+        );
+    }
+
+    #[test]
+    fn strict_native_rejects_null_for_string() {
+        let schema = json!({"type": "string"});
+        let err = validate_property_inner(
+            &json!(null),
+            &schema,
+            "arg",
+            10,
+            CompatibilityMode::StrictNative,
+        )
+        .expect("should fail");
+        assert!(
+            err.contains("string"),
+            "error should mention 'string', got: {err}"
+        );
+        assert!(
+            err.contains("null"),
+            "error should mention 'null', got: {err}"
+        );
+    }
+
+    #[test]
+    fn eggcalc_python_rejects_null_for_string() {
+        let schema = json!({"type": "string"});
+        let err = validate_property_inner(
+            &json!(null),
+            &schema,
+            "arg",
+            10,
+            CompatibilityMode::EggcalcPython,
+        )
+        .expect("should fail");
+        assert!(
+            err.contains("str"),
+            "error should mention 'str', got: {err}"
+        );
+        assert!(
+            err.contains("NoneType"),
+            "error should mention 'NoneType', got: {err}"
+        );
+    }
+
+    #[test]
+    fn strict_native_error_message_for_nested_object() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "inner": {"type": "string"}
+            }
+        });
+        let err = validate_property_inner(
+            &json!({"inner": 42}),
+            &schema,
+            "config",
+            10,
+            CompatibilityMode::StrictNative,
+        )
+        .expect("should fail");
+        assert!(
+            err.contains("config.inner"),
+            "error path should be nested, got: {err}"
+        );
+        assert!(
+            err.contains("string"),
+            "error should mention 'string', got: {err}"
+        );
+        assert!(
+            err.contains("integer"),
+            "error should mention 'integer', got: {err}"
+        );
+    }
+
+    #[test]
+    fn strict_native_rejects_array_for_object() {
+        let schema = json!({"type": "object"});
+        let err = validate_property_inner(
+            &json!([1, 2, 3]),
+            &schema,
+            "arg",
+            10,
+            CompatibilityMode::StrictNative,
+        )
+        .expect("should fail");
+        assert!(
+            err.contains("object"),
+            "error should mention 'object', got: {err}"
+        );
+        assert!(
+            err.contains("array"),
+            "error should mention 'array', got: {err}"
+        );
+    }
+
+    #[test]
+    fn strict_native_rejects_string_for_number() {
+        let schema = json!({"type": "number"});
+        let err = validate_property_inner(
+            &json!("hello"),
+            &schema,
+            "arg",
+            10,
+            CompatibilityMode::StrictNative,
+        )
+        .expect("should fail");
+        assert!(
+            err.contains("number"),
+            "error should mention 'number', got: {err}"
+        );
+        assert!(
+            err.contains("string"),
+            "error should mention 'string', got: {err}"
+        );
+    }
 }
