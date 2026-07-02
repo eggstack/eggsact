@@ -5,9 +5,10 @@ mod types;
 pub use all_tools::{all_tools as all_tools_vec, PROFILE_NAMES};
 pub use listing::{
     all_tools as all_tools_list, available_profiles, compact_input_schema, compact_output_schema,
-    find_close_match, get_tool, input_schema_for, list_tool_definitions, mcp_tool_definitions,
-    output_schema_for, tool_count, tool_handler_for, tool_names, tool_names_for_profile_audience,
-    tools_for_profile, tools_for_profile_audience, ToolListAudience, ToolListOptions,
+    find_close_match, get_tool, input_schema_for, is_route_critical, list_tool_definitions,
+    mcp_tool_definitions, output_schema_for, tool_count, tool_handler_for, tool_names,
+    tool_names_for_profile_audience, tools_for_profile, tools_for_profile_audience,
+    ToolListAudience, ToolListOptions, ROUTE_CRITICAL_TOOLS,
 };
 pub use types::{ToolCost, ToolDefinition, ToolExposure, ToolHandler, ToolSpec, ToolStability};
 

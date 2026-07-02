@@ -39,6 +39,29 @@ pub fn available_profiles() -> &'static [&'static str] {
     PROFILE_NAMES
 }
 
+// ---------------------------------------------------------------------------
+// Route-critical tool classification
+// ---------------------------------------------------------------------------
+
+/// Tools that participate in routing decisions and must emit structured
+/// envelope fields (machine_code, verdict) on every successful response.
+///
+/// Route-critical tools are preflight/composite tools whose verdict drives
+/// downstream action selection. Simple utility tools are NOT in this list
+/// and should not be forced into artificial verdicts.
+pub const ROUTE_CRITICAL_TOOLS: &[&str] = &[
+    "edit_preflight",
+    "command_preflight",
+    "config_preflight",
+    "patch_apply_check",
+    "text_security_inspect",
+];
+
+/// Returns `true` if `name` is a route-critical tool.
+pub fn is_route_critical(name: &str) -> bool {
+    ROUTE_CRITICAL_TOOLS.contains(&name)
+}
+
 pub fn tool_handler_for(name: &str) -> Option<super::types::ToolHandler> {
     get_tool(name).map(|spec| spec.handler)
 }

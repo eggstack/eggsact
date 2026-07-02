@@ -79,6 +79,8 @@ Composite tools (`edit_preflight`, `command_preflight`, `config_preflight`, `tex
 
 All composite tools use `finding()` / `finding_with_location()` helpers with canonical `severity::*` and `disposition::*` constants for structured findings. Severity values map from legacy vocab: `"error"` → `severity::HIGH`, `"warn"` → `severity::MEDIUM`, `"info"` → `severity::INFO`.
 
+A subset of these tools are further classified as **route-critical** (`is_route_critical()` in `registry/listing.rs`). Route-critical tools (`edit_preflight`, `command_preflight`, `config_preflight`, `patch_apply_check`, `text_security_inspect`) must always emit `machine_code` and `verdict` fields in their response envelope. Route-critical tests verify this contract.
+
 ## Category-Prefixed Aliases
 
 Common error codes have category-prefixed aliases for use by orchestration layers (e.g. codegg) that prefer a uniform `CATEGORY_DETAIL` naming pattern. The Rust constant name differs but the string value is identical to the original, so they are wire-compatible.

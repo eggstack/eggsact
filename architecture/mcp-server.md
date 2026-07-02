@@ -160,6 +160,18 @@ Tools marked `composite: true` orchestrate other tools internally. All emit a `v
 | `cargo_toml_inspect` | allow / review / block | Inspects Cargo.toml structure and naming |
 | `structured_data_compare` | — | Uses json_compare and list tools for structured data |
 
+## Route-Critical Tools
+
+A subset of tools are classified as **route-critical** — they produce structured verdicts and machine codes that downstream harnesses depend on for routing decisions. The `is_route_critical()` helper and `ROUTE_CRITICAL_TOOLS` constant in `registry/listing.rs` identify these tools:
+
+- `edit_preflight`
+- `command_preflight`
+- `config_preflight`
+- `patch_apply_check`
+- `text_security_inspect`
+
+Route-critical tools must always emit a `machine_code` and `verdict` in their response envelope. The `patch_apply_check` tool is `HarnessOnly` exposure and does not appear in model-facing listings.
+
 ## Concurrency Model
 
 The MCP stdio server is effectively **serial at the read-loop level**. The read

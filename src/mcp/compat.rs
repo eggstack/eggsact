@@ -8,8 +8,10 @@
 ///
 /// The MCP server uses `EggcalcPython` to preserve compatibility with
 /// Python `eggcalc` clients. This includes Python-style type names in
-/// error messages (`NoneType`, `int`, `float`, `str`, `list`, `dict`)
-/// and bool-as-int coercion for numeric parameters.
+/// error messages (`NoneType`, `int`, `float`, `str`, `list`, `dict`).
+/// JSON booleans are always rejected for numeric parameters in both
+/// modes because MCP model-generated booleans for number fields are
+/// commonly mistakes.
 ///
 /// # In-Process API
 ///
@@ -20,13 +22,15 @@
 pub enum CompatibilityMode {
     /// Python-parity behavior for MCP migration and general clients.
     ///
-    /// Preserves Python-style type names in error messages and allows
-    /// bool-as-int coercion for numeric parameters at the MCP boundary.
+    /// Preserves Python-style type names in error messages (e.g.,
+    /// `NoneType` instead of `null`, `int` instead of `integer`).
+    /// Bool values are rejected for numeric schema fields.
     EggcalcPython,
     /// Strict native behavior for codegg and Rust consumers.
     ///
     /// Uses standard JSON Schema type names and rejects ambiguous or
-    /// incorrectly typed inputs.
+    /// incorrectly typed inputs. Bool values are rejected for numeric
+    /// schema fields.
     #[default]
     StrictNative,
 }

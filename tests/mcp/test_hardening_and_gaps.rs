@@ -503,47 +503,31 @@ fn test_profile_hardening_unknown_profile_returns_error() {
 
 #[test]
 fn test_profile_enforcement_tool_outside_profile_rejected() {
-    let min = list_tools_with_params(serde_json::json!({"profile": "codegg_core_min"}));
-    let full = list_tools_with_params(serde_json::json!({}));
-    let min_tools: Vec<String> = min
-        .get("tools")
-        .and_then(|t| t.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|t| {
-                    t.get("name")
-                        .and_then(|n| n.as_str())
-                        .map(|s| s.to_string())
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let all_tools: Vec<String> = full
-        .get("tools")
-        .and_then(|t| t.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|t| {
-                    t.get("name")
-                        .and_then(|n| n.as_str())
-                        .map(|s| s.to_string())
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    if let Some(excluded) = all_tools.iter().find(|t| !min_tools.contains(t)) {
-        let response = call_tool_raw(
-            &serde_json::json!({
-                "jsonrpc": "2.0", "method": "tools/call",
-                "params": {"name": excluded, "arguments": {}, "profile": "codegg_core_min"},
-                "id": 1
-            })
-            .to_string(),
-        );
+    let min_registry =
+        ToolRegistry::with_profile_and_audience(Profile::CodeggCoreMin, ToolAudience::Model);
+    let full_registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
+    let min_names: Vec<String> = min_registry
+        .available_tools()
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    let all_names: Vec<String> = full_registry
+        .available_tools()
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    if let Some(excluded) = all_names.iter().find(|t| !min_names.contains(t)) {
+        let result = min_registry.call_json(excluded, serde_json::json!({}));
         assert!(
-            is_error(&response),
+            result.is_err(),
             "Tool '{}' outside profile should be rejected",
             excluded
+        );
+        let err = result.unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("not available") || msg.contains("unavailable"),
+            "Error should mention unavailability, got: {msg}"
         );
     }
 }
@@ -2036,8 +2020,8 @@ fn test_strict_native_bool_for_integer_field() {
     let err = result.unwrap_err();
     let msg = format!("{err}");
     assert!(
-        msg.contains("boolean"),
-        "StrictNative should say 'boolean', got: {msg}"
+        msg.contains("bool"),
+        "StrictNative should say 'bool', got: {msg}"
     );
     assert!(
         msg.contains("integer"),

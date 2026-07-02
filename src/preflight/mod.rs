@@ -420,6 +420,21 @@ pub struct FingerprintResult {
 // Shared types
 // ---------------------------------------------------------------------------
 
+/// Structured representation of a recommended next tool.
+///
+/// The tool may return `recommended_next_tool` as either a plain string
+/// (legacy shape) or an object with `name`, `reason`, and
+/// `arguments_hint`. This struct unifies both shapes.
+#[derive(Clone, Debug)]
+pub struct RecommendedNextTool {
+    /// Tool name to call next.
+    pub name: String,
+    /// Human-readable reason for the recommendation.
+    pub reason: Option<String>,
+    /// Optional JSON arguments hint for the next call.
+    pub arguments_hint: Option<Value>,
+}
+
 /// A structured finding from a tool execution.
 ///
 /// Stores severity and disposition as raw strings for serde compatibility.
@@ -438,7 +453,7 @@ pub struct Finding {
 }
 
 impl Finding {
-    /// Parse a finding from a JSON value.
+    /// Parse a finding from a JSON value (permissive).
     pub fn from_value(v: &Value) -> Option<Self> {
         Some(Self {
             code: v.get("code")?.as_str()?.to_string(),
@@ -457,9 +472,92 @@ impl Finding {
         })
     }
 
-    /// Parse a list of findings from a JSON array.
+    /// Parse a finding from a JSON value (strict — fail-closed).
+    ///
+    /// Requires `code`, `severity`, and `message` to be present strings.
+    /// Does NOT default `severity` to `"info"` when missing.
+    pub fn try_from_value_strict(v: &Value, tool: &'static str) -> Result<Self, PreflightError> {
+        let code = v
+            .get("code")
+            .and_then(|s| s.as_str())
+            .ok_or_else(|| PreflightError::ContractViolation {
+                tool,
+                field: "finding.code",
+                message: format!(
+                    "finding missing required `code` string, got {:?}",
+                    v.get("code")
+                ),
+            })?
+            .to_string();
+
+        let severity = v
+            .get("severity")
+            .and_then(|s| s.as_str())
+            .ok_or_else(|| PreflightError::ContractViolation {
+                tool,
+                field: "finding.severity",
+                message: format!(
+                    "finding missing required `severity` string, got {:?}",
+                    v.get("severity")
+                ),
+            })?
+            .to_string();
+
+        let message = v
+            .get("message")
+            .and_then(|s| s.as_str())
+            .ok_or_else(|| PreflightError::ContractViolation {
+                tool,
+                field: "finding.message",
+                message: format!(
+                    "finding missing required `message` string, got {:?}",
+                    v.get("message")
+                ),
+            })?
+            .to_string();
+
+        let disposition = v
+            .get("disposition")
+            .and_then(|d| d.as_str())
+            .map(String::from);
+        let location = v.get("location").cloned();
+        let details = v.get("details").cloned();
+
+        Ok(Self {
+            code,
+            severity,
+            message,
+            disposition,
+            location,
+            details,
+        })
+    }
+
+    /// Parse a list of findings from a JSON array (permissive — drops malformed).
     pub fn from_array(arr: &[Value]) -> Vec<Self> {
         arr.iter().filter_map(Finding::from_value).collect()
+    }
+
+    /// Parse a list of findings from a JSON array (strict — fail-closed).
+    ///
+    /// Returns `ContractViolation` if any element is malformed instead of
+    /// silently dropping it.
+    pub fn from_array_strict(
+        arr: &[Value],
+        tool: &'static str,
+    ) -> Result<Vec<Self>, PreflightError> {
+        arr.iter()
+            .enumerate()
+            .map(|(i, v)| {
+                Finding::try_from_value_strict(v, tool).map_err(|e| {
+                    PreflightError::ContractViolation {
+                        tool,
+                        field: "findings",
+                        message: format!("malformed finding at index {i}: {e}"),
+                    }
+                })
+            })
+            .collect()
     }
 
     /// Typed severity accessor.
@@ -470,6 +568,48 @@ impl Finding {
     /// Typed disposition accessor.
     pub fn disposition_enum(&self) -> Option<FindingDisposition> {
         self.disposition.as_deref().map(FindingDisposition::parse)
+    }
+}
+
+/// Parse a `recommended_next_tool` value (string or object) into a
+/// `RecommendedNextTool`. Returns `ContractViolation` for malformed
+/// objects or values that are neither string nor object.
+fn parse_recommended_next_tool(
+    v: &Value,
+    tool: &'static str,
+) -> Result<RecommendedNextTool, PreflightError> {
+    match v {
+        Value::String(name) => Ok(RecommendedNextTool {
+            name: name.clone(),
+            reason: None,
+            arguments_hint: None,
+        }),
+        Value::Object(map) => {
+            let name = map
+                .get("name")
+                .and_then(|n| n.as_str())
+                .ok_or_else(|| PreflightError::ContractViolation {
+                    tool,
+                    field: "recommended_next_tool.name",
+                    message: format!(
+                        "recommended_next_tool object missing required `name` string, got {:?}",
+                        map.get("name")
+                    ),
+                })?
+                .to_string();
+            let reason = map.get("reason").and_then(|r| r.as_str()).map(String::from);
+            let arguments_hint = map.get("arguments_hint").cloned();
+            Ok(RecommendedNextTool {
+                name,
+                reason,
+                arguments_hint,
+            })
+        }
+        other => Err(PreflightError::ContractViolation {
+            tool,
+            field: "recommended_next_tool",
+            message: format!("expected string or object, got {}", other),
+        }),
     }
 }
 
@@ -724,8 +864,8 @@ pub struct EditPreflightOutput {
     pub summary: String,
     /// Structured findings.
     pub findings: Vec<Finding>,
-    /// Recommended next tool to call.
-    pub recommended_next_tool: Option<String>,
+    /// Recommended next tool to call (structured).
+    pub recommended_next_tool: Option<RecommendedNextTool>,
     /// Path scope check result (when file_path + workspace_root provided).
     pub path_scope: Option<PathScopeResult>,
     /// Newline check result (when newline_policy is not Skip).
@@ -818,14 +958,15 @@ impl EditPreflight {
         let findings = response
             .findings
             .as_ref()
-            .map(|f| Finding::from_array(f))
+            .map(|f| Finding::from_array_strict(f, Self::TOOL))
+            .transpose()?
             .unwrap_or_default();
 
         let recommended_next_tool = response
             .recommended_next_tool
             .as_ref()
-            .and_then(|v| v.as_str())
-            .map(String::from);
+            .map(|v| parse_recommended_next_tool(v, Self::TOOL))
+            .transpose()?;
 
         // Parse optional sub-tool result structs
         let path_scope = result
@@ -948,7 +1089,8 @@ impl CommandPreflight {
         let findings = response
             .findings
             .as_ref()
-            .map(|f| Finding::from_array(f))
+            .map(|f| Finding::from_array_strict(f, Self::TOOL))
+            .transpose()?
             .unwrap_or_default();
 
         let argv = result.get("argv").and_then(|v| v.as_array()).map(|arr| {
@@ -1055,7 +1197,8 @@ impl ConfigPreflight {
         let findings = response
             .findings
             .as_ref()
-            .map(|f| Finding::from_array(f))
+            .map(|f| Finding::from_array_strict(f, Self::TOOL))
+            .transpose()?
             .unwrap_or_default();
 
         let raw = response.result.unwrap_or(Value::Null);
@@ -2024,5 +2167,221 @@ mod tests {
         assert!(output.newline_check.is_none());
         assert!(output.unicode_check.is_none());
         assert!(output.fingerprint.is_none());
+    }
+
+    // -- Strict finding parsing tests --
+
+    #[test]
+    fn structured_recommended_next_tool_parses_correctly() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "review"
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK")
+        .with_recommended_next_tool(serde_json::json!({
+            "name": "command_preflight",
+            "reason": "verify shell command",
+            "arguments_hint": {"command": "cargo test"}
+        }));
+        let output = EditPreflight::parse_response(response).unwrap();
+        let next = output.recommended_next_tool.unwrap();
+        assert_eq!(next.name, "command_preflight");
+        assert_eq!(next.reason.as_deref(), Some("verify shell command"));
+        assert!(next.arguments_hint.is_some());
+    }
+
+    #[test]
+    fn legacy_string_recommended_next_tool_parses_to_structured() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow"
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK")
+        .with_recommended_next_tool(serde_json::json!("command_preflight"));
+        let output = EditPreflight::parse_response(response).unwrap();
+        let next = output.recommended_next_tool.unwrap();
+        assert_eq!(next.name, "command_preflight");
+        assert!(next.reason.is_none());
+        assert!(next.arguments_hint.is_none());
+    }
+
+    #[test]
+    fn malformed_recommended_next_tool_object_fails_closed() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow"
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK")
+        .with_recommended_next_tool(serde_json::json!({
+            "reason": "missing name field"
+        }));
+        let err = EditPreflight::parse_response(response).unwrap_err();
+        assert!(
+            matches!(err, PreflightError::ContractViolation { field, .. } if field == "recommended_next_tool.name")
+        );
+    }
+
+    #[test]
+    fn recommended_next_tool_number_fails_closed() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow"
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK")
+        .with_recommended_next_tool(serde_json::json!(42));
+        let err = EditPreflight::parse_response(response).unwrap_err();
+        assert!(
+            matches!(err, PreflightError::ContractViolation { field, .. } if field == "recommended_next_tool")
+        );
+    }
+
+    #[test]
+    fn missing_finding_code_fails_closed() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow"
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK")
+        .with_findings(vec![serde_json::json!({
+            "severity": "info",
+            "message": "no code field"
+        })]);
+        let err = EditPreflight::parse_response(response).unwrap_err();
+        assert!(
+            matches!(err, PreflightError::ContractViolation { field, .. } if field == "findings")
+        );
+    }
+
+    #[test]
+    fn missing_finding_severity_fails_closed() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow"
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK")
+        .with_findings(vec![serde_json::json!({
+            "code": "TEST",
+            "message": "no severity field"
+        })]);
+        let err = EditPreflight::parse_response(response).unwrap_err();
+        assert!(
+            matches!(err, PreflightError::ContractViolation { field, .. } if field == "findings")
+        );
+    }
+
+    #[test]
+    fn missing_finding_message_fails_closed() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow"
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK")
+        .with_findings(vec![serde_json::json!({
+            "code": "TEST",
+            "severity": "info"
+        })]);
+        let err = EditPreflight::parse_response(response).unwrap_err();
+        assert!(
+            matches!(err, PreflightError::ContractViolation { field, .. } if field == "findings")
+        );
+    }
+
+    #[test]
+    fn command_preflight_strict_findings_fails_on_malformed() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "verdict": "allow",
+                "summary": "safe"
+            }),
+            Some("command_preflight"),
+        )
+        .with_machine_code("COMMAND_OK")
+        .with_findings(vec![serde_json::json!({
+            "invalid": true
+        })]);
+        let err = CommandPreflight::parse_response(response).unwrap_err();
+        assert!(
+            matches!(err, PreflightError::ContractViolation { field, .. } if field == "findings")
+        );
+    }
+
+    #[test]
+    fn config_preflight_strict_findings_fails_on_malformed() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "valid": true,
+                "verdict": "valid",
+                "summary": "ok"
+            }),
+            Some("config_preflight"),
+        )
+        .with_machine_code("CONFIG_OK")
+        .with_findings(vec![serde_json::json!({
+            "code": "X",
+            "severity": "info"
+            // missing message
+        })]);
+        let err = ConfigPreflight::parse_response(response).unwrap_err();
+        assert!(
+            matches!(err, PreflightError::ContractViolation { field, .. } if field == "findings")
+        );
+    }
+
+    #[test]
+    fn strict_findings_pass_for_well_formed() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow"
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK")
+        .with_findings(vec![
+            serde_json::json!({"code": "A", "severity": "info", "message": "ok"}),
+            serde_json::json!({"code": "B", "severity": "high", "message": "warn", "disposition": "blocking"}),
+        ]);
+        let output = EditPreflight::parse_response(response).unwrap();
+        assert_eq!(output.findings.len(), 2);
+        assert_eq!(output.findings[0].code, "A");
+        assert_eq!(output.findings[1].code, "B");
+        assert_eq!(output.findings[1].disposition.as_deref(), Some("blocking"));
     }
 }

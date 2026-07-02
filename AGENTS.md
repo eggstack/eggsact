@@ -84,11 +84,11 @@ src/
     cargo.rs        # cargo_toml_inspect
   text/             # text processing library (24 modules)
   agent/            # in-process agent API (ToolRegistry, Profile, call_json)
-  preflight/        # typed preflight wrappers (ConfigPreflight, CommandPreflight, EditPreflight)
+  preflight/        # typed preflight wrappers (ConfigPreflight, CommandPreflight, EditPreflight), strict finding parsing, structured RecommendedNextTool
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text
   calc/             # calculator tests (4 files)
-  mcp/              # MCP protocol + tool tests (17 files)
+  mcp/              # MCP protocol + tool tests (18 files)
   parity/           # Python/Rust parity tests (12 files)
   text/             # text processing tests (24 files)
 scripts/
@@ -114,11 +114,14 @@ Detailed architecture documentation is in `architecture/`:
 
 - **`PreflightError`** has three variants: `ToolCall` (registry rejected), `ToolRejected` (tool returned `ok: false`), `ContractViolation` (missing mandatory field in `ok: true` response). Missing fields are hard failures, not silent defaults.
 - **Typed verdict enums**: `EditVerdict`, `CommandVerdict`, `ConfigVerdict` with `Other(String)` variant for forward compatibility. `FindingSeverity` and `FindingDisposition` follow the same pattern.
+- **`RecommendedNextTool`** struct: `{ name: String, reason: Option<String>, arguments_hint: Option<Value> }`. Parsed from both string and object shapes; fails closed on malformed values.
+- **Strict finding parsing**: `Finding::try_from_value_strict()` and `Finding::from_array_strict()` require `code`, `severity`, and `message` strings. Used by all typed preflight wrappers. Permissive `Finding::from_value()` / `Finding::from_array()` preserved for backward compatibility.
 - **`parse_response()`** is public on each wrapper for testing contract parsing without a full registry call.
 - **`EditPreflightInput`** accepts optional `file_path`/`workspace_root` (triggers `path_scope_check`), `newline_policy` (triggers `text_fingerprint` newline detection), `unicode_policy` (triggers `text_security_inspect`), `expected_fingerprint` (triggers `text_fingerprint` SHA-256 comparison), and `edit_metadata` (passthrough). All sub-tool results appear in `subresults` and structured output fields.
 
 - **`ToolDefinition`** lives in `src/mcp/registry/types.rs` (not `server.rs`).
 - **`ToolAudience`** enum (`Model`, `Harness`, `Debug`) controls which exposure levels appear in tool listings and which tools may be executed. Use `available_tools_model_safe()` for model-facing integrations. `ToolAudience::can_execute_exposure()` enforces audience at dispatch time.
+- **Route-critical tools** (`is_route_critical()` in `registry/listing.rs`): `edit_preflight`, `command_preflight`, `config_preflight`, `patch_apply_check`, `text_security_inspect`. Must always emit `machine_code` and `verdict` in their response envelope. Verified by route-contract tests in `tests/mcp/test_route_contracts.rs`.
 - **`Profile::from_str_opt`** is strict — returns `None` for unknown names. Use `Profile::custom(name)` to construct a custom profile explicitly.
 - **`ToolResponse::error`** has been renamed to `error_without_code_for_legacy_tests_only` (deprecated/hidden). Use `error_with_code()` instead.
 - **`CompatibilityMode`** enum (`EggcalcPython`, `StrictNative`) controls validation behavior. `StrictNative` is the default for in-process API; MCP server uses `EggcalcPython`. See `architecture/compatibility.md`.

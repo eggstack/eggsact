@@ -389,3 +389,86 @@ fn main() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eggsact::mcp::registry::{all_tools_vec, tools_for_profile_audience, ToolListAudience};
+
+    #[test]
+    fn tool_table_contains_all_non_hidden_tools() {
+        let table = generate_readme_tools();
+        let all = all_tools_vec();
+        let non_hidden: Vec<&str> = all
+            .iter()
+            .filter(|s| s.exposure != ToolExposure::Hidden)
+            .map(|s| s.name)
+            .collect();
+        for name in &non_hidden {
+            let backtick_name = format!("`{}`", name);
+            assert!(
+                table.contains(&backtick_name),
+                "tool table missing {}",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn profile_counts_match_registry() {
+        let profile_ref = generate_profile_reference();
+        for &profile in available_profiles() {
+            let tools = tools_for_profile_audience(profile, ToolListAudience::Model);
+            let count = tools.len();
+            let profile_line = format!("| `{}` | {} |", profile, count);
+            assert!(
+                profile_ref.contains(&profile_line),
+                "profile reference missing or wrong count for {}: expected {}",
+                profile,
+                count
+            );
+        }
+    }
+
+    #[test]
+    fn tool_cards_reference_only_known_tools() {
+        let cards = generate_tool_cards();
+        let all = all_tools_vec();
+        let known: std::collections::HashSet<&str> = all.iter().map(|s| s.name).collect();
+        for line in cards.lines() {
+            if let Some(name) = line.strip_prefix("### `").and_then(|s| s.strip_suffix('`')) {
+                assert!(
+                    known.contains(name),
+                    "tool card references unknown tool: {}",
+                    name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tool_card_required_args_match_schema() {
+        let all = all_tools_vec();
+        for spec in all {
+            let schema = (spec.input_schema)();
+            let req = required_args(&schema);
+            let card = generate_tool_card(spec, "test_profile");
+            if req.is_empty() {
+                assert!(
+                    card.contains("**Required args**: none"),
+                    "{}: expected 'none' in card",
+                    spec.name
+                );
+            } else {
+                for (arg_name, _) in &req {
+                    assert!(
+                        card.contains(&format!("`{}`", arg_name)),
+                        "{}: card missing required arg `{}`",
+                        spec.name,
+                        arg_name
+                    );
+                }
+            }
+        }
+    }
+}

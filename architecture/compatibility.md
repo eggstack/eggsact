@@ -20,7 +20,7 @@
 | `ToolRegistry::with_profile()` | `StrictNative` | Same |
 | `ToolRegistry::with_profile_and_audience()` | `StrictNative` | Same |
 | `ToolRegistry::with_compat_mode()` | explicit | Override the default per-registry |
-| Preflight wrappers (`ConfigPreflight`, `CommandPreflight`, `EditPreflight`) | `StrictNative` (via `ToolRegistry::default()`) | Rust-native consumers, fail-closed contract enforcement via `PreflightError` |
+| Preflight wrappers (`ConfigPreflight`, `CommandPreflight`, `EditPreflight`) | `StrictNative` (via `ToolRegistry::default()`) | Rust-native consumers, fail-closed contract enforcement via `PreflightError`, strict finding/next-tool parsing |
 
 ## Behavioral Differences
 
@@ -36,6 +36,10 @@ When validation rejects a value, the error message includes expected and actual 
 "Expected string but got integer at 'text'"
 ```
 
+### Bool Handling
+
+JSON booleans are always rejected for numeric schema fields (`integer`, `number`) in both modes. MCP model-generated booleans for number fields are commonly mistakes and should remain rejected.
+
 ### Affected Validation
 
 The `compat` parameter threads through:
@@ -49,6 +53,7 @@ The mode does **not** affect:
 - Schema compaction — controlled by `EGGCALC_MCP_SCHEMA_DETAIL` env var
 - Error sanitization — always active
 - Tool dispatch logic — profile/audience checks are mode-independent
+- Bool rejection for numeric fields — always rejected in both modes
 
 ## Usage
 

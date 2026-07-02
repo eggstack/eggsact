@@ -15,5 +15,6 @@ pub mod test_mcp_tools;
 pub mod test_protocol;
 pub mod test_real_tool_use;
 pub mod test_response_structure;
+pub mod test_route_contracts;
 pub mod test_tool_coverage;
 pub mod test_tool_gaps;
