@@ -78,14 +78,17 @@ fn profile_display(spec: &ToolSpec) -> String {
 }
 
 fn generate_readme_tools() -> String {
-    let all = all_tools_vec();
+    let visible_tools: Vec<&ToolSpec> = all_tools_vec()
+        .iter()
+        .filter(|spec| spec.exposure != ToolExposure::Hidden)
+        .collect();
     let mut by_category: BTreeMap<&str, Vec<&ToolSpec>> = BTreeMap::new();
-    for spec in all {
+    for spec in &visible_tools {
         by_category.entry(spec.category).or_default().push(spec);
     }
 
     let mut out = String::new();
-    out.push_str(&format!("{} tools across {} categories. See `architecture/mcp-server.md` for the full reference.\n\n", all.len(), by_category.len()));
+    out.push_str(&format!("{} tools across {} categories. See `architecture/mcp-server.md` for the full reference.\n\n", visible_tools.len(), by_category.len()));
 
     for &cat in CATEGORY_ORDER {
         let tools = match by_category.get(cat) {
@@ -115,20 +118,45 @@ fn generate_readme_tools() -> String {
 fn generate_profile_reference() -> String {
     let profiles = available_profiles();
     let mut out = String::new();
-    out.push_str("| Profile | Model Tools | Tool Names |\n");
-    out.push_str("|---------|-------------|------------|\n");
+    out.push_str(
+        "| Profile | Model Tools | Harness Tools | Model Tool Names | Harness-Only Tools |\n",
+    );
+    out.push_str(
+        "|---------|-------------|---------------|------------------|--------------------|\n",
+    );
 
     for &profile in profiles {
-        let tools = tools_for_profile_audience(profile, ToolListAudience::Model);
-        let count = tools.len();
-        let mut names: Vec<&str> = tools.iter().map(|s| s.name).collect();
-        names.sort();
-        let names_str = names
+        let model_tools = tools_for_profile_audience(profile, ToolListAudience::Model);
+        let harness_tools = tools_for_profile_audience(profile, ToolListAudience::Harness);
+        let model_count = model_tools.len();
+        let harness_count = harness_tools.len();
+
+        let mut model_names: Vec<&str> = model_tools.iter().map(|s| s.name).collect();
+        model_names.sort();
+        let model_names_str = model_names
             .iter()
             .map(|n| format!("`{}`", n))
             .collect::<Vec<_>>()
             .join(", ");
-        out.push_str(&format!("| `{}` | {} | {} |\n", profile, count, names_str));
+
+        let model_set: std::collections::HashSet<&str> =
+            model_tools.iter().map(|s| s.name).collect();
+        let mut harness_only: Vec<&str> = harness_tools
+            .iter()
+            .filter(|s| !model_set.contains(s.name))
+            .map(|s| s.name)
+            .collect();
+        harness_only.sort();
+        let harness_only_str = harness_only
+            .iter()
+            .map(|n| format!("`{}`", n))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        out.push_str(&format!(
+            "| `{}` | {} | {} | {} | {} |\n",
+            profile, model_count, harness_count, model_names_str, harness_only_str
+        ));
     }
 
     out
@@ -211,7 +239,10 @@ fn generate_tool_cards() -> String {
     );
 
     for &profile in CODEGG_PROFILES {
-        let tools = tools_for_profile_audience(profile, ToolListAudience::Model);
+        let tools: Vec<&ToolSpec> = tools_for_profile_audience(profile, ToolListAudience::Model)
+            .into_iter()
+            .filter(|spec| spec.exposure != ToolExposure::Hidden)
+            .collect();
         if tools.is_empty() {
             continue;
         }
@@ -393,7 +424,9 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eggsact::mcp::registry::{all_tools_vec, tools_for_profile_audience, ToolListAudience};
+    use eggsact::mcp::registry::{
+        all_tools_vec, tools_for_profile_audience, ToolExposure, ToolListAudience,
+    };
 
     #[test]
     fn tool_table_contains_all_non_hidden_tools() {
@@ -415,18 +448,93 @@ mod tests {
     }
 
     #[test]
+    fn generated_readme_excludes_hidden_tools() {
+        let table = generate_readme_tools();
+        let all = all_tools_vec();
+        let hidden: Vec<&str> = all
+            .iter()
+            .filter(|s| s.exposure == ToolExposure::Hidden)
+            .map(|s| s.name)
+            .collect();
+        for name in &hidden {
+            let backtick_name = format!("`{}`", name);
+            assert!(
+                !table.contains(&backtick_name),
+                "tool table should not include hidden tool {}",
+                name
+            );
+        }
+        // If no hidden tools exist, the test still passes — it guards future additions.
+    }
+
+    #[test]
+    fn generated_tool_cards_exclude_hidden_tools() {
+        let cards = generate_tool_cards();
+        let all = all_tools_vec();
+        let hidden: Vec<&str> = all
+            .iter()
+            .filter(|s| s.exposure == ToolExposure::Hidden)
+            .map(|s| s.name)
+            .collect();
+        for name in &hidden {
+            let header = format!("### `{}`", name);
+            assert!(
+                !cards.contains(&header),
+                "tool cards should not include hidden tool {}",
+                name
+            );
+        }
+        // If no hidden tools exist, the test still passes — it guards future additions.
+    }
+
+    #[test]
     fn profile_counts_match_registry() {
         let profile_ref = generate_profile_reference();
         for &profile in available_profiles() {
-            let tools = tools_for_profile_audience(profile, ToolListAudience::Model);
-            let count = tools.len();
-            let profile_line = format!("| `{}` | {} |", profile, count);
+            let model_tools = tools_for_profile_audience(profile, ToolListAudience::Model);
+            let harness_tools = tools_for_profile_audience(profile, ToolListAudience::Harness);
+            let model_count = model_tools.len();
+            let harness_count = harness_tools.len();
+            let profile_line = format!("| `{}` | {} | {} |", profile, model_count, harness_count);
             assert!(
                 profile_ref.contains(&profile_line),
-                "profile reference missing or wrong count for {}: expected {}",
+                "profile reference missing or wrong count for {}: expected model={} harness={}",
                 profile,
-                count
+                model_count,
+                harness_count
             );
+        }
+    }
+
+    #[test]
+    fn profile_reference_includes_harness_only_tools() {
+        let profile_ref = generate_profile_reference();
+        // For profiles that have harness-only tools, verify at least one appears in the output
+        for &profile in available_profiles() {
+            let model_tools = tools_for_profile_audience(profile, ToolListAudience::Model);
+            let harness_tools = tools_for_profile_audience(profile, ToolListAudience::Harness);
+            let model_set: std::collections::HashSet<&str> =
+                model_tools.iter().map(|s| s.name).collect();
+            let harness_only: Vec<&str> = harness_tools
+                .iter()
+                .filter(|s| !model_set.contains(s.name))
+                .map(|s| s.name)
+                .collect();
+            if !harness_only.is_empty() {
+                // At least one harness-only tool should appear in the profile reference line
+                let profile_line = profile_ref
+                    .lines()
+                    .find(|l| l.contains(&format!("`{}`", profile)))
+                    .unwrap_or("");
+                for name in &harness_only {
+                    assert!(
+                        profile_line.contains(&format!("`{}`", name)),
+                        "profile '{}' has harness-only tool '{}' but it's not in the profile reference",
+                        profile,
+                        name
+                    );
+                }
+            }
         }
     }
 
