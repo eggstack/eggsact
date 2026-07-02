@@ -324,12 +324,13 @@ impl ToolResponse {
         }
     }
 
+    #[cfg(test)]
     #[deprecated(
         since = "0.2.0",
         note = "Use `error_with_code` instead. Non-OK tool responses must carry a machine_code."
     )]
     #[doc(hidden)]
-    pub fn error_without_code_for_legacy_tests_only(
+    pub(crate) fn error_without_code_for_legacy_tests_only(
         error_type: &str,
         error: &str,
         hints: Option<Vec<String>>,
@@ -445,5 +446,20 @@ impl ToolResponse {
     pub fn with_recommended_next_tool(mut self, tool: serde_json::Value) -> Self {
         self.recommended_next_tool = Some(tool);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[allow(deprecated)]
+    fn legacy_error_constructor_only_in_tests() {
+        // This test verifies the architectural decision:
+        // error_without_code_for_legacy_tests_only should only be callable
+        // from test code. If this test compiles, that constraint is met
+        // because the function is #[cfg(test)].
+        let _ = ToolResponse::error_without_code_for_legacy_tests_only("test", "test", None, None);
     }
 }

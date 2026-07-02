@@ -30,7 +30,7 @@ Every tool call returns a `ToolResponse` (serialized as JSON) with these 11 fiel
 |-------------|-------------|
 | `ToolResponse::success(result, tool)` | Successful result (no machine code needed) |
 | `ToolResponse::success_with_machine_code(result, tool, code)` | Success with an explicit code |
-| `ToolResponse::error_without_code_for_legacy_tests_only(type, error, hints, tool)` | **Deprecated/hidden** — legacy error constructor (no machine code). Do not use in new code. |
+| `ToolResponse::error_without_code_for_legacy_tests_only(type, error, hints, tool)` | **Deprecated/hidden/test-only** — legacy error constructor (no machine code). Only available under `#[cfg(test)]`. Do not use in new code. |
 | `ToolResponse::error_with_code(type, code, error, hints, tool)` | **Preferred** error constructor — ensures machine code is set |
 | `.with_machine_code(code)` | Add a machine code to any response via builder |
 | `.with_findings(findings)` | Attach structured findings |
@@ -74,6 +74,8 @@ Composite tools (`edit_preflight`, `command_preflight`, `config_preflight`, `tex
 
 Common error codes have category-prefixed aliases for use by orchestration layers (e.g. codegg) that prefer a uniform `CATEGORY_DETAIL` naming pattern. The Rust constant name differs but the string value is identical to the original, so they are wire-compatible.
 
+### Common Error Aliases
+
 | Alias Constant | Original Constant | String Value |
 |----------------|-------------------|--------------|
 | `COMMON_CANCELLED` | `CANCELLED` | `"CANCELLED"` |
@@ -82,6 +84,24 @@ Common error codes have category-prefixed aliases for use by orchestration layer
 | `COMMON_INPUT_TOO_LARGE` | `INPUT_TOO_LARGE` | `"INPUT_TOO_LARGE"` |
 | `COMMON_INTERNAL_ERROR` | `INTERNAL_ERROR` | `"INTERNAL_ERROR"` |
 | `COMMON_INVALID_ARGUMENTS` | `INVALID_ARGUMENTS` | `"INVALID_ARGUMENTS"` |
+
+### Codegg Routing Aliases
+
+Category-specific aliases for codegg routing. These share string values with their originals and are wire-compatible.
+
+| Alias Constant | Original Constant | String Value |
+|----------------|-------------------|--------------|
+| `EDIT_SAFE_TO_APPLY` | `EDIT_OK` | `"EDIT_OK"` |
+| `EDIT_OLD_TEXT_NOT_FOUND` | `AMBIGUOUS_REPLACEMENT` | `"AMBIGUOUS_REPLACEMENT"` |
+| `EDIT_MULTIPLE_MATCHES` | `AMBIGUOUS_REPLACEMENT` | `"AMBIGUOUS_REPLACEMENT"` |
+| `EDIT_STALE_CONTEXT` | `FINGERPRINT_MISMATCH` | `"FINGERPRINT_MISMATCH"` |
+| `SHELL_SAFE_COMMAND` | `COMMAND_OK` | `"COMMAND_OK"` |
+| `SHELL_DESTRUCTIVE_COMMAND` | `SHELL_RISK` | `"SHELL_RISK"` |
+| `SHELL_NETWORK_ACCESS` | `SHELL_RISK` | `"SHELL_RISK"` |
+| `CONFIG_VALID` | `CONFIG_OK` | `"CONFIG_OK"` |
+| `CONFIG_INVALID` | `CONFIG_PARSE_FAILED` | `"CONFIG_PARSE_FAILED"` |
+| `UNICODE_BIDI_DETECTED` | `BIDI_DETECTED` | `"BIDI_DETECTED"` |
+| `PATH_SCOPE_ESCAPE` | `PATH_HAS_TRAVERSAL` | `"PATH_HAS_TRAVERSAL"` |
 
 These aliases are included in the `ALL` array and are interchangeable with their originals at the wire level.
 

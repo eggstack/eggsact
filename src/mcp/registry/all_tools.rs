@@ -4,6 +4,11 @@ use crate::tools::*;
 
 // ---------------------------------------------------------------------------
 // Static registry
+//
+// Tools are ordered to match the Python eggcalc reference implementation.
+// Adding a new tool: append to the category in specs/<category>.rs, then add
+// the ToolSpec entry below in the correct position (after other tools in the
+// same category, matching the category module's ordering).
 // ---------------------------------------------------------------------------
 
 pub const ALL_TOOLS: &[ToolSpec] = &[

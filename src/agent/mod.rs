@@ -337,6 +337,15 @@ impl ToolRegistry {
         self.available_tools_for_audience(ToolAudience::Model)
     }
 
+    /// List tools for the registry's stored audience.
+    ///
+    /// This is the ergonomic shortcut for consumers who construct a registry
+    /// with a specific profile and audience and then want tools for that audience
+    /// without passing the audience again.
+    pub fn available_tools_for_current_audience(&self) -> Vec<ToolView> {
+        self.available_tools_for_audience(self.audience)
+    }
+
     /// Get detailed information about a specific tool.
     pub fn get_tool(&self, name: &str) -> Option<ToolSpecView> {
         let spec = registry::get_tool(name)?;
@@ -669,5 +678,42 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn current_audience_model_excludes_harness_only() {
+        let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
+        let current = registry.available_tools_for_current_audience();
+        let explicit = registry.available_tools_for_audience(ToolAudience::Model);
+        assert_eq!(current.len(), explicit.len());
+        for t in &current {
+            assert!(!t.exposure.contains("harness_only"));
+        }
+    }
+
+    #[test]
+    fn current_audience_harness_includes_preflight_harness_tools() {
+        let registry = ToolRegistry::with_profile_and_audience(
+            Profile::CodeggPreflight,
+            ToolAudience::Harness,
+        );
+        let tools = registry.available_tools_for_current_audience();
+        // codegg_preflight has harness-only tools like shell_split, path_scope_check, etc.
+        assert!(
+            tools.iter().any(|t| t.name == "shell_split"),
+            "harness audience should include shell_split"
+        );
+        assert!(
+            tools.iter().any(|t| t.name == "path_scope_check"),
+            "harness audience should include path_scope_check"
+        );
+    }
+
+    #[test]
+    fn current_audience_debug_matches_debug_listing() {
+        let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Debug);
+        let current = registry.available_tools_for_current_audience();
+        let explicit = registry.available_tools_for_audience(ToolAudience::Debug);
+        assert_eq!(current.len(), explicit.len());
     }
 }

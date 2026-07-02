@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::text::levenshtein_distance;
 use serde_json::Value;
 
@@ -81,6 +83,101 @@ pub fn mcp_tool_definitions() -> Vec<super::types::ToolDefinition> {
             }
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Tool list filtering (tools/list handler logic)
+// ---------------------------------------------------------------------------
+
+/// Options for filtering tool definitions in tools/list.
+pub struct ToolListOptions<'a> {
+    pub profile: &'a str,
+    pub names: Option<&'a [String]>,
+    pub tier: Option<u8>,
+    pub tags: Option<&'a [String]>,
+    pub schema_detail: &'a str,
+}
+
+/// Filter tool definitions by profile, names, tier, tags, and schema detail.
+///
+/// This is the core listing logic that was previously in server.rs.
+/// It returns a Vec<ToolDefinition> ready for MCP serialization.
+pub fn list_tool_definitions(options: ToolListOptions<'_>) -> Vec<super::types::ToolDefinition> {
+    let profile_tools = tools_for_profile(options.profile);
+    let mut tools: Vec<super::types::ToolDefinition> = profile_tools
+        .into_iter()
+        .map(|spec| {
+            let deprecated = if spec.stability == ToolStability::Deprecated {
+                Some(true)
+            } else {
+                None
+            };
+            super::types::ToolDefinition {
+                name: spec.name.to_string(),
+                description: spec.description.to_string(),
+                input_schema: (spec.input_schema)(),
+                output_schema: Some((spec.output_schema)()),
+                tier: Some(spec.tier),
+                tags: Some(spec.tags.iter().map(|s| s.to_string()).collect()),
+                deprecated,
+                category: Some(spec.category.to_string()),
+                llm_exposure: Some(spec.exposure.as_str().to_string()),
+                cost: Some(spec.cost.as_str().to_string()),
+            }
+        })
+        .collect();
+
+    // Filter by names
+    if let Some(names) = options.names {
+        let name_set: HashSet<&str> = names.iter().map(|s| s.as_str()).collect();
+        tools.retain(|t| name_set.contains(t.name.as_str()));
+    }
+
+    // Filter by tier
+    if let Some(tier) = options.tier {
+        tools.retain(|t| t.tier == Some(tier));
+    }
+
+    // Filter by tags (all specified tags must be present)
+    if let Some(tags) = options.tags {
+        let tag_set: HashSet<&str> = tags.iter().map(|s| s.as_str()).collect();
+        tools.retain(|t| {
+            if let Some(ref tool_tags) = t.tags {
+                tag_set
+                    .iter()
+                    .all(|tag| tool_tags.iter().any(|tt| tt.as_str() == *tag))
+            } else {
+                false
+            }
+        });
+    }
+
+    if options.schema_detail == "compact" {
+        for tool in &mut tools {
+            // Truncate description to 120 chars
+            if tool.description.chars().count() > 120 {
+                let truncated: String = tool.description.chars().take(117).collect();
+                tool.description = truncated;
+                tool.description.push_str("...");
+            }
+            // Compact input schema: strip defaults, truncate property descriptions
+            tool.input_schema = compact_input_schema(&tool.input_schema);
+            // Compact output schema: keep top-level keys/types only
+            if let Some(ref output) = tool.output_schema.clone() {
+                tool.output_schema = Some(compact_output_schema(output));
+            }
+            // Python compact mode: drops tier and tags, keeps category/llm_exposure/cost
+            tool.tier = None;
+            tool.tags = None;
+        }
+    } else {
+        // Non-compact mode: include deprecated field for all tools (Python parity)
+        for tool in &mut tools {
+            tool.deprecated = Some(tool.deprecated.unwrap_or(false));
+        }
+    }
+
+    tools
 }
 
 // ---------------------------------------------------------------------------
@@ -288,4 +385,113 @@ pub fn find_close_match<'a>(input: &str, tool_names: &[&'a str]) -> Option<&'a s
     }
 
     best.map(|(name, _)| name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_all_tools_for_full_profile() {
+        let options = ToolListOptions {
+            profile: "full",
+            names: None,
+            tier: None,
+            tags: None,
+            schema_detail: "normal",
+        };
+        let tools = list_tool_definitions(options);
+        assert!(!tools.is_empty());
+        // full profile should exclude hidden tools
+        for tool in &tools {
+            assert_ne!(tool.llm_exposure.as_deref(), Some("hidden"));
+        }
+    }
+
+    #[test]
+    fn list_tool_definitions_names_filter() {
+        let options = ToolListOptions {
+            profile: "full",
+            names: Some(&[String::from("math_eval"), String::from("text_equal")]),
+            tier: None,
+            tags: None,
+            schema_detail: "normal",
+        };
+        let tools = list_tool_definitions(options);
+        assert_eq!(tools.len(), 2);
+        assert!(tools.iter().any(|t| t.name == "math_eval"));
+        assert!(tools.iter().any(|t| t.name == "text_equal"));
+    }
+
+    #[test]
+    fn list_tool_definitions_tier_filter() {
+        let options = ToolListOptions {
+            profile: "full",
+            names: None,
+            tier: Some(0),
+            tags: None,
+            schema_detail: "normal",
+        };
+        let tools = list_tool_definitions(options);
+        for tool in &tools {
+            assert_eq!(tool.tier, Some(0));
+        }
+    }
+
+    #[test]
+    fn list_tool_definitions_compact_schema() {
+        let options = ToolListOptions {
+            profile: "full",
+            names: Some(&[String::from("math_eval")]),
+            tier: None,
+            tags: None,
+            schema_detail: "compact",
+        };
+        let tools = list_tool_definitions(options);
+        assert_eq!(tools.len(), 1);
+        let tool = &tools[0];
+        // Compact mode strips tier and tags
+        assert_eq!(tool.tier, None);
+        assert_eq!(tool.tags, None);
+        // Description should be truncated if > 120 chars
+        if tool.description.chars().count() > 120 {
+            assert!(tool.description.ends_with("..."));
+        }
+    }
+
+    #[test]
+    fn list_tool_definitions_tags_filter() {
+        let options = ToolListOptions {
+            profile: "full",
+            names: None,
+            tier: None,
+            tags: Some(&[String::from("math")]),
+            schema_detail: "normal",
+        };
+        let tools = list_tool_definitions(options);
+        for tool in &tools {
+            let tags = tool.tags.as_ref().unwrap();
+            assert!(
+                tags.iter().any(|t| t == "math"),
+                "tool {} missing 'math' tag",
+                tool.name
+            );
+        }
+    }
+
+    #[test]
+    fn list_tool_definitions_profile_filter() {
+        let options = ToolListOptions {
+            profile: "human_math",
+            names: None,
+            tier: None,
+            tags: None,
+            schema_detail: "normal",
+        };
+        let tools = list_tool_definitions(options);
+        // human_math should have math tools
+        assert!(tools.iter().any(|t| t.name == "math_eval"));
+        // Should NOT have text tools
+        assert!(!tools.iter().any(|t| t.name == "text_equal"));
+    }
 }

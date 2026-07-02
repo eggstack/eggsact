@@ -104,13 +104,15 @@ coder-agent sessions and `Harness` for automatic preflight checks.
 `available_tools_model_safe()` (equivalent to `available_tools_for_audience(ToolAudience::Model)`)
 for model-facing codegg integrations, or
 `with_profile_and_audience(profile, ToolAudience::Harness)` for harness checks.
+Use `available_tools_for_current_audience()` to list tools using the registry's
+stored audience without passing it explicitly.
 
 MCP `tools/list` preserves legacy behavior (no audience filter) for backward
 compatibility. The audience filter is available for codegg's in-process API.
 
 ### How tools/list and tools/call work
 
-- `tools/list`: Looks up all `ToolSpec` entries in the registry and returns `Vec<ToolDefinition>` with full input schemas.
+- `tools/list`: Validates MCP parameters in `server.rs`, builds a `ToolListOptions`, and delegates to `registry::list_tool_definitions()` in `registry/listing.rs`. The registry handles profile filtering, name/tier/tag filtering, schema compaction, and deprecated-field normalization. MCP retains parameter validation and profile resolution.
 - `tools/call`: Delegates tool lookup, profile checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API.
 
 ## Tool Categories (64 tools)

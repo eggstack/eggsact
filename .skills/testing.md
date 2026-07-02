@@ -25,6 +25,8 @@ cargo test --verbose                 # all tests
 cargo package --verbose              # crates.io package verification
 ```
 
+CI runs these checks on push/PR to `main` via `.github/workflows/ci.yml`.
+
 ## Test Structure
 
 ```

@@ -58,6 +58,31 @@ pub const COMMON_INTERNAL_ERROR: &str = "INTERNAL_ERROR";
 pub const COMMON_INVALID_ARGUMENTS: &str = "INVALID_ARGUMENTS";
 
 // ---------------------------------------------------------------------------
+// Category-specific aliases for codegg routing
+// ---------------------------------------------------------------------------
+
+// Edit/Patch category
+pub const EDIT_SAFE_TO_APPLY: &str = "EDIT_OK";
+pub const EDIT_OLD_TEXT_NOT_FOUND: &str = "AMBIGUOUS_REPLACEMENT";
+pub const EDIT_MULTIPLE_MATCHES: &str = "AMBIGUOUS_REPLACEMENT";
+pub const EDIT_STALE_CONTEXT: &str = "FINGERPRINT_MISMATCH";
+
+// Shell/Command category
+pub const SHELL_SAFE_COMMAND: &str = "COMMAND_OK";
+pub const SHELL_DESTRUCTIVE_COMMAND: &str = "SHELL_RISK";
+pub const SHELL_NETWORK_ACCESS: &str = "SHELL_RISK";
+
+// Config category
+pub const CONFIG_VALID: &str = "CONFIG_OK";
+pub const CONFIG_INVALID: &str = "CONFIG_PARSE_FAILED";
+
+// Unicode/Safety category
+pub const UNICODE_BIDI_DETECTED: &str = "BIDI_DETECTED";
+
+// Path category
+pub const PATH_SCOPE_ESCAPE: &str = "PATH_HAS_TRAVERSAL";
+
+// ---------------------------------------------------------------------------
 // Edit / Patch
 // ---------------------------------------------------------------------------
 
@@ -342,4 +367,15 @@ pub const ALL: &[&str] = &[
     COMMON_INPUT_TOO_LARGE,
     COMMON_INTERNAL_ERROR,
     COMMON_INVALID_ARGUMENTS,
+    EDIT_SAFE_TO_APPLY,
+    EDIT_OLD_TEXT_NOT_FOUND,
+    EDIT_MULTIPLE_MATCHES,
+    EDIT_STALE_CONTEXT,
+    SHELL_SAFE_COMMAND,
+    SHELL_DESTRUCTIVE_COMMAND,
+    SHELL_NETWORK_ACCESS,
+    CONFIG_VALID,
+    CONFIG_INVALID,
+    UNICODE_BIDI_DETECTED,
+    PATH_SCOPE_ESCAPE,
 ];

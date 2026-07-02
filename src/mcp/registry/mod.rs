@@ -5,9 +5,9 @@ mod types;
 pub use all_tools::{ALL_TOOLS, PROFILE_NAMES};
 pub use listing::{
     all_tools as all_tools_list, available_profiles, compact_input_schema, compact_output_schema,
-    find_close_match, get_tool, input_schema_for, mcp_tool_definitions, output_schema_for,
-    tool_count, tool_handler_for, tool_names, tool_names_for_profile_audience, tools_for_profile,
-    tools_for_profile_audience, ToolListAudience,
+    find_close_match, get_tool, input_schema_for, list_tool_definitions, mcp_tool_definitions,
+    output_schema_for, tool_count, tool_handler_for, tool_names, tool_names_for_profile_audience,
+    tools_for_profile, tools_for_profile_audience, ToolListAudience, ToolListOptions,
 };
 pub use types::{ToolCost, ToolDefinition, ToolExposure, ToolHandler, ToolSpec, ToolStability};
 
@@ -412,5 +412,50 @@ mod tests {
             let spec = get_tool(name).expect("tool should exist");
             assert_ne!(spec.exposure, ToolExposure::HarnessOnly);
         }
+    }
+
+    #[test]
+    fn preflight_exposure_policy_is_intentional() {
+        // These tools are intentionally model-visible (Default exposure)
+        // because they provide advisory feedback that helps models make
+        // better decisions. The harness calls them automatically anyway.
+        let model_preflight_tools = ["edit_preflight", "command_preflight", "config_preflight"];
+        for name in &model_preflight_tools {
+            let spec = get_tool(name).expect("tool should exist");
+            assert_eq!(
+                spec.exposure,
+                ToolExposure::Default,
+                "{} should be Default exposure (model-visible advisory)",
+                name
+            );
+        }
+
+        // These tools are intentionally harness-only because they enforce
+        // safety policies that the model should not bypass or see results of.
+        let harness_only_tools = [
+            "patch_apply_check",
+            "path_scope_check",
+            "prompt_input_inspect",
+            "unicode_policy_check",
+            "shell_split",
+        ];
+        for name in &harness_only_tools {
+            let spec = get_tool(name).expect("tool should exist");
+            assert_eq!(
+                spec.exposure,
+                ToolExposure::HarnessOnly,
+                "{} should be HarnessOnly exposure (enforcement tool)",
+                name
+            );
+        }
+
+        // text_security_inspect is model-visible because it's a composite tool
+        // that models use for security hygiene on text input.
+        let spec = get_tool("text_security_inspect").expect("tool should exist");
+        assert_eq!(
+            spec.exposure,
+            ToolExposure::Default,
+            "text_security_inspect should be Default (model-visible composite)"
+        );
     }
 }

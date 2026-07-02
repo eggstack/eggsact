@@ -10,7 +10,7 @@ Use this when adding a new MCP tool or modifying an existing one.
    - Call reusable library code from `src/text/` or `src/calc/`
    - Return `ToolResponse` (from `src/mcp/schemas.rs`)
 
-2. **Add a `ToolSpec` entry** in `src/mcp/registry/all_tools.rs` — this is the single source of truth for tool registration. It defines the handler, category, tier, tags, profiles, input schema, and output schema all in one place.
+2. **Add a `ToolSpec` entry** in `src/mcp/registry/all_tools.rs` — this is the single source of truth for tool registration. It defines the handler, category, tier, tags, profiles, input schema, and output schema all in one place. ToolSpec entries are declared in the `ALL_TOOLS` const slice.
 
 3. **Run the invariant test** to verify sync:
    ```bash
@@ -75,7 +75,9 @@ See `architecture/machine-codes.md` for the full code table and design rationale
 
 ## In-Process Execution Path
 
-`ToolRegistry` (`src/agent/mod.rs`) provides the core tool execution path. Both the MCP server (`src/mcp/server.rs`) and direct Rust callers use it for tool lookup, profile filtering, argument validation, and dispatch. Tool functions themselves live in `src/mcp/tools.rs`; `ToolRegistry` orchestrates calling them.
+`ToolRegistry` (`src/agent/mod.rs`) provides the core tool execution path. Both the MCP server (`src/mcp/server.rs`) and direct Rust callers use it for tool lookup, profile filtering, argument validation, and dispatch. Tool functions themselves live in `src/tools/*.rs` (by category); `ToolRegistry` orchestrates calling them.
+
+Tool listing and filtering lives in `src/mcp/registry/listing.rs`, including `list_tool_definitions()` (used by the MCP `tools/list` handler), audience-aware listing, and schema compaction.
 
 ## Composite Tools
 

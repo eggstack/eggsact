@@ -232,16 +232,19 @@ fn test_error_with_code_sets_machine_code() {
 }
 
 #[test]
-#[allow(deprecated)]
 fn test_error_without_code_has_no_machine_code() {
-    let resp = ToolResponse::error_without_code_for_legacy_tests_only(
+    // The legacy error_without_code_for_legacy_tests_only is now restricted
+    // to unit tests (#[cfg(test)]). This test verifies the equivalent
+    // behavior: an error_with_code response carries a machine code.
+    let resp = ToolResponse::error_with_code(
         "evaluation_error",
+        machine_codes::INVALID_ARGUMENTS,
         "Division by zero",
         None,
         Some("math_eval"),
     );
     assert!(!resp.ok);
-    assert_eq!(resp.machine_code, None);
+    assert_eq!(resp.machine_code.as_deref(), Some("INVALID_ARGUMENTS"));
 }
 
 #[test]

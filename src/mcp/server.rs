@@ -11,18 +11,10 @@ use crate::mcp::runtime::{
     MAX_TOOL_WORKERS, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
 };
 use serde_json::Value;
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Mutex;
-
-fn get_profile_tools(profile: &str) -> Vec<&'static str> {
-    registry::tools_for_profile(profile)
-        .into_iter()
-        .map(|spec| spec.name)
-        .collect()
-}
 
 pub fn mcp_tool_count() -> usize {
     registry::tool_count()
@@ -170,64 +162,25 @@ async fn handle_request_async(
                     "id": request.id
                 }));
             }
-            let profile_tools = get_profile_tools(effective_profile);
-            let profile_set: HashSet<&str> = profile_tools.into_iter().collect();
-
-            let mut tools = registry::mcp_tool_definitions();
-
-            // Filter by profile
-            tools.retain(|t| profile_set.contains(t.name.as_str()));
-
-            // Filter by names
-            if let Some(names) = names_filter {
-                let name_set: HashSet<&str> = names.iter().filter_map(|n| n.as_str()).collect();
-                tools.retain(|t| name_set.contains(t.name.as_str()));
-            }
-
-            // Filter by tier
-            if let Some(tier) = tier_filter {
-                tools.retain(|t| t.tier == Some(tier as u8));
-            }
-
-            // Filter by tags (all specified tags must be present)
-            if let Some(tags) = tags_filter {
-                let tag_set: HashSet<&str> = tags.iter().filter_map(|t| t.as_str()).collect();
-                tools.retain(|t| {
-                    if let Some(ref tool_tags) = t.tags {
-                        tag_set
-                            .iter()
-                            .all(|tag| tool_tags.iter().any(|tt| tt.as_str() == *tag))
-                    } else {
-                        false
-                    }
-                });
-            }
-
-            if detail == "compact" {
-                for tool in &mut tools {
-                    // Truncate description to 120 chars
-                    if tool.description.chars().count() > 120 {
-                        let truncated: String = tool.description.chars().take(117).collect();
-                        tool.description = truncated;
-                        tool.description.push_str("...");
-                    }
-                    // Compact input schema: strip defaults, truncate property descriptions
-                    tool.input_schema = registry::compact_input_schema(&tool.input_schema);
-                    // Compact output schema: keep top-level keys/types only
-                    if let Some(ref output) = tool.output_schema.clone() {
-                        tool.output_schema = Some(registry::compact_output_schema(output));
-                    }
-                    // Python compact mode: drops tier and tags, keeps category/llm_exposure/cost
-                    tool.tier = None;
-                    tool.tags = None;
-                }
-            } else {
-                // Non-compact mode: include deprecated field for all tools (Python parity)
-                for tool in &mut tools {
-                    tool.deprecated = Some(tool.deprecated.unwrap_or(false));
-                }
-            }
-
+            // Build options and delegate to registry
+            let names_vec: Option<Vec<String>> = names_filter.map(|n| {
+                n.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            });
+            let tags_vec: Option<Vec<String>> = tags_filter.map(|t| {
+                t.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            });
+            let options = registry::ToolListOptions {
+                profile: effective_profile,
+                names: names_vec.as_deref(),
+                tier: tier_filter.map(|t| t as u8),
+                tags: tags_vec.as_deref(),
+                schema_detail: detail,
+            };
+            let tools = registry::list_tool_definitions(options);
             Some(serde_json::json!({"tools": tools}))
         }
 

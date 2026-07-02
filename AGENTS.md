@@ -19,6 +19,14 @@ cargo package                        # crates.io packaging dry run
 ./release.sh                         # full pipeline: regenerate data, fmt, clippy, test, release build, package
 ```
 
+## CI
+
+GitHub Actions CI runs on push/PR to `main`:
+- `cargo fmt --all -- --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo test --all-features`
+- `cargo package --verbose` (after fmt/clippy/test pass)
+
 ## Verification order
 
 `cargo fmt --check` → `cargo clippy --all-targets --all-features -- -D warnings` → `cargo test --verbose` → `cargo package --verbose`
