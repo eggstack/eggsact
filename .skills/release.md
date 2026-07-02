@@ -10,17 +10,19 @@ Use this when preparing or performing a release.
 
 The script runs in order:
 1. Regenerate confusables data: `python3 scripts/generate_confusables.py`
-2. Check formatting: `cargo fmt --check`
-3. Run clippy: `cargo clippy --all-targets --all-features`
-4. Run all tests: `cargo test`
-5. Build release: `cargo build --release`
-6. Check crates.io packaging: `cargo package`
+2. Regenerate docs: `cargo run --bin generate-docs`
+3. Check formatting: `cargo fmt --check`
+4. Run clippy: `cargo clippy --all-targets --all-features`
+5. Run all tests: `cargo test`
+6. Build release: `cargo build --release`
+7. Check crates.io packaging: `cargo package`
 
 ## Pre-Release Checklist
 
 - [ ] All tests pass: `cargo test`
 - [ ] No formatting issues: `cargo fmt --check`
 - [ ] No clippy warnings: `cargo clippy --all-targets --all-features`
+- [ ] Generated docs current: `cargo run --bin generate-docs -- --check`
 - [ ] Parity tests pass: `cargo test --test lib parity`
 - [ ] Confusables data regenerated: `python3 scripts/generate_confusables.py`
 - [ ] Crate packaging succeeds: `cargo package`
@@ -51,6 +53,7 @@ CI runs on GitHub Actions (`.github/workflows/ci.yml`):
 - Run clippy with warnings denied
 - Build on ubuntu-latest
 - Run tests (unit + integration)
+- Verify generated docs are current
 - Run `cargo package`
 
 ## Cargo.lock

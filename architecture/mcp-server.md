@@ -153,7 +153,7 @@ Tools marked `composite: true` orchestrate other tools internally. All emit a `v
 
 | Tool | Verdict domain | What it does |
 |------|---------------|-------------|
-| `edit_preflight` | allow / review / block | Pre-checks an edit operation using text tools |
+| `edit_preflight` | allow / review / block | Pre-checks an edit operation using text tools. Optionally composes `path_scope_check`, `text_security_inspect`, and `text_fingerprint` (newline detection) when the corresponding input fields are provided. |
 | `command_preflight` | allow / review / block | Pre-checks a shell command using shell/identifier tools |
 | `config_preflight` | valid / valid_with_warnings / invalid | Pre-checks a config file using validation tools |
 | `text_security_inspect` | allow / review / block | Calls multiple text inspection tools and aggregates results |
@@ -250,6 +250,23 @@ JSON-RPC level errors use standard codes (constructed in `src/mcp/protocol.rs`):
 Profiles control which tools are available. The `full` profile includes all non-hidden tools. Named profiles include specific tool subsets.
 
 ### Profile Reference
+
+<!-- BEGIN GENERATED: profile reference -->
+| Profile | Model Tools | Tool Names |
+|---------|-------------|------------|
+| `full` | 59 | `argv_compare`, `canonicalize_text`, `cargo_toml_inspect`, `code_fence_extract`, `command_preflight`, `config_preflight`, `constant_lookup`, `dotenv_validate`, `edit_preflight`, `escape_text`, `glob_match`, `identifier_analyze`, `identifier_inspect`, `identifier_table_inspect`, `ini_validate`, `json_canonicalize`, `json_compare`, `json_extract`, `json_query`, `json_shape`, `line_range_compare`, `line_range_extract`, `list_compare`, `list_dedupe`, `list_sort`, `markdown_structure`, `math_eval`, `patch_summary`, `path_analyze`, `path_compare`, `path_normalize`, `regex_finditer`, `regex_safety_check`, `shell_quote_join`, `structured_data_compare`, `text_count`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_hash`, `text_inspect`, `text_measure`, `text_position`, `text_replace_check`, `text_security_inspect`, `text_transform`, `text_truncate`, `text_window`, `toml_shape`, `unescape_text`, `unit_convert`, `unit_info`, `validate_brackets`, `validate_json`, `validate_regex`, `validate_schema_light`, `validate_toml`, `version_compare`, `version_constraint_check` |
+| `default` | 25 | `escape_text`, `glob_match`, `identifier_inspect`, `json_canonicalize`, `json_compare`, `line_range_extract`, `list_dedupe`, `list_sort`, `math_eval`, `path_normalize`, `regex_finditer`, `regex_safety_check`, `text_count`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_inspect`, `text_measure`, `text_replace_check`, `text_window`, `unescape_text`, `validate_brackets`, `validate_json`, `validate_regex`, `validate_toml` |
+| `codegg_core_min` | 6 | `command_preflight`, `config_preflight`, `edit_preflight`, `text_replace_check`, `text_security_inspect`, `validate_json` |
+| `codegg_core` | 15 | `cargo_toml_inspect`, `command_preflight`, `config_preflight`, `edit_preflight`, `identifier_inspect`, `path_normalize`, `structured_data_compare`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_inspect`, `text_replace_check`, `text_security_inspect`, `validate_json`, `validate_toml` |
+| `codegg_preflight` | 4 | `command_preflight`, `config_preflight`, `edit_preflight`, `text_security_inspect` |
+| `codegg_patch` | 6 | `edit_preflight`, `line_range_compare`, `line_range_extract`, `patch_summary`, `text_diff_explain`, `text_replace_check` |
+| `codegg_config` | 12 | `config_preflight`, `dotenv_validate`, `ini_validate`, `json_canonicalize`, `json_compare`, `json_extract`, `structured_data_compare`, `toml_shape`, `validate_json`, `validate_schema_light`, `validate_toml`, `version_compare` |
+| `codegg_unicode_security` | 6 | `canonicalize_text`, `identifier_inspect`, `text_inspect`, `text_position`, `text_security_inspect`, `text_transform` |
+| `codegg_shell` | 4 | `argv_compare`, `command_preflight`, `regex_safety_check`, `shell_quote_join` |
+| `codegg_repo_audit` | 6 | `cargo_toml_inspect`, `code_fence_extract`, `identifier_table_inspect`, `json_shape`, `markdown_structure`, `text_fingerprint` |
+| `human_math` | 4 | `constant_lookup`, `math_eval`, `unit_convert`, `unit_info` |
+
+<!-- END GENERATED: profile reference -->
 
 | Profile | Intended Consumer | Description |
 |---------|------------------|-------------|

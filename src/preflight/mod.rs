@@ -285,6 +285,138 @@ impl FindingDisposition {
 }
 
 // ---------------------------------------------------------------------------
+// Edit preflight policy enums and result structs
+// ---------------------------------------------------------------------------
+
+/// Newline policy for edit preflight.
+///
+/// Controls whether mixed newline styles (CRLF/LF) should be flagged.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EditNewlinePolicy {
+    /// Do not check newline styles.
+    #[default]
+    Skip,
+    /// Flag mixed newlines (CRLF/LF in same file).
+    Check,
+    /// Automatically normalize to LF before comparison.
+    NormalizeLf,
+    /// Automatically normalize to CRLF before comparison.
+    NormalizeCrlf,
+}
+
+impl EditNewlinePolicy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EditNewlinePolicy::Skip => "skip",
+            EditNewlinePolicy::Check => "check",
+            EditNewlinePolicy::NormalizeLf => "normalize_lf",
+            EditNewlinePolicy::NormalizeCrlf => "normalize_crlf",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "skip" => EditNewlinePolicy::Skip,
+            "check" => EditNewlinePolicy::Check,
+            "normalize_lf" => EditNewlinePolicy::NormalizeLf,
+            "normalize_crlf" => EditNewlinePolicy::NormalizeCrlf,
+            _ => EditNewlinePolicy::default(),
+        }
+    }
+}
+
+/// Unicode policy for edit preflight.
+///
+/// Controls how unicode security checks are applied to the replacement text.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EditUnicodePolicy {
+    /// No unicode security checks.
+    #[default]
+    Skip,
+    /// Run default security checks (invisible chars, confusables, bidi).
+    Default,
+    /// Run security checks with source_code policy (stricter).
+    SourceCode,
+    /// Run security checks with identifier policy.
+    Identifier,
+}
+
+impl EditUnicodePolicy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EditUnicodePolicy::Skip => "skip",
+            EditUnicodePolicy::Default => "default",
+            EditUnicodePolicy::SourceCode => "source_code",
+            EditUnicodePolicy::Identifier => "identifier",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "skip" => EditUnicodePolicy::Skip,
+            "default" => EditUnicodePolicy::Default,
+            "source_code" => EditUnicodePolicy::SourceCode,
+            "identifier" => EditUnicodePolicy::Identifier,
+            _ => EditUnicodePolicy::default(),
+        }
+    }
+}
+
+/// Edit metadata providing context for preflight analysis.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct EditMetadata {
+    /// Description of the edit (for logging/diagnostics).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Author or agent performing the edit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// Tool that originated this edit (e.g. "apply_patch", "edit_file").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_tool: Option<String>,
+}
+
+/// Path scope check result from composing `path_scope_check`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PathScopeResult {
+    /// Whether the target path is inside the workspace root.
+    pub inside_root: bool,
+    /// Whether the path uses `..` traversal.
+    pub escapes_via_dotdot: bool,
+    /// Normalized relative path from root.
+    pub relative_path: String,
+}
+
+/// Newline check result from detecting newline style inconsistencies.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NewlineCheckResult {
+    /// Detected newline style: "LF", "CRLF", "CR", "mixed", or "none".
+    pub style: String,
+    /// Whether mixed newlines were detected.
+    pub mixed: bool,
+}
+
+/// Unicode security check result from composing `text_security_inspect`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UnicodeCheckResult {
+    /// Overall verdict from security inspect: "allow", "review", or "block".
+    pub verdict: String,
+    /// Machine code from security inspect.
+    pub machine_code: String,
+    /// Number of findings.
+    pub finding_count: usize,
+}
+
+/// Fingerprint result from composing `text_fingerprint`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FingerprintResult {
+    /// SHA-256 fingerprint of the text.
+    pub sha256: String,
+    /// Detected newline style in the text.
+    pub newline_style: String,
+}
+
+// ---------------------------------------------------------------------------
 // Shared types
 // ---------------------------------------------------------------------------
 
@@ -544,6 +676,16 @@ pub struct EditPreflightInput {
     pub expected_fingerprint: Option<String>,
     /// Strict mode for patch matching.
     pub strict: bool,
+    /// Target file path (enables path_scope_check when workspace_root is set).
+    pub file_path: Option<String>,
+    /// Workspace root directory (enables path scope validation).
+    pub workspace_root: Option<String>,
+    /// Newline policy for the replacement text.
+    pub newline_policy: EditNewlinePolicy,
+    /// Unicode security policy for the replacement text.
+    pub unicode_policy: EditUnicodePolicy,
+    /// Edit metadata for diagnostics.
+    pub edit_metadata: Option<EditMetadata>,
 }
 
 impl Default for EditPreflightInput {
@@ -558,6 +700,11 @@ impl Default for EditPreflightInput {
             end_line: None,
             expected_fingerprint: None,
             strict: true,
+            file_path: None,
+            workspace_root: None,
+            newline_policy: EditNewlinePolicy::default(),
+            unicode_policy: EditUnicodePolicy::default(),
+            edit_metadata: None,
         }
     }
 }
@@ -579,6 +726,14 @@ pub struct EditPreflightOutput {
     pub findings: Vec<Finding>,
     /// Recommended next tool to call.
     pub recommended_next_tool: Option<String>,
+    /// Path scope check result (when file_path + workspace_root provided).
+    pub path_scope: Option<PathScopeResult>,
+    /// Newline check result (when newline_policy is not Skip).
+    pub newline_check: Option<NewlineCheckResult>,
+    /// Unicode security check result (when unicode_policy is not Skip).
+    pub unicode_check: Option<UnicodeCheckResult>,
+    /// Fingerprint result (when expected_fingerprint provided).
+    pub fingerprint: Option<FingerprintResult>,
     /// The raw tool response for diagnostics and forward compatibility.
     pub raw: Value,
 }
@@ -614,6 +769,23 @@ impl EditPreflight {
         }
         if let Some(ref fp) = input.expected_fingerprint {
             args["expected_fingerprint"] = Value::String(fp.clone());
+        }
+        if let Some(ref fp) = input.file_path {
+            args["file_path"] = Value::String(fp.clone());
+        }
+        if let Some(ref wr) = input.workspace_root {
+            args["workspace_root"] = Value::String(wr.clone());
+        }
+        if input.newline_policy != EditNewlinePolicy::default() {
+            args["newline_policy"] = Value::String(input.newline_policy.as_str().to_string());
+        }
+        if input.unicode_policy != EditUnicodePolicy::default() {
+            args["unicode_policy"] = Value::String(input.unicode_policy.as_str().to_string());
+        }
+        if let Some(ref meta) = input.edit_metadata {
+            if let Ok(v) = serde_json::to_value(meta) {
+                args["edit_metadata"] = v;
+            }
         }
 
         let response = registry.call_json(Self::TOOL, args)?;
@@ -655,6 +827,20 @@ impl EditPreflight {
             .and_then(|v| v.as_str())
             .map(String::from);
 
+        // Parse optional sub-tool result structs
+        let path_scope = result
+            .get("path_scope")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let newline_check = result
+            .get("newline_check")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let unicode_check = result
+            .get("unicode_check")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let fingerprint = result
+            .get("fingerprint")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+
         let raw = response.result.unwrap_or(Value::Null);
 
         Ok(EditPreflightOutput {
@@ -665,6 +851,10 @@ impl EditPreflight {
             summary,
             findings,
             recommended_next_tool,
+            path_scope,
+            newline_check,
+            unicode_check,
+            fingerprint,
             raw,
         })
     }
@@ -1598,5 +1788,241 @@ mod tests {
         let output = CommandPreflight::run(&input).unwrap();
         assert!(output.raw.is_object());
         assert!(output.raw.get("verdict").is_some());
+    }
+
+    // -- Phase 6: Enhanced edit preflight tests --
+
+    #[test]
+    fn edit_preflight_path_scope_inside_root() {
+        let input = EditPreflightInput {
+            original: "hello world".to_string(),
+            mode: ReplacementMode::Literal,
+            old: Some("hello".to_string()),
+            new: Some("goodbye".to_string()),
+            file_path: Some("src/main.rs".to_string()),
+            workspace_root: Some(".".to_string()),
+            ..Default::default()
+        };
+        let output = EditPreflight::run(&input).unwrap();
+        assert!(output.ok_to_apply);
+        assert!(output.path_scope.is_some());
+        let ps = output.path_scope.unwrap();
+        assert!(ps.inside_root);
+        assert!(!ps.escapes_via_dotdot);
+    }
+
+    #[test]
+    fn edit_preflight_path_scope_escape_blocked() {
+        // Use a workspace root that resolves to the project directory
+        // and a file path that resolves outside it via traversal
+        let workspace = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let input = EditPreflightInput {
+            original: "hello world".to_string(),
+            mode: ReplacementMode::Literal,
+            old: Some("hello".to_string()),
+            new: Some("goodbye".to_string()),
+            file_path: Some(format!("{}/../outside_project/file.txt", workspace)),
+            workspace_root: Some(workspace),
+            ..Default::default()
+        };
+        let output = EditPreflight::run(&input).unwrap();
+        assert!(output.path_scope.is_some());
+        let ps = output.path_scope.unwrap();
+        // The path goes outside root via traversal
+        assert!(ps.escapes_via_dotdot);
+        // Whether inside_root is true or false depends on the OS resolution,
+        // but escapes_via_dotdot should always be true for traversal paths
+    }
+
+    #[test]
+    fn edit_preflight_newline_check_detects_mixed() {
+        let mixed = "line1\nline2\r\nline3\n";
+        let input = EditPreflightInput {
+            original: mixed.to_string(),
+            mode: ReplacementMode::Literal,
+            old: Some("line1".to_string()),
+            new: Some("LINE1".to_string()),
+            newline_policy: EditNewlinePolicy::Check,
+            ..Default::default()
+        };
+        let output = EditPreflight::run(&input).unwrap();
+        assert!(output.newline_check.is_some());
+        let nc = output.newline_check.unwrap();
+        assert!(nc.mixed);
+    }
+
+    #[test]
+    fn edit_preflight_newline_skip_by_default() {
+        let input = EditPreflightInput {
+            original: "hello".to_string(),
+            mode: ReplacementMode::Literal,
+            old: Some("hello".to_string()),
+            new: Some("world".to_string()),
+            ..Default::default()
+        };
+        let output = EditPreflight::run(&input).unwrap();
+        assert!(output.newline_check.is_none());
+    }
+
+    #[test]
+    fn edit_preflight_unicode_check_default_policy() {
+        let input = EditPreflightInput {
+            original: "hello world".to_string(),
+            mode: ReplacementMode::Literal,
+            old: Some("hello".to_string()),
+            new: Some("world".to_string()),
+            unicode_policy: EditUnicodePolicy::Default,
+            ..Default::default()
+        };
+        let output = EditPreflight::run(&input).unwrap();
+        assert!(output.unicode_check.is_some());
+        let uc = output.unicode_check.unwrap();
+        assert_eq!(uc.verdict, "allow");
+    }
+
+    #[test]
+    fn edit_preflight_unicode_skip_by_default() {
+        let input = EditPreflightInput {
+            original: "hello".to_string(),
+            mode: ReplacementMode::Literal,
+            old: Some("hello".to_string()),
+            new: Some("world".to_string()),
+            ..Default::default()
+        };
+        let output = EditPreflight::run(&input).unwrap();
+        assert!(output.unicode_check.is_none());
+    }
+
+    #[test]
+    fn edit_preflight_enums_parse_roundtrip() {
+        // EditNewlinePolicy
+        assert_eq!(EditNewlinePolicy::parse("skip"), EditNewlinePolicy::Skip);
+        assert_eq!(EditNewlinePolicy::parse("check"), EditNewlinePolicy::Check);
+        assert_eq!(
+            EditNewlinePolicy::parse("normalize_lf"),
+            EditNewlinePolicy::NormalizeLf
+        );
+        assert_eq!(
+            EditNewlinePolicy::parse("normalize_crlf"),
+            EditNewlinePolicy::NormalizeCrlf
+        );
+        assert_eq!(EditNewlinePolicy::Skip.as_str(), "skip");
+        assert_eq!(EditNewlinePolicy::Check.as_str(), "check");
+        assert_eq!(EditNewlinePolicy::NormalizeLf.as_str(), "normalize_lf");
+        assert_eq!(EditNewlinePolicy::NormalizeCrlf.as_str(), "normalize_crlf");
+
+        // EditUnicodePolicy
+        assert_eq!(EditUnicodePolicy::parse("skip"), EditUnicodePolicy::Skip);
+        assert_eq!(
+            EditUnicodePolicy::parse("default"),
+            EditUnicodePolicy::Default
+        );
+        assert_eq!(
+            EditUnicodePolicy::parse("source_code"),
+            EditUnicodePolicy::SourceCode
+        );
+        assert_eq!(
+            EditUnicodePolicy::parse("identifier"),
+            EditUnicodePolicy::Identifier
+        );
+        assert_eq!(EditUnicodePolicy::Skip.as_str(), "skip");
+        assert_eq!(EditUnicodePolicy::Default.as_str(), "default");
+        assert_eq!(EditUnicodePolicy::SourceCode.as_str(), "source_code");
+        assert_eq!(EditUnicodePolicy::Identifier.as_str(), "identifier");
+    }
+
+    #[test]
+    fn edit_preflight_parse_response_with_path_scope() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow",
+                "path_scope": {
+                    "inside_root": true,
+                    "escapes_via_dotdot": false,
+                    "relative_path": "src/main.rs"
+                }
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK");
+        let output = EditPreflight::parse_response(response).unwrap();
+        assert!(output.path_scope.is_some());
+        let ps = output.path_scope.unwrap();
+        assert!(ps.inside_root);
+        assert!(!ps.escapes_via_dotdot);
+        assert_eq!(ps.relative_path, "src/main.rs");
+    }
+
+    #[test]
+    fn edit_preflight_parse_response_with_unicode_check() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow",
+                "unicode_check": {
+                    "verdict": "allow",
+                    "machine_code": "TEXT_SECURITY_OK",
+                    "finding_count": 0
+                }
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK");
+        let output = EditPreflight::parse_response(response).unwrap();
+        assert!(output.unicode_check.is_some());
+        let uc = output.unicode_check.unwrap();
+        assert_eq!(uc.verdict, "allow");
+        assert_eq!(uc.machine_code, "TEXT_SECURITY_OK");
+        assert_eq!(uc.finding_count, 0);
+    }
+
+    #[test]
+    fn edit_preflight_parse_response_with_newline_check() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "review",
+                "newline_check": {
+                    "style": "mixed",
+                    "mixed": true
+                }
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("NEWLINE_INCONSISTENCY");
+        let output = EditPreflight::parse_response(response).unwrap();
+        assert!(output.newline_check.is_some());
+        let nc = output.newline_check.unwrap();
+        assert_eq!(nc.style, "mixed");
+        assert!(nc.mixed);
+    }
+
+    #[test]
+    fn edit_preflight_parse_response_without_new_fields_is_none() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow"
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK");
+        let output = EditPreflight::parse_response(response).unwrap();
+        assert!(output.path_scope.is_none());
+        assert!(output.newline_check.is_none());
+        assert!(output.unicode_check.is_none());
+        assert!(output.fingerprint.is_none());
     }
 }

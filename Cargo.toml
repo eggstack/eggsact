@@ -34,6 +34,10 @@ tokio = { version = "1", features = ["full"] }
 
 [dev-dependencies]
 
+[[bin]]
+name = "generate-docs"
+path = "src/bin/generate_docs.rs"
+
 [[test]]
 name = "lib"
 path = "tests/lib.rs"

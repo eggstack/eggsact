@@ -256,6 +256,16 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
         .unwrap_or("literal");
     let strict = args.get("strict").and_then(|v| v.as_bool()).unwrap_or(true);
     let expected_fingerprint = args.get("expected_fingerprint").and_then(|v| v.as_str());
+    let file_path = args.get("file_path").and_then(|v| v.as_str());
+    let workspace_root = args.get("workspace_root").and_then(|v| v.as_str());
+    let newline_policy = args
+        .get("newline_policy")
+        .and_then(|v| v.as_str())
+        .unwrap_or("skip");
+    let unicode_policy = args
+        .get("unicode_policy")
+        .and_then(|v| v.as_str())
+        .unwrap_or("skip");
 
     if original.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
@@ -446,15 +456,22 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     //   literal mode: fingerprints original text
     //   patch mode:   fingerprints result_fingerprint from patch_apply_check
     //   line_range mode: fingerprints fingerprint from line_range_extract
+    let mut fingerprint_result: Option<Value> = None;
     if let Some(fp) = expected_fingerprint {
-        let (actual_fp, fp_source) = if replacement_mode == "patch" {
+        let (actual_fp, fp_source, newline_style) = if replacement_mode == "patch" {
             // Use result_fingerprint from patch_apply_check subresult
             let fp_val = subresults
                 .get("patch_apply_check")
                 .and_then(|r| r.get("result_fingerprint"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            (fp_val.to_string(), "patch_apply_check")
+            let nl = subresults
+                .get("patch_apply_check")
+                .and_then(|r| r.get("newline_style_after"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            (fp_val.to_string(), "patch_apply_check", nl)
         } else if replacement_mode == "line_range" {
             // Use fingerprint from line_range_extract subresult
             let fp_val = subresults
@@ -462,7 +479,13 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 .and_then(|r| r.get("fingerprint"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            (fp_val.to_string(), "line_range_extract")
+            let nl = subresults
+                .get("line_range_extract")
+                .and_then(|r| r.get("newline_style"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            (fp_val.to_string(), "line_range_extract", nl)
         } else {
             // literal mode: fingerprint original text
             let fp_args = serde_json::json!({"text": original});
@@ -474,12 +497,23 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            let nl = fp_result
+                .result
+                .as_ref()
+                .and_then(|r| r.get("newline_style"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
             subresults.insert(
                 "text_fingerprint".to_string(),
                 fp_result.result.unwrap_or(serde_json::Value::Null),
             );
-            (fp_val, "text_fingerprint")
+            (fp_val, "text_fingerprint", nl)
         };
+        fingerprint_result = Some(serde_json::json!({
+            "sha256": actual_fp,
+            "newline_style": newline_style,
+        }));
         if actual_fp != fp {
             findings.push(finding(
                 "FINGERPRINT_MISMATCH",
@@ -488,6 +522,118 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 Some(disposition::CAUTION),
                 None,
             ));
+        }
+    }
+
+    // --- Path scope check (when file_path + workspace_root are provided) ---
+    let mut path_scope_result: Option<Value> = None;
+    if let (Some(fp), Some(wr)) = (file_path, workspace_root) {
+        let ps_args = serde_json::json!({
+            "root": wr,
+            "target": fp,
+        });
+        let ps_resp = crate::tools::path::path_scope_check(&ps_args);
+        if let Some(ref r) = ps_resp.result {
+            path_scope_result = Some(r.clone());
+            subresults.insert("path_scope_check".to_string(), r.clone());
+            let inside_root = r
+                .get("inside_root")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            if !inside_root {
+                findings.push(finding(
+                    "PATH_SCOPE_ESCAPE",
+                    severity::HIGH,
+                    "Target path is outside workspace root",
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
+            }
+        }
+    }
+
+    // --- Newline style detection (when policy is not "skip") ---
+    let mut newline_check_result: Option<Value> = None;
+    if newline_policy != "skip" {
+        // Detect newline style on original text using text_fingerprint
+        let fp_args = serde_json::json!({"text": original, "unicode": "raw", "newline": "raw"});
+        let fp_resp = crate::tools::text::text_fingerprint_tool(&fp_args);
+        if let Some(ref r) = fp_resp.result {
+            let style = r
+                .get("newline_style")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let mixed = style == "mixed";
+            let nc = serde_json::json!({
+                "style": style,
+                "mixed": mixed,
+            });
+            newline_check_result = Some(nc.clone());
+            subresults.insert("newline_check".to_string(), nc);
+            if mixed {
+                findings.push(finding(
+                    "NEWLINE_INCONSISTENCY",
+                    severity::MEDIUM,
+                    "File has mixed newline styles (CRLF and LF)",
+                    Some(disposition::CAUTION),
+                    None,
+                ));
+            }
+        }
+    }
+
+    // --- Unicode security check (when policy is not "skip") ---
+    let mut unicode_check_result: Option<Value> = None;
+    if unicode_policy != "skip" {
+        // Determine text to inspect: prefer `new` (literal mode), otherwise original
+        let inspect_text = args.get("new").and_then(|v| v.as_str()).unwrap_or(original);
+        let us_args = serde_json::json!({
+            "text": inspect_text,
+            "policy": unicode_policy,
+            "detail": "summary",
+        });
+        let us_resp = crate::tools::text::text_security_inspect(&us_args);
+        if let Some(ref r) = us_resp.result {
+            let us_verdict = r
+                .get("verdict")
+                .and_then(|v| v.as_str())
+                .unwrap_or("allow")
+                .to_string();
+            let us_machine_code = r
+                .get("machine_code")
+                .and_then(|v| v.as_str())
+                .unwrap_or("TEXT_SECURITY_OK")
+                .to_string();
+            let us_findings_count = r
+                .get("findings")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            let uc = serde_json::json!({
+                "verdict": us_verdict,
+                "machine_code": us_machine_code,
+                "finding_count": us_findings_count,
+            });
+            unicode_check_result = Some(uc.clone());
+            subresults.insert("text_security_inspect".to_string(), r.clone());
+            if us_verdict == "block" {
+                findings.push(finding(
+                    "UNICODE_RISK",
+                    severity::HIGH,
+                    "Unicode security check blocked replacement text",
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
+            } else if us_verdict == "review" {
+                findings.push(finding(
+                    "UNICODE_RISK",
+                    severity::MEDIUM,
+                    "Unicode security check flagged replacement text for review",
+                    Some(disposition::CAUTION),
+                    None,
+                ));
+            }
         }
     }
 
@@ -559,6 +705,27 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             ));
         }
     }
+    // Path scope escape is always BLOCK-level
+    let has_path_escape = findings
+        .iter()
+        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("PATH_SCOPE_ESCAPE"));
+    if has_path_escape && !code_list.contains(&machine_codes::PATH_SCOPE_ESCAPE.to_string()) {
+        code_list.push(machine_codes::PATH_SCOPE_ESCAPE.to_string());
+    }
+    // Unicode risk
+    let has_unicode_risk = findings
+        .iter()
+        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("UNICODE_RISK"));
+    if has_unicode_risk && !code_list.contains(&machine_codes::UNICODE_RISK.to_string()) {
+        code_list.push(machine_codes::UNICODE_RISK.to_string());
+    }
+    // Newline inconsistency
+    let has_newline_inc = findings
+        .iter()
+        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("NEWLINE_INCONSISTENCY"));
+    if has_newline_inc && !code_list.contains(&machine_codes::NEWLINE_INCONSISTENCY.to_string()) {
+        code_list.push(machine_codes::NEWLINE_INCONSISTENCY.to_string());
+    }
     if has_error && code_list.is_empty() {
         code_list.push(machine_codes::EDIT_FAILED.to_string());
     }
@@ -590,6 +757,18 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     });
     if !subresults.is_empty() {
         result["subresults"] = serde_json::Value::Object(subresults);
+    }
+    if let Some(ps) = path_scope_result {
+        result["path_scope"] = ps;
+    }
+    if let Some(nc) = newline_check_result {
+        result["newline_check"] = nc;
+    }
+    if let Some(uc) = unicode_check_result {
+        result["unicode_check"] = uc;
+    }
+    if let Some(fp) = fingerprint_result {
+        result["fingerprint"] = fp;
     }
 
     let mut resp =

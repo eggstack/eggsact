@@ -34,7 +34,12 @@ pub fn edit_preflight_input() -> Value {
             "start_line": {"type": "integer", "description": "First line (line_range mode)"},
             "end_line": {"type": "integer", "description": "Last line inclusive (line_range mode)"},
             "expected_fingerprint": {"type": "string", "description": "Expected SHA-256 fingerprint for verification"},
-            "strict": {"type": "boolean", "default": true, "description": "Strict mode for patch matching"}
+            "strict": {"type": "boolean", "default": true, "description": "Strict mode for patch matching"},
+            "file_path": {"type": "string", "description": "Target file path (enables path scope check when workspace_root is set)"},
+            "workspace_root": {"type": "string", "description": "Workspace root directory (enables path scope validation)"},
+            "newline_policy": {"type": "string", "enum": ["skip", "check", "normalize_lf", "normalize_crlf"], "default": "skip", "description": "Newline style policy: skip, check (flag mixed), normalize_lf, normalize_crlf"},
+            "unicode_policy": {"type": "string", "enum": ["skip", "default", "source_code", "identifier"], "default": "skip", "description": "Unicode security policy: skip, default, source_code, identifier"},
+            "edit_metadata": {"type": "object", "properties": {"description": {"type": "string"}, "author": {"type": "string"}, "source_tool": {"type": "string", "description": "Tool that originated this edit"}}, "description": "Edit metadata for diagnostics"}
         },
         "required": ["original"]
     })
@@ -49,5 +54,5 @@ pub fn patch_summary_output() -> Value {
 }
 
 pub fn edit_preflight_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"ok_to_apply":{"type":"boolean"},"mode":{"type":"string"},"findings":{"type":"array"},"machine_code":{"type":"string"},"recommended_next_tool":{"type":["string","null"]},"summary":{"type":"string"},"subresults":{"type":"object"}}})
+    serde_json::json!({"type":"object","properties":{"ok_to_apply":{"type":"boolean"},"mode":{"type":"string"},"verdict":{"type":"string","enum":["allow","review","block","safe_to_apply","safe_with_warnings"],"description":"Typed verdict for programmatic routing"},"findings":{"type":"array"},"machine_code":{"type":"string"},"recommended_next_tool":{"type":["string","null"]},"summary":{"type":"string"},"subresults":{"type":"object"},"path_scope":{"type":["object","null"],"properties":{"inside_root":{"type":"boolean"},"escapes_via_dotdot":{"type":"boolean"},"relative_path":{"type":"string"}},"description":"Path scope check result"},"newline_check":{"type":["object","null"],"properties":{"style":{"type":"string"},"mixed":{"type":"boolean"}},"description":"Newline style check result"},"unicode_check":{"type":["object","null"],"properties":{"verdict":{"type":"string"},"machine_code":{"type":"string"},"finding_count":{"type":"integer"}},"description":"Unicode security check result"},"fingerprint":{"type":["object","null"],"properties":{"sha256":{"type":"string"},"newline_style":{"type":"string"}},"description":"Fingerprint verification result"}}})
 }

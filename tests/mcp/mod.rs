@@ -5,6 +5,7 @@ pub mod test_comprehensive_parity;
 pub mod test_determinism_concurrency;
 pub mod test_deterministic_real_use;
 pub mod test_edge_cases;
+pub mod test_edit_preflight_enhanced;
 pub mod test_error_structure;
 pub mod test_golden_fixtures;
 pub mod test_hardening_and_gaps;

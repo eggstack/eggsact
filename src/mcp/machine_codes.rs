@@ -98,6 +98,8 @@ pub const PATCH_FAILED: &str = "PATCH_FAILED";
 pub const LINE_RANGE_INVALID: &str = "LINE_RANGE_INVALID";
 /// Content fingerprint did not match — source may have changed.
 pub const FINGERPRINT_MISMATCH: &str = "FINGERPRINT_MISMATCH";
+/// Newline style is inconsistent across the file (mixed CRLF/LF).
+pub const NEWLINE_INCONSISTENCY: &str = "NEWLINE_INCONSISTENCY";
 
 // ---------------------------------------------------------------------------
 // Shell / Command
@@ -320,6 +322,7 @@ pub const ALL: &[&str] = &[
     PATCH_FAILED,
     LINE_RANGE_INVALID,
     FINGERPRINT_MISMATCH,
+    NEWLINE_INCONSISTENCY,
     COMMAND_OK,
     SHELL_RISK,
     SHELL_PARSE_ERROR,

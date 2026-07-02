@@ -5,6 +5,9 @@ cd "$(dirname "$0")"
 echo "=== Regenerating confusables data from Unicode.org ==="
 python3 scripts/generate_confusables.py
 
+echo "=== Regenerating docs from ToolSpec registry ==="
+cargo run --bin generate-docs
+
 echo "=== Checking formatting ==="
 cargo fmt --check
 

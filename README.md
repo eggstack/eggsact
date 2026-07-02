@@ -91,151 +91,155 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 
 ## MCP Tools
 
+<!-- BEGIN GENERATED: eggsact tools -->
 64 tools across 16 categories. See `architecture/mcp-server.md` for the full reference.
 
-### Math & Units (4)
+### Math (4)
 
-| Tool | Description |
-|------|-------------|
-| `math_eval` | Evaluate arithmetic, unit conversions, constants, and scientific expressions |
-| `unit_convert` | Convert a quantity between compatible units |
-| `unit_info` | Get metadata about a unit (category, base unit, aliases) |
-| `constant_lookup` | Look up physical or mathematical constants by name |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `math_eval` | 0 | default | stable | mod | default, full, human_math |
+| `unit_convert` | 2 | contextual | stable | cheap | full, human_math |
+| `unit_info` | 2 | contextual | stable | cheap | full, human_math |
+| `constant_lookup` | 2 | contextual | stable | cheap | full, human_math |
 
 ### Text (18)
 
-| Tool | Description |
-|------|-------------|
-| `text_measure` | Measure text properties: bytes, characters, codepoints, words, lines |
-| `text_equal` | Compare two strings with casefold and trim options |
-| `text_diff_explain` | Levenshtein distance and character-level diff between strings |
-| `text_inspect` | Inspect text for hidden characters, codepoints, and confusables |
-| `text_count` | Count character occurrences or build a frequency table |
-| `text_truncate` | Truncate text to a given length with ellipsis options |
-| `text_fingerprint` | Generate a stable text fingerprint for deduplication |
-| `text_hash` | Hash text with SHA-256, SHA-1, MD5, or CRC32 |
-| `text_position` | Convert between byte offsets, line/column, and UTF-16 positions |
-| `text_window` | Extract a window of text around a position |
-| `text_transform` | Casefold, normalize (NFC/NFD/NFKC/NFKD), and transform text |
-| `text_replace_check` | Preview a text replacement before applying it |
-| `escape_text` | Escape special characters (JSON, shell, regex, URL) |
-| `unescape_text` | Unescape escaped strings back to their original form |
-| `text_security_inspect` | Composite: aggregate security checks across multiple tools |
-| `prompt_input_inspect` | Detect hidden characters and instruction injection in prompts |
-| `line_range_extract` | Extract a line range from text |
-| `line_range_compare` | Compare line ranges between two texts |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `text_measure` | 0 | default | stable | cheap | default, full |
+| `text_equal` | 0 | default | stable | cheap | codegg_core, default, full |
+| `text_diff_explain` | 1 | default | stable | mod | codegg_core, codegg_patch, default, full |
+| `text_inspect` | 1 | default | stable | mod | codegg_core, codegg_unicode_security, default, full |
+| `text_count` | 0 | default | stable | cheap | default, full |
+| `text_truncate` | 3 | expert | stable | cheap | full |
+| `text_transform` | 2 | contextual | stable | mod | codegg_unicode_security, full |
+| `text_position` | 2 | contextual | stable | cheap | codegg_unicode_security, full |
+| `text_hash` | 2 | contextual | stable | mod | full |
+| `escape_text` | 1 | default | stable | cheap | default, full |
+| `unescape_text` | 1 | default | stable | cheap | default, full |
+| `text_window` | 1 | default | stable | cheap | default, full |
+| `text_fingerprint` | 0 | default | stable | cheap | codegg_core, codegg_repo_audit, default, full |
+| `text_replace_check` | 1 | default | stable | cheap | codegg_core, codegg_core_min, codegg_patch, default, full |
+| `line_range_extract` | 1 | default | stable | cheap | codegg_patch, default, full |
+| `line_range_compare` | 2 | contextual | stable | mod | codegg_patch, full |
+| `prompt_input_inspect` | 2 | harness | stable | mod | codegg_preflight, codegg_unicode_security, full |
+| `text_security_inspect` | 1 | default | stable | heavy | codegg_core, codegg_core_min, codegg_preflight, codegg_unicode_security, full |
 
-### JSON (6)
+### Json (6)
 
-| Tool | Description |
-|------|-------------|
-| `json_extract` | Extract values from JSON by path |
-| `json_compare` | Compare two JSON structures for equality or diff |
-| `json_canonicalize` | Produce canonical JSON for deterministic serialization |
-| `json_query` | Query JSON with a simple dot-path language |
-| `json_shape` | Describe the structure of a JSON document |
-| `structured_data_compare` | Composite: compare structured data using JSON tools |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `json_extract` | 2 | contextual | stable | mod | codegg_config, full |
+| `json_compare` | 1 | default | stable | mod | codegg_config, default, full |
+| `json_shape` | 3 | expert | stable | mod | codegg_repo_audit, full |
+| `json_canonicalize` | 1 | default | stable | mod | codegg_config, default, full |
+| `json_query` | 1 | contextual | deprecated | mod | full |
+| `structured_data_compare` | 2 | contextual | stable | heavy | codegg_config, codegg_core, full |
 
 ### Regex (3)
 
-| Tool | Description |
-|------|-------------|
-| `validate_regex` | Test regex patterns with lookahead/lookbehind, groups, and flags |
-| `regex_safety_check` | Detect ReDoS vulnerabilities and catastrophic backtracking |
-| `regex_finditer` | Find all regex matches in a string with capture groups |
-
-### Lists (3)
-
-| Tool | Description |
-|------|-------------|
-| `list_compare` | Compare two lists, find common and unique items |
-| `list_dedupe` | Remove duplicate items from a list |
-| `list_sort` | Sort a list with configurable order and key extraction |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `validate_regex` | 1 | default | stable | mod | default, full |
+| `regex_finditer` | 1 | default | stable | mod | default, full |
+| `regex_safety_check` | 1 | default | stable | cheap | codegg_shell, default, full |
 
 ### Validation (4)
 
-| Tool | Description |
-|------|-------------|
-| `validate_json` | Validate JSON syntax with error position reporting |
-| `validate_toml` | Validate TOML syntax |
-| `validate_brackets` | Check bracket balance in text (parens, braces, brackets, angle) |
-| `validate_schema_light` | Lightweight JSON schema validation |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `validate_brackets` | 1 | default | stable | cheap | default, full |
+| `validate_json` | 0 | default | stable | cheap | codegg_config, codegg_core, codegg_core_min, default, full |
+| `validate_toml` | 1 | default | stable | cheap | codegg_config, codegg_core, default, full |
+| `validate_schema_light` | 3 | contextual | stable | mod | codegg_config, full |
 
-### Paths (5)
+### List (3)
 
-| Tool | Description |
-|------|-------------|
-| `path_normalize` | Normalize and canonicalize file paths |
-| `path_analyze` | Analyze path components (parent, stem, extension, etc.) |
-| `path_compare` | Compare two paths for equivalence |
-| `path_scope_check` | Check whether a path is within a given directory scope |
-| `glob_match` | Match a file path against a glob pattern |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `list_compare` | 2 | contextual | stable | mod | full |
+| `list_dedupe` | 1 | default | stable | cheap | default, full |
+| `list_sort` | 1 | default | stable | cheap | default, full |
 
-### Identifiers (3)
+### Path (5)
 
-| Tool | Description |
-|------|-------------|
-| `identifier_analyze` | Classify identifier naming conventions (snake_case, camelCase, etc.) |
-| `identifier_inspect` | Inspect identifiers for confusables and collisions |
-| `identifier_table_inspect` | Analyze a table of identifiers for naming issues |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `path_normalize` | 0 | default | stable | cheap | codegg_core, default, full |
+| `path_analyze` | 2 | contextual | stable | cheap | full |
+| `path_compare` | 2 | contextual | stable | cheap | full |
+| `path_scope_check` | 2 | harness | stable | cheap | codegg_preflight, full |
+| `glob_match` | 1 | default | stable | cheap | default, full |
 
 ### Shell (4)
 
-| Tool | Description |
-|------|-------------|
-| `shell_split` | Split a shell command string into argv tokens |
-| `shell_quote_join` | Quote and join tokens into a safe shell command string |
-| `argv_compare` | Compare two argument lists for equivalence |
-| `command_preflight` | Composite: pre-check a shell command using shell/identifier tools |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `shell_split` | 2 | harness | stable | cheap | codegg_preflight, codegg_shell, full |
+| `shell_quote_join` | 2 | contextual | stable | cheap | codegg_shell, full |
+| `argv_compare` | 2 | contextual | stable | cheap | codegg_shell, full |
+| `command_preflight` | 1 | default | stable | heavy | codegg_core, codegg_core_min, codegg_preflight, codegg_shell, full |
 
 ### Markdown (2)
 
-| Tool | Description |
-|------|-------------|
-| `markdown_structure` | Parse markdown headings, lists, and code blocks |
-| `code_fence_extract` | Extract fenced code blocks with language tags |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `markdown_structure` | 2 | contextual | stable | mod | codegg_repo_audit, full |
+| `code_fence_extract` | 2 | contextual | stable | mod | codegg_repo_audit, full |
 
 ### Config (3)
 
-| Tool | Description |
-|------|-------------|
-| `dotenv_validate` | Validate `.env` file syntax |
-| `ini_validate` | Validate INI file syntax |
-| `config_preflight` | Composite: pre-check a config file using validation tools |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `dotenv_validate` | 2 | contextual | stable | cheap | codegg_config, full |
+| `ini_validate` | 2 | contextual | stable | cheap | codegg_config, full |
+| `config_preflight` | 1 | default | stable | heavy | codegg_config, codegg_core, codegg_core_min, codegg_preflight, full |
 
-### Patches (3)
+### Identifier (3)
 
-| Tool | Description |
-|------|-------------|
-| `patch_apply_check` | Preview a unified diff patch without modifying files |
-| `patch_summary` | Summarize changes in a unified diff patch |
-| `edit_preflight` | Composite: pre-check an edit operation using text tools |
-
-### TOML (1)
-
-| Tool | Description |
-|------|-------------|
-| `toml_shape` | Describe the structure of a TOML document |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `identifier_analyze` | 3 | expert | stable | mod | full |
+| `identifier_inspect` | 1 | default | stable | mod | codegg_core, codegg_unicode_security, default, full |
+| `identifier_table_inspect` | 3 | expert | stable | mod | codegg_repo_audit, full |
 
 ### Unicode (2)
 
-| Tool | Description |
-|------|-------------|
-| `unicode_policy_check` | Validate text against named Unicode safety policies |
-| `canonicalize_text` | Normalize text using configurable canonicalization profiles |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `unicode_policy_check` | 2 | harness | stable | mod | codegg_preflight, codegg_unicode_security, full |
+| `canonicalize_text` | 2 | contextual | stable | mod | codegg_unicode_security, full |
 
-### Versioning (2)
+### Version (2)
 
-| Tool | Description |
-|------|-------------|
-| `version_constraint_check` | Check if a semver version satisfies a constraint |
-| `version_compare` | Compare two semver versions |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `version_compare` | 2 | contextual | stable | cheap | codegg_config, full |
+| `version_constraint_check` | 3 | expert | stable | cheap | full |
+
+### Toml (1)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `toml_shape` | 2 | contextual | stable | mod | codegg_config, full |
+
+### Patch (3)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `patch_apply_check` | 2 | harness | stable | mod | codegg_patch, codegg_preflight, full |
+| `patch_summary` | 2 | contextual | stable | mod | codegg_patch, full |
+| `edit_preflight` | 1 | default | stable | heavy | codegg_core, codegg_core_min, codegg_patch, codegg_preflight, full |
 
 ### Cargo (1)
 
-| Tool | Description |
-|------|-------------|
-| `cargo_toml_inspect` | Extract metadata from Cargo.toml files |
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `cargo_toml_inspect` | 3 | expert | stable | mod | codegg_core, codegg_repo_audit, full |
+
+
+<!-- END GENERATED: eggsact tools -->
 
 ## Math Features
 

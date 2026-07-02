@@ -17,7 +17,13 @@ Use this when adding a new MCP tool or modifying an existing one.
    cargo test tool_registration_tables_are_in_sync -- --nocapture
    ```
 
-4. **Add tests** at the right layer:
+4. **Regenerate docs** from the registry:
+   ```bash
+   cargo run --bin generate-docs
+   ```
+   This updates README tool tables, architecture profile references, and `generated/tool-cards.md`. Commit the generated files alongside your ToolSpec changes.
+
+5. **Add tests** at the right layer:
    - Unit tests: `src/mcp/tools.rs` (inline `#[cfg(test)]`)
    - MCP protocol tests: `tests/mcp/`
    - Library behavior tests: `tests/text/` or `tests/calc/`
@@ -90,6 +96,8 @@ Tool listing and filtering lives in `src/mcp/registry/listing.rs`, including `li
 Tools marked `composite: true` orchestrate calls to other tools internally.
 Examples: `text_security_inspect`, `edit_preflight`, `command_preflight`, `config_preflight`, `structured_data_compare`.
 These are implemented in `src/text/synthesis.rs` and wrapped in `src/mcp/tools.rs`.
+
+`edit_preflight` optionally composes additional tools when the corresponding input fields are provided: `path_scope_check` (via `file_path` + `workspace_root` fields), `text_security_inspect` (via `unicode_policy` field), and `text_fingerprint` (via `newline_policy` field for newline style detection). Each sub-tool call is included in the `subresults` map when invoked.
 
 ## Adding a Text Processing Module
 

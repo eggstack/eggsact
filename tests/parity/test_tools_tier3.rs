@@ -1,4 +1,5 @@
 use crate::parity::compare_tool_parity;
+use crate::parity::compare_tool_parity_superset;
 
 #[test]
 fn test_unicode_policy_check_identifier_strict() {
@@ -141,7 +142,7 @@ fn test_text_security_inspect_with_hidden() {
 #[test]
 fn test_edit_preflight_basic() {
     let args = serde_json::json!({"original": "hello world", "old": "world", "new": "rust", "replacement_mode": "literal"});
-    let result = compare_tool_parity("edit_preflight", args);
+    let result = compare_tool_parity_superset("edit_preflight", args);
     assert!(result.passed, "Parity failed: {:?}", result.error);
 }
 

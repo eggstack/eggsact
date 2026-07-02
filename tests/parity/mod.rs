@@ -177,6 +177,77 @@ pub fn compare_tool_parity(tool_name: &str, arguments: Value) -> ParityTestResul
     }
 }
 
+pub fn compare_tool_parity_superset(tool_name: &str, arguments: Value) -> ParityTestResult {
+    let python_out = run_python_request(tool_name, arguments.clone(), 1);
+    let rust_out = run_rust_tool(tool_name, arguments.clone());
+
+    if python_out.is_none() || rust_out.is_none() {
+        let msg = match (python_out.is_none(), rust_out.is_none()) {
+            (true, true) => format!(
+                "Parity test '{}': both Python and Rust MCP servers unavailable",
+                tool_name
+            ),
+            (true, false) => format!("Parity test '{}': Python MCP server unavailable", tool_name),
+            (false, true) => format!("Parity test '{}': Rust MCP server unavailable", tool_name),
+            (false, false) => unreachable!(),
+        };
+        return ParityTestResult {
+            passed: false,
+            error: Some(msg),
+        };
+    }
+
+    let python_out = python_out.unwrap();
+    let rust_out = rust_out.unwrap();
+
+    let r_str = rust_out.as_str().unwrap_or("{}");
+    let p_str = python_out.as_str().unwrap_or("{}");
+    let r_val: Value =
+        serde_json::from_str(r_str).unwrap_or_else(|_| serde_json::json!({"parse_error": r_str}));
+    let p_val: Value =
+        serde_json::from_str(p_str).unwrap_or_else(|_| serde_json::json!({"parse_error": p_str}));
+
+    // Check that Python output is a subset of Rust output (Rust may have extra fields)
+    let passed = is_subset(&p_val, &r_val);
+
+    ParityTestResult {
+        passed,
+        error: if !passed {
+            Some(format!(
+                "Rust output is not a superset of Python output\nPython: {}\nRust: {}",
+                p_val, r_val
+            ))
+        } else {
+            None
+        },
+    }
+}
+
+fn is_subset(python: &Value, rust: &Value) -> bool {
+    match (python, rust) {
+        (Value::Object(p_obj), Value::Object(r_obj)) => {
+            for (key, p_val) in p_obj {
+                match r_obj.get(key) {
+                    Some(r_val) => {
+                        if !is_subset(p_val, r_val) {
+                            return false;
+                        }
+                    }
+                    None => return false,
+                }
+            }
+            true
+        }
+        (Value::Array(p_arr), Value::Array(r_arr)) => {
+            if p_arr.len() != r_arr.len() {
+                return false;
+            }
+            p_arr.iter().zip(r_arr.iter()).all(|(p, r)| is_subset(p, r))
+        }
+        _ => python == rust,
+    }
+}
+
 pub fn compare_tool_text_parity(tool_name: &str, arguments: Value) -> ParityTestResult {
     let python_out = run_python_request(tool_name, arguments.clone(), 1);
     let rust_out = run_rust_tool(tool_name, arguments);

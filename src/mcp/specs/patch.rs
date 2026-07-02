@@ -39,7 +39,7 @@ pub const PATCH_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "edit_preflight",
-        description: "Composite: validate a proposed edit before applying it. Calls text_replace_check, patch_apply_check, line_range_extract, text_fingerprint, and text_diff_explain as needed. Returns ok_to_apply verdict with findings and machine codes.",
+        description: "Composite: validate a proposed edit before applying it. Calls text_replace_check, patch_apply_check, line_range_extract, text_fingerprint, and text_diff_explain as needed. Optionally composes path_scope_check (when file_path + workspace_root are provided), text_fingerprint newline detection (when newline_policy is not \"skip\"), and text_security_inspect (when unicode_policy is not \"skip\"). Returns ok_to_apply verdict with findings and machine codes.",
         handler: edit_preflight,
         input_schema: edit_preflight_input,
         output_schema: edit_preflight_output,

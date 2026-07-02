@@ -22,6 +22,7 @@ Always run in this order (CI mirrors this exactly):
 cargo fmt --check                    # format gate
 cargo clippy --all-targets --all-features -- -D warnings  # lint (warnings denied)
 cargo test --verbose                 # all tests
+cargo run --bin generate-docs -- --check  # generated docs freshness
 cargo package --verbose              # crates.io package verification
 ```
 

@@ -140,6 +140,7 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | `PATCH_FAILED` | Patch parse/apply error | high | yes | fix patch | `patch_apply_check` |
 | `LINE_RANGE_INVALID` | Line range out of bounds | medium | yes | fix range | `line_range_extract`, `line_range_compare` |
 | `FINGERPRINT_MISMATCH` | Source changed since fingerprint | high | yes | re-fetch source | `edit_preflight` |
+| `NEWLINE_INCONSISTENCY` | Newline style is inconsistent across the file (mixed CRLF/LF) | medium | no | review warnings | `edit_preflight` |
 
 ### Shell / Command
 
