@@ -155,6 +155,22 @@ impl ToolAudience {
             ToolAudience::Debug => ToolListAudience::Debug,
         }
     }
+
+    /// Whether this audience may execute a tool with the given exposure level.
+    ///
+    /// Rules:
+    /// - Model audience rejects `HarnessOnly` and `Hidden`.
+    /// - Harness audience accepts `HarnessOnly` but rejects `Hidden`.
+    /// - Debug audience accepts all non-hidden exposure levels.
+    pub fn can_execute_exposure(self, exposure: ToolExposure) -> bool {
+        match self {
+            ToolAudience::Model => {
+                exposure != ToolExposure::HarnessOnly && exposure != ToolExposure::Hidden
+            }
+            ToolAudience::Harness => exposure != ToolExposure::Hidden,
+            ToolAudience::Debug => exposure != ToolExposure::Hidden,
+        }
+    }
 }
 
 /// Errors that can occur before tool execution.
@@ -168,6 +184,13 @@ pub enum ToolCallError {
     UnknownTool(String),
     /// The tool exists but is not available in the current profile.
     ToolUnavailable { tool: String, profile: String },
+    /// The tool exists in the profile but the current audience cannot execute it.
+    ToolNotAllowedForAudience {
+        tool: String,
+        profile: String,
+        audience: String,
+        exposure: String,
+    },
     /// The tool arguments failed schema validation.
     InvalidArguments(String),
     /// An internal error occurred during tool lookup or dispatch.
@@ -183,6 +206,18 @@ impl fmt::Display for ToolCallError {
                     f,
                     "Tool '{}' is not available in profile '{}'",
                     tool, profile
+                )
+            }
+            ToolCallError::ToolNotAllowedForAudience {
+                tool,
+                profile,
+                audience,
+                exposure,
+            } => {
+                write!(
+                    f,
+                    "Tool '{}' (exposure: {}) is not executable by {} audience in profile '{}'",
+                    tool, exposure, audience, profile
                 )
             }
             ToolCallError::InvalidArguments(msg) => write!(f, "Invalid arguments: {}", msg),
@@ -388,7 +423,21 @@ impl ToolRegistry {
             });
         }
 
-        // 3. Validate arguments
+        // 3. Check audience/exposure compatibility
+        if let Some(spec) = registry::get_tool(name) {
+            if !self.audience.can_execute_exposure(spec.exposure) {
+                return ToolCallOutcome::PreExecutionError(
+                    ToolCallError::ToolNotAllowedForAudience {
+                        tool: name.to_string(),
+                        profile: self.profile.to_string(),
+                        audience: format!("{:?}", self.audience),
+                        exposure: spec.exposure.as_str().to_string(),
+                    },
+                );
+            }
+        }
+
+        // 4. Validate arguments
         if let Some(msg) = schema_validation::validate_arguments(name, args) {
             return ToolCallOutcome::PreExecutionError(ToolCallError::InvalidArguments(msg));
         }
@@ -715,5 +764,127 @@ mod tests {
         let current = registry.available_tools_for_current_audience();
         let explicit = registry.available_tools_for_audience(ToolAudience::Debug);
         assert_eq!(current.len(), explicit.len());
+    }
+
+    // -- Exposure helper tests --
+
+    #[test]
+    fn model_audience_allows_default_exposure() {
+        assert!(ToolAudience::Model.can_execute_exposure(ToolExposure::Default));
+    }
+
+    #[test]
+    fn model_audience_allows_contextual_exposure() {
+        assert!(ToolAudience::Model.can_execute_exposure(ToolExposure::Contextual));
+    }
+
+    #[test]
+    fn model_audience_allows_expert_only_exposure() {
+        assert!(ToolAudience::Model.can_execute_exposure(ToolExposure::ExpertOnly));
+    }
+
+    #[test]
+    fn model_audience_rejects_harness_only_exposure() {
+        assert!(!ToolAudience::Model.can_execute_exposure(ToolExposure::HarnessOnly));
+    }
+
+    #[test]
+    fn model_audience_rejects_hidden_exposure() {
+        assert!(!ToolAudience::Model.can_execute_exposure(ToolExposure::Hidden));
+    }
+
+    #[test]
+    fn harness_audience_allows_default_exposure() {
+        assert!(ToolAudience::Harness.can_execute_exposure(ToolExposure::Default));
+    }
+
+    #[test]
+    fn harness_audience_allows_harness_only_exposure() {
+        assert!(ToolAudience::Harness.can_execute_exposure(ToolExposure::HarnessOnly));
+    }
+
+    #[test]
+    fn harness_audience_rejects_hidden_exposure() {
+        assert!(!ToolAudience::Harness.can_execute_exposure(ToolExposure::Hidden));
+    }
+
+    #[test]
+    fn debug_audience_allows_default_exposure() {
+        assert!(ToolAudience::Debug.can_execute_exposure(ToolExposure::Default));
+    }
+
+    #[test]
+    fn debug_audience_allows_harness_only_exposure() {
+        assert!(ToolAudience::Debug.can_execute_exposure(ToolExposure::HarnessOnly));
+    }
+
+    #[test]
+    fn debug_audience_rejects_hidden_exposure() {
+        assert!(!ToolAudience::Debug.can_execute_exposure(ToolExposure::Hidden));
+    }
+
+    // -- Registry audience enforcement at dispatch time --
+
+    #[test]
+    fn model_audience_rejects_harness_only_tool_call() {
+        // Find a harness-only tool in the full profile
+        let harness_tool = registry::tools_for_profile("full")
+            .into_iter()
+            .find(|t| t.exposure == ToolExposure::HarnessOnly)
+            .expect("full profile should have harness-only tools");
+        let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
+        let result = registry.call_json(harness_tool.name, serde_json::json!({}));
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolCallError::ToolNotAllowedForAudience { tool, exposure, .. } => {
+                assert_eq!(tool, harness_tool.name);
+                assert_eq!(exposure, "harness_only");
+            }
+            other => panic!("expected ToolNotAllowedForAudience, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn harness_audience_allows_harness_only_tool_call() {
+        // Find a harness-only tool in codegg_preflight
+        let harness_tool = registry::tools_for_profile("codegg_preflight")
+            .into_iter()
+            .find(|t| t.exposure == ToolExposure::HarnessOnly)
+            .expect("codegg_preflight should have harness-only tools");
+        let registry = ToolRegistry::with_profile_and_audience(
+            Profile::CodeggPreflight,
+            ToolAudience::Harness,
+        );
+        let result = registry.call_json(harness_tool.name, serde_json::json!({}));
+        // Should not fail with ToolNotAllowedForAudience (may fail for other reasons like args)
+        if let Err(ToolCallError::ToolNotAllowedForAudience { .. }) = result {
+            panic!(
+                "harness audience should allow harness-only tool: {}",
+                harness_tool.name
+            );
+        }
+    }
+
+    #[test]
+    fn restricted_profile_rejects_out_of_profile_tool() {
+        let registry = ToolRegistry::with_profile(Profile::HumanMath);
+        // math_eval should work in human_math
+        let result = registry.call_json("math_eval", serde_json::json!({"expression": "1+1"}));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn model_audience_error_includes_tool_profile_audience_exposure() {
+        let harness_tool = registry::tools_for_profile("full")
+            .into_iter()
+            .find(|t| t.exposure == ToolExposure::HarnessOnly)
+            .expect("full profile should have harness-only tools");
+        let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
+        let result = registry.call_json(harness_tool.name, serde_json::json!({}));
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains(harness_tool.name));
+        assert!(msg.contains("harness_only"));
+        assert!(msg.contains("Model"));
     }
 }

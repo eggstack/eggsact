@@ -15,6 +15,8 @@ use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use eggsact::agent::{Profile, ToolAudience, ToolRegistry};
+
 fn mcp_request(request: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
@@ -1213,8 +1215,11 @@ fn test_list_sort_empty_list() {
 
 #[test]
 fn test_shell_split_empty_string() {
-    let result = call_tool("shell_split", serde_json::json!({"command": ""}));
-    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+    let result = registry
+        .call_json("shell_split", serde_json::json!({"command": ""}))
+        .unwrap();
+    assert!(result.ok);
 }
 
 #[test]
@@ -1359,15 +1364,18 @@ fn test_patch_summary_basic() {
 
 #[test]
 fn test_patch_apply_check_valid() {
-    let result = call_tool(
-        "patch_apply_check",
-        serde_json::json!({
-            "original_text": "old\n",
-            "patch_text": "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+new"
-        }),
-    );
-    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
-    let applies = result.get("result").and_then(|r| r.get("applies"));
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+    let result = registry
+        .call_json(
+            "patch_apply_check",
+            serde_json::json!({
+                "original_text": "old\n",
+                "patch_text": "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+new"
+            }),
+        )
+        .unwrap();
+    assert!(result.ok);
+    let applies = result.result.as_ref().and_then(|r| r.get("applies"));
     assert_eq!(applies, Some(&Value::Bool(true)));
 }
 
@@ -1764,7 +1772,6 @@ fn test_core_tools_return_tool_field() {
             serde_json::json!({"value": 1, "from_unit": "m", "to_unit": "ft"}),
         ),
         ("list_compare", serde_json::json!({"a": ["1"], "b": ["2"]})),
-        ("shell_split", serde_json::json!({"command": "a b"})),
         ("path_analyze", serde_json::json!({"path": "foo/bar"})),
         ("identifier_analyze", serde_json::json!({"text": "foo_bar"})),
         (
@@ -1784,4 +1791,143 @@ fn test_core_tools_return_tool_field() {
             tool_field
         );
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROFILE-AWARE tools/call ENFORCEMENT
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Spawn MCP server with a custom EGGCALC_MCP_PROFILE and send a single request.
+fn mcp_request_with_profile(request: &str, profile: &str) -> String {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .env("EGGCALC_MCP_PROFILE", profile)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(request.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    String::from_utf8_lossy(&output.stdout).to_string()
+}
+
+fn call_tool_with_profile(name: &str, args: Value, profile: &str) -> Value {
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {"name": name, "arguments": args},
+        "id": 1
+    })
+    .to_string();
+    let response_str = mcp_request_with_profile(&request, profile);
+    serde_json::from_str(&response_str).expect("Failed to parse JSON-RPC response")
+}
+
+#[test]
+fn test_tools_call_honors_active_profile() {
+    // With codegg_core_min active, math_eval should be rejected
+    // (math_eval is not in codegg_core_min profile)
+    let response = call_tool_with_profile(
+        "math_eval",
+        serde_json::json!({"expression": "1+1"}),
+        "codegg_core_min",
+    );
+    // Should be a JSON-RPC error (profile mismatch)
+    assert!(
+        response.get("error").is_some(),
+        "math_eval should be rejected under codegg_core_min active profile"
+    );
+    let msg = response["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("not available"),
+        "Error should mention tool unavailability, got: {}",
+        msg
+    );
+}
+
+#[test]
+fn test_tools_call_allows_tool_in_active_profile() {
+    // With codegg_core_min active, validate_json should succeed
+    // (validate_json IS in codegg_core_min profile)
+    let response = call_tool_with_profile(
+        "validate_json",
+        serde_json::json!({"text": "1"}),
+        "codegg_core_min",
+    );
+    // Should not be a JSON-RPC error
+    assert!(
+        response.get("error").is_none(),
+        "validate_json should succeed under codegg_core_min, got error: {:?}",
+        response.get("error")
+    );
+}
+
+#[test]
+fn test_tools_list_and_call_agree_under_restricted_profile() {
+    // List tools under codegg_core_min, then try to call each one.
+    // Every tool that appears in the list should be callable.
+    let list_request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "tools/list",
+        "params": {"profile": "codegg_core_min"},
+        "id": 1
+    })
+    .to_string();
+    let list_response_str = mcp_request_with_profile(&list_request, "codegg_core_min");
+    let list_response: Value =
+        serde_json::from_str(&list_response_str).expect("Failed to parse tools/list response");
+    let tool_names: Vec<String> = list_response["result"]["tools"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|t| t.get("name").and_then(|n| n.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    assert!(!tool_names.is_empty(), "codegg_core_min should have tools");
+
+    // Each tool in the list should be callable (not rejected for profile reasons)
+    for name in &tool_names {
+        let response = call_tool_with_profile(name, serde_json::json!({}), "codegg_core_min");
+        // Should not get a profile-mismatch error
+        if let Some(error) = response.get("error") {
+            let msg = error["message"].as_str().unwrap_or("");
+            assert!(
+                !msg.contains("not available"),
+                "Tool '{}' appears in tools/list for codegg_core_min but tools/call rejects it: {}",
+                name,
+                msg
+            );
+        }
+    }
+}
+
+#[test]
+fn test_tools_call_rejects_harness_only_for_model_audience() {
+    // MCP tools/call uses Model audience by default.
+    // shell_split is harness_only and in codegg_shell profile.
+    // Under the full active profile, shell_split is in the profile,
+    // but Model audience should reject it.
+    let response = call_tool_with_profile(
+        "shell_split",
+        serde_json::json!({"command": "echo hello"}),
+        "full",
+    );
+    // Should be a JSON-RPC error (audience mismatch)
+    assert!(
+        response.get("error").is_some(),
+        "shell_split (harness_only) should be rejected by model audience in MCP tools/call"
+    );
+    let msg = response["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("exposure") || msg.contains("not available") || msg.contains("audience"),
+        "Error should mention audience/exposure issue, got: {}",
+        msg
+    );
 }

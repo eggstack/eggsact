@@ -104,7 +104,7 @@ Detailed architecture documentation is in `architecture/`:
 `src/agent/` provides an in-process API for calling tools without MCP. `ToolRegistry` wraps the tool registry with profile filtering and `call_json()` dispatch. `src/preflight/` adds typed wrappers (`ConfigPreflight`, `CommandPreflight`, `EditPreflight`) that parse tool responses into structured Rust types.
 
 - **`ToolDefinition`** lives in `src/mcp/registry/types.rs` (not `server.rs`).
-- **`ToolAudience`** enum (`Model`, `Harness`, `Debug`) controls which exposure levels appear in tool listings. Use `available_tools_model_safe()` for model-facing integrations.
+- **`ToolAudience`** enum (`Model`, `Harness`, `Debug`) controls which exposure levels appear in tool listings and which tools may be executed. Use `available_tools_model_safe()` for model-facing integrations. `ToolAudience::can_execute_exposure()` enforces audience at dispatch time.
 - **`Profile::from_str_opt`** is strict — returns `None` for unknown names. Use `Profile::custom(name)` to construct a custom profile explicitly.
 - **`ToolResponse::error`** has been renamed to `error_without_code_for_legacy_tests_only` (deprecated/hidden). Use `error_with_code()` instead.
 
@@ -115,9 +115,9 @@ Tools have typed `ToolExposure` and `ToolListAudience` enums in `src/mcp/registr
 - **Exposure**: `Default`, `Contextual`, `ExpertOnly`, `HarnessOnly`, `Hidden` — controls which contexts a tool appears in.
 - **Audience**: `Model` (excludes HarnessOnly+Hidden), `Harness` (excludes Hidden), `Debug` (all non-hidden).
 
-Use `tools_for_profile_audience(profile, audience)` for filtered listings. MCP `tools/list` preserves legacy behavior for backward compatibility.
+Use `tools_for_profile_audience(profile, audience)` for filtered listings. Both `tools/list` and `tools/call` enforce profile membership. `tools/call` also enforces audience/exposure compatibility via `ToolRegistry::prepare_tool_call` — the active profile is resolved from `get_active_profile()` and Model audience is used by default. MCP `tools/call` rejects harness-only tools for model audience.
 
-**Codegg guidance**: Use `codegg_core_min` + `Model` audience for ordinary coder-agent sessions. Use `codegg_preflight`/`codegg_shell` + `Harness` audience for automatic preflight checks.
+**Codegg guidance**: Use `codegg_core_min` + `Model` audience for ordinary coder-agent sessions. Use `codegg_preflight`/`codegg_shell` + `Harness` audience for automatic preflight checks via the in-process API (`ToolRegistry::with_profile_and_audience`).
 
 Profile snapshot tests (`tests/mcp/test_hardening_and_gaps.rs`) verify that all 11 named profiles exist and their tool lists match expected tool counts.
 

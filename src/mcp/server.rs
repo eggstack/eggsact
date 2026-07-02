@@ -1,4 +1,4 @@
-use crate::agent::{ToolCallError, ToolCallOutcome, ToolRegistry};
+use crate::agent::{Profile, ToolAudience, ToolCallError, ToolCallOutcome, ToolRegistry};
 use crate::mcp::machine_codes;
 use crate::mcp::protocol::{
     invalid_request, json_rpc_error, method_not_found, JsonRpcRequest, JsonRpcResponse,
@@ -239,7 +239,10 @@ async fn handle_request_async(
             }
 
             // Delegate lookup, profile check, and validation to ToolRegistry
-            let registry = ToolRegistry::default();
+            let active_profile = get_active_profile();
+            let profile = Profile::from_str_opt(&active_profile)
+                .unwrap_or_else(|| Profile::custom(&active_profile));
+            let registry = ToolRegistry::with_profile_and_audience(profile, ToolAudience::Model);
             let handler = match registry.prepare_tool_call(name, &arguments_val) {
                 ToolCallOutcome::Ready { handler } => handler,
                 ToolCallOutcome::PreExecutionError(e) => {
@@ -259,6 +262,21 @@ async fn handle_request_async(
                                 format!(
                                     "Tool '{}' is not available in profile '{}'. Use tools/list to see available tools, or switch profile.",
                                     tool, profile
+                                ),
+                                request.id.clone(),
+                            ))
+                        }
+                        ToolCallError::ToolNotAllowedForAudience {
+                            tool,
+                            profile,
+                            audience,
+                            exposure,
+                        } => {
+                            Some(json_rpc_error(
+                                -32602,
+                                format!(
+                                    "Tool '{}' (exposure: {}) cannot be executed by {} audience in profile '{}'. Use tools/list with appropriate audience, or use the in-process API with a different audience.",
+                                    tool, exposure, audience, profile
                                 ),
                                 request.id.clone(),
                             ))

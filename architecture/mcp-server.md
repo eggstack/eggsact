@@ -108,13 +108,22 @@ for model-facing codegg integrations, or
 Use `available_tools_for_current_audience()` to list tools using the registry's
 stored audience without passing it explicitly.
 
-MCP `tools/list` preserves legacy behavior (no audience filter) for backward
-compatibility. The audience filter is available for codegg's in-process API.
+`ToolAudience::can_execute_exposure()` answers whether a given audience may
+execute a tool with a specific exposure level. This is enforced at dispatch
+time by `ToolRegistry::prepare_tool_call`.
+
+**MCP `tools/list` and `tools/call`**: Both paths enforce profile membership.
+`tools/call` also enforces audience/exposure compatibility via
+`ToolRegistry::prepare_tool_call` — the active profile is resolved from
+`get_active_profile()` and `Model` audience is used by default. This means
+MCP `tools/call` rejects harness-only tools for ordinary model-facing calls.
+Harness-oriented execution should use the in-process API with explicit
+`Harness` audience.
 
 ### How tools/list and tools/call work
 
 - `tools/list`: Validates MCP parameters in `server.rs`, builds a `ToolListOptions`, and delegates to `registry::list_tool_definitions()` in `registry/listing.rs`. The registry handles profile filtering, name/tier/tag filtering, schema compaction, and deprecated-field normalization. MCP retains parameter validation and profile resolution.
-- `tools/call`: Delegates tool lookup, profile checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API.
+- `tools/call`: Resolves the active profile from `get_active_profile()` and creates a `ToolRegistry` with `Model` audience. Delegates tool lookup, profile checking, audience/exposure checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API.
 
 ## Tool Categories (64 tools)
 

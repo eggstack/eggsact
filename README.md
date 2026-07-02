@@ -395,6 +395,9 @@ let harness_registry = ToolRegistry::with_profile_and_audience(
 );
 ```
 
+Audience is enforced at dispatch time: `call_json` rejects harness-only tools
+when the registry uses `Model` audience, and rejects hidden tools for all audiences.
+
 ### Typed preflight wrappers
 
 For common workflows, use the typed wrappers in `eggsact::preflight`:
