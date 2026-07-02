@@ -92,7 +92,43 @@ pub fn patch_apply_check(args: &Value) -> ToolResponse {
         return_result_text,
     );
 
-    ToolResponse::success(
+    let mut findings: Vec<serde_json::Value> = Vec::new();
+    for msg in &result.findings {
+        findings.push(finding(
+            "PATCH_FINDING",
+            severity::MEDIUM,
+            msg,
+            Some(disposition::CAUTION),
+            None,
+        ));
+    }
+    if !result.patch_parse_ok {
+        findings.push(finding(
+            "PATCH_PARSE_FAILED",
+            severity::HIGH,
+            "Patch failed to parse",
+            Some(disposition::BLOCKING),
+            None,
+        ));
+    } else if !result.applies {
+        findings.push(finding(
+            "PATCH_FAILED",
+            severity::HIGH,
+            "Patch does not apply cleanly",
+            Some(disposition::BLOCKING),
+            None,
+        ));
+    }
+
+    let (response_verdict, machine_code) = if !result.patch_parse_ok || !result.applies {
+        (verdict::BLOCK, machine_codes::PATCH_FAILED)
+    } else if result.hunks_failed > 0 {
+        (verdict::REVIEW, machine_codes::PATCH_FAILED)
+    } else {
+        (verdict::ALLOW, machine_codes::EDIT_OK)
+    };
+
+    let mut resp = ToolResponse::success(
         serde_json::json!({
             "patch_parse_ok": result.patch_parse_ok,
             "applies": result.applies,
@@ -105,11 +141,18 @@ pub fn patch_apply_check(args: &Value) -> ToolResponse {
             "newline_style_after": result.newline_style_after,
             "result_fingerprint": result.result_fingerprint,
             "result_text": result.result_text,
-            "findings": result.findings,
+            "verdict": response_verdict,
+            "findings": findings,
         }),
         Some("patch_apply_check"),
     )
     .with_tool("patch_apply_check")
+    .with_machine_code(machine_code)
+    .with_verdict(response_verdict);
+    if !findings.is_empty() {
+        resp = resp.with_findings(findings);
+    }
+    resp
 }
 
 pub fn patch_summary(args: &Value) -> ToolResponse {
@@ -148,7 +191,30 @@ pub fn patch_summary(args: &Value) -> ToolResponse {
 
     let result = crate::text::patch_summary(patch_text);
 
-    ToolResponse::success(
+    let mut findings: Vec<serde_json::Value> = Vec::new();
+    for msg in &result.findings {
+        findings.push(finding(
+            "PATCH_SUMMARY_FINDING",
+            severity::INFO,
+            msg,
+            Some(disposition::INFORMATIONAL),
+            None,
+        ));
+    }
+
+    let has_warnings = result.binary_patch_detected || !result.renames_detected.is_empty();
+    let response_verdict = if has_warnings {
+        verdict::REVIEW
+    } else {
+        verdict::ALLOW
+    };
+    let machine_code = if has_warnings {
+        machine_codes::PATCH_FAILED
+    } else {
+        machine_codes::EDIT_OK
+    };
+
+    let mut resp = ToolResponse::success(
         serde_json::json!({
             "files_changed": result.files_changed,
             "hunks_total": result.hunks_total,
@@ -157,11 +223,18 @@ pub fn patch_summary(args: &Value) -> ToolResponse {
             "renames_detected": result.renames_detected,
             "binary_patch_detected": result.binary_patch_detected,
             "line_ranges_by_file": result.line_ranges_by_file,
-            "findings": result.findings,
+            "findings": findings,
+            "verdict": response_verdict,
         }),
         Some("patch_summary"),
     )
     .with_tool("patch_summary")
+    .with_machine_code(machine_code)
+    .with_verdict(response_verdict);
+    if !findings.is_empty() {
+        resp = resp.with_findings(findings);
+    }
+    resp
 }
 
 pub fn edit_preflight(args: &Value) -> ToolResponse {

@@ -107,10 +107,14 @@ impl From<ToolCallError> for PreflightError {
 
 /// Edit preflight verdict.
 ///
-/// Uses `KnownOrOther` for forward compatibility — codegg can handle
-/// new values deliberately rather than crashing on unknown variants.
+/// Uses the canonical verdict vocabulary (allow/review/block) matching
+/// the actual `edit_preflight` tool output. `SafeToApply`/`SafeWithWarnings`
+/// are kept as domain aliases for backward compatibility.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditVerdict {
+    Allow,
+    Review,
+    Block,
     SafeToApply,
     SafeWithWarnings,
     Other(String),
@@ -119,6 +123,9 @@ pub enum EditVerdict {
 impl EditVerdict {
     pub fn as_str(&self) -> &str {
         match self {
+            EditVerdict::Allow => "allow",
+            EditVerdict::Review => "review",
+            EditVerdict::Block => "block",
             EditVerdict::SafeToApply => "safe_to_apply",
             EditVerdict::SafeWithWarnings => "safe_with_warnings",
             EditVerdict::Other(s) => s,
@@ -127,6 +134,9 @@ impl EditVerdict {
 
     pub fn parse(s: &str) -> Self {
         match s {
+            "allow" => EditVerdict::Allow,
+            "review" => EditVerdict::Review,
+            "block" => EditVerdict::Block,
             "safe_to_apply" => EditVerdict::SafeToApply,
             "safe_with_warnings" => EditVerdict::SafeWithWarnings,
             other => EditVerdict::Other(other.to_string()),
@@ -279,11 +289,16 @@ impl FindingDisposition {
 // ---------------------------------------------------------------------------
 
 /// A structured finding from a tool execution.
+///
+/// Stores severity and disposition as raw strings for serde compatibility.
+/// Use `severity_enum()` and `disposition_enum()` for typed access.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Finding {
     pub code: String,
     pub severity: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disposition: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -295,8 +310,16 @@ impl Finding {
     pub fn from_value(v: &Value) -> Option<Self> {
         Some(Self {
             code: v.get("code")?.as_str()?.to_string(),
-            severity: v.get("severity")?.as_str()?.to_string(),
+            severity: v
+                .get("severity")
+                .and_then(|s| s.as_str())
+                .unwrap_or("info")
+                .to_string(),
             message: v.get("message")?.as_str()?.to_string(),
+            disposition: v
+                .get("disposition")
+                .and_then(|d| d.as_str())
+                .map(String::from),
             location: v.get("location").cloned(),
             details: v.get("details").cloned(),
         })
@@ -305,6 +328,16 @@ impl Finding {
     /// Parse a list of findings from a JSON array.
     pub fn from_array(arr: &[Value]) -> Vec<Self> {
         arr.iter().filter_map(Finding::from_value).collect()
+    }
+
+    /// Typed severity accessor.
+    pub fn severity_enum(&self) -> FindingSeverity {
+        FindingSeverity::parse(&self.severity)
+    }
+
+    /// Typed disposition accessor.
+    pub fn disposition_enum(&self) -> Option<FindingDisposition> {
+        self.disposition.as_deref().map(FindingDisposition::parse)
     }
 }
 
@@ -536,6 +569,8 @@ pub struct EditPreflightOutput {
     pub ok_to_apply: bool,
     /// Edit mode used.
     pub mode: String,
+    /// Typed verdict for programmatic routing.
+    pub verdict: EditVerdict,
     /// Machine-readable status code.
     pub machine_code: String,
     /// Human-readable summary.
@@ -605,6 +640,8 @@ impl EditPreflight {
         let mode = require_str(result, Self::TOOL, "mode")?.to_string();
         let summary = require_str(result, Self::TOOL, "summary")?.to_string();
         let ok_to_apply = require_bool(result, Self::TOOL, "ok_to_apply")?;
+        let verdict_str = require_str(result, Self::TOOL, "verdict")?;
+        let verdict = EditVerdict::parse(verdict_str);
 
         let findings = response
             .findings
@@ -623,6 +660,7 @@ impl EditPreflight {
         Ok(EditPreflightOutput {
             ok_to_apply,
             mode,
+            verdict,
             machine_code,
             summary,
             findings,
@@ -663,8 +701,8 @@ impl Default for CommandPreflightInput {
 /// Output from command preflight analysis.
 #[derive(Clone, Debug)]
 pub struct CommandPreflightOutput {
-    /// Verdict: "allow", "review", or "block".
-    pub verdict: String,
+    /// Typed verdict for programmatic routing.
+    pub verdict: CommandVerdict,
     /// Machine-readable status code.
     pub machine_code: String,
     /// Human-readable summary.
@@ -713,7 +751,8 @@ impl CommandPreflight {
 
         let result = require_result_object(&response, Self::TOOL)?;
         let machine_code = require_machine_code(&response, Self::TOOL)?;
-        let verdict = require_str(result, Self::TOOL, "verdict")?.to_string();
+        let verdict_str = require_str(result, Self::TOOL, "verdict")?;
+        let verdict = CommandVerdict::parse(verdict_str);
         let summary = require_str(result, Self::TOOL, "summary")?.to_string();
 
         let findings = response
@@ -763,8 +802,8 @@ pub struct ConfigPreflightInput {
 pub struct ConfigPreflightOutput {
     /// Whether the config is structurally valid.
     pub valid: bool,
-    /// Verdict: "valid", "valid_with_warnings", or "invalid".
-    pub verdict: String,
+    /// Typed verdict for programmatic routing.
+    pub verdict: ConfigVerdict,
     /// Detected config format.
     pub detected_format: Option<String>,
     /// Machine-readable status code.
@@ -814,7 +853,8 @@ impl ConfigPreflight {
         let result = require_result_object(&response, Self::TOOL)?;
         let machine_code = require_machine_code(&response, Self::TOOL)?;
         let valid = require_bool(result, Self::TOOL, "valid")?;
-        let verdict = require_str(result, Self::TOOL, "verdict")?.to_string();
+        let verdict_str = require_str(result, Self::TOOL, "verdict")?;
+        let verdict = ConfigVerdict::parse(verdict_str);
         let summary = require_str(result, Self::TOOL, "summary")?.to_string();
 
         let detected_format = result
@@ -863,7 +903,7 @@ mod tests {
         };
         let output = ConfigPreflight::run(&input).unwrap();
         assert!(output.valid);
-        assert_eq!(output.verdict, "valid");
+        assert_eq!(output.verdict, ConfigVerdict::Valid);
         assert!(!output.machine_code.is_empty());
         assert!(!output.summary.is_empty());
     }
@@ -877,7 +917,7 @@ mod tests {
         };
         let output = ConfigPreflight::run(&input).unwrap();
         assert!(!output.valid);
-        assert_eq!(output.verdict, "invalid");
+        assert_eq!(output.verdict, ConfigVerdict::Invalid);
     }
 
     #[test]
@@ -887,21 +927,38 @@ mod tests {
             ..Default::default()
         };
         let output = CommandPreflight::run(&input).unwrap();
-        assert_eq!(output.verdict, "allow");
+        assert_eq!(output.verdict, CommandVerdict::Allow);
         assert!(!output.machine_code.is_empty());
     }
 
     #[test]
-    fn finding_from_value() {
+    fn finding_from_value_with_disposition() {
         let v = serde_json::json!({
             "code": "TEST_CODE",
             "severity": "info",
-            "message": "test message"
+            "message": "test message",
+            "disposition": "caution"
         });
         let f = Finding::from_value(&v).unwrap();
         assert_eq!(f.code, "TEST_CODE");
         assert_eq!(f.severity, "info");
+        assert_eq!(f.severity_enum(), FindingSeverity::Info);
         assert_eq!(f.message, "test message");
+        assert_eq!(f.disposition.as_deref(), Some("caution"));
+        assert_eq!(f.disposition_enum(), Some(FindingDisposition::Caution));
+    }
+
+    #[test]
+    fn finding_from_value_without_disposition() {
+        let v = serde_json::json!({
+            "code": "TEST_CODE",
+            "severity": "high",
+            "message": "test message"
+        });
+        let f = Finding::from_value(&v).unwrap();
+        assert_eq!(f.severity_enum(), FindingSeverity::High);
+        assert_eq!(f.disposition, None);
+        assert_eq!(f.disposition_enum(), None);
     }
 
     #[test]
@@ -935,6 +992,7 @@ mod tests {
                 "ok_to_apply": true,
                 "mode": "literal",
                 "summary": "test",
+                "verdict": "allow",
             }),
             Some("edit_preflight"),
         );
@@ -960,6 +1018,7 @@ mod tests {
             serde_json::json!({
                 "mode": "literal",
                 "summary": "test",
+                "verdict": "allow",
             }),
             Some("edit_preflight"),
         )
@@ -976,6 +1035,7 @@ mod tests {
             serde_json::json!({
                 "ok_to_apply": true,
                 "summary": "test",
+                "verdict": "allow",
             }),
             Some("edit_preflight"),
         )
@@ -990,6 +1050,7 @@ mod tests {
             serde_json::json!({
                 "ok_to_apply": true,
                 "mode": "literal",
+                "verdict": "allow",
             }),
             Some("edit_preflight"),
         )
@@ -997,6 +1058,23 @@ mod tests {
         let err = EditPreflight::parse_response(response).unwrap_err();
         assert!(
             matches!(err, PreflightError::ContractViolation { field, .. } if field == "summary")
+        );
+    }
+
+    #[test]
+    fn edit_preflight_missing_verdict_fails_closed() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "test",
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK");
+        let err = EditPreflight::parse_response(response).unwrap_err();
+        assert!(
+            matches!(err, PreflightError::ContractViolation { field, .. } if field == "verdict")
         );
     }
 
@@ -1142,6 +1220,7 @@ mod tests {
                 "ok_to_apply": true,
                 "mode": "literal",
                 "summary": "looks good",
+                "verdict": "allow",
             }),
             Some("edit_preflight"),
         )
@@ -1150,6 +1229,7 @@ mod tests {
         assert!(!output.machine_code.is_empty());
         assert!(!output.mode.is_empty());
         assert!(!output.summary.is_empty());
+        assert_eq!(output.verdict, EditVerdict::Allow);
     }
 
     #[test]
@@ -1164,8 +1244,8 @@ mod tests {
         .with_machine_code("COMMAND_OK");
         let output = CommandPreflight::parse_response(response).unwrap();
         assert!(!output.machine_code.is_empty());
-        assert!(!output.verdict.is_empty());
         assert!(!output.summary.is_empty());
+        assert_eq!(output.verdict, CommandVerdict::Allow);
     }
 
     #[test]
@@ -1181,18 +1261,24 @@ mod tests {
         .with_machine_code("CONFIG_OK");
         let output = ConfigPreflight::parse_response(response).unwrap();
         assert!(!output.machine_code.is_empty());
-        assert!(!output.verdict.is_empty());
         assert!(!output.summary.is_empty());
+        assert_eq!(output.verdict, ConfigVerdict::Valid);
     }
 
     // -- Typed enum tests --
 
     #[test]
     fn edit_verdict_roundtrip() {
+        assert_eq!(EditVerdict::Allow.as_str(), "allow");
+        assert_eq!(EditVerdict::Review.as_str(), "review");
+        assert_eq!(EditVerdict::Block.as_str(), "block");
         assert_eq!(EditVerdict::SafeToApply.as_str(), "safe_to_apply");
         assert_eq!(EditVerdict::SafeWithWarnings.as_str(), "safe_with_warnings");
         let other = EditVerdict::Other("new_value".to_string());
         assert_eq!(other.as_str(), "new_value");
+        assert_eq!(EditVerdict::parse("allow"), EditVerdict::Allow);
+        assert_eq!(EditVerdict::parse("review"), EditVerdict::Review);
+        assert_eq!(EditVerdict::parse("block"), EditVerdict::Block);
         assert_eq!(
             EditVerdict::parse("safe_to_apply"),
             EditVerdict::SafeToApply
@@ -1300,5 +1386,217 @@ mod tests {
         assert!(
             matches!(err, PreflightError::ContractViolation { field, .. } if field == "result")
         );
+    }
+
+    // -- Tool-specific preflight route tests --
+
+    #[test]
+    fn edit_preflight_literal_no_match_blocks() {
+        let input = EditPreflightInput {
+            original: "hello world".to_string(),
+            mode: ReplacementMode::Literal,
+            old: Some("nonexistent".to_string()),
+            new: Some("replacement".to_string()),
+            ..Default::default()
+        };
+        let output = EditPreflight::run(&input).unwrap();
+        assert!(!output.ok_to_apply);
+        assert_eq!(output.verdict, EditVerdict::Block);
+        assert!(output.machine_code.contains("AMBIGUOUS"));
+    }
+
+    #[test]
+    fn edit_preflight_literal_match_allows() {
+        let input = EditPreflightInput {
+            original: "hello world".to_string(),
+            mode: ReplacementMode::Literal,
+            old: Some("hello".to_string()),
+            new: Some("goodbye".to_string()),
+            ..Default::default()
+        };
+        let output = EditPreflight::run(&input).unwrap();
+        assert!(output.ok_to_apply);
+        assert_eq!(output.verdict, EditVerdict::Allow);
+        assert_eq!(output.machine_code, "EDIT_OK");
+    }
+
+    #[test]
+    fn command_preflight_pipe_reviews() {
+        let input = CommandPreflightInput {
+            command: "cat file | grep pattern".to_string(),
+            ..Default::default()
+        };
+        let output = CommandPreflight::run(&input).unwrap();
+        assert_eq!(output.verdict, CommandVerdict::Review);
+        assert!(!output.findings.is_empty());
+    }
+
+    #[test]
+    fn config_preflight_toml_valid() {
+        let input = ConfigPreflightInput {
+            text: "key = \"value\"\n".to_string(),
+            format: ConfigFormat::Toml,
+            ..Default::default()
+        };
+        let output = ConfigPreflight::run(&input).unwrap();
+        assert!(output.valid);
+        assert_eq!(output.verdict, ConfigVerdict::Valid);
+    }
+
+    // -- Fixture tests for findings shape --
+
+    #[test]
+    fn findings_have_required_fields() {
+        let v = serde_json::json!({
+            "code": "TEST_CODE",
+            "severity": "high",
+            "message": "test",
+            "disposition": "blocking",
+            "location": {"line": 1, "column": 5},
+            "details": {"key": "value"}
+        });
+        let f = Finding::from_value(&v).unwrap();
+        assert_eq!(f.code, "TEST_CODE");
+        assert_eq!(f.severity, "high");
+        assert_eq!(f.severity_enum(), FindingSeverity::High);
+        assert_eq!(f.message, "test");
+        assert_eq!(f.disposition_enum(), Some(FindingDisposition::Blocking));
+        assert!(f.location.is_some());
+        assert!(f.details.is_some());
+    }
+
+    #[test]
+    fn findings_optional_fields_absent() {
+        let v = serde_json::json!({
+            "code": "MINIMAL",
+            "severity": "info",
+            "message": "minimal finding"
+        });
+        let f = Finding::from_value(&v).unwrap();
+        assert_eq!(f.disposition, None);
+        assert_eq!(f.location, None);
+        assert_eq!(f.details, None);
+    }
+
+    #[test]
+    fn findings_from_array_filters_invalid() {
+        let arr = vec![
+            serde_json::json!({"code": "A", "severity": "info", "message": "ok"}),
+            serde_json::json!({"invalid": true}),
+            serde_json::json!({"code": "B", "severity": "high", "message": "also ok"}),
+        ];
+        let findings = Finding::from_array(&arr);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].code, "A");
+        assert_eq!(findings[1].code, "B");
+    }
+
+    #[test]
+    fn finding_severity_all_variants() {
+        for (s, expected) in [
+            ("info", FindingSeverity::Info),
+            ("low", FindingSeverity::Low),
+            ("medium", FindingSeverity::Medium),
+            ("high", FindingSeverity::High),
+            ("critical", FindingSeverity::Critical),
+        ] {
+            assert_eq!(FindingSeverity::parse(s), expected);
+        }
+    }
+
+    #[test]
+    fn finding_disposition_all_variants() {
+        for (s, expected) in [
+            ("informational", FindingDisposition::Informational),
+            ("caution", FindingDisposition::Caution),
+            ("blocking", FindingDisposition::Blocking),
+        ] {
+            assert_eq!(FindingDisposition::parse(s), expected);
+        }
+    }
+
+    // -- Backward-compatibility tests --
+
+    #[test]
+    fn edit_verdict_accepts_legacy_safe_to_apply() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "safe_to_apply",
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK");
+        let output = EditPreflight::parse_response(response).unwrap();
+        assert_eq!(output.verdict, EditVerdict::SafeToApply);
+        assert_eq!(output.verdict.as_str(), "safe_to_apply");
+    }
+
+    #[test]
+    fn edit_verdict_accepts_legacy_safe_with_warnings() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "safe_with_warnings",
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK");
+        let output = EditPreflight::parse_response(response).unwrap();
+        assert_eq!(output.verdict, EditVerdict::SafeWithWarnings);
+    }
+
+    #[test]
+    fn finding_severity_unknown_maps_to_other() {
+        let v = serde_json::json!({
+            "code": "X",
+            "severity": "nonexistent_level",
+            "message": "test"
+        });
+        let f = Finding::from_value(&v).unwrap();
+        assert_eq!(
+            f.severity_enum(),
+            FindingSeverity::Other("nonexistent_level".to_string())
+        );
+    }
+
+    #[test]
+    fn finding_disposition_none_when_absent() {
+        let v = serde_json::json!({
+            "code": "X",
+            "severity": "info",
+            "message": "test"
+        });
+        let f = Finding::from_value(&v).unwrap();
+        assert_eq!(f.disposition, None);
+    }
+
+    #[test]
+    fn edit_preflight_output_has_raw_for_forward_compat() {
+        let input = EditPreflightInput {
+            original: "hello".to_string(),
+            mode: ReplacementMode::Literal,
+            old: Some("hello".to_string()),
+            new: Some("world".to_string()),
+            ..Default::default()
+        };
+        let output = EditPreflight::run(&input).unwrap();
+        assert!(output.raw.is_object());
+        assert!(output.raw.get("ok_to_apply").is_some());
+    }
+
+    #[test]
+    fn command_preflight_output_has_raw_for_forward_compat() {
+        let input = CommandPreflightInput {
+            command: "ls".to_string(),
+            ..Default::default()
+        };
+        let output = CommandPreflight::run(&input).unwrap();
+        assert!(output.raw.is_object());
+        assert!(output.raw.get("verdict").is_some());
     }
 }
