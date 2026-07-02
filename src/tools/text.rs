@@ -1,5 +1,5 @@
 use crate::mcp::machine_codes;
-use crate::mcp::response::ToolResponse;
+use crate::mcp::response::{disposition, finding, severity, verdict, ToolResponse};
 use crate::text::measure::{char_category_metrics, word_metrics};
 use crate::text::position::{TextPositionResult, TextWindowPosition, TextWindowResult};
 use crate::text::primitives::byte_offset_to_char_index;
@@ -3068,11 +3068,13 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         if let Some(warnings) = r.get("warnings").and_then(|v| v.as_array()) {
             for w in warnings {
                 if !w.is_null() {
-                    all_findings.push(serde_json::json!({
-                        "code": "TEXT_INSPECT_WARNING",
-                        "severity": "warn",
-                        "message": w,
-                    }));
+                    all_findings.push(finding(
+                        "TEXT_INSPECT_WARNING",
+                        severity::MEDIUM,
+                        w.as_str().unwrap_or("text inspection warning"),
+                        Some(disposition::CAUTION),
+                        None,
+                    ));
                 }
             }
         }
@@ -3082,11 +3084,13 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                 if !code_list.contains(&machine_codes::UNICODE_RISK.to_string()) {
                     code_list.push(machine_codes::UNICODE_RISK.to_string());
                 }
-                all_findings.push(serde_json::json!({
-                    "code": "HIDDEN_CHARS",
-                    "severity": "warn",
-                    "message": format!("Found {} invisible character(s)", inv.len()),
-                }));
+                all_findings.push(finding(
+                    "HIDDEN_CHARS",
+                    severity::MEDIUM,
+                    &format!("Found {} invisible character(s)", inv.len()),
+                    Some(disposition::CAUTION),
+                    None,
+                ));
             }
         }
         // Check confusables
@@ -3095,11 +3099,13 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                 if !code_list.contains(&machine_codes::UNICODE_RISK.to_string()) {
                     code_list.push(machine_codes::UNICODE_RISK.to_string());
                 }
-                all_findings.push(serde_json::json!({
-                    "code": "CONFUSABLES",
-                    "severity": "warn",
-                    "message": format!("Found {} confusable character(s)", conf.len()),
-                }));
+                all_findings.push(finding(
+                    "CONFUSABLES",
+                    severity::MEDIUM,
+                    &format!("Found {} confusable character(s)", conf.len()),
+                    Some(disposition::CAUTION),
+                    None,
+                ));
             }
         }
     }
@@ -3123,18 +3129,28 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
     if let Some(ref r) = uc_result.result {
         if let Some(up_findings) = r.get("findings").and_then(|v| v.as_array()) {
             for f in up_findings {
-                let sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("info");
+                let raw_sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("info");
+                let sev = match raw_sev {
+                    "error" | "critical" => severity::HIGH,
+                    "warn" | "warning" => severity::MEDIUM,
+                    "danger" => severity::HIGH,
+                    "info" => severity::INFO,
+                    other => other,
+                };
+                let disp = match sev {
+                    severity::HIGH => Some(disposition::BLOCKING),
+                    severity::MEDIUM => Some(disposition::CAUTION),
+                    _ => Some(disposition::INFORMATIONAL),
+                };
                 let code = f
                     .get("code")
                     .and_then(|v| v.as_str())
                     .unwrap_or("UNICODE_POLICY");
                 let msg = f.get("message").and_then(|v| v.as_str()).unwrap_or("");
-                all_findings.push(serde_json::json!({
-                    "code": code,
-                    "severity": sev,
-                    "message": msg,
-                }));
-                if sev == "error" && !code_list.contains(&machine_codes::UNICODE_RISK.to_string()) {
+                all_findings.push(finding(code, sev, msg, disp, None));
+                if raw_sev == "error"
+                    && !code_list.contains(&machine_codes::UNICODE_RISK.to_string())
+                {
                     code_list.push(machine_codes::UNICODE_RISK.to_string());
                 }
             }
@@ -3180,13 +3196,21 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                         .get("code")
                         .and_then(|v| v.as_str())
                         .unwrap_or("PROMPT_RISK");
-                    let sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("warn");
+                    let raw_sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("warn");
+                    let sev = match raw_sev {
+                        "error" | "critical" => severity::HIGH,
+                        "warn" | "warning" => severity::MEDIUM,
+                        "danger" => severity::HIGH,
+                        "info" => severity::INFO,
+                        other => other,
+                    };
+                    let disp = match sev {
+                        severity::HIGH => Some(disposition::BLOCKING),
+                        severity::MEDIUM => Some(disposition::CAUTION),
+                        _ => Some(disposition::INFORMATIONAL),
+                    };
                     let msg = f.get("message").and_then(|v| v.as_str()).unwrap_or("");
-                    all_findings.push(serde_json::json!({
-                        "code": code,
-                        "severity": sev,
-                        "message": msg,
-                    }));
+                    all_findings.push(finding(code, sev, msg, disp, None));
                 }
                 if pi_findings.iter().any(|f| {
                     let sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("");
@@ -3236,13 +3260,21 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                             .get("code")
                             .and_then(|v| v.as_str())
                             .unwrap_or("IDENTIFIER_RISK");
-                        let sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("warn");
+                        let raw_sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("warn");
+                        let sev = match raw_sev {
+                            "error" | "critical" => severity::HIGH,
+                            "warn" | "warning" => severity::MEDIUM,
+                            "danger" => severity::HIGH,
+                            "info" => severity::INFO,
+                            other => other,
+                        };
+                        let disp = match sev {
+                            severity::HIGH => Some(disposition::BLOCKING),
+                            severity::MEDIUM => Some(disposition::CAUTION),
+                            _ => Some(disposition::INFORMATIONAL),
+                        };
                         let msg = f.get("message").and_then(|v| v.as_str()).unwrap_or("");
-                        all_findings.push(serde_json::json!({
-                            "code": code,
-                            "severity": sev,
-                            "message": msg,
-                        }));
+                        all_findings.push(finding(code, sev, msg, disp, None));
                     }
                     if !code_list.contains(&machine_codes::IDENTIFIER_COLLISION_RISK.to_string()) {
                         code_list.push(machine_codes::IDENTIFIER_COLLISION_RISK.to_string());
@@ -3255,16 +3287,16 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
     // 6. Determine verdict
     let has_error = all_findings
         .iter()
-        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some("error"));
+        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::HIGH));
     let has_warn = all_findings
         .iter()
-        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some("warn"));
-    let verdict = if has_error {
-        "block"
+        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::MEDIUM));
+    let response_verdict = if has_error {
+        verdict::BLOCK
     } else if has_warn {
-        "review"
+        verdict::REVIEW
     } else {
-        "allow"
+        verdict::ALLOW
     };
 
     // Deduplicate machine codes
@@ -3282,9 +3314,9 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
 
     // Build summary
     let n_findings = all_findings.len();
-    let summary = if verdict == "allow" {
+    let summary = if response_verdict == verdict::ALLOW {
         format!("No security issues found ({} findings).", n_findings)
-    } else if verdict == "review" {
+    } else if response_verdict == verdict::REVIEW {
         format!(
             "Review recommended: {} finding(s) require attention.",
             n_findings
@@ -3293,12 +3325,22 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         format!("Block: {} finding(s) indicate security risk.", n_findings)
     };
 
-    let recommended_action = if verdict == "allow" {
+    let recommended_action = if response_verdict == verdict::ALLOW {
         "allow".to_string()
-    } else if verdict == "review" {
+    } else if response_verdict == verdict::REVIEW {
         "review content for hidden instructions".to_string()
     } else {
         "do not trust this text without manual inspection".to_string()
+    };
+
+    let next_tool = if response_verdict != verdict::ALLOW {
+        Some(ToolResponse::next_tool(
+            "text_diff_explain",
+            &recommended_action,
+            None,
+        ))
+    } else {
+        None
     };
 
     let normalized_changed = subresults
@@ -3308,7 +3350,7 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         .unwrap_or(false);
 
     let mut result = serde_json::json!({
-        "verdict": verdict,
+        "verdict": response_verdict,
         "policy": policy,
         "findings": all_findings,
         "machine_code": primary_machine_code,
@@ -3324,9 +3366,14 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
 
     let mut resp = ToolResponse::success(result, Some("text_security_inspect"))
         .with_tool("text_security_inspect");
-    resp = resp.with_machine_code(&primary_machine_code);
+    resp = resp
+        .with_machine_code(&primary_machine_code)
+        .with_verdict(response_verdict);
     if !all_findings.is_empty() {
         resp = resp.with_findings(all_findings);
+    }
+    if let Some(nt) = next_tool {
+        resp = resp.with_recommended_next_tool(nt);
     }
     resp
 }

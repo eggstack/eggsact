@@ -24,7 +24,7 @@ eggsact/
 │   │   │   ├── text.rs       # TEXT_TOOLS
 │   │   │   └── ... (one file per category)
 │   │   ├── protocol.rs     # JSON-RPC types
-│   │   ├── response.rs     # ToolResponse, error sanitization
+│   │   ├── response.rs     # ToolResponse, error sanitization, finding() helpers, with_verdict, preflight builders
 │   │   ├── runtime.rs      # Rate limiter, constants, profile management
 │   │   ├── schema_validation.rs # Argument validation
 │   │   ├── machine_codes.rs # Machine-readable response codes
@@ -52,7 +52,7 @@ eggsact/
 │   │   ├── version.rs      # Version tools (2)
 │   │   └── cargo.rs        # Cargo tool (1)
 │   ├── agent/              # In-process agent API (ToolRegistry, Profile, call_json)
-│   ├── preflight/          # Typed preflight wrappers with fail-closed contract enforcement (PreflightError)
+│   ├── preflight/          # Typed preflight wrappers with fail-closed contract enforcement (PreflightError), preflight_allow/review/block builders
 │   └── text/               # Text processing library (24 modules)
 ├── tests/                  # Integration tests
 │   ├── lib.rs              # Test module declarations

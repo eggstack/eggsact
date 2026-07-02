@@ -1,5 +1,5 @@
 use crate::mcp::machine_codes;
-use crate::mcp::schemas::ToolResponse;
+use crate::mcp::schemas::{disposition, finding, severity, verdict, ToolResponse};
 use crate::tools::helpers::*;
 use serde_json::Value;
 use std::time::Duration;
@@ -269,7 +269,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
     let mut subresults = serde_json::Map::new();
     let mut findings: Vec<serde_json::Value> = Vec::new();
     let mut code_list: Vec<String> = Vec::new();
-    let mut verdict = "valid";
+    let mut config_verdict = verdict::VALID;
 
     match detected_format {
         "json" => {
@@ -279,13 +279,17 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                 subresults.insert("validate_json".to_string(), r.clone());
                 let valid = r.get("valid").and_then(|v| v.as_bool()).unwrap_or(false);
                 if !valid {
-                    verdict = "invalid";
+                    config_verdict = verdict::INVALID;
                     code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                    findings.push(serde_json::json!({
-                        "code": "JSON_PARSE_ERROR",
-                        "severity": "error",
-                        "message": r.get("error").and_then(|v| v.as_str()).unwrap_or("Invalid JSON"),
-                    }));
+                    findings.push(finding(
+                        "JSON_PARSE_ERROR",
+                        severity::HIGH,
+                        r.get("error")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Invalid JSON"),
+                        Some(disposition::BLOCKING),
+                        None,
+                    ));
                 } else if let Some(sch) = schema {
                     let vs_args = serde_json::json!({"text": text, "schema": sch});
                     let vs_result = crate::tools::validation::validate_schema_light_tool(&vs_args);
@@ -294,7 +298,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                         let vs_valid = vr.get("valid").and_then(|v| v.as_bool()).unwrap_or(true);
                         if !vs_valid {
                             code_list.push(machine_codes::CONFIG_SCHEMA_MISMATCH.to_string());
-                            verdict = "valid_with_warnings";
+                            config_verdict = verdict::VALID_WITH_WARNINGS;
                             if let Some(violations) =
                                 vr.get("violations").and_then(|v| v.as_array())
                             {
@@ -303,24 +307,44 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                                         .get("message")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("Schema violation");
-                                    findings.push(serde_json::json!({
-                                        "code": "SCHEMA_ERROR",
-                                        "severity": if strict { "error" } else { "warn" },
-                                        "message": msg,
-                                    }));
+                                    findings.push(finding(
+                                        "SCHEMA_ERROR",
+                                        if strict {
+                                            severity::HIGH
+                                        } else {
+                                            severity::MEDIUM
+                                        },
+                                        msg,
+                                        Some(if strict {
+                                            disposition::BLOCKING
+                                        } else {
+                                            disposition::CAUTION
+                                        }),
+                                        None,
+                                    ));
                                 }
                             } else {
-                                findings.push(serde_json::json!({
-                                    "code": "SCHEMA_ERROR",
-                                    "severity": if strict { "error" } else { "warn" },
-                                    "message": "Schema validation failed",
-                                }));
+                                findings.push(finding(
+                                    "SCHEMA_ERROR",
+                                    if strict {
+                                        severity::HIGH
+                                    } else {
+                                        severity::MEDIUM
+                                    },
+                                    "Schema validation failed",
+                                    Some(if strict {
+                                        disposition::BLOCKING
+                                    } else {
+                                        disposition::CAUTION
+                                    }),
+                                    None,
+                                ));
                             }
                         }
                     }
                 }
                 // Optionally canonicalize
-                if verdict != "invalid" {
+                if config_verdict != verdict::INVALID {
                     let jc_result =
                         crate::tools::json::json_canonicalize(&serde_json::json!({"text": text}));
                     if let Some(ref r) = jc_result.result {
@@ -336,11 +360,13 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                 }
             } else if let Some(ref e) = vj_result.error {
                 code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                findings.push(serde_json::json!({
-                    "code": "CONFIG_ERROR",
-                    "severity": "error",
-                    "message": e,
-                }));
+                findings.push(finding(
+                    "CONFIG_ERROR",
+                    severity::HIGH,
+                    e,
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
             }
         }
         "toml" => {
@@ -354,13 +380,17 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 if !valid {
-                    verdict = "invalid";
+                    config_verdict = verdict::INVALID;
                     code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                    findings.push(serde_json::json!({
-                        "code": "TOML_PARSE_ERROR",
-                        "severity": "error",
-                        "message": r.get("error").and_then(|v| v.as_str()).unwrap_or("Invalid TOML"),
-                    }));
+                    findings.push(finding(
+                        "TOML_PARSE_ERROR",
+                        severity::HIGH,
+                        r.get("error")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Invalid TOML"),
+                        Some(disposition::BLOCKING),
+                        None,
+                    ));
                 } else {
                     let ts_result = toml_shape_tool(&serde_json::json!({"text": text}));
                     if let Some(ref r) = ts_result.result {
@@ -369,11 +399,13 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                 }
             } else if let Some(ref e) = vt_result.error {
                 code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                findings.push(serde_json::json!({
-                    "code": "CONFIG_ERROR",
-                    "severity": "error",
-                    "message": e,
-                }));
+                findings.push(finding(
+                    "CONFIG_ERROR",
+                    severity::HIGH,
+                    e,
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
             }
         }
         "dotenv" => {
@@ -382,31 +414,37 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                 subresults.insert("dotenv_validate".to_string(), r.clone());
                 let parse_ok = r.get("parse_ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 if !parse_ok {
-                    verdict = "invalid";
+                    config_verdict = verdict::INVALID;
                     code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                     if let Some(dv_findings) = r.get("findings").and_then(|v| v.as_array()) {
                         for err in dv_findings {
-                            findings.push(serde_json::json!({
-                                "code": "DOTENV_ERROR",
-                                "severity": "error",
-                                "message": err.as_str().unwrap_or("Invalid dotenv format"),
-                            }));
+                            findings.push(finding(
+                                "DOTENV_ERROR",
+                                severity::HIGH,
+                                err.as_str().unwrap_or("Invalid dotenv format"),
+                                Some(disposition::BLOCKING),
+                                None,
+                            ));
                         }
                     } else {
-                        findings.push(serde_json::json!({
-                            "code": "DOTENV_ERROR",
-                            "severity": "error",
-                            "message": "Invalid dotenv format",
-                        }));
+                        findings.push(finding(
+                            "DOTENV_ERROR",
+                            severity::HIGH,
+                            "Invalid dotenv format",
+                            Some(disposition::BLOCKING),
+                            None,
+                        ));
                     }
                 }
             } else if let Some(ref e) = dv_result.error {
                 code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                findings.push(serde_json::json!({
-                    "code": "CONFIG_ERROR",
-                    "severity": "error",
-                    "message": e,
-                }));
+                findings.push(finding(
+                    "CONFIG_ERROR",
+                    severity::HIGH,
+                    e,
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
             }
         }
         "ini" => {
@@ -415,31 +453,37 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                 subresults.insert("ini_validate".to_string(), r.clone());
                 let parse_ok = r.get("parse_ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 if !parse_ok {
-                    verdict = "invalid";
+                    config_verdict = verdict::INVALID;
                     code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                     if let Some(iv_findings) = r.get("findings").and_then(|v| v.as_array()) {
                         for err in iv_findings {
-                            findings.push(serde_json::json!({
-                                "code": "INI_ERROR",
-                                "severity": "error",
-                                "message": err.as_str().unwrap_or("Invalid INI format"),
-                            }));
+                            findings.push(finding(
+                                "INI_ERROR",
+                                severity::HIGH,
+                                err.as_str().unwrap_or("Invalid INI format"),
+                                Some(disposition::BLOCKING),
+                                None,
+                            ));
                         }
                     } else {
-                        findings.push(serde_json::json!({
-                            "code": "INI_ERROR",
-                            "severity": "error",
-                            "message": "Invalid INI format",
-                        }));
+                        findings.push(finding(
+                            "INI_ERROR",
+                            severity::HIGH,
+                            "Invalid INI format",
+                            Some(disposition::BLOCKING),
+                            None,
+                        ));
                     }
                 }
             } else if let Some(ref e) = iv_result.error {
                 code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                findings.push(serde_json::json!({
-                    "code": "CONFIG_ERROR",
-                    "severity": "error",
-                    "message": e,
-                }));
+                findings.push(finding(
+                    "CONFIG_ERROR",
+                    severity::HIGH,
+                    e,
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
             }
         }
         "cargo_toml" => {
@@ -449,37 +493,59 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                 subresults.insert("cargo_toml_inspect".to_string(), r.clone());
                 let parse_ok = r.get("parse_ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 if !parse_ok {
-                    verdict = "invalid";
+                    config_verdict = verdict::INVALID;
                     code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                    findings.push(serde_json::json!({
-                        "code": "CARGO_PARSE_ERROR",
-                        "severity": "error",
-                        "message": "Cargo.toml parse failed",
-                    }));
+                    findings.push(finding(
+                        "CARGO_PARSE_ERROR",
+                        severity::HIGH,
+                        "Cargo.toml parse failed",
+                        Some(disposition::BLOCKING),
+                        None,
+                    ));
                 } else {
                     if let Some(ct_findings) = r.get("findings").and_then(|v| v.as_array()) {
                         for f in ct_findings {
-                            findings.push(serde_json::json!({
-                                "code": f.get("code").and_then(|v| v.as_str()).unwrap_or("CARGO_NOTE"),
-                                "severity": f.get("severity").and_then(|v| v.as_str()).unwrap_or("info"),
-                                "message": f.get("message").and_then(|v| v.as_str()).unwrap_or(""),
-                            }));
+                            let sev = match f
+                                .get("severity")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("info")
+                            {
+                                "error" => severity::HIGH,
+                                "warn" => severity::MEDIUM,
+                                _ => severity::INFO,
+                            };
+                            let disp = match sev {
+                                severity::HIGH => Some(disposition::BLOCKING),
+                                severity::MEDIUM => Some(disposition::CAUTION),
+                                _ => Some(disposition::INFORMATIONAL),
+                            };
+                            findings.push(finding(
+                                f.get("code")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("CARGO_NOTE"),
+                                sev,
+                                f.get("message").and_then(|v| v.as_str()).unwrap_or(""),
+                                disp,
+                                None,
+                            ));
                         }
                     }
                 }
             } else if let Some(ref e) = ct_result.error {
                 code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                findings.push(serde_json::json!({
-                    "code": "CONFIG_ERROR",
-                    "severity": "error",
-                    "message": e,
-                }));
+                findings.push(finding(
+                    "CONFIG_ERROR",
+                    severity::HIGH,
+                    e,
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
             }
         }
         _ => unreachable!(),
     }
 
-    let parse_ok = verdict != "invalid";
+    let parse_ok = config_verdict != verdict::INVALID;
 
     let machine_code = if !parse_ok {
         code_list
@@ -498,13 +564,13 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
     let summary = format!(
         "{} config: {} ({} finding(s))",
         detected_format,
-        verdict,
+        config_verdict,
         findings.len()
     );
 
     let mut result = serde_json::json!({
         "valid": parse_ok,
-        "verdict": verdict,
+        "verdict": config_verdict,
         "format": detected_format,
         "findings": findings,
         "machine_code": machine_code,
@@ -516,7 +582,9 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
 
     let mut resp =
         ToolResponse::success(result, Some("config_preflight")).with_tool("config_preflight");
-    resp = resp.with_machine_code(&machine_code);
+    resp = resp
+        .with_machine_code(&machine_code)
+        .with_verdict(config_verdict);
     if !findings.is_empty() {
         resp = resp.with_findings(findings);
     }

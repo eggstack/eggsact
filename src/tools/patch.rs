@@ -1,5 +1,5 @@
 use crate::mcp::machine_codes;
-use crate::mcp::schemas::ToolResponse;
+use crate::mcp::schemas::{disposition, finding, severity, verdict, ToolResponse};
 use crate::tools::helpers::*;
 use serde_json::Value;
 
@@ -248,17 +248,21 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 subresults.insert("text_replace_check".to_string(), r.clone());
                 let match_count = r.get("match_count").and_then(|v| v.as_u64()).unwrap_or(0);
                 if match_count == 0 {
-                    findings.push(serde_json::json!({
-                        "code": "NO_MATCH",
-                        "severity": "error",
-                        "message": "old text not found in original",
-                    }));
+                    findings.push(finding(
+                        "NO_MATCH",
+                        severity::HIGH,
+                        "old text not found in original",
+                        Some(disposition::BLOCKING),
+                        None,
+                    ));
                 } else if match_count > 1 {
-                    findings.push(serde_json::json!({
-                        "code": "MULTIPLE_MATCHES",
-                        "severity": "warn",
-                        "message": format!("Found {} matches; use allow_multiple=true", match_count),
-                    }));
+                    findings.push(finding(
+                        "MULTIPLE_MATCHES",
+                        severity::MEDIUM,
+                        &format!("Found {} matches; use allow_multiple=true", match_count),
+                        Some(disposition::CAUTION),
+                        None,
+                    ));
                 }
             }
         }
@@ -287,11 +291,13 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 ToolResponse {
                     error: Some(ref e), ..
                 } => {
-                    findings.push(serde_json::json!({
-                        "code": "PATCH_ERROR",
-                        "severity": "error",
-                        "message": e,
-                    }));
+                    findings.push(finding(
+                        "PATCH_ERROR",
+                        severity::HIGH,
+                        e,
+                        Some(disposition::BLOCKING),
+                        None,
+                    ));
                 }
                 ToolResponse {
                     result: Some(ref r),
@@ -300,11 +306,13 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                     subresults.insert("patch_apply_check".to_string(), r.clone());
                     if let Some(applies) = r.get("applies").and_then(|v| v.as_bool()) {
                         if !applies {
-                            findings.push(serde_json::json!({
-                                "code": "PATCH_FAILED",
-                                "severity": "error",
-                                "message": "Patch does not apply cleanly",
-                            }));
+                            findings.push(finding(
+                                "PATCH_FAILED",
+                                severity::HIGH,
+                                "Patch does not apply cleanly",
+                                Some(disposition::BLOCKING),
+                                None,
+                            ));
                         }
                     }
                 }
@@ -346,11 +354,13 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 subresults.insert("line_range_extract".to_string(), r.clone());
                 if let Some(valid_range) = r.get("valid_range").and_then(|v| v.as_bool()) {
                     if !valid_range {
-                        findings.push(serde_json::json!({
-                            "code": "INVALID_RANGE",
-                            "severity": "error",
-                            "message": "Invalid line range",
-                        }));
+                        findings.push(finding(
+                            "INVALID_RANGE",
+                            severity::HIGH,
+                            "Invalid line range",
+                            Some(disposition::BLOCKING),
+                            None,
+                        ));
                     }
                 }
             }
@@ -398,22 +408,36 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             (fp_val, "text_fingerprint")
         };
         if actual_fp != fp {
-            findings.push(serde_json::json!({
-                "code": "FINGERPRINT_MISMATCH",
-                "severity": "warn",
-                "message": format!("Expected {}, got {} (from {})", fp, actual_fp, fp_source),
-            }));
+            findings.push(finding(
+                "FINGERPRINT_MISMATCH",
+                severity::MEDIUM,
+                &format!("Expected {}, got {} (from {})", fp, actual_fp, fp_source),
+                Some(disposition::CAUTION),
+                None,
+            ));
         }
     }
 
     let has_error = findings
         .iter()
-        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some("error"));
+        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::HIGH));
+    let has_warning = findings
+        .iter()
+        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::MEDIUM));
     let ok_to_apply = !has_error;
+
+    // Determine verdict
+    let response_verdict = if has_error {
+        verdict::BLOCK
+    } else if has_warning {
+        verdict::REVIEW
+    } else {
+        verdict::ALLOW
+    };
 
     // Determine machine_code and recommended_next_tool (matching Python's first-inserted-wins)
     let mut code_list: Vec<String> = Vec::new();
-    let mut recommended_next: Option<String> = None;
+    let mut recommended_next: Option<serde_json::Value> = None;
 
     let has_no_match = findings
         .iter()
@@ -436,7 +460,11 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
 
     if has_no_match || has_multiple {
         code_list.push(machine_codes::AMBIGUOUS_REPLACEMENT.to_string());
-        recommended_next = Some("text_diff_explain".to_string());
+        recommended_next = Some(ToolResponse::next_tool(
+            "text_diff_explain",
+            "literal replacement was ambiguous",
+            None,
+        ));
     }
     if (has_patch_fail || has_patch_error)
         && !code_list.contains(&machine_codes::PATCH_FAILED.to_string())
@@ -451,7 +479,11 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             code_list.push(machine_codes::FINGERPRINT_MISMATCH.to_string());
         }
         if recommended_next.is_none() {
-            recommended_next = Some("text_diff_explain".to_string());
+            recommended_next = Some(ToolResponse::next_tool(
+                "text_diff_explain",
+                "content fingerprint mismatch",
+                None,
+            ));
         }
     }
     if has_error && code_list.is_empty() {
@@ -476,6 +508,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
 
     let mut result = serde_json::json!({
         "ok_to_apply": ok_to_apply,
+        "verdict": response_verdict,
         "mode": replacement_mode,
         "findings": findings,
         "machine_code": machine_code_str,
@@ -488,13 +521,11 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
 
     let mut resp =
         ToolResponse::success(result, Some("edit_preflight")).with_tool("edit_preflight");
-    resp = resp.with_machine_code(&machine_code_str);
+    resp = resp
+        .with_machine_code(&machine_code_str)
+        .with_verdict(response_verdict);
     if !findings.is_empty() {
         resp = resp.with_findings(findings.clone());
-    }
-    if let Some(ref next) = recommended_next {
-        let next_val: serde_json::Value = serde_json::Value::String(next.clone());
-        resp = resp.with_recommended_next_tool(next_val);
     }
     resp
 }

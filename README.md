@@ -450,7 +450,7 @@ eggsact/
 │   │   │   ├── all_tools.rs   # ALL_TOOLS constant, PROFILE_NAMES
 │   │   │   └── listing.rs     # Filtering, audience, schema compaction, suggestions
 │   │   ├── protocol.rs      # JSON-RPC types (Request, Response, Error, InitializeResult)
-│   │   ├── response.rs      # ToolResponse, error sanitization
+│   │   ├── response.rs      # ToolResponse, error sanitization, finding() helpers, with_verdict, preflight builders
 │   │   ├── runtime.rs       # Rate limiter, cancelled requests, constants, profile management
 │   │   ├── schema_validation.rs # MCP argument validation against tool schemas
 │   │   └── schemas/         # JSON-schema builders per tool category

@@ -269,6 +269,7 @@ fn test_finding_creates_correct_shape() {
         machine_codes::severity::MEDIUM,
         "Multiple matches found",
         None,
+        None,
     );
     assert_eq!(f["code"].as_str(), Some("AMBIGUOUS_REPLACEMENT"));
     assert_eq!(f["severity"].as_str(), Some("medium"));
@@ -283,6 +284,7 @@ fn test_finding_with_details() {
         machine_codes::AMBIGUOUS_REPLACEMENT,
         machine_codes::severity::MEDIUM,
         "Multiple matches found",
+        None,
         Some(details),
     );
     assert_eq!(f["details"]["match_count"].as_i64(), Some(3));
@@ -294,6 +296,7 @@ fn test_finding_with_location_creates_correct_shape() {
         machine_codes::EDIT_FAILED,
         machine_codes::severity::HIGH,
         "Patch parse error",
+        None,
         42,
         Some(8),
     );
@@ -309,6 +312,7 @@ fn test_finding_with_location_no_column() {
         machine_codes::EDIT_FAILED,
         machine_codes::severity::HIGH,
         "Patch parse error",
+        None,
         42,
         None,
     );
@@ -322,6 +326,7 @@ fn test_prompt_finding_creates_correct_shape() {
         machine_codes::PROMPT_HIDDEN_CONTENT,
         machine_codes::severity::MEDIUM,
         "HTML comment detected",
+        None,
         10,
         25,
         None,
@@ -741,6 +746,270 @@ fn test_identifier_table_inspect_returns_result() {
         r.get("result").is_some(),
         "identifier_table_inspect should return result: {}",
         r
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// COMPOSITE TOOL VERDICT COVERAGE
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn composite_edit_preflight_includes_verdict() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "rust",
+            "replacement_mode": "literal"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    let verdict = r["result"]["verdict"].as_str();
+    assert!(
+        verdict.is_some(),
+        "edit_preflight result should include 'verdict': {}",
+        r
+    );
+    assert!(
+        matches!(
+            verdict.unwrap(),
+            "allow"
+                | "review"
+                | "block"
+                | "safe_to_apply"
+                | "safe_with_warnings"
+                | "valid"
+                | "valid_with_warnings"
+                | "invalid"
+        ),
+        "edit_preflight verdict should be a canonical value, got: {:?}",
+        verdict
+    );
+}
+
+#[test]
+fn composite_command_preflight_includes_verdict() {
+    let r = call_tool(
+        "command_preflight",
+        serde_json::json!({"command": "echo hello"}),
+    );
+    assert_eq!(r["ok"], true);
+    let verdict = r["result"]["verdict"].as_str();
+    assert!(
+        verdict.is_some(),
+        "command_preflight result should include 'verdict': {}",
+        r
+    );
+    assert!(
+        matches!(verdict.unwrap(), "allow" | "review" | "block"),
+        "command_preflight verdict should be allow/review/block, got: {:?}",
+        verdict
+    );
+}
+
+#[test]
+fn composite_config_preflight_includes_verdict() {
+    let r = call_tool("config_preflight", serde_json::json!({"text": "{}"}));
+    assert_eq!(r["ok"], true);
+    let verdict = r["result"]["verdict"].as_str();
+    assert!(
+        verdict.is_some(),
+        "config_preflight result should include 'verdict': {}",
+        r
+    );
+    assert!(
+        matches!(
+            verdict.unwrap(),
+            "valid" | "valid_with_warnings" | "invalid"
+        ),
+        "config_preflight verdict should be valid/valid_with_warnings/invalid, got: {:?}",
+        verdict
+    );
+}
+
+#[test]
+fn composite_text_security_includes_verdict() {
+    let r = call_tool(
+        "text_security_inspect",
+        serde_json::json!({"text": "hello world"}),
+    );
+    assert_eq!(r["ok"], true);
+    let verdict = r["result"]["verdict"].as_str();
+    assert!(
+        verdict.is_some(),
+        "text_security_inspect result should include 'verdict': {}",
+        r
+    );
+    assert!(
+        matches!(verdict.unwrap(), "allow" | "review" | "block"),
+        "text_security_inspect verdict should be allow/review/block, got: {:?}",
+        verdict
+    );
+}
+
+#[test]
+fn composite_cargo_toml_inspect_includes_verdict() {
+    let r = call_tool(
+        "cargo_toml_inspect",
+        serde_json::json!({"text": "[package]\nname = \"test\"\nversion = \"0.1.0\"\n"}),
+    );
+    assert_eq!(r["ok"], true);
+    let verdict = r["result"]["verdict"].as_str();
+    assert!(
+        verdict.is_some(),
+        "cargo_toml_inspect result should include 'verdict': {}",
+        r
+    );
+    assert!(
+        matches!(verdict.unwrap(), "allow" | "review" | "block"),
+        "cargo_toml_inspect verdict should be allow/review/block, got: {:?}",
+        verdict
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// COMPOSITE TOOL FINDING SHAPE VALIDATION
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn composite_findings_have_required_fields() {
+    // Trigger findings in various composite tools and validate shape.
+    let test_cases: Vec<(&str, Value)> = vec![
+        // edit_preflight with ambiguous replacement
+        (
+            "edit_preflight",
+            json!({
+                "original": "aaa",
+                "old": "a",
+                "new": "b",
+                "replacement_mode": "literal"
+            }),
+        ),
+        // command_preflight with risky shell feature
+        ("command_preflight", json!({"command": "echo hello | cat"})),
+        // config_preflight with invalid TOML
+        ("config_preflight", json!({"text": "[unclosed"})),
+        // text_security_inspect with hidden chars
+        (
+            "text_security_inspect",
+            json!({"text": "hello\u{200b}world"}),
+        ),
+        // cargo_toml_inspect with missing fields
+        (
+            "cargo_toml_inspect",
+            json!({"text": "[package]\nname = \"test\"\n"}),
+        ),
+    ];
+
+    let canonical_severities = ["info", "low", "medium", "high", "critical"];
+
+    for (tool_name, args) in test_cases {
+        let r = call_tool(tool_name, args);
+        if let Some(findings) = r.get("findings").and_then(|f| f.as_array()) {
+            for finding in findings {
+                assert!(
+                    finding.get("code").is_some(),
+                    "{} finding should have 'code': {:?}",
+                    tool_name,
+                    finding
+                );
+                assert!(
+                    finding.get("severity").is_some(),
+                    "{} finding should have 'severity': {:?}",
+                    tool_name,
+                    finding
+                );
+                assert!(
+                    finding.get("message").is_some(),
+                    "{} finding should have 'message': {:?}",
+                    tool_name,
+                    finding
+                );
+                // Severity must use canonical vocabulary
+                let sev = finding["severity"].as_str().unwrap_or("");
+                assert!(
+                    canonical_severities.contains(&sev),
+                    "{} finding uses non-canonical severity '{}': {:?}",
+                    tool_name,
+                    sev,
+                    finding
+                );
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MACHINE CODE USAGE COVERAGE
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn every_machine_code_constant_is_used_in_source() {
+    let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+
+    fn read_all_rs(dir: &std::path::Path) -> String {
+        let mut content = String::new();
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    content.push_str(&read_all_rs(&path));
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    if let Ok(c) = std::fs::read_to_string(&path) {
+                        content.push_str(&c);
+                        content.push('\n');
+                    }
+                }
+            }
+        }
+        content
+    }
+
+    let all_src = read_all_rs(&src_dir);
+
+    // Aliases that point to the same string value as another constant —
+    // they don't need their own references.
+    let alias_constants: Vec<&str> = vec![
+        machine_codes::COMMON_CANCELLED,
+        machine_codes::COMMON_TIMEOUT,
+        machine_codes::COMMON_OUTPUT_TOO_LARGE,
+        machine_codes::COMMON_INPUT_TOO_LARGE,
+        machine_codes::COMMON_INTERNAL_ERROR,
+        machine_codes::COMMON_INVALID_ARGUMENTS,
+        machine_codes::EDIT_SAFE_TO_APPLY,
+        machine_codes::EDIT_OLD_TEXT_NOT_FOUND,
+        machine_codes::EDIT_MULTIPLE_MATCHES,
+        machine_codes::EDIT_STALE_CONTEXT,
+        machine_codes::SHELL_SAFE_COMMAND,
+        machine_codes::SHELL_DESTRUCTIVE_COMMAND,
+        machine_codes::SHELL_NETWORK_ACCESS,
+        machine_codes::CONFIG_VALID,
+        machine_codes::CONFIG_INVALID,
+        machine_codes::UNICODE_BIDI_DETECTED,
+        machine_codes::PATH_SCOPE_ESCAPE,
+    ];
+
+    let mut unused = Vec::new();
+    for code in machine_codes::ALL {
+        if alias_constants.contains(code) {
+            continue;
+        }
+        // Check if the constant's string value appears in source code
+        // (as a literal string or as part of a machine_codes::CONST_NAME reference).
+        if !all_src.contains(code) {
+            // Also check as a Rust identifier reference (machine_codes::CONST_NAME)
+            let identifier = code.to_lowercase();
+            if !all_src.contains(&identifier) {
+                unused.push(*code);
+            }
+        }
+    }
+
+    assert!(
+        unused.is_empty(),
+        "Machine code constants not referenced in source code (excluding aliases): {:?}",
+        unused
     );
 }
 

@@ -53,8 +53,8 @@ src/
       json.rs       # JSON_TOOLS
       ...           # one file per category (16 total)
     protocol.rs     # JSON-RPC types (Request, Response, Error, InitializeResult)
-    response.rs     # ToolResponse, error sanitization, finding() helpers
-    machine_codes.rs # machine-readable response codes (single source of truth)
+    response.rs     # ToolResponse, error sanitization, finding() helpers, with_verdict, preflight builders
+    machine_codes.rs # machine-readable response codes, severity/disposition/verdict constants
     runtime.rs      # rate limiter, constants, profile management
     schema_validation.rs # argument validation against tool schemas
     schemas/        # JSON-schema builders per tool category
@@ -83,7 +83,7 @@ src/
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text
   calc/             # calculator tests (4 files)
-  mcp/              # MCP protocol + tool tests (14 files)
+  mcp/              # MCP protocol + tool tests (17 files)
   parity/           # Python/Rust parity tests (12 files)
   text/             # text processing tests (24 files)
 scripts/
@@ -97,7 +97,7 @@ Detailed architecture documentation is in `architecture/`:
 - `architecture/overview.md` — directory layout, dependency flow, constants
 - `architecture/calculator.md` — calculator core, NL pipeline, units, constants
 - `architecture/mcp-server.md` — MCP protocol, tool registration, categories, error handling
-- `architecture/machine-codes.md` — machine-readable response codes, finding helpers, severity/verdict constants
+- `architecture/machine-codes.md` — machine-readable response codes, finding helpers, severity/disposition/verdict constants, composite tool verdicts
 - `architecture/text-library.md` — all 24 text modules, public API, code patterns
 - `architecture/compatibility.md` — compatibility mode (EggcalcPython vs StrictNative), behavior differences
 

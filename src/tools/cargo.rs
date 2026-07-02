@@ -1,5 +1,5 @@
 use crate::mcp::machine_codes;
-use crate::mcp::schemas::ToolResponse;
+use crate::mcp::schemas::{disposition, finding, severity, verdict, ToolResponse};
 use crate::tools::helpers::*;
 use serde_json::Value;
 
@@ -44,33 +44,54 @@ pub fn cargo_toml_inspect(args: &Value) -> ToolResponse {
         .findings
         .iter()
         .map(|msg| {
-            let (severity, code) = {
+            let (sev, disp, code) = {
                 let lower = msg.to_lowercase();
                 if lower.contains("parse error") || lower.contains("not a table") {
-                    ("error", "CARGO_PARSE_ERROR")
+                    (severity::HIGH, disposition::BLOCKING, "CARGO_PARSE_ERROR")
                 } else if lower.contains("missing") {
-                    ("warn", "CARGO_MISSING_FIELD")
+                    (
+                        severity::MEDIUM,
+                        disposition::CAUTION,
+                        "CARGO_MISSING_FIELD",
+                    )
                 } else if lower.contains("confusable") {
-                    ("warn", "CARGO_CONFUSABLE_NAMES")
+                    (
+                        severity::MEDIUM,
+                        disposition::CAUTION,
+                        "CARGO_CONFUSABLE_NAMES",
+                    )
                 } else if lower.contains("suspicious") {
-                    ("warn", "CARGO_SUSPICIOUS_NAME")
+                    (
+                        severity::MEDIUM,
+                        disposition::CAUTION,
+                        "CARGO_SUSPICIOUS_NAME",
+                    )
                 } else if lower.contains("unrecognized") {
-                    ("warn", "CARGO_UNRECOGNIZED_VALUE")
+                    (
+                        severity::MEDIUM,
+                        disposition::CAUTION,
+                        "CARGO_UNRECOGNIZED_VALUE",
+                    )
                 } else {
-                    ("info", "CARGO_NOTE")
+                    (severity::INFO, disposition::INFORMATIONAL, "CARGO_NOTE")
                 }
             };
-            serde_json::json!({
-                "code": code,
-                "severity": severity,
-                "message": msg,
-            })
+            finding(code, sev, msg, Some(disp), None)
         })
         .collect();
+
+    let cargo_verdict = if !parse_ok {
+        verdict::INVALID
+    } else if has_findings {
+        verdict::REVIEW
+    } else {
+        verdict::ALLOW
+    };
 
     let mut resp = ToolResponse::success(
     serde_json::json!({
         "parse_ok": result.parse_ok,
+        "verdict": cargo_verdict,
         "package": result.package,
         "workspace": result.workspace,
         "dependencies": result.dependencies,
@@ -90,5 +111,6 @@ pub fn cargo_toml_inspect(args: &Value) -> ToolResponse {
     } else if has_findings {
         resp = resp.with_machine_code(machine_codes::CARGO_HAS_FINDINGS);
     }
+    resp = resp.with_verdict(cargo_verdict);
     resp
 }

@@ -36,22 +36,29 @@ Every tool call returns a `ToolResponse` (serialized as JSON) with these 11 fiel
 | `.with_findings(findings)` | Attach structured findings |
 | `.with_warnings(warnings)` | Attach warnings |
 | `.with_limits_applied(limits)` | Record which limits were enforced |
-| `.with_recommended_next_tool(tool)` | Suggest the next tool to call |
+| `.with_verdict(verdict)` | Set verdict inside result JSON (for composite tools) |
+| `.with_recommended_next_tool(tool)` | Suggest the next tool to call (structured `{name, reason, arguments_hint}`) |
+| `preflight_allow(tool)` | Quick preflight success — `ok=true`, `machine_code=OK`, `verdict=allow` |
+| `preflight_review(tool, findings)` | Quick preflight with warnings — `ok=true`, verdict=`review`, findings attached |
+| `preflight_block(tool, machine_code, findings)` | Quick preflight failure — `ok=true`, verdict=`block`, findings attached |
+| `ToolResponse::next_tool(name, reason, arguments_hint)` | Static helper returning structured `recommended_next_tool` JSON |
 
 ## Finding Helpers
 
-Structured findings are JSON objects with `code`, `severity`, and `message` fields. Three helpers are available in `src/mcp/response.rs`:
+Structured findings are JSON objects with `code`, `severity`, `message`, and optional `disposition` fields. Three helpers are available in `src/mcp/response.rs`:
 
 ```rust
-// Simple finding
-finding(code, severity, message, details)
+// Simple finding (disposition is optional)
+finding(code, severity, message, details, disposition)
 
 // Finding with source location (line/column)
-finding_with_location(code, severity, message, line, column)
+finding_with_location(code, severity, message, line, column, disposition)
 
 // Finding for prompt inspection (span instead of location)
-prompt_finding(code, severity, message, byte_offset, end_byte_offset, details)
+prompt_finding(code, severity, message, byte_offset, end_byte_offset, details, disposition)
 ```
+
+Use `severity::*` constants (`info`, `low`, `medium`, `high`, `critical`) and `disposition::*` constants (`informational`, `caution`, `blocking`) from `machine_codes.rs`.
 
 ## Severity / Disposition / Verdict Constants
 
@@ -68,7 +75,9 @@ These constants are defined in `src/mcp/machine_codes.rs` (and re-exported from 
 
 ## Composite Tool Verdicts
 
-Composite tools (`edit_preflight`, `command_preflight`, `config_preflight`, `text_security_inspect`, `structured_data_compare`) emit a `verdict` field in their `result` object. Verdicts use the `verdict` constants above. Composite tools also emit a `machine_code` at the top level to summarize the overall outcome (e.g. `COMMAND_OK`, `SHELL_RISK`, `CONFIG_OK`, `TEXT_SECURITY_OK`).
+Composite tools (`edit_preflight`, `command_preflight`, `config_preflight`, `text_security_inspect`, `cargo_toml_inspect`) emit a `verdict` field in their `result` object via the `.with_verdict(verdict)` builder. Verdicts use the `verdict` constants above. Composite tools also emit a `machine_code` at the top level to summarize the overall outcome (e.g. `COMMAND_OK`, `SHELL_RISK`, `CONFIG_OK`, `TEXT_SECURITY_OK`).
+
+All composite tools use `finding()` / `finding_with_location()` helpers with canonical `severity::*` and `disposition::*` constants for structured findings. Severity values map from legacy vocab: `"error"` → `severity::HIGH`, `"warn"` → `severity::MEDIUM`, `"info"` → `severity::INFO`.
 
 ## Category-Prefixed Aliases
 

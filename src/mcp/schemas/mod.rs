@@ -37,6 +37,6 @@ pub use crate::mcp::protocol::{
     JsonRpcResponse, ServerInfo, ToolsCapability,
 };
 pub use crate::mcp::response::{
-    disposition, finding, finding_with_location, prompt_finding, sanitize_error, severity, verdict,
-    ToolResponse,
+    disposition, finding, finding_with_location, preflight_allow, preflight_block,
+    preflight_review, prompt_finding, sanitize_error, severity, verdict, ToolResponse,
 };

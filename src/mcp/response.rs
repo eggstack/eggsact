@@ -149,70 +149,28 @@ pub fn sanitize_error(msg: &str) -> String {
     result
 }
 
-/// Structured finding severity levels.
-///
-/// These are string constants for use in finding construction helpers.
-/// They serialize as lowercase strings matching the wire format.
-pub mod severity {
-    /// Purely informational; no action required.
-    pub const INFO: &str = "info";
-    /// Minor concern; safe to act on but worth noting.
-    pub const LOW: &str = "low";
-    /// Caution required; may need review before acting.
-    pub const MEDIUM: &str = "medium";
-    /// Significant concern; likely requires investigation.
-    pub const HIGH: &str = "high";
-    /// Critical issue; do not act without resolving.
-    pub const CRITICAL: &str = "critical";
-}
-
-/// Structured finding disposition values.
-pub mod disposition {
-    /// Informational only; no blocking behavior.
-    pub const INFORMATIONAL: &str = "informational";
-    /// Caution — user or model should review before acting.
-    pub const CAUTION: &str = "caution";
-    /// Blocking — tool result should not be acted upon.
-    pub const BLOCKING: &str = "blocking";
-}
-
-/// Composite tool verdict constants.
-pub mod verdict {
-    /// Allowed / safe to proceed.
-    pub const ALLOW: &str = "allow";
-    /// Needs human or model review before proceeding.
-    pub const REVIEW: &str = "review";
-    /// Blocked — do not proceed.
-    pub const BLOCK: &str = "block";
-
-    /// Config is valid.
-    pub const VALID: &str = "valid";
-    /// Config is valid but has warnings.
-    pub const VALID_WITH_WARNINGS: &str = "valid_with_warnings";
-    /// Config is invalid.
-    pub const INVALID: &str = "invalid";
-
-    /// Safe to apply.
-    pub const SAFE_TO_APPLY: &str = "safe_to_apply";
-    /// Safe with warnings.
-    pub const SAFE_WITH_WARNINGS: &str = "safe_with_warnings";
-}
+// Canonical severity, disposition, and verdict constants live in
+// `machine_codes`. Re-export here so existing `use crate::mcp::response::{severity, ...}`
+// paths continue to work.
+pub use crate::mcp::machine_codes::{disposition, severity, verdict};
 
 /// Create a structured finding as a `serde_json::Value`.
 ///
 /// Findings are serialized as JSON objects with standard fields:
-/// `code`, `severity`, `message`, and optionally `location`, `details`.
+/// `code`, `severity`, `message`, and optionally `disposition`, `location`, `details`.
 ///
 /// # Arguments
 ///
 /// * `code` — Machine code constant (e.g. `AMBIGUOUS_REPLACEMENT`).
 /// * `severity` — Severity level (`severity::INFO`, etc.).
 /// * `message` — Human-readable description of the finding.
+/// * `disposition` — Optional disposition (`disposition::BLOCKING`, etc.).
 /// * `details` — Optional additional structured data.
 pub fn finding(
     code: &str,
     severity: &str,
     message: &str,
+    disposition: Option<&str>,
     details: Option<serde_json::Value>,
 ) -> serde_json::Value {
     let mut f = serde_json::json!({
@@ -220,6 +178,9 @@ pub fn finding(
         "severity": severity,
         "message": message,
     });
+    if let Some(d) = disposition {
+        f["disposition"] = serde_json::json!(d);
+    }
     if let Some(d) = details {
         f["details"] = d;
     }
@@ -233,12 +194,14 @@ pub fn finding(
 /// * `code` — Machine code constant.
 /// * `severity` — Severity level.
 /// * `message` — Human-readable description.
+/// * `disposition` — Optional disposition.
 /// * `line` — 1-indexed line number.
 /// * `column` — 1-indexed column number (optional).
 pub fn finding_with_location(
     code: &str,
     severity: &str,
     message: &str,
+    disposition: Option<&str>,
     line: usize,
     column: Option<usize>,
 ) -> serde_json::Value {
@@ -248,12 +211,16 @@ pub fn finding_with_location(
     if let Some(c) = column {
         loc["column"] = serde_json::json!(c);
     }
-    serde_json::json!({
+    let mut f = serde_json::json!({
         "code": code,
         "severity": severity,
         "message": message,
         "location": loc,
-    })
+    });
+    if let Some(d) = disposition {
+        f["disposition"] = serde_json::json!(d);
+    }
+    f
 }
 
 /// Create a finding for a prompt input inspection check.
@@ -263,6 +230,7 @@ pub fn prompt_finding(
     code: &str,
     severity: &str,
     message: &str,
+    disposition: Option<&str>,
     byte_offset: usize,
     end_byte_offset: usize,
     details: Option<serde_json::Value>,
@@ -276,6 +244,9 @@ pub fn prompt_finding(
             "end_byte_offset": end_byte_offset,
         },
     });
+    if let Some(d) = disposition {
+        f["disposition"] = serde_json::json!(d);
+    }
     if let Some(d) = details {
         f["details"] = d;
     }
@@ -447,19 +418,182 @@ impl ToolResponse {
         self.recommended_next_tool = Some(tool);
         self
     }
+
+    /// Build a structured `recommended_next_tool` value.
+    ///
+    /// Returns a JSON object with `name`, `reason`, and optionally `arguments_hint`.
+    pub fn next_tool(
+        name: &str,
+        reason: &str,
+        arguments_hint: Option<serde_json::Value>,
+    ) -> serde_json::Value {
+        let mut obj = serde_json::json!({
+            "name": name,
+            "reason": reason,
+        });
+        if let Some(hint) = arguments_hint {
+            obj["arguments_hint"] = hint;
+        }
+        obj
+    }
+
+    /// Set the `verdict` field inside `result`.
+    ///
+    /// If `result` is `None`, it is initialized to an empty object first.
+    pub fn with_verdict(mut self, verdict: &str) -> Self {
+        let result = self.result.get_or_insert_with(|| serde_json::json!({}));
+        result["verdict"] = serde_json::json!(verdict);
+        self
+    }
+}
+
+/// Build a preflight "allow" response.
+///
+/// Sets `ok=true`, verdict to `allow`, machine_code, and optionally findings and next tool.
+pub fn preflight_allow(
+    tool: &str,
+    machine_code: &str,
+    result: serde_json::Value,
+    findings: Vec<serde_json::Value>,
+    next_tool: Option<serde_json::Value>,
+) -> ToolResponse {
+    let mut resp = ToolResponse::success(result, Some(tool))
+        .with_machine_code(machine_code)
+        .with_verdict(verdict::ALLOW);
+    if !findings.is_empty() {
+        resp = resp.with_findings(findings);
+    }
+    if let Some(nt) = next_tool {
+        resp = resp.with_recommended_next_tool(nt);
+    }
+    resp
+}
+
+/// Build a preflight "review" response.
+///
+/// Sets `ok=true`, verdict to `review`, machine_code, findings, and optionally next tool.
+pub fn preflight_review(
+    tool: &str,
+    machine_code: &str,
+    result: serde_json::Value,
+    findings: Vec<serde_json::Value>,
+    next_tool: Option<serde_json::Value>,
+) -> ToolResponse {
+    let mut resp = ToolResponse::success(result, Some(tool))
+        .with_machine_code(machine_code)
+        .with_verdict(verdict::REVIEW);
+    if !findings.is_empty() {
+        resp = resp.with_findings(findings);
+    }
+    if let Some(nt) = next_tool {
+        resp = resp.with_recommended_next_tool(nt);
+    }
+    resp
+}
+
+/// Build a preflight "block" response.
+///
+/// Sets `ok=true`, verdict to `block`, machine_code, and findings.
+pub fn preflight_block(
+    tool: &str,
+    machine_code: &str,
+    result: serde_json::Value,
+    findings: Vec<serde_json::Value>,
+) -> ToolResponse {
+    let mut resp = ToolResponse::success(result, Some(tool))
+        .with_machine_code(machine_code)
+        .with_verdict(verdict::BLOCK);
+    if !findings.is_empty() {
+        resp = resp.with_findings(findings);
+    }
+    resp
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::machine_codes;
 
     #[test]
     #[allow(deprecated)]
     fn legacy_error_constructor_only_in_tests() {
-        // This test verifies the architectural decision:
-        // error_without_code_for_legacy_tests_only should only be callable
-        // from test code. If this test compiles, that constraint is met
-        // because the function is #[cfg(test)].
         let _ = ToolResponse::error_without_code_for_legacy_tests_only("test", "test", None, None);
+    }
+
+    #[test]
+    fn finding_with_disposition() {
+        let f = finding(
+            "TEST_CODE",
+            severity::MEDIUM,
+            "test message",
+            Some(disposition::BLOCKING),
+            None,
+        );
+        assert_eq!(f["code"], "TEST_CODE");
+        assert_eq!(f["severity"], "medium");
+        assert_eq!(f["disposition"], "blocking");
+        assert!(f.get("location").is_none());
+    }
+
+    #[test]
+    fn finding_without_disposition() {
+        let f = finding("TEST_CODE", severity::LOW, "test message", None, None);
+        assert_eq!(f["code"], "TEST_CODE");
+        assert!(f.get("disposition").is_none());
+    }
+
+    #[test]
+    fn next_tool_structured() {
+        let nt = ToolResponse::next_tool("text_diff_explain", "ambiguous replacement", None);
+        assert_eq!(nt["name"], "text_diff_explain");
+        assert_eq!(nt["reason"], "ambiguous replacement");
+        assert!(nt.get("arguments_hint").is_none());
+    }
+
+    #[test]
+    fn next_tool_with_arguments_hint() {
+        let hint = serde_json::json!({"old_text": "foo"});
+        let nt = ToolResponse::next_tool("text_diff_explain", "ambiguous", Some(hint));
+        assert_eq!(nt["arguments_hint"]["old_text"], "foo");
+    }
+
+    #[test]
+    fn with_verdict_sets_result_field() {
+        let resp = ToolResponse::success(serde_json::json!({}), None).with_verdict(verdict::ALLOW);
+        assert_eq!(resp.result.as_ref().unwrap()["verdict"], "allow");
+    }
+
+    #[test]
+    fn preflight_allow_builder() {
+        let resp = preflight_allow(
+            "edit_preflight",
+            machine_codes::EDIT_OK,
+            serde_json::json!({"ok_to_apply": true}),
+            vec![],
+            None,
+        );
+        assert!(resp.ok);
+        assert_eq!(resp.machine_code.as_deref(), Some("EDIT_OK"));
+        assert_eq!(resp.result.as_ref().unwrap()["verdict"], "allow");
+    }
+
+    #[test]
+    fn preflight_block_builder() {
+        let findings = vec![finding(
+            "PATCH_FAILED",
+            severity::HIGH,
+            "patch does not apply",
+            Some(disposition::BLOCKING),
+            None,
+        )];
+        let resp = preflight_block(
+            "edit_preflight",
+            machine_codes::PATCH_FAILED,
+            serde_json::json!({"ok_to_apply": false}),
+            findings,
+        );
+        assert!(resp.ok);
+        assert_eq!(resp.result.as_ref().unwrap()["verdict"], "block");
+        assert_eq!(resp.findings.as_ref().unwrap().len(), 1);
     }
 }

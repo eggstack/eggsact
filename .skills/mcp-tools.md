@@ -68,8 +68,14 @@ Every non-OK `ToolResponse` must carry a `machine_code`. Use constants from `src
 
 - Use `ToolResponse::error_with_code(error_type, machine_code, error, hints, tool)` for error responses.
 - Use `.with_machine_code(code)` on a success response when the code conveys meaningful routing info.
-- Use `finding()`, `finding_with_location()`, or `prompt_finding()` (from `src/mcp/response.rs`) to build structured findings with codes and severity.
-- Use `severity::*`, `disposition::*`, and `verdict::*` constants for finding metadata.
+- Use `finding(code, severity, message, details, disposition)` (from `src/mcp/response.rs`) to build structured findings with codes, severity, and disposition.
+- Use `severity::*` (`info`, `low`, `medium`, `high`, `critical`), `disposition::*` (`informational`, `caution`, `blocking`), and `verdict::*` constants for finding metadata.
+
+### Composite / Preflight Tools
+
+- Use `.with_verdict(verdict)` to set the verdict field inside result JSON.
+- Use `preflight_allow(tool)`, `preflight_review(tool, findings)`, or `preflight_block(tool, machine_code, findings)` for quick preflight response construction.
+- Use `ToolResponse::next_tool(name, reason, arguments_hint)` for structured `recommended_next_tool`.
 
 See `architecture/machine-codes.md` for the full code table and design rationale.
 

@@ -1,5 +1,5 @@
 use crate::mcp::machine_codes;
-use crate::mcp::schemas::ToolResponse;
+use crate::mcp::schemas::{disposition, finding, severity, verdict, ToolResponse};
 use crate::tools::helpers::*;
 use serde_json::Value;
 
@@ -466,12 +466,12 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
                     .map(|(k, _)| k)
                     .collect();
                 for rf in &risky {
-                    let sev = if policy == "strict" { "error" } else { "warn" };
-                    findings.push(serde_json::json!({
-                        "code": "RISKY_SHELL_FEATURE",
-                        "severity": sev,
-                        "message": rf,
-                    }));
+                    let (sev, disp) = if policy == "strict" {
+                        (severity::HIGH, disposition::BLOCKING)
+                    } else {
+                        (severity::MEDIUM, disposition::CAUTION)
+                    };
+                    findings.push(finding("RISKY_SHELL_FEATURE", sev, rf, Some(disp), None));
                 }
                 if !risky.is_empty() && !code_list.contains(&machine_codes::SHELL_RISK.to_string())
                 {
@@ -481,11 +481,13 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         }
     } else if let Some(ref e) = ss_result.error {
         code_list.push(machine_codes::SHELL_PARSE_ERROR.to_string());
-        findings.push(serde_json::json!({
-            "code": "SHELL_PARSE_ERROR",
-            "severity": "error",
-            "message": e,
-        }));
+        findings.push(finding(
+            "SHELL_PARSE_ERROR",
+            severity::HIGH,
+            e,
+            Some(disposition::BLOCKING),
+            None,
+        ));
     }
 
     // 2. Check for regex-like args in the command
@@ -523,16 +525,22 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
                 if let Some(findings_arr) = r.get("findings").and_then(|v| v.as_array()) {
                     has_rs_findings = !findings_arr.is_empty();
                     for f in findings_arr {
-                        let sev = if risk != "none" { "warn" } else { "info" };
+                        let (sev, disp) = if risk != "none" {
+                            (severity::MEDIUM, disposition::CAUTION)
+                        } else {
+                            (severity::INFO, disposition::INFORMATIONAL)
+                        };
                         let kind = f
                             .get("kind")
                             .and_then(|v| v.as_str())
                             .unwrap_or("REGEX_RISK");
-                        findings.push(serde_json::json!({
-                            "code": kind.to_uppercase(),
-                            "severity": sev,
-                            "message": f.get("message").and_then(|v| v.as_str()).unwrap_or(""),
-                        }));
+                        findings.push(finding(
+                            &kind.to_uppercase(),
+                            sev,
+                            f.get("message").and_then(|v| v.as_str()).unwrap_or(""),
+                            Some(disp),
+                            None,
+                        ));
                     }
                 }
                 if has_rs_findings
@@ -561,16 +569,16 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
     // 3. Determine verdict
     let has_error = findings
         .iter()
-        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some("error"));
+        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::HIGH));
     let has_warn = findings
         .iter()
-        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some("warn"));
-    let verdict = if has_error {
-        "block"
+        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::MEDIUM));
+    let response_verdict = if has_error {
+        verdict::BLOCK
     } else if has_warn {
-        "review"
+        verdict::REVIEW
     } else {
-        "allow"
+        verdict::ALLOW
     };
 
     // Build primary machine_code
@@ -585,10 +593,14 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         .cloned()
         .unwrap_or_else(|| machine_codes::COMMAND_OK.to_string());
 
-    let summary = format!("Command {} ({} finding(s))", verdict, findings.len());
+    let summary = format!(
+        "Command {} ({} finding(s))",
+        response_verdict,
+        findings.len()
+    );
 
     let mut result = serde_json::json!({
-        "verdict": verdict,
+        "verdict": response_verdict,
         "command": command,
         "platform": platform,
         "policy": policy,
@@ -605,7 +617,9 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
 
     let mut resp =
         ToolResponse::success(result, Some("command_preflight")).with_tool("command_preflight");
-    resp = resp.with_machine_code(&primary_code);
+    resp = resp
+        .with_machine_code(&primary_code)
+        .with_verdict(response_verdict);
     if !findings.is_empty() {
         resp = resp.with_findings(findings);
     }

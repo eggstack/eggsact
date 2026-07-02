@@ -149,15 +149,16 @@ Harness-oriented execution should use the in-process API with explicit
 
 ## Composite Tools
 
-Tools marked `composite: true` orchestrate other tools internally:
+Tools marked `composite: true` orchestrate other tools internally. All emit a `verdict` field in their result JSON via the `.with_verdict()` builder, and use `finding()` helpers with canonical `severity::*` and `disposition::*` constants.
 
-| Tool | What it does |
-|------|-------------|
-| `text_security_inspect` | Calls multiple text inspection tools and aggregates results |
-| `edit_preflight` | Pre-checks an edit operation using text tools |
-| `command_preflight` | Pre-checks a shell command using shell/identifier tools |
-| `config_preflight` | Pre-checks a config file using validation tools |
-| `structured_data_compare` | Uses json_compare and list tools for structured data |
+| Tool | Verdict domain | What it does |
+|------|---------------|-------------|
+| `edit_preflight` | allow / review / block | Pre-checks an edit operation using text tools |
+| `command_preflight` | allow / review / block | Pre-checks a shell command using shell/identifier tools |
+| `config_preflight` | valid / valid_with_warnings / invalid | Pre-checks a config file using validation tools |
+| `text_security_inspect` | allow / review / block | Calls multiple text inspection tools and aggregates results |
+| `cargo_toml_inspect` | allow / review / block | Inspects Cargo.toml structure and naming |
+| `structured_data_compare` | — | Uses json_compare and list tools for structured data |
 
 ## Concurrency Model
 
@@ -205,7 +206,7 @@ Every tool call returns a `ToolResponse` (defined in `src/mcp/response.rs`) with
 | `limits_applied` | string[] | optional |
 | `findings` | object[] | optional |
 | `machine_code` | string | when set |
-| `recommended_next_tool` | object | optional |
+| `recommended_next_tool` | `{name, reason, arguments_hint}` | optional | Structured next-tool suggestion |
 
 ### Error Responses
 
