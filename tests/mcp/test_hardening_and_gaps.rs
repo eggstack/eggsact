@@ -1834,6 +1834,89 @@ fn test_tools_call_honors_active_profile() {
     );
 }
 
+/// Subprocess MCP regression: prove `tools/call` honors `EGGCALC_MCP_PROFILE`
+/// at server startup by rejecting a tool that is in the full profile but not
+/// in `codegg_core_min`. This guards against a regression where `tools/call`
+/// uses a default full-profile `ToolRegistry` while `tools/list` honors the
+/// restricted profile.
+///
+/// Strategy: discover a deterministic out-of-profile candidate whose arguments
+/// are valid under the full profile, then assert the MCP subprocess rejects
+/// it specifically for profile reasons (JSON-RPC code `-32602`, message
+/// mentions "profile").
+#[test]
+fn test_mcp_tools_call_honors_active_profile_env() {
+    // 1. Build in-process registries to discover a candidate.
+    let full = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
+    let restricted =
+        ToolRegistry::with_profile_and_audience(Profile::CodeggCoreMin, ToolAudience::Model);
+
+    // 2. Candidates with valid arguments, ordered to prefer tools whose
+    //    argument shape is stable and deterministic.
+    let candidates = [
+        ("math_eval", serde_json::json!({"expression": "1+1"})),
+        ("text_measure", serde_json::json!({"text": "hello"})),
+        ("json_shape", serde_json::json!({"text": "{\"a\":1}"})),
+        ("regex_safety_check", serde_json::json!({"pattern": "a+"})),
+        ("path_analyze", serde_json::json!({"path": "src/main.rs"})),
+    ];
+
+    let (tool, args) = candidates
+        .iter()
+        .find(|(name, _)| {
+            full.has_tool(name)
+                && !restricted.has_tool(name)
+                // Confirm model-audience visibility (has_tool does not
+                // consider audience).
+                && full
+                    .available_tools_model_safe()
+                    .iter()
+                    .any(|t| t.name == *name)
+                && !restricted
+                    .available_tools_model_safe()
+                    .iter()
+                    .any(|t| t.name == *name)
+        })
+        .expect("test requires at least one candidate outside codegg_core_min");
+
+    // 3. Positive control: the same args must succeed under full profile.
+    let full_result = full.call_json(tool, args.clone());
+    assert!(
+        full_result.is_ok(),
+        "candidate {tool} should be valid under full profile, got: {:?}",
+        full_result.err().map(|e| e.to_string())
+    );
+
+    // 4. Subprocess MCP call under codegg_core_min active profile.
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {"name": tool, "arguments": args},
+        "id": 1
+    })
+    .to_string();
+    let response_str = mcp_request_with_profile(&request, "codegg_core_min");
+    let response: Value =
+        serde_json::from_str(&response_str).expect("MCP subprocess should return valid JSON");
+
+    // 5. Assert the rejection is profile-based, not schema-based.
+    assert!(
+        response.get("error").is_some(),
+        "out-of-profile tool {tool} should be rejected by MCP tools/call"
+    );
+    let error = response.get("error").unwrap();
+    assert_eq!(
+        error.get("code").and_then(|v| v.as_i64()),
+        Some(-32602),
+        "rejection should use JSON-RPC -32602 (invalid params), got: {error}"
+    );
+    let message = error.get("message").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(
+        message.contains("profile"),
+        "error should mention profile unavailability, got: {message}"
+    );
+}
+
 #[test]
 fn test_tools_call_allows_tool_in_active_profile() {
     // With codegg_core_min active, validate_json should succeed

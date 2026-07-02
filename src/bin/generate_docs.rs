@@ -15,6 +15,8 @@ const END_TOOLS: &str = "<!-- END GENERATED: eggsact tools -->";
 const BEGIN_PROFILES: &str = "<!-- BEGIN GENERATED: profile reference -->";
 const END_PROFILES: &str = "<!-- END GENERATED: profile reference -->";
 
+const REGENERATE_COMMAND: &str = "cargo run --bin generate-docs";
+
 const CODEGG_PROFILES: &[&str] = &[
     "codegg_core_min",
     "codegg_core",
@@ -405,7 +407,7 @@ fn main() {
         for f in &stale_files {
             eprintln!("  {}", f);
         }
-        eprintln!("Run `cargo run --bin generate_docs` to regenerate.");
+        eprintln!("Run `{REGENERATE_COMMAND}` to regenerate.");
         process::exit(1);
     }
 
@@ -578,5 +580,22 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The stale-doc message must reference the actual cargo binary name
+    /// (`generate-docs`, with a dash) so users can copy/paste it without
+    /// hitting "no such binary". Cargo uses the `name` field from
+    /// `[[bin]]` in `Cargo.toml`, not the source filename.
+    #[test]
+    fn stale_docs_message_uses_cargo_bin_name() {
+        assert_eq!(REGENERATE_COMMAND, "cargo run --bin generate-docs");
+        assert!(
+            REGENERATE_COMMAND.contains("generate-docs"),
+            "REGENERATE_COMMAND must use the dash form, got: {REGENERATE_COMMAND}"
+        );
+        assert!(
+            !REGENERATE_COMMAND.contains("generate_docs"),
+            "REGENERATE_COMMAND must not use the underscore form, got: {REGENERATE_COMMAND}"
+        );
     }
 }
