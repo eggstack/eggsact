@@ -52,7 +52,7 @@ eggsact/
 │   │   ├── version.rs      # Version tools (2)
 │   │   └── cargo.rs        # Cargo tool (1)
 │   ├── agent/              # In-process agent API (ToolRegistry, Profile, call_json)
-│   ├── preflight/          # Typed preflight wrappers (ConfigPreflight, CommandPreflight, EditPreflight)
+│   ├── preflight/          # Typed preflight wrappers with fail-closed contract enforcement (PreflightError)
 │   └── text/               # Text processing library (24 modules)
 ├── tests/                  # Integration tests
 │   ├── lib.rs              # Test module declarations

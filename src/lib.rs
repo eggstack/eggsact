@@ -48,7 +48,11 @@
 //! };
 //! let output = ConfigPreflight::run(&input).unwrap();
 //! assert!(output.valid);
+//! assert!(!output.machine_code.is_empty());
 //! ```
+//!
+//! Wrappers return `Result<Output, PreflightError>`. Missing mandatory fields
+//! produce `ContractViolation` errors instead of silently defaulting.
 //!
 //! # MCP Server
 //!

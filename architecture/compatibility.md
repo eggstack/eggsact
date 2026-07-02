@@ -20,7 +20,7 @@
 | `ToolRegistry::with_profile()` | `StrictNative` | Same |
 | `ToolRegistry::with_profile_and_audience()` | `StrictNative` | Same |
 | `ToolRegistry::with_compat_mode()` | explicit | Override the default per-registry |
-| Preflight wrappers (`ConfigPreflight`, `CommandPreflight`, `EditPreflight`) | `StrictNative` (via `ToolRegistry::default()`) | Rust-native consumers |
+| Preflight wrappers (`ConfigPreflight`, `CommandPreflight`, `EditPreflight`) | `StrictNative` (via `ToolRegistry::default()`) | Rust-native consumers, fail-closed contract enforcement via `PreflightError` |
 
 ## Behavioral Differences
 

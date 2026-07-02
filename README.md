@@ -413,9 +413,21 @@ let input = ConfigPreflightInput {
 };
 let output = ConfigPreflight::run(&input).unwrap();
 assert!(output.valid);
+assert!(!output.machine_code.is_empty());
 ```
 
 Available preflight wrappers: `ConfigPreflight`, `CommandPreflight`, `EditPreflight`.
+
+All wrappers return `Result<Output, PreflightError>` where `PreflightError`
+distinguishes three failure modes:
+
+- **`ToolCall`** — registry rejected the call before execution
+- **`ToolRejected`** — tool executed but returned `ok: false`
+- **`ContractViolation`** — tool returned `ok: true` but response shape
+  violated the typed contract (missing mandatory field)
+
+Missing mandatory fields are **hard failures** — wrappers will not silently
+default `machine_code`, `verdict`, or other route-critical fields.
 
 ## Architecture
 
