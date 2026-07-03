@@ -640,7 +640,7 @@ fn is_wildcard_host(key: &str, val: &str) -> bool {
 }
 
 pub fn config_file_inspect(args: &Value) -> ToolResponse {
-    let budget_ctx = crate::mcp::budget::BudgetContext::new(crate::mcp::budget::ToolBudget::HEAVY);
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::HEAVY);
 
     let file_path = match args.get("file_path").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -752,7 +752,7 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
 
     if budget_ctx.should_stop() {
         return budget_ctx
-            .check_deadline("config_file_inspect")
+            .check_should_stop("config_file_inspect")
             .unwrap_err();
     }
 

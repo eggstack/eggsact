@@ -3406,6 +3406,63 @@ fn test_config_file_inspect_masked_secret_values() {
     assert!(!preview.contains("supersecretvalue123"));
 }
 
+#[test]
+fn test_config_file_inspect_json_boolean_debug_flag() {
+    let json = r#"{"debug": true}"#;
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "config.json", "text": json}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("parse_ok"), Some(&Value::Bool(true)));
+    let debug = inner.get("debug_flags").unwrap().as_array().unwrap();
+    assert!(!debug.is_empty());
+    assert_eq!(debug[0].get("key").and_then(|v| v.as_str()), Some("debug"));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_debug = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "CONFIG_RISK_DEBUG_FLAG")
+            .unwrap_or(false)
+    });
+    assert!(has_debug, "Expected CONFIG_RISK_DEBUG_FLAG finding");
+}
+
+#[test]
+fn test_config_file_inspect_toml_nested_secret_key() {
+    let toml = "[auth]\napi_key = \"abc123\"\n";
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "config.toml", "text": toml}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("parse_ok"), Some(&Value::Bool(true)));
+    let secrets = inner.get("secret_risks").unwrap().as_array().unwrap();
+    assert!(!secrets.is_empty());
+    assert!(secrets[0]
+        .get("key")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .contains("api_key"));
+    let preview = secrets[0]
+        .get("value_preview")
+        .and_then(|v| v.as_str())
+        .unwrap();
+    assert!(preview.contains("***"));
+    assert!(!preview.contains("abc123"));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_secret = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "CONFIG_RISK_SECRET_KEY")
+            .unwrap_or(false)
+    });
+    assert!(has_secret, "Expected CONFIG_RISK_SECRET_KEY finding");
+}
+
 // ---------------------------------------------------------------------------
 // dependency_edit_preflight: parser-backed traversal tests
 // ---------------------------------------------------------------------------
@@ -3840,4 +3897,90 @@ fn test_dep_malformed_json_falls_back_to_heuristic() {
     }));
     // Should still work via heuristic fallback
     assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+}
+
+#[test]
+fn test_dep_cargo_target_specific_dependency() {
+    let old = r#"[package]
+name = "x"
+version = "0.1.0"
+
+[dependencies]
+serde = "1.0"
+"#;
+    let new = r#"[package]
+name = "x"
+version = "0.1.0"
+
+[dependencies]
+serde = "1.0"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "Cargo.toml",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let changes = result
+        .get("result")
+        .unwrap()
+        .get("dependency_changes")
+        .unwrap();
+    let added = changes.get("added").unwrap().as_array().unwrap();
+    assert!(
+        added.contains(&Value::String("libc".to_string())),
+        "Expected 'libc' in added dependencies, got: {:?}",
+        added
+    );
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_libc = findings.iter().any(|f| {
+        f.get("message")
+            .and_then(|m| m.as_str())
+            .map(|m| m.contains("libc"))
+            .unwrap_or(false)
+    });
+    assert!(has_libc, "Expected finding mentioning 'libc'");
+}
+
+#[test]
+fn test_dep_pyproject_base_dependencies_array() {
+    let old = r#"[project]
+name = "myproj"
+version = "0.1.0"
+"#;
+    let new = r#"[project]
+name = "myproj"
+version = "0.1.0"
+dependencies = [
+  "serde >= 1",
+]
+"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "pyproject.toml",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let changes = result
+        .get("result")
+        .unwrap()
+        .get("dependency_changes")
+        .unwrap();
+    let added = changes.get("added").unwrap().as_array().unwrap();
+    assert!(
+        added.contains(&Value::String("serde".to_string())),
+        "Expected 'serde' in added dependencies, got: {:?}",
+        added
+    );
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_serde = findings.iter().any(|f| {
+        f.get("message")
+            .and_then(|m| m.as_str())
+            .map(|m| m.contains("serde"))
+            .unwrap_or(false)
+    });
+    assert!(has_serde, "Expected finding mentioning 'serde'");
 }

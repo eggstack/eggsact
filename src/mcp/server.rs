@@ -310,6 +310,7 @@ async fn handle_request_async(
                 .map(|spec| budget_for_tool(name, spec.cost))
                 .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
             let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let cancel_flag_for_handler = cancel_flag.clone();
             let budget_context =
                 BudgetContext::new(tool_budget).with_cancellation(cancel_flag.clone());
 
@@ -322,7 +323,13 @@ async fn handle_request_async(
                     .acquire()
                     .await
                     .expect("tool semaphore unexpectedly closed");
-                tokio::task::spawn_blocking(move || handler(&args_clone)).await
+                tokio::task::spawn_blocking(move || {
+                    crate::mcp::budget::with_cancel_flag(
+                        Some(cancel_flag_for_handler.clone()),
+                        || handler(&args_clone),
+                    )
+                })
+                .await
             })
             .await;
 

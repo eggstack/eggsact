@@ -753,7 +753,7 @@ fn check_destructive_patterns(
 }
 
 pub fn command_preflight(args: &Value) -> ToolResponse {
-    let budget_ctx = crate::mcp::budget::BudgetContext::new(crate::mcp::budget::ToolBudget::HEAVY);
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::HEAVY);
 
     let command = match args.get("command").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -843,7 +843,9 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
     }
 
     if budget_ctx.should_stop() {
-        return budget_ctx.check_deadline("command_preflight").unwrap_err();
+        return budget_ctx
+            .check_should_stop("command_preflight")
+            .unwrap_err();
     }
 
     let shell = "posix";
@@ -1101,7 +1103,9 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
 
     // 6. Emit shell feature findings (pipe, redirect, command substitution, etc.)
     if budget_ctx.should_stop() {
-        return budget_ctx.check_deadline("command_preflight").unwrap_err();
+        return budget_ctx
+            .check_should_stop("command_preflight")
+            .unwrap_err();
     }
 
     if let Some(obj) = shell_features.as_object() {
@@ -1125,7 +1129,9 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
 
     // 7. Check for regex-like args in the command
     if budget_ctx.should_stop() {
-        return budget_ctx.check_deadline("command_preflight").unwrap_err();
+        return budget_ctx
+            .check_should_stop("command_preflight")
+            .unwrap_err();
     }
 
     let looks_like_regex = command.contains("grep")

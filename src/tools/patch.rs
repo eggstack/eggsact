@@ -535,7 +535,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     let mut findings: Vec<serde_json::Value> = Vec::new();
 
     if budget_ctx.should_stop() {
-        return budget_ctx.check_deadline("edit_preflight").unwrap_err();
+        return budget_ctx.check_should_stop("edit_preflight").unwrap_err();
     }
 
     match replacement_mode {
@@ -646,7 +646,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     //   patch mode:   fingerprints result_fingerprint from patch_apply_check
     //   line_range mode: fingerprints fingerprint from line_range_extract
     if budget_ctx.should_stop() {
-        return budget_ctx.check_deadline("edit_preflight").unwrap_err();
+        return budget_ctx.check_should_stop("edit_preflight").unwrap_err();
     }
 
     let mut fingerprint_result: Option<Value> = None;
@@ -763,7 +763,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
 
     // --- Newline style detection (when policy is not "skip") ---
     if budget_ctx.should_stop() {
-        return budget_ctx.check_deadline("edit_preflight").unwrap_err();
+        return budget_ctx.check_should_stop("edit_preflight").unwrap_err();
     }
 
     let mut newline_check_result: Option<Value> = None;
@@ -865,7 +865,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
 
     // --- Unicode security check (when policy is not "skip") ---
     if budget_ctx.should_stop() {
-        return budget_ctx.check_deadline("edit_preflight").unwrap_err();
+        return budget_ctx.check_should_stop("edit_preflight").unwrap_err();
     }
 
     let mut unicode_check_result: Option<Value> = None;
@@ -874,14 +874,23 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
         // - literal: inspect `new` (the replacement text)
         // - patch: inspect the raw patch content (added lines are within it)
         // - line_range: inspect `new` (required replacement text)
+        // All fallbacks are unreachable: mode-specific validation above guarantees
+        // `new` is present for literal/line_range, `patch` is present for patch mode,
+        // and `replacement_mode` is one of the three known values.
         let inspect_text = match replacement_mode {
-            "literal" => args.get("new").and_then(|v| v.as_str()).unwrap_or(original),
+            "literal" => args
+                .get("new")
+                .and_then(|v| v.as_str())
+                .expect("literal validation guarantees new is present"),
             "patch" => args
                 .get("patch")
                 .and_then(|v| v.as_str())
-                .unwrap_or(original),
-            "line_range" => args.get("new").and_then(|v| v.as_str()).unwrap_or(original),
-            _ => original,
+                .expect("patch validation guarantees patch is present"),
+            "line_range" => args
+                .get("new")
+                .and_then(|v| v.as_str())
+                .expect("line_range validation guarantees new is present"),
+            _ => unreachable!(),
         };
         let us_args = serde_json::json!({
             "text": inspect_text,

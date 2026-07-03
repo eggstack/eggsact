@@ -45,25 +45,55 @@ the `parity` module.
 ```
 eggsact/
   src/
-    main.rs              # CLI entry point
-    lib.rs               # Library root, re-exports public API
-    calc/
-      mod.rs             # Calculator module root
+    main.rs              # CLI entry point, argument parsing
+    lib.rs               # Library root, re-exports run()/evaluate()
+    calc/                # Calculator core (3 modules)
+      mod.rs
       evaluator.rs       # AST-based expression evaluation
       normalize.rs       # Natural language normalization
       units.rs           # Unit definitions and conversion
-    mcp/
-      mod.rs             # MCP module root
-      server.rs          # JSON-RPC 2.0 stdio server, tool dispatch
-      tools.rs           # Tool implementation functions
-      schemas.rs         # Tool definitions with input/output schemas
-    text/
-      mod.rs             # Text module root, re-exports (24 submodules)
-      primitives.rs      # UTF-8, codepoint, grapheme utilities
-      confusables.rs     # Homoglyph and confusable detection
-      diff.rs            # String diffing
-      validate.rs        # JSON, regex, bracket validation
-      ...                # 20 additional text processing modules
+    mcp/                 # MCP server protocol, runtime, registry, validation
+      server.rs          # Protocol orchestration, stdio loop, dispatch
+      compat.rs          # CompatibilityMode enum
+      registry/          # Tool registration (ToolSpec declarations, single source of truth)
+        mod.rs           # Re-exports, tests
+        types.rs         # ToolDefinition, ToolSpec, enums
+        all_tools.rs     # ALL_TOOLS aggregation from specs/
+        listing.rs       # Filtering, audience, schema compaction
+      specs/             # ToolSpec declarations per tool category
+        mod.rs           # Re-exports all category slices
+        math.rs          # MATH_TOOLS
+        text.rs          # TEXT_TOOLS
+        ...              # One file per category
+      protocol.rs        # JSON-RPC types
+      response.rs        # ToolResponse, error sanitization, finding helpers
+      runtime.rs         # Rate limiter, constants, profile management
+      schema_validation.rs
+      machine_codes.rs   # Machine-readable response codes
+      budget.rs          # Per-tool budgets, composite sub-budgets
+      schemas/           # JSON-schema builders per tool category
+        mod.rs
+        ...
+    tools/               # MCP tool implementations (by category)
+      helpers.rs         # Shared constants, utilities
+      math.rs            # Math & unit tools
+      text.rs            # Text processing tools (18)
+      json.rs            # JSON tools (6)
+      regex.rs           # Regex tools (3)
+      validation.rs      # Validation tools (4)
+      path.rs            # Path tools (5)
+      shell.rs           # Shell tools (4)
+      list.rs            # List tools (3)
+      markdown.rs        # Markdown tools (2)
+      patch.rs           # Patch tools (3)
+      config.rs          # Config tools (3)
+      identifier.rs      # Identifier tools (3)
+      unicode.rs         # Unicode tools (2)
+      version.rs         # Version tools (2)
+      cargo.rs           # Cargo tool (1)
+    agent/               # In-process agent API (ToolRegistry, Profile, call_json)
+    preflight/           # Typed preflight wrappers
+    text/                # Text processing library (24 modules)
   tests/
     lib.rs               # Test entry point
     parity/              # Python/Rust comparison tests
@@ -74,22 +104,33 @@ eggsact/
 
 ## Adding a New MCP Tool
 
-1. **Implement the function** in `src/mcp/tools.rs`. Follow the existing pattern:
+1. **Implement the function** in `src/tools/<category>.rs`. Follow the existing pattern:
    take `&Value`, validate arguments at the boundary, call a library function when
    one exists, and return `ToolResponse`.
 
-2. **Register the dispatch entry** in `TOOL_HANDLERS` in `src/mcp/server.rs`. This
-   static array routes tool names to implementation functions.
+2. **Add a `ToolSpec` entry** in `src/mcp/specs/<category>.rs`. This is the single
+   source of truth for tool registration — it defines the handler, category, tier,
+   tags, profiles, input schema, and output schema all in one place. Each category
+   exports a `pub const <CATEGORY>_TOOLS: &[ToolSpec]` slice, which `all_tools.rs`
+   aggregates into the combined `ALL_TOOLS`.
 
-3. **Add schema and metadata entries** in `src/mcp/server.rs` and `src/mcp/schemas.rs`.
-   The tool list, schema builder, and `TOOL_METADATA` entry must stay in sync. Run
-   the `tool_registration_tables_are_in_sync` test after editing these tables.
+3. **Run the invariant test** to verify sync:
+   ```bash
+   cargo test tool_registration_tables_are_in_sync -- --nocapture
+   ```
 
-4. **Prefer reusable library code** under `src/text/` or `src/calc/` for business
-   logic. Keep `src/mcp/tools.rs` wrappers thin so the same behavior is testable
+4. **Regenerate docs** from the registry:
+   ```bash
+   cargo run --bin generate-docs
+   ```
+   This updates README tool tables, architecture profile references, and
+   `generated/tool-cards.md`.
+
+5. **Prefer reusable library code** under `src/text/` or `src/calc/` for business
+   logic. Keep `src/tools/*.rs` wrappers thin so the same behavior is testable
    without going through JSON-RPC.
 
-5. **Add tests** at the right layer:
+6. **Add tests** at the right layer:
    - Library behavior: `tests/text/` or `tests/calc/`.
    - MCP request/response behavior: `tests/mcp/`.
    - Python reference compatibility: `tests/parity/` using `compare_tool_parity()`.
@@ -106,8 +147,9 @@ eggsact/
    under `tests/text/` for integration-level coverage.
 
 4. **Add an MCP tool wrapper** if the function should be exposed to MCP clients. Create
-   a thin wrapper in `src/mcp/tools.rs` that parses input, calls your function, and
-   returns the result as a `ToolResponse`.
+   a thin wrapper in `src/tools/<category>.rs` that parses input, calls your function, and
+   returns the result as a `ToolResponse`. Add a `ToolSpec` entry in `src/mcp/specs/<category>.rs`
+   and run `cargo run --bin generate-docs` to regenerate docs.
 
 ## Code Style
 

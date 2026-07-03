@@ -137,7 +137,7 @@ profile at construction time via `with_profile_and_audience`.
 - `tools/list`: Validates MCP parameters in `server.rs`, builds a `ToolListOptions`, and delegates to `registry::list_tool_definitions()` in `registry/listing.rs`. The registry handles profile filtering, name/tier/tag filtering, schema compaction, and deprecated-field normalization. MCP retains parameter validation and profile resolution.
 - `tools/call`: Resolves the active profile from `get_active_profile()` and creates a `ToolRegistry` with `Model` audience and `EggcalcPython` compatibility mode (Python-parity error messages). Delegates tool lookup, profile checking, audience/exposure checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API. The in-process agent API defaults to `StrictNative` mode (standard JSON Schema error messages).
 
-## Tool Categories (64 tools)
+## Tool Categories (67 tools)
 
 | Category | Count | Tools |
 |----------|-------|-------|
@@ -157,6 +157,8 @@ profile at construction time via `with_profile_and_audience`.
 | version | 2 | version_compare, version_constraint_check |
 | toml | 1 | toml_shape |
 | cargo | 1 | cargo_toml_inspect |
+| dependency | 1 | dependency_edit_preflight |
+| repo | 2 | repo_manifest_inspect, config_file_inspect |
 
 ## Composite Tools
 

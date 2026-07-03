@@ -667,8 +667,7 @@ fn classify_version_change(old_ver: &str, new_ver: &str) -> Option<&'static str>
 }
 
 pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
-    let budget_ctx =
-        crate::mcp::budget::BudgetContext::new(crate::mcp::budget::ToolBudget::MODERATE);
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::MODERATE);
 
     let file_path = match args.get("file_path").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -776,7 +775,7 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
 
     if budget_ctx.should_stop() {
         return budget_ctx
-            .check_deadline("dependency_edit_preflight")
+            .check_should_stop("dependency_edit_preflight")
             .unwrap_err();
     }
 

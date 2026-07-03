@@ -46,14 +46,15 @@ Plus `confusables_generated.rs` — auto-generated data file (never edit directl
 1. Create `src/text/<module>.rs`
 2. Add `pub mod <module>;` to `src/text/mod.rs`
 3. Re-export public functions from `src/text/mod.rs`
-4. Add MCP tool wrapper in `src/mcp/tools.rs`
-5. Register in all 4 places in `src/mcp/server.rs`
+4. Add MCP tool wrapper in `src/tools/<category>.rs`
+5. Add a `ToolSpec` entry in `src/mcp/specs/<category>.rs` (single source of truth for registration)
 6. Add tests in `tests/text/test_<module>.rs`
-7. Run `cargo test` to verify
+7. Run `cargo run --bin generate-docs` to regenerate docs
+8. Run `cargo test` to verify
 
 ## Reusable Library Pattern
 
-Business logic goes in `src/text/` or `src/calc/`. MCP tool wrappers in `src/mcp/tools.rs`
+Business logic goes in `src/text/` or `src/calc/`. MCP tool wrappers in `src/tools/*.rs`
 should be thin — they parse input, call the library function, and return `ToolResponse`.
 This keeps logic testable without JSON-RPC overhead.
 

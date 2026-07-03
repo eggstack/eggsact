@@ -1,5 +1,6 @@
 pub mod test_additional_edge_cases;
 pub mod test_boundary_conditions;
+pub mod test_cancellation;
 pub mod test_composite_tools;
 pub mod test_comprehensive_parity;
 pub mod test_determinism_concurrency;

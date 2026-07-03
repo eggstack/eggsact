@@ -1,8 +1,47 @@
 use crate::mcp::registry::ToolCost;
 use crate::mcp::response::ToolResponse;
+use std::cell::RefCell;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+thread_local! {
+    static CURRENT_CANCEL_FLAG: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
+}
+
+/// Set the current thread's cancellation flag for the duration of `f`.
+///
+/// Nested calls properly restore the previous flag when `f` returns.
+pub fn with_cancel_flag<F, R>(flag: Option<Arc<AtomicBool>>, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    CURRENT_CANCEL_FLAG.with(|cell| {
+        let prev = std::mem::replace(&mut *cell.borrow_mut(), flag);
+        let result = f();
+        *cell.borrow_mut() = prev;
+        result
+    })
+}
+
+/// Retrieve the current thread's cancellation flag, if any.
+pub fn current_cancel_flag() -> Option<Arc<AtomicBool>> {
+    CURRENT_CANCEL_FLAG.with(|cell| cell.borrow().clone())
+}
+
+/// Create a `BudgetContext` suitable for a tool handler, automatically
+/// picking up the thread-local cancellation flag if one is set.
+///
+/// This is the recommended way for handler functions (which have signature
+/// `fn(&Value) -> ToolResponse` and cannot receive context directly) to
+/// create a `BudgetContext` with cancellation support.
+pub fn for_handler(budget: ToolBudget) -> BudgetContext {
+    let mut ctx = BudgetContext::new(budget);
+    if let Some(flag) = current_cancel_flag() {
+        ctx = ctx.with_cancellation(flag);
+    }
+    ctx
+}
 
 /// Budget tier classification for MCP tools.
 ///
@@ -307,6 +346,22 @@ impl BudgetContext {
         } else {
             Ok(())
         }
+    }
+
+    /// Returns `Err(TOOL_RESPONSE)` if the context should stop.
+    ///
+    /// Checks cancellation first, then deadline. Use this in handler
+    /// cooldown checks where `should_stop()` is true but the reason
+    /// could be either cancellation or expiry.
+    #[allow(clippy::result_large_err)]
+    pub fn check_should_stop(&self, tool_name: &str) -> Result<(), ToolResponse> {
+        if self.is_cancelled() {
+            return self.check_not_cancelled(tool_name);
+        }
+        if self.is_expired() {
+            return self.check_deadline(tool_name);
+        }
+        Ok(())
     }
 
     /// Returns the remaining time before deadline, or `None` if no deadline.
@@ -670,5 +725,64 @@ mod tests {
             cancelled: None,
         };
         assert_eq!(ctx.remaining_time_ms(), Some(0));
+    }
+
+    // ── Thread-local cancellation flag tests ────────────────────────────
+
+    #[test]
+    fn with_cancel_flag_sets_and_restores() {
+        assert!(current_cancel_flag().is_none());
+        let flag = Arc::new(AtomicBool::new(true));
+        let captured = with_cancel_flag(Some(flag.clone()), || current_cancel_flag().unwrap());
+        assert!(Arc::ptr_eq(&captured, &flag));
+        // Previous flag restored
+        assert!(current_cancel_flag().is_none());
+    }
+
+    #[test]
+    fn with_cancel_flag_nested_calls_restore_previous() {
+        let outer = Arc::new(AtomicBool::new(false));
+        let inner = Arc::new(AtomicBool::new(true));
+        with_cancel_flag(Some(outer.clone()), || {
+            assert!(current_cancel_flag().is_some());
+            with_cancel_flag(Some(inner.clone()), || {
+                assert!(Arc::ptr_eq(&current_cancel_flag().unwrap(), &inner));
+            });
+            // Inner scope finished — outer flag restored
+            assert!(Arc::ptr_eq(&current_cancel_flag().unwrap(), &outer));
+        });
+        assert!(current_cancel_flag().is_none());
+    }
+
+    #[test]
+    fn with_cancel_flag_none_restores_none() {
+        let flag = Arc::new(AtomicBool::new(false));
+        with_cancel_flag(Some(flag.clone()), || {
+            assert!(current_cancel_flag().is_some());
+        });
+        assert!(current_cancel_flag().is_none());
+    }
+
+    #[test]
+    fn for_handler_picks_up_cancel_flag() {
+        let flag = Arc::new(AtomicBool::new(true));
+        let ctx = with_cancel_flag(Some(flag.clone()), || for_handler(ToolBudget::CHEAP));
+        assert!(ctx.is_cancelled());
+        assert!(ctx.should_stop());
+    }
+
+    #[test]
+    fn for_handler_without_flag_has_no_cancellation() {
+        let ctx = for_handler(ToolBudget::MODERATE);
+        assert!(!ctx.is_cancelled());
+        assert!(!ctx.should_stop());
+        assert_eq!(ctx.budget, ToolBudget::MODERATE);
+    }
+
+    #[test]
+    fn for_handler_budget_is_set() {
+        let ctx = for_handler(ToolBudget::HEAVY);
+        assert_eq!(ctx.budget, ToolBudget::HEAVY);
+        assert!(ctx.deadline.is_some());
     }
 }

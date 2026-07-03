@@ -547,6 +547,44 @@ impl ToolRegistry {
         Ok(response)
     }
 
+    /// Call a tool with an explicit budget and cancellation flag, applying resource
+    /// limits and output truncation.
+    ///
+    /// This extends [`call_json_with_budget`](Self::call_json_with_budget) with
+    /// an external cancellation flag. The flag is set as a thread-local during
+    /// handler execution so that high-risk handlers that create their own
+    /// `BudgetContext` (via [`budget::for_handler`]) will inherit cancellation.
+    pub fn call_json_with_context(
+        &self,
+        name: &str,
+        args: Value,
+        budget: Option<ToolBudget>,
+        cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    ) -> Result<ToolResponse, ToolCallError> {
+        let spec =
+            registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
+        let effective_budget = match budget {
+            Some(b) => b,
+            None => budget_for_tool_resolved(name, spec),
+        };
+        let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
+        if serialized_len > effective_budget.max_input_bytes {
+            return Ok(ToolResponse::error_with_code(
+                "input_too_large",
+                crate::mcp::machine_codes::INPUT_TOO_LARGE,
+                &format!(
+                    "Serialized arguments ({} bytes) exceed budget max_input_bytes ({} bytes)",
+                    serialized_len, effective_budget.max_input_bytes
+                ),
+                None,
+                Some(name),
+            ));
+        }
+        let mut response = budget::with_cancel_flag(cancel_flag, || self.call_json(name, args))?;
+        truncate_response(&mut response, &effective_budget);
+        Ok(response)
+    }
+
     /// Call a tool and return only the result `Value`, or `null` on error.
     ///
     /// Convenience wrapper around [`call_json`](Self::call_json) that
