@@ -241,6 +241,53 @@ pub const CARGO_PARSE_FAILED: &str = "CARGO_PARSE_FAILED";
 pub const CARGO_HAS_FINDINGS: &str = "CARGO_HAS_FINDINGS";
 
 // ---------------------------------------------------------------------------
+// Dependency / Cargo
+// ---------------------------------------------------------------------------
+
+/// Dependency structure is clean — no changes or all changes are safe.
+pub const DEPENDENCY_OK: &str = "DEPENDENCY_OK";
+/// New dependency was added.
+pub const DEPENDENCY_ADDED: &str = "DEPENDENCY_ADDED";
+/// Existing dependency was removed.
+pub const DEPENDENCY_REMOVED: &str = "DEPENDENCY_REMOVED";
+/// Version constraint was widened (e.g. patch → range).
+pub const DEPENDENCY_VERSION_WIDENED: &str = "DEPENDENCY_VERSION_WIDENED";
+/// Git source dependency detected.
+pub const DEPENDENCY_GIT_SOURCE: &str = "DEPENDENCY_GIT_SOURCE";
+/// Path source dependency detected.
+pub const DEPENDENCY_PATH_SOURCE: &str = "DEPENDENCY_PATH_SOURCE";
+/// Build script change detected.
+pub const DEPENDENCY_BUILD_SCRIPT: &str = "DEPENDENCY_BUILD_SCRIPT";
+/// Patch/replace override detected.
+pub const DEPENDENCY_PATCH_OVERRIDE: &str = "DEPENDENCY_PATCH_OVERRIDE";
+
+// ---------------------------------------------------------------------------
+// Config Risk
+// ---------------------------------------------------------------------------
+
+/// Config contains a secret-like key (token, password, api_key, etc.).
+pub const CONFIG_RISK_SECRET_KEY: &str = "CONFIG_RISK_SECRET_KEY";
+/// Config contains an insecure URL (http:// where https:// expected).
+pub const CONFIG_RISK_INSECURE_URL: &str = "CONFIG_RISK_INSECURE_URL";
+/// Config contains a debug flag that may be risky in production.
+pub const CONFIG_RISK_DEBUG_FLAG: &str = "CONFIG_RISK_DEBUG_FLAG";
+/// Config contains a command hook (install, preinstall, postinstall, etc.).
+pub const CONFIG_RISK_COMMAND_HOOK: &str = "CONFIG_RISK_COMMAND_HOOK";
+/// Config disables TLS verification.
+pub const CONFIG_RISK_TLS_DISABLED: &str = "CONFIG_RISK_TLS_DISABLED";
+/// Config contains a wildcard host or permissive CORS setting.
+pub const CONFIG_RISK_WILDCARD_HOST: &str = "CONFIG_RISK_WILDCARD_HOST";
+
+// ---------------------------------------------------------------------------
+// Repo Manifest
+// ---------------------------------------------------------------------------
+
+/// Repo type was detected from path list.
+pub const REPO_DETECTED: &str = "REPO_DETECTED";
+/// Repo type could not be determined from provided paths.
+pub const REPO_UNKNOWN: &str = "REPO_UNKNOWN";
+
+// ---------------------------------------------------------------------------
 // TOML
 // ---------------------------------------------------------------------------
 
@@ -378,6 +425,22 @@ pub const ALL: &[&str] = &[
     CARGO_OK,
     CARGO_PARSE_FAILED,
     CARGO_HAS_FINDINGS,
+    DEPENDENCY_OK,
+    DEPENDENCY_ADDED,
+    DEPENDENCY_REMOVED,
+    DEPENDENCY_VERSION_WIDENED,
+    DEPENDENCY_GIT_SOURCE,
+    DEPENDENCY_PATH_SOURCE,
+    DEPENDENCY_BUILD_SCRIPT,
+    DEPENDENCY_PATCH_OVERRIDE,
+    CONFIG_RISK_SECRET_KEY,
+    CONFIG_RISK_INSECURE_URL,
+    CONFIG_RISK_DEBUG_FLAG,
+    CONFIG_RISK_COMMAND_HOOK,
+    CONFIG_RISK_TLS_DISABLED,
+    CONFIG_RISK_WILDCARD_HOST,
+    REPO_DETECTED,
+    REPO_UNKNOWN,
     TOML_VALID,
     TOML_INVALID,
     TEXT_EQUAL,

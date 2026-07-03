@@ -220,6 +220,7 @@ mod tests {
         let expected = vec![
             "command_preflight",
             "config_preflight",
+            "dependency_edit_preflight",
             "edit_preflight",
             "patch_apply_check",
             "path_scope_check",
@@ -273,7 +274,9 @@ mod tests {
     fn profile_snapshot_codegg_config_model() {
         let actual = snapshot_names("codegg_config", ToolListAudience::Model);
         let expected = vec![
+            "config_file_inspect",
             "config_preflight",
+            "dependency_edit_preflight",
             "dotenv_validate",
             "ini_validate",
             "json_canonicalize",
@@ -296,7 +299,9 @@ mod tests {
     fn profile_snapshot_codegg_config_harness() {
         let actual = snapshot_names("codegg_config", ToolListAudience::Harness);
         let expected = vec![
+            "config_file_inspect",
             "config_preflight",
+            "dependency_edit_preflight",
             "dotenv_validate",
             "ini_validate",
             "json_canonicalize",
@@ -388,9 +393,12 @@ mod tests {
         let expected = vec![
             "cargo_toml_inspect",
             "code_fence_extract",
+            "config_file_inspect",
+            "dependency_edit_preflight",
             "identifier_table_inspect",
             "json_shape",
             "markdown_structure",
+            "repo_manifest_inspect",
             "text_fingerprint",
         ];
         assert_eq!(

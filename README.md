@@ -92,7 +92,333 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 ## MCP Tools
 
 <!-- BEGIN GENERATED: eggsact tools -->
-64 tools across 16 categories. See `architecture/mcp-server.md` for the full reference.
+67 tools across 18 categories. See `architecture/mcp-server.md` for the full reference.
+
+### Math (4)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `math_eval` | 0 | default | stable | mod | default, full, human_math |
+| `unit_convert` | 2 | contextual | stable | cheap | full, human_math |
+| `unit_info` | 2 | contextual | stable | cheap | full, human_math |
+| `constant_lookup` | 2 | contextual | stable | cheap | full, human_math |
+
+### Text (18)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `text_measure` | 0 | default | stable | cheap | default, full |
+| `text_equal` | 0 | default | stable | cheap | codegg_core, default, full |
+| `text_diff_explain` | 1 | default | stable | mod | codegg_core, codegg_patch, default, full |
+| `text_inspect` | 1 | default | stable | mod | codegg_core, codegg_unicode_security, default, full |
+| `text_count` | 0 | default | stable | cheap | default, full |
+| `text_truncate` | 3 | expert | stable | cheap | full |
+| `text_transform` | 2 | contextual | stable | mod | codegg_unicode_security, full |
+| `text_position` | 2 | contextual | stable | cheap | codegg_unicode_security, full |
+| `text_hash` | 2 | contextual | stable | mod | full |
+| `escape_text` | 1 | default | stable | cheap | default, full |
+| `unescape_text` | 1 | default | stable | cheap | default, full |
+| `text_window` | 1 | default | stable | cheap | default, full |
+| `text_fingerprint` | 0 | default | stable | cheap | codegg_core, codegg_repo_audit, default, full |
+| `text_replace_check` | 1 | default | stable | cheap | codegg_core, codegg_core_min, codegg_patch, default, full |
+| `line_range_extract` | 1 | default | stable | cheap | codegg_patch, default, full |
+| `line_range_compare` | 2 | contextual | stable | mod | codegg_patch, full |
+| `prompt_input_inspect` | 2 | harness | stable | mod | codegg_preflight, codegg_unicode_security, full |
+| `text_security_inspect` | 1 | default | stable | heavy | codegg_core, codegg_core_min, codegg_preflight, codegg_unicode_security, full |
+
+### Json (6)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `json_extract` | 2 | contextual | stable | mod | codegg_config, full |
+| `json_compare` | 1 | default | stable | mod | codegg_config, default, full |
+| `json_shape` | 3 | expert | stable | mod | codegg_repo_audit, full |
+| `json_canonicalize` | 1 | default | stable | mod | codegg_config, default, full |
+| `json_query` | 1 | contextual | deprecated | mod | full |
+| `structured_data_compare` | 2 | contextual | stable | heavy | codegg_config, codegg_core, full |
+
+### Regex (3)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `validate_regex` | 1 | default | stable | mod | default, full |
+| `regex_finditer` | 1 | default | stable | mod | default, full |
+| `regex_safety_check` | 1 | default | stable | cheap | codegg_shell, default, full |
+
+### Validation (4)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `validate_brackets` | 1 | default | stable | cheap | default, full |
+| `validate_json` | 0 | default | stable | cheap | codegg_config, codegg_core, codegg_core_min, default, full |
+| `validate_toml` | 1 | default | stable | cheap | codegg_config, codegg_core, default, full |
+| `validate_schema_light` | 3 | contextual | stable | mod | codegg_config, full |
+
+### List (3)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `list_compare` | 2 | contextual | stable | mod | full |
+| `list_dedupe` | 1 | default | stable | cheap | default, full |
+| `list_sort` | 1 | default | stable | cheap | default, full |
+
+### Path (5)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `path_normalize` | 0 | default | stable | cheap | codegg_core, default, full |
+| `path_analyze` | 2 | contextual | stable | cheap | full |
+| `path_compare` | 2 | contextual | stable | cheap | full |
+| `path_scope_check` | 2 | harness | stable | cheap | codegg_preflight, full |
+| `glob_match` | 1 | default | stable | cheap | default, full |
+
+### Shell (4)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `shell_split` | 2 | harness | stable | cheap | codegg_preflight, codegg_shell, full |
+| `shell_quote_join` | 2 | contextual | stable | cheap | codegg_shell, full |
+| `argv_compare` | 2 | contextual | stable | cheap | codegg_shell, full |
+| `command_preflight` | 1 | default | stable | heavy | codegg_core, codegg_core_min, codegg_preflight, codegg_shell, full |
+
+### Markdown (2)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `markdown_structure` | 2 | contextual | stable | mod | codegg_repo_audit, full |
+| `code_fence_extract` | 2 | contextual | stable | mod | codegg_repo_audit, full |
+
+### Config (3)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `dotenv_validate` | 2 | contextual | stable | cheap | codegg_config, full |
+| `ini_validate` | 2 | contextual | stable | cheap | codegg_config, full |
+| `config_preflight` | 1 | default | stable | heavy | codegg_config, codegg_core, codegg_core_min, codegg_preflight, full |
+
+### Identifier (3)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `identifier_analyze` | 3 | expert | stable | mod | full |
+| `identifier_inspect` | 1 | default | stable | mod | codegg_core, codegg_unicode_security, default, full |
+| `identifier_table_inspect` | 3 | expert | stable | mod | codegg_repo_audit, full |
+
+### Unicode (2)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `unicode_policy_check` | 2 | harness | stable | mod | codegg_preflight, codegg_unicode_security, full |
+| `canonicalize_text` | 2 | contextual | stable | mod | codegg_unicode_security, full |
+
+### Version (2)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `version_compare` | 2 | contextual | stable | cheap | codegg_config, full |
+| `version_constraint_check` | 3 | expert | stable | cheap | full |
+
+### Toml (1)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `toml_shape` | 2 | contextual | stable | mod | codegg_config, full |
+
+### Patch (3)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `patch_apply_check` | 2 | harness | stable | mod | codegg_patch, codegg_preflight, full |
+| `patch_summary` | 2 | contextual | stable | mod | codegg_patch, full |
+| `edit_preflight` | 1 | default | stable | heavy | codegg_core, codegg_core_min, codegg_patch, codegg_preflight, full |
+
+### Cargo (1)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `cargo_toml_inspect` | 3 | expert | stable | mod | codegg_core, codegg_repo_audit, full |
+
+### Dependency (1)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `dependency_edit_preflight` | 2 | default | stable | mod | codegg_config, codegg_preflight, codegg_repo_audit, full |
+
+### Repo (2)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `repo_manifest_inspect` | 2 | contextual | stable | cheap | codegg_repo_audit, full |
+| `config_file_inspect` | 2 | contextual | stable | mod | codegg_config, codegg_repo_audit, full |
+
+
+<!-- END GENERATED: eggsact tools -->
+
+<!-- BEGIN GENERATED: eggsact tools -->
+67 tools across 18 categories. See `architecture/mcp-server.md` for the full reference.
+
+### Math (4)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `math_eval` | 0 | default | stable | mod | default, full, human_math |
+| `unit_convert` | 2 | contextual | stable | cheap | full, human_math |
+| `unit_info` | 2 | contextual | stable | cheap | full, human_math |
+| `constant_lookup` | 2 | contextual | stable | cheap | full, human_math |
+
+### Text (18)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `text_measure` | 0 | default | stable | cheap | default, full |
+| `text_equal` | 0 | default | stable | cheap | codegg_core, default, full |
+| `text_diff_explain` | 1 | default | stable | mod | codegg_core, codegg_patch, default, full |
+| `text_inspect` | 1 | default | stable | mod | codegg_core, codegg_unicode_security, default, full |
+| `text_count` | 0 | default | stable | cheap | default, full |
+| `text_truncate` | 3 | expert | stable | cheap | full |
+| `text_transform` | 2 | contextual | stable | mod | codegg_unicode_security, full |
+| `text_position` | 2 | contextual | stable | cheap | codegg_unicode_security, full |
+| `text_hash` | 2 | contextual | stable | mod | full |
+| `escape_text` | 1 | default | stable | cheap | default, full |
+| `unescape_text` | 1 | default | stable | cheap | default, full |
+| `text_window` | 1 | default | stable | cheap | default, full |
+| `text_fingerprint` | 0 | default | stable | cheap | codegg_core, codegg_repo_audit, default, full |
+| `text_replace_check` | 1 | default | stable | cheap | codegg_core, codegg_core_min, codegg_patch, default, full |
+| `line_range_extract` | 1 | default | stable | cheap | codegg_patch, default, full |
+| `line_range_compare` | 2 | contextual | stable | mod | codegg_patch, full |
+| `prompt_input_inspect` | 2 | harness | stable | mod | codegg_preflight, codegg_unicode_security, full |
+| `text_security_inspect` | 1 | default | stable | heavy | codegg_core, codegg_core_min, codegg_preflight, codegg_unicode_security, full |
+
+### Json (6)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `json_extract` | 2 | contextual | stable | mod | codegg_config, full |
+| `json_compare` | 1 | default | stable | mod | codegg_config, default, full |
+| `json_shape` | 3 | expert | stable | mod | codegg_repo_audit, full |
+| `json_canonicalize` | 1 | default | stable | mod | codegg_config, default, full |
+| `json_query` | 1 | contextual | deprecated | mod | full |
+| `structured_data_compare` | 2 | contextual | stable | heavy | codegg_config, codegg_core, full |
+
+### Regex (3)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `validate_regex` | 1 | default | stable | mod | default, full |
+| `regex_finditer` | 1 | default | stable | mod | default, full |
+| `regex_safety_check` | 1 | default | stable | cheap | codegg_shell, default, full |
+
+### Validation (4)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `validate_brackets` | 1 | default | stable | cheap | default, full |
+| `validate_json` | 0 | default | stable | cheap | codegg_config, codegg_core, codegg_core_min, default, full |
+| `validate_toml` | 1 | default | stable | cheap | codegg_config, codegg_core, default, full |
+| `validate_schema_light` | 3 | contextual | stable | mod | codegg_config, full |
+
+### List (3)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `list_compare` | 2 | contextual | stable | mod | full |
+| `list_dedupe` | 1 | default | stable | cheap | default, full |
+| `list_sort` | 1 | default | stable | cheap | default, full |
+
+### Path (5)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `path_normalize` | 0 | default | stable | cheap | codegg_core, default, full |
+| `path_analyze` | 2 | contextual | stable | cheap | full |
+| `path_compare` | 2 | contextual | stable | cheap | full |
+| `path_scope_check` | 2 | harness | stable | cheap | codegg_preflight, full |
+| `glob_match` | 1 | default | stable | cheap | default, full |
+
+### Shell (4)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `shell_split` | 2 | harness | stable | cheap | codegg_preflight, codegg_shell, full |
+| `shell_quote_join` | 2 | contextual | stable | cheap | codegg_shell, full |
+| `argv_compare` | 2 | contextual | stable | cheap | codegg_shell, full |
+| `command_preflight` | 1 | default | stable | heavy | codegg_core, codegg_core_min, codegg_preflight, codegg_shell, full |
+
+### Markdown (2)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `markdown_structure` | 2 | contextual | stable | mod | codegg_repo_audit, full |
+| `code_fence_extract` | 2 | contextual | stable | mod | codegg_repo_audit, full |
+
+### Config (3)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `dotenv_validate` | 2 | contextual | stable | cheap | codegg_config, full |
+| `ini_validate` | 2 | contextual | stable | cheap | codegg_config, full |
+| `config_preflight` | 1 | default | stable | heavy | codegg_config, codegg_core, codegg_core_min, codegg_preflight, full |
+
+### Identifier (3)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `identifier_analyze` | 3 | expert | stable | mod | full |
+| `identifier_inspect` | 1 | default | stable | mod | codegg_core, codegg_unicode_security, default, full |
+| `identifier_table_inspect` | 3 | expert | stable | mod | codegg_repo_audit, full |
+
+### Unicode (2)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `unicode_policy_check` | 2 | harness | stable | mod | codegg_preflight, codegg_unicode_security, full |
+| `canonicalize_text` | 2 | contextual | stable | mod | codegg_unicode_security, full |
+
+### Version (2)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `version_compare` | 2 | contextual | stable | cheap | codegg_config, full |
+| `version_constraint_check` | 3 | expert | stable | cheap | full |
+
+### Toml (1)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `toml_shape` | 2 | contextual | stable | mod | codegg_config, full |
+
+### Patch (3)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `patch_apply_check` | 2 | harness | stable | mod | codegg_patch, codegg_preflight, full |
+| `patch_summary` | 2 | contextual | stable | mod | codegg_patch, full |
+| `edit_preflight` | 1 | default | stable | heavy | codegg_core, codegg_core_min, codegg_patch, codegg_preflight, full |
+
+### Cargo (1)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `cargo_toml_inspect` | 3 | expert | stable | mod | codegg_core, codegg_repo_audit, full |
+
+### Dependency (1)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `dependency_edit_preflight` | 2 | default | stable | mod | codegg_config, codegg_preflight, codegg_repo_audit, full |
+
+### Repo (2)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `repo_manifest_inspect` | 2 | contextual | stable | cheap | codegg_repo_audit, full |
+| `config_file_inspect` | 2 | contextual | stable | mod | codegg_config, codegg_repo_audit, full |
+
+
+
+
+<!-- BEGIN GENERATED: eggsact tools -->
+67 tools across 18 categories. See `architecture/mcp-server.md` for the full reference.
 
 ### Math (4)
 
@@ -239,7 +565,7 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 | `cargo_toml_inspect` | 3 | expert | stable | mod | codegg_core, codegg_repo_audit, full |
 
 
-<!-- END GENERATED: eggsact tools -->
+
 
 ## Math Features
 

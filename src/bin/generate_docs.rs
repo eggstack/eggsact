@@ -45,6 +45,8 @@ const CATEGORY_ORDER: &[&str] = &[
     "toml",
     "patch",
     "cargo",
+    "dependency",
+    "repo",
 ];
 
 fn exposure_short(e: &ToolExposure) -> &'static str {

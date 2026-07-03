@@ -256,6 +256,19 @@ Composite: validate generated config text. Auto-detects format and runs the appr
 - **Required args**:
   - `text` (string)
 
+### `dependency_edit_preflight`
+
+Composite: inspect proposed dependency file changes before applying. Detects additions, removals, version changes, source changes (registry/path/git/url), script/hook changes, and patch overrides across Rust, Python, and Node ecosystems.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: default
+- **Profile**: `codegg_preflight`
+- **Composite**: yes
+- **Required args**:
+  - `file_path` (string)
+  - `old_text` (string)
+  - `new_text` (string)
+
 ### `edit_preflight`
 
 Composite: validate a proposed edit before applying it. Calls text_replace_check, patch_apply_check, line_range_extract, text_fingerprint, and text_diff_explain as needed. Optionally composes path_scope_check (when file_path + workspace_root are provided), text_fingerprint newline detection (when newline_policy is not "skip"), and text_security_inspect (when unicode_policy is not "skip"). Returns ok_to_apply verdict with findings and machine codes.
@@ -351,6 +364,18 @@ Check whether a text replacement would apply cleanly before an agent attempts to
 
 ## `codegg_config`
 
+### `config_file_inspect`
+
+Composite: inspect a single config file beyond syntax validity. Detects risky keys, secret-like values, insecure URLs, debug flags, command hooks, and TLS/hostname issues. Returns structured findings with severity and disposition.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_config`
+- **Composite**: yes
+- **Required args**:
+  - `file_path` (string)
+  - `text` (string)
+
 ### `config_preflight`
 
 Composite: validate generated config text. Auto-detects format and runs the appropriate validator. Returns valid/invalid, detected format, parse error location, and machine code.
@@ -361,6 +386,19 @@ Composite: validate generated config text. Auto-detects format and runs the appr
 - **Composite**: yes
 - **Required args**:
   - `text` (string)
+
+### `dependency_edit_preflight`
+
+Composite: inspect proposed dependency file changes before applying. Detects additions, removals, version changes, source changes (registry/path/git/url), script/hook changes, and patch overrides across Rust, Python, and Node ecosystems.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: default
+- **Profile**: `codegg_config`
+- **Composite**: yes
+- **Required args**:
+  - `file_path` (string)
+  - `old_text` (string)
+  - `new_text` (string)
 
 ### `dotenv_validate`
 
@@ -606,6 +644,31 @@ Extract fenced code blocks from Markdown with exact line ranges, optional langua
 - **Required args**:
   - `text` (string)
 
+### `config_file_inspect`
+
+Composite: inspect a single config file beyond syntax validity. Detects risky keys, secret-like values, insecure URLs, debug flags, command hooks, and TLS/hostname issues. Returns structured findings with severity and disposition.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_repo_audit`
+- **Composite**: yes
+- **Required args**:
+  - `file_path` (string)
+  - `text` (string)
+
+### `dependency_edit_preflight`
+
+Composite: inspect proposed dependency file changes before applying. Detects additions, removals, version changes, source changes (registry/path/git/url), script/hook changes, and patch overrides across Rust, Python, and Node ecosystems.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: default
+- **Profile**: `codegg_repo_audit`
+- **Composite**: yes
+- **Required args**:
+  - `file_path` (string)
+  - `old_text` (string)
+  - `new_text` (string)
+
 ### `identifier_table_inspect`
 
 Inspect a table of identifiers for casefold collisions, normalization collisions, confusable/near-collisions, style variants, reserved keyword hits, and mixed naming style groups. Accepts structured entries with name, kind, file, and line metadata.
@@ -635,6 +698,16 @@ Parse Markdown structure with a deterministic line scanner: headings (level, tex
 - **Profile**: `codegg_repo_audit`
 - **Required args**:
   - `text` (string)
+
+### `repo_manifest_inspect`
+
+Classify project manifests from a bounded path list. Detects Rust, Python, Node, Go, mixed, or unknown projects and emits tool hints for downstream inspection and command policy.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_repo_audit`
+- **Required args**:
+  - `paths` (array)
 
 ### `text_fingerprint`
 
