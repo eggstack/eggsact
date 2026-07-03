@@ -60,6 +60,7 @@ pub fn shell_split(args: &Value) -> ToolResponse {
                 "has_variable_expansion": result.features.has_variable_expansion,
                 "has_glob_pattern": result.features.has_glob_pattern,
                 "has_control_operator": result.features.has_control_operator,
+                "has_background": result.features.has_background,
                 "has_unbalanced_quotes": result.features.has_unbalanced_quotes,
             },
             "findings": result.findings,
@@ -607,6 +608,13 @@ fn detect_behavioral_features(
                 "command uses a pipeline",
             ));
         }
+        if obj.get("has_background").and_then(|v| v.as_bool()) == Some(true) {
+            result.push((
+                machine_codes::SHELL_BACKGROUND_EXECUTION,
+                "BackgroundExecution",
+                "command uses background execution (&)",
+            ));
+        }
     }
 
     result
@@ -1015,6 +1023,47 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
 
     // 5. Detect behavioral features (network, filesystem, process, env, shell features)
     let behavioral = detect_behavioral_features(&argv, &shell_features);
+
+    // 5a. Filter behavioral findings based on policy_config allow_* overrides
+    let allow_network = policy_config
+        .as_ref()
+        .and_then(|pc| pc.get("allow_network").and_then(|v| v.as_bool()))
+        .unwrap_or(false);
+    let allow_filesystem_write = policy_config
+        .as_ref()
+        .and_then(|pc| pc.get("allow_filesystem_write").and_then(|v| v.as_bool()))
+        .unwrap_or(false);
+    let allow_process_control = policy_config
+        .as_ref()
+        .and_then(|pc| pc.get("allow_process_control").and_then(|v| v.as_bool()))
+        .unwrap_or(false);
+    let allow_env_mutation = policy_config
+        .as_ref()
+        .and_then(|pc| pc.get("allow_env_mutation").and_then(|v| v.as_bool()))
+        .unwrap_or(false);
+
+    let behavioral: Vec<_> = behavioral
+        .into_iter()
+        .filter(|(code, _, _)| {
+            if allow_network && *code == machine_codes::SHELL_NETWORK_ACCESS {
+                matched_rules.push("allow_network".to_string());
+                return false;
+            }
+            if allow_filesystem_write && *code == machine_codes::SHELL_FILESYSTEM_WRITE {
+                matched_rules.push("allow_filesystem_write".to_string());
+                return false;
+            }
+            if allow_process_control && *code == machine_codes::SHELL_PROCESS_CONTROL {
+                matched_rules.push("allow_process_control".to_string());
+                return false;
+            }
+            if allow_env_mutation && *code == machine_codes::SHELL_ENV_MUTATION {
+                matched_rules.push("allow_env_mutation".to_string());
+                return false;
+            }
+            true
+        })
+        .collect();
     for (code, kind, message) in &behavioral {
         let (sev, disp) = match *code {
             c if c == machine_codes::SHELL_PRIVILEGE_ESCALATION
@@ -1146,6 +1195,7 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
     };
 
     // 9. Select primary machine code by priority
+    let has_parse_error = code_list.contains(&machine_codes::SHELL_PARSE_ERROR.to_string());
     let unique_codes: Vec<String> = code_list.into_iter().fold(Vec::new(), |mut acc, c| {
         if !acc.contains(&c) {
             acc.push(c);
@@ -1198,6 +1248,27 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         .with_verdict(response_verdict);
     if !findings.is_empty() {
         resp = resp.with_findings(findings);
+    }
+
+    // 10. Emit recommended_next_tool when appropriate
+    let has_unbalanced = shell_features
+        .as_object()
+        .and_then(|o| o.get("has_unbalanced_quotes"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let has_non_ascii = !command.is_ascii();
+    if has_unbalanced || has_parse_error {
+        resp = resp.with_recommended_next_tool(ToolResponse::next_tool(
+            "shell_split",
+            "command has ambiguous parsing — verify with shell_split",
+            Some(serde_json::json!({"command": command, "shell": shell})),
+        ));
+    } else if has_non_ascii {
+        resp = resp.with_recommended_next_tool(ToolResponse::next_tool(
+            "text_security_inspect",
+            "command contains non-ASCII characters — run unicode security check",
+            Some(serde_json::json!({"text": command})),
+        ));
     }
     resp
 }

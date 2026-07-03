@@ -16,6 +16,7 @@ pub struct ShellFeatures {
     pub has_variable_expansion: bool,
     pub has_glob_pattern: bool,
     pub has_control_operator: bool,
+    pub has_background: bool,
     pub has_unbalanced_quotes: bool,
 }
 
@@ -80,6 +81,10 @@ fn detect_features(argv: &[String], raw: &str, unbalanced: bool) -> ShellFeature
         has_control_operator = true;
     }
 
+    // Background execution: standalone '&' at end of command or between commands
+    // (not '&&')
+    let has_background = detect_background(raw);
+
     ShellFeatures {
         has_pipe,
         has_redirection,
@@ -87,6 +92,7 @@ fn detect_features(argv: &[String], raw: &str, unbalanced: bool) -> ShellFeature
         has_variable_expansion,
         has_glob_pattern,
         has_control_operator,
+        has_background,
         has_unbalanced_quotes: unbalanced,
     }
 }
@@ -95,6 +101,29 @@ static VARIABLE_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*").unwrap());
 
 static COMMAND_SUB_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\(|`").unwrap());
+
+/// Detect background execution (`cmd &` or `cmd1 && cmd2 &`).
+///
+/// Background execution is a standalone `&` at the end of a pipeline or
+/// command, NOT `&&` (logical AND). Matches a non-`&` char followed by
+/// `&` not followed by another `&`, then optional whitespace to end.
+static BACKGROUND_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[^&]&[^&]\s*$|[^&]&\s*$").unwrap());
+
+fn detect_background(raw: &str) -> bool {
+    // Check each line independently (for multi-line commands)
+    for line in raw.lines() {
+        let trimmed = line.trim_end();
+        if BACKGROUND_PATTERN.is_match(trimmed) {
+            return true;
+        }
+        // Also handle single-char `&` at start of line
+        if trimmed == "&" {
+            return true;
+        }
+    }
+    false
+}
 
 pub fn shell_split(command: &str, shell: &str, detect_risky_features: bool) -> ShellSplitResult {
     let mut findings = Vec::new();
@@ -152,6 +181,9 @@ pub fn shell_split(command: &str, shell: &str, detect_risky_features: bool) -> S
         }
         if features.has_control_operator {
             findings.push("Contains control operator (; & && ||)".to_string());
+        }
+        if features.has_background {
+            findings.push("Contains background execution operator (&)".to_string());
         }
     }
 

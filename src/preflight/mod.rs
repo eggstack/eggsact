@@ -693,6 +693,41 @@ impl CommandPolicy {
     }
 }
 
+/// Structured policy configuration for command preflight.
+///
+/// These fields refine or override the built-in policy enum. Deny beats
+/// allow when both are set for the same category.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CommandPolicyConfig {
+    /// Explicit allow list of program names.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_commands: Option<Vec<String>>,
+    /// Explicit deny list of program names (overrides allow).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deny_commands: Option<Vec<String>>,
+    /// Per-program allowed subcommands.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_subcommands: Option<std::collections::HashMap<String, Vec<String>>>,
+    /// Per-program denied subcommands (overrides allow).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deny_subcommands: Option<std::collections::HashMap<String, Vec<String>>>,
+    /// Allow network access (default false — network findings are emitted).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_network: Option<bool>,
+    /// Allow filesystem writes (default false).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_filesystem_write: Option<bool>,
+    /// Allow process control (default false).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_process_control: Option<bool>,
+    /// Allow environment variable mutation (default false).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_env_mutation: Option<bool>,
+    /// Maximum command length in characters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_command_length: Option<u64>,
+}
+
 /// Config format for config preflight.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub enum ConfigFormat {
@@ -1014,6 +1049,8 @@ pub struct CommandPreflightInput {
     pub platform: String,
     /// Analysis policy.
     pub policy: CommandPolicy,
+    /// Structured policy configuration overrides.
+    pub policy_config: Option<CommandPolicyConfig>,
     /// Working directory context (informational).
     pub working_directory: Option<String>,
 }
@@ -1024,6 +1061,7 @@ impl Default for CommandPreflightInput {
             command: String::new(),
             platform: "posix".to_string(),
             policy: CommandPolicy::default(),
+            policy_config: None,
             working_directory: None,
         }
     }
@@ -1050,6 +1088,8 @@ pub struct CommandPreflightOutput {
     pub matched_rules: Vec<String>,
     /// Parsed argv if available.
     pub argv: Option<Vec<String>>,
+    /// Recommended next tool to call (structured).
+    pub recommended_next_tool: Option<RecommendedNextTool>,
     /// The raw tool response for diagnostics and forward compatibility.
     pub raw: Value,
 }
@@ -1070,6 +1110,11 @@ impl CommandPreflight {
         });
         if let Some(ref wd) = input.working_directory {
             args["working_directory"] = Value::String(wd.clone());
+        }
+        if let Some(ref config) = input.policy_config {
+            if let Ok(v) = serde_json::to_value(config) {
+                args["policy_config"] = v;
+            }
         }
 
         let response = registry.call_json(Self::TOOL, args)?;
@@ -1134,6 +1179,12 @@ impl CommandPreflight {
             })
             .unwrap_or_default();
 
+        let recommended_next_tool = response
+            .recommended_next_tool
+            .as_ref()
+            .map(|v| parse_recommended_next_tool(v, Self::TOOL))
+            .transpose()?;
+
         let raw = response.result.unwrap_or(Value::Null);
 
         Ok(CommandPreflightOutput {
@@ -1146,6 +1197,7 @@ impl CommandPreflight {
             features,
             matched_rules,
             argv,
+            recommended_next_tool,
             raw,
         })
     }
