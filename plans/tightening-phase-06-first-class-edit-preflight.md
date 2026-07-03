@@ -2,353 +2,332 @@
 
 ## Goal
 
-Promote `edit_preflight` into a single, first-class harness API for model-authored edits. The current handler already composes sub-tools (text_replace_check, patch_apply_check, line_range_extract, text_fingerprint) but lacks path scope validation, Unicode/newline policy, edit metadata, and a complete verdict vocabulary. This phase closes those gaps so codegg can call a single typed API before applying any model-authored edit.
+Promote `edit_preflight` into the canonical harness API for model-authored edits. codegg should be able to call one typed preflight path before applying an edit and receive a deterministic route decision with machine-readable reasons, strict findings, optional sub-results, and stable audit metadata.
+
+This phase builds on the phase 01–05 closure work. Profile/audience dispatch, route-critical response contracts, generated docs, strict typed preflight parsing, structured next-tool hints, and active-profile MCP regression coverage are now in place. Phase 6 should avoid reopening those seams and focus on making edit preflight complete, precise, and dependable for harness use.
 
 ## Current State
 
-### What exists today
+Recent implementation already moved `edit_preflight` forward:
 
-| Component | Location | Notes |
-|-----------|----------|-------|
-| `edit_preflight` handler | `src/tools/patch.rs:240-604` | 364 lines, composes 3 sub-tools + fingerprint |
-| `EditPreflightInput` | `src/preflight/mod.rs:527-563` | 9 fields: original, mode, old/new/patch/start_line/end_line, fingerprint, strict |
-| `EditPreflightOutput` | `src/preflight/mod.rs:566-584` | 8 fields: ok_to_apply, mode, verdict, machine_code, summary, findings, recommended_next_tool, raw |
-| `EditVerdict` enum | `src/preflight/mod.rs:114-143` | Allow, Review, Block, SafeToApply, SafeWithWarnings, Other |
-| ToolSpec | `src/mcp/specs/patch.rs:40-56` | 5 profiles, Default exposure, composite, Heavy cost |
-| Schema (input) | `src/mcp/schemas/patch.rs:25-53` | Missing `verdict` in output schema |
-| Schema (output) | `src/mcp/schemas/patch.rs:55-67` | No `verdict`, no `newline_policy`, no `unicode_policy` |
+- `EditPreflightInput` includes target path/workspace root fields, newline policy, Unicode policy, and edit metadata.
+- `EditPreflightOutput` includes typed verdict, machine code, summary, findings, structured next-tool hints, optional `path_scope`, `newline_check`, `unicode_check`, and `fingerprint` sub-results.
+- `edit_preflight` composes literal replacement, patch, line-range, fingerprint, path scope, newline detection, and Unicode security checks.
+- It emits canonical route fields: `ok_to_apply`, `verdict`, `machine_code`, `summary`, and response-level findings.
+- Route-critical tests cover the basic requirement that `edit_preflight` emits machine code and verdict.
+- Enhanced edit preflight tests cover path scope, newline, Unicode, fingerprint, and metadata paths at a high level.
 
-### What's missing
+The remaining work is refinement and hardening, not a ground-up implementation.
 
-1. **Path scope**: No `file_path`/`workspace_root` input — can't validate the edit target is inside the repo.
-2. **Newline policy**: No newline consistency check on replacement text (mixed CRLF/LF risk).
-3. **Unicode policy**: No security inspection of the replacement text (invisible chars, confusables, bidi).
-4. **Edit metadata**: No way to pass context (e.g., "model wants to add a function") for audit trails.
-5. **Verdict vocabulary**: Current verdicts (`allow`/`review`/`block`/`safe_to_apply`/`safe_with_warnings`) don't distinguish between stale context, old_text_not_found, multiple_matches, patch_failed, etc. The plan calls for richer machine-code-driven verdicts.
-6. **Output schema gaps**: `verdict` field missing from output schema definition.
+## Scope
 
-## Plan
+Phase 6 covers only edit preflight. Do not expand command policy, dependency inspectors, runtime cancellation, evaluator isolation, or broad repo-audit work in this phase. Those are phases 7–10.
 
-### Step 1: Expand `EditPreflightInput` and output schema
+## Workstream A: Tighten Edit Mode Semantics
 
-**File: `src/preflight/mod.rs`**
+### Problem
 
-Add new fields to `EditPreflightInput`:
+`edit_preflight` supports literal, patch, and line-range modes. The API is powerful, but it needs explicit per-mode argument contracts so model/harness misuse fails predictably.
 
-```rust
-pub struct EditPreflightInput {
-    // Existing fields (unchanged)
-    pub original: String,
-    pub mode: ReplacementMode,
-    pub old: Option<String>,
-    pub new: Option<String>,
-    pub patch: Option<String>,
-    pub start_line: Option<u64>,
-    pub end_line: Option<u64>,
-    pub expected_fingerprint: Option<String>,
-    pub strict: bool,
+### Required Work
 
-    // NEW: path scope
-    pub file_path: Option<String>,         // target file path
-    pub workspace_root: Option<String>,    // repo/workspace root for scope check
+1. Define exact mode contracts in code and docs.
 
-    // NEW: newline policy
-    pub newline_policy: NewlinePolicy,     // require_lf | require_crlf | mixed_ok | match_original
+   - `literal` requires `old` and `new`.
+   - `patch` requires `patch`.
+   - `line_range` requires `start_line`, `end_line`, and replacement text. Prefer `new` for replacement text unless a distinct field already exists.
+   - Common optional inputs: `expected_fingerprint`, `file_path`, `workspace_root`, `newline_policy`, `unicode_policy`, and `edit_metadata`.
 
-    // NEW: unicode policy
-    pub unicode_policy: UnicodePolicy,     // allow | review_if_invisible | block_if_risky
+2. Add mode-specific validation before sub-tool execution.
 
-    // NEW: edit metadata (audit trail)
-    pub edit_metadata: Option<EditMetadata>, // reason, model_id, etc.
-}
-```
+   Invalid mode/argument combinations should return a route-critical non-OK response or registry validation error consistently. Prefer schema validation for structural failures and handler machine codes for semantically invalid combinations.
 
-New enums:
+3. Add machine codes for mode contract failures if existing codes are too broad.
 
-```rust
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum NewlinePolicy {
-    #[default]
-    MatchOriginal,  // accept whatever the original has
-    RequireLf,      // enforce LF-only in replacement
-    RequireCrlf,    // enforce CRLF in replacement
-    MixedOk,        // no newline validation
-}
+   Candidate codes:
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum UnicodePolicy {
-    #[default]
-    Allow,             // no unicode security check
-    ReviewIfInvisible, // warn on invisible/confusable chars
-    BlockIfRisky,      // block on high-severity unicode findings
-}
+   - `EDIT_MODE_INVALID`
+   - `EDIT_ARGUMENTS_MISSING`
+   - `EDIT_ARGUMENTS_CONFLICT`
 
-#[derive(Clone, Debug, Default)]
-pub struct EditMetadata {
-    pub reason: Option<String>,      // e.g. "add error handling"
-    pub model_id: Option<String>,    // which model generated this edit
-    pub source_tool: Option<String>, // e.g. "apply_patch", "edit_file"
-}
-```
+   If new codes are added, update `machine_codes::ALL`, architecture docs, and tests.
 
-Update `EditPreflightOutput` to include:
+4. Add tests for each invalid mode shape.
 
-```rust
-pub struct EditPreflightOutput {
-    // Existing fields
-    pub ok_to_apply: bool,
-    pub mode: String,
-    pub verdict: EditVerdict,
-    pub machine_code: String,
-    pub summary: String,
-    pub findings: Vec<Finding>,
-    pub recommended_next_tool: Option<String>,
-    pub raw: Value,
+   Required cases:
 
-    // NEW
-    pub path_scope: Option<PathScopeResult>,  // from path_scope_check composition
-    pub newline_check: Option<NewlineCheckResult>,
-    pub unicode_check: Option<UnicodeCheckResult>,
-    pub fingerprint: Option<FingerprintResult>,
-}
+   - literal without `old`.
+   - literal without `new`.
+   - patch without `patch`.
+   - line_range without `start_line`.
+   - line_range with `start_line > end_line`.
+   - unknown replacement mode.
+   - conflicting inputs where a mode-specific conflict should be rejected.
 
-#[derive(Clone, Debug)]
-pub struct PathScopeResult {
-    pub inside_root: bool,
-    pub relative_path: String,
-    pub escapes_via_dotdot: bool,
-}
+### Acceptance Criteria
 
-#[derive(Clone, Debug)]
-pub struct NewlineCheckResult {
-    pub original_style: String,  // "LF" / "CRLF" / "mixed" / "none"
-    pub replacement_style: String,
-    pub consistent: bool,
-    pub policy_satisfied: bool,
-}
+- Every edit mode has a documented argument contract.
+- Invalid mode shapes fail deterministically.
+- Error responses use stable machine codes or schema errors.
+- Tests cannot pass by accidentally exercising a different edit mode.
 
-#[derive(Clone, Debug)]
-pub struct UnicodeCheckResult {
-    pub verdict: String,  // "allow" / "review" / "block"
-    pub findings_count: usize,
-    pub has_invisible: bool,
-    pub has_confusables: bool,
-}
+## Workstream B: Normalize Verdict and Machine-Code Taxonomy
 
-#[derive(Clone, Debug)]
-pub struct FingerprintResult {
-    pub matched: bool,
-    pub expected: String,
-    pub actual: String,
-}
-```
+### Problem
 
-### Step 2: Update `edit_preflight` handler
+`edit_preflight` currently maps findings into `allow`, `review`, and `block` and picks the first machine code from a code list. This is good enough for coarse routing, but codegg needs predictable priority ordering and stable mapping from cause to action.
 
-**File: `src/tools/patch.rs`** (handler at lines 240-604)
+### Required Work
 
-Add new composition steps after existing sub-tool calls:
+1. Define priority order for findings.
 
-1. **Path scope check** (if `file_path` and `workspace_root` provided):
-   - Call `path_scope_check_tool` in-process with `{root: workspace_root, target: file_path}`
-   - If `inside_root == false`: add PATH_SCOPE_ESCAPE finding (HIGH severity), set machine_code to `PATH_SCOPE_ESCAPE`, set verdict to BLOCK
-   - Store result in `subresults["path_scope"]`
+   Recommended priority:
 
-2. **Newline policy check** (on replacement text):
-   - If `mode == "literal"` and `new` is provided: detect newline style of `new` vs `original`
-   - If `mode == "patch"`: detect newline style of the unified diff content
-   - If `mode == "line_range"`: N/A (no replacement text provided)
-   - Apply policy: `RequireLf` → block if CRLF found; `RequireCrlf` → block if LF-only; `MatchOriginal` → warn if styles differ
-   - Add NEWLINE_INCONSISTENCY finding (MEDIUM) if policy violated
+   1. path scope escape or traversal.
+   2. invalid line range.
+   3. patch parse/apply failure.
+   4. no match or multiple matches.
+   5. fingerprint mismatch.
+   6. Unicode block/review.
+   7. newline inconsistency.
+   8. success.
 
-3. **Unicode security check** (on replacement text):
-   - If `mode == "literal"` and `new` is provided: call `text_security_inspect` on `new` with `policy: "source_code"`
-   - If `mode == "patch"`: extract added lines from patch, call `text_security_inspect` on those
-   - Apply `unicode_policy`: `Allow` → skip; `ReviewIfInvisible` → convert HIGH findings to MEDIUM; `BlockIfRisky` → keep HIGH as BLOCK
-   - Add UNICODE_RISK finding if issues found
-   - Store in `subresults["unicode_check"]`
+2. Implement a single helper to derive:
 
-4. **Fingerprint for patch/line_range modes** (if `expected_fingerprint` provided):
-   - Already done for literal mode. Extend to patch mode (compute fingerprint of the whole patched result) and line_range mode (compute fingerprint of the modified line range)
-   - Add FINGERPRINT_MISMATCH finding if mismatch
+   - primary machine code.
+   - verdict.
+   - `ok_to_apply`.
+   - `recommended_next_tool`.
+   - summary.
 
-### Step 3: Update output schema
+   This should replace scattered ad hoc machine-code selection.
 
-**File: `src/mcp/schemas/patch.rs`**
+3. Keep the response-level `machine_code` as the primary code.
 
-Add to `edit_preflight_output`:
+   If multiple findings exist, consider adding `result.machine_codes: Vec<String>` or `result.secondary_machine_codes` while keeping the envelope `machine_code` stable.
 
-```rust
-pub fn edit_preflight_output() -> Value {
-    json!({
-        "type": "object",
-        "properties": {
-            "ok_to_apply": { "type": "boolean" },
-            "mode": { "type": "string", "enum": ["literal", "patch", "line_range"] },
-            "verdict": { "type": "string", "enum": ["allow", "review", "block", "safe_to_apply", "safe_with_warnings"] },
-            "machine_code": { "type": "string" },
-            "summary": { "type": "string" },
-            "findings": { "type": "array" },
-            "recommended_next_tool": { "type": ["string", "null"] },
-            "subresults": { "type": "object" },
-            // NEW
-            "path_scope": { "type": ["object", "null"] },
-            "newline_check": { "type": ["object", "null"] },
-            "unicode_check": { "type": ["object", "null"] },
-            "fingerprint": { "type": ["object", "null"] }
-        },
-        "required": ["ok_to_apply", "mode", "verdict", "machine_code", "summary", "findings"]
-    })
-}
-```
+4. Document the mapping in `architecture/machine-codes.md` or the MCP architecture doc.
 
-### Step 4: Update ToolSpec input schema
+5. Add table-driven tests for the mapping.
 
-**File: `src/mcp/schemas/patch.rs`**
+### Acceptance Criteria
 
-Add new input fields to `edit_preflight_input`:
+- Given the same findings, the primary machine code is deterministic.
+- More severe findings always dominate less severe findings.
+- `ok_to_apply` and `verdict` cannot disagree.
+- Tests cover mixed-finding cases.
 
-```rust
-// Add to the properties:
-"file_path": { "type": "string", "description": "Target file path for scope validation" },
-"workspace_root": { "type": "string", "description": "Workspace root for scope check" },
-"newline_policy": { "type": "string", "enum": ["match_original", "require_lf", "require_crlf", "mixed_ok"], "default": "match_original" },
-"unicode_policy": { "type": "string", "enum": ["allow", "review_if_invisible", "block_if_risky"], "default": "allow" },
-"edit_reason": { "type": "string", "description": "Audit trail: why this edit is being made" },
-"model_id": { "type": "string", "description": "Audit trail: which model generated this edit" },
-"source_tool": { "type": "string", "description": "Audit trail: tool that originated this edit" }
-```
+## Workstream C: Improve Path Scope Handling
 
-### Step 5: Update `EditPreflight::parse_response`
+### Problem
 
-**File: `src/preflight/mod.rs`** (parse_response at lines 627-670)
+Path scope is now present, but edit harnesses need exact behavior for repository-root constraints, relative paths, symlinks, and traversal-style inputs.
 
-Add parsing for new optional fields:
+### Required Work
 
-```rust
-// Path scope (optional — only present when file_path was provided)
-let path_scope = result.get("path_scope").and_then(|v| {
-    if v.is_null() { return None; }
-    Some(PathScopeResult {
-        inside_root: v.get("inside_root")?.as_bool()?,
-        relative_path: v.get("relative_path")?.as_str()?.to_string(),
-        escapes_via_dotdot: v.get("escapes_via_dotdot")?.as_bool()?,
-    })
-});
+1. Clarify path semantics.
 
-// Newline check (optional)
-let newline_check = result.get("newline_check").and_then(|v| { /* ... */ });
+   - `workspace_root` should be the canonical project root passed by codegg.
+   - `file_path` may be relative or absolute.
+   - Relative paths are resolved against `workspace_root`.
+   - `..` traversal should be flagged even if final normalized path remains inside root.
+   - Absolute paths outside root block.
 
-// Unicode check (optional)
-let unicode_check = result.get("unicode_check").and_then(|v| { /* ... */ });
+2. Decide whether symlink resolution is in scope.
 
-// Fingerprint (optional)
-let fingerprint = result.get("fingerprint").and_then(|v| { /* ... */ });
-```
+   If not in scope, document that phase 6 performs lexical path checks only and add a phase-9 or later hardening note for canonical filesystem-aware checks.
 
-### Step 6: Expand `EditVerdict` vocabulary
+3. Ensure `path_scope` sub-result contains stable fields:
 
-**File: `src/preflight/mod.rs`**
+   - `inside_root`
+   - `escapes_via_dotdot`
+   - `relative_path`
+   - optional `normalized_target`
+   - optional `reason`
 
-The plan calls for unified verdicts like `stale_context`, `old_text_not_found`, `multiple_matches`, `patch_failed`, `line_range_invalid`, `path_scope_escape`, `unicode_risk`, `blocked`. These are already communicated via machine_codes today. The verdict enum should add:
+4. Add tests for:
 
-```rust
-pub enum EditVerdict {
-    Allow,
-    Review,
-    Block,
-    SafeToApply,
-    SafeWithWarnings,
-    // NEW: machine-code-driven verdicts
-    StaleContext,        // fingerprint mismatch
-    OldTextNotFound,     // literal mode, no match
-    MultipleMatches,     // literal mode, >1 match
-    PatchFailed,         // patch mode, doesn't apply
-    LineRangeInvalid,    // line_range mode, out of bounds
-    PathScopeEscape,     // target outside workspace root
-    UnicodeRisk,         // unicode security check found risks
-    Blocked,             // explicit block from any check
-    Other(String),
-}
-```
+   - relative safe path.
+   - absolute safe path under root.
+   - relative `../` traversal.
+   - absolute outside-root path.
+   - path with redundant segments.
 
-However, this is a **breaking change** to the typed wrapper. Since the `EditVerdict` has `Other(String)` for forward compat, and the handler already returns machine_code separately, the pragmatic approach is:
+### Acceptance Criteria
 
-- **Keep the existing 5 verdicts** + `Other(String)` for forward compat
-- The handler already maps machine_codes → verdict (HIGH → BLOCK, MEDIUM → REVIEW, else → ALLOW)
-- The new checks (path_scope, unicode, newline) feed into findings → machine_code → verdict chain naturally
-- Document that `machine_code` is the primary routing signal, `verdict` is the high-level classification
+- Path violations produce block verdicts.
+- Path warnings are represented as structured findings.
+- Safe paths do not produce spurious findings.
 
-**Decision**: Don't expand the enum variants. The `Other(String)` variant handles forward compat, and the machine_code field carries the precise routing signal. This keeps the typed wrapper backward-compatible.
+## Workstream D: Complete Newline Policy
 
-### Step 7: Add tests
+### Problem
 
-**File: `tests/mcp/test_edit_preflight_enhanced.rs`** (new)
+Newline inspection exists, but the policy should define whether mixed newlines are review-only, block-worthy, or normalized.
 
-Test cases:
-1. **Path scope escape**: `file_path: "../etc/passwd"`, `workspace_root: "/repo"` → BLOCK with PATH_SCOPE_ESCAPE
-2. **Path scope safe**: `file_path: "src/main.rs"`, `workspace_root: "/repo"` → no path_scope finding
-3. **Newline policy violation**: original has LF, replacement has CRLF, policy=require_lf → NEWLINE_INCONSISTENCY finding
-4. **Newline policy satisfied**: original has LF, replacement has LF, policy=require_lf → no finding
-5. **Unicode risk (block)**: replacement contains bidi override chars, policy=block_if_risky → BLOCK with UNICODE_RISK
-6. **Unicode risk (review)**: replacement contains confusable chars, policy=review_if_invisible → REVIEW
-7. **Unicode allow**: replacement contains unicode, policy=allow → no unicode finding
-8. **Fingerprint match (patch mode)**: provide expected_fingerprint, patch applies → fingerprint matched
-9. **Fingerprint mismatch (patch mode)**: provide wrong fingerprint → FINGERPRINT_MISMATCH finding
-10. **Edit metadata passthrough**: verify metadata appears in subresults for audit trail
-11. **Full composition**: path_scope + newline + unicode + fingerprint all checked together
-12. **Backward compat**: existing calls without new fields still work identically
+### Required Work
 
-**File: `src/preflight/mod.rs`** (inline tests)
+1. Define policy values and semantics.
 
-Add contract tests:
-13. Parse response with new optional fields present
-14. Parse response without new optional fields (backward compat)
-15. `NewlinePolicy` and `UnicodePolicy` serialization
+   Recommended values:
 
-### Step 8: Update documentation
+   - `skip`: do not inspect newlines.
+   - `check`: inspect and warn/review on mixed newlines.
+   - `normalize_lf`: report expected normalization to LF.
+   - `normalize_crlf`: report expected normalization to CRLF.
 
-**Files:**
-- `architecture/mcp-server.md` — add edit_preflight composition diagram showing all sub-tools
-- `.skills/mcp-tools.md` — note edit_preflight as the canonical example of composite tool composition
-- `README.md` — update edit_preflight description in the generated tools table (description text in ToolSpec)
-- `AGENTS.md` — note the enhanced edit_preflight capabilities
+2. Decide whether `edit_preflight` actually normalizes candidate replacement text or only reports normalization requirements.
 
-## Verification Order
+   Recommended for this phase: report only. Do not mutate replacement text inside preflight.
 
-```
-cargo fmt --check
+3. Ensure `newline_check` sub-result includes:
+
+   - original style.
+   - replacement style if applicable.
+   - mixed flag.
+   - policy.
+   - recommended normalization if any.
+
+4. Add tests for LF, CRLF, mixed, empty, and no-newline inputs.
+
+### Acceptance Criteria
+
+- Newline policy is deterministic and documented.
+- Preflight does not silently mutate edit text.
+- Mixed newline warnings produce review verdict unless combined with block-level findings.
+
+## Workstream E: Complete Unicode Policy
+
+### Problem
+
+Unicode inspection is wired in, but policy handling needs exact source-text selection and stable finding projection.
+
+### Required Work
+
+1. Define which text is inspected by mode.
+
+   - literal: inspect `new`.
+   - patch: inspect added lines from patch, not the entire raw patch if feasible.
+   - line_range: inspect replacement text.
+
+2. Define policy values.
+
+   Recommended values:
+
+   - `skip`
+   - `default`
+   - `source_code`
+   - `identifier`
+
+3. Preserve findings from `text_security_inspect` rather than collapsing all Unicode risks into one generic finding where feasible.
+
+   Use a parent finding only when the sub-tool output lacks structured findings.
+
+4. Add tests for:
+
+   - harmless ASCII.
+   - bidi control character.
+   - invisible separator.
+   - known confusable in source-code context.
+   - policy skip.
+
+### Acceptance Criteria
+
+- Unicode risk routes to review or block according to sub-tool verdict.
+- Findings include enough detail for codegg to display actionable diagnostics.
+- Policy skip avoids sub-tool execution and output fields.
+
+## Workstream F: Audit Metadata and Traceability
+
+### Problem
+
+`edit_metadata` exists, but it must be safe, bounded, and useful for logs without becoming an arbitrary unbounded blob.
+
+### Required Work
+
+1. Define metadata shape.
+
+   Suggested fields:
+
+   - `description`
+   - `author`
+   - `source_tool`
+   - `session_id`
+   - `request_id`
+
+2. Bound metadata field lengths.
+
+   Apply existing text length policies or add explicit metadata limits.
+
+3. Reflect metadata in result only when useful.
+
+   Do not echo sensitive or large values by default. Prefer summaries or normalized fields.
+
+4. Add tests for metadata presence, oversized metadata, and unknown metadata keys.
+
+### Acceptance Criteria
+
+- Metadata is bounded.
+- Unknown or oversized metadata fails predictably or is ignored according to documented policy.
+- Logs/results do not echo unbounded user text.
+
+## Workstream G: Typed API and Generated Tool Cards
+
+### Problem
+
+codegg should consume the typed Rust API, but generated tool cards and schema docs need to match the final edit preflight contract.
+
+### Required Work
+
+1. Update schemas for every new input/result field.
+
+2. Update `EditPreflightInput` and `EditPreflightOutput` docs.
+
+3. Regenerate docs and tool cards.
+
+4. Add generator tests if route-critical field metadata is extended.
+
+5. Add examples showing typical harness calls:
+
+   - safe literal replacement.
+   - blocked path escape.
+   - review due to fingerprint mismatch.
+   - review due to Unicode risk.
+
+### Acceptance Criteria
+
+- `cargo run --bin generate-docs -- --check` passes.
+- Generated cards include all edit preflight required and optional fields.
+- Typed API examples compile or are covered by tests.
+
+## Test Plan
+
+Add or update tests in these areas:
+
+- `tests/mcp/test_edit_preflight_enhanced.rs` for subprocess MCP behavior.
+- `src/preflight/mod.rs` unit tests for typed parsing and contract violations.
+- route-contract tests for route-critical response shape.
+- schema tests for input/output fields.
+- generated-doc tests if tool-card metadata changes.
+
+Required commands:
+
+```bash
+cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
 cargo run --bin generate-docs -- --check
-cargo test --lib
-cargo test --doc
-cargo test --test lib mcp::test_edit_preflight_enhanced
-cargo test --test lib mcp::test_composite_tools
-cargo test --test lib mcp::test_hardening_and_gaps
-cargo test --test lib mcp::test_response_structure
-cargo test --test lib mcp::test_edge_cases
-cargo test --test lib mcp::test_machine_codes
-cargo test --test lib mcp::test_golden_fixtures
-cargo test --test lib mcp::test_tool_coverage
-cargo test --test lib mcp::test_deterministic_real_use
-cargo test --test lib mcp::test_lifecycle_and_gaps
-cargo test --test lib mcp::test_protocol
-cargo test --test lib mcp::test_mcp_tools
-cargo test --test lib mcp::test_comprehensive_parity
-cargo test --test lib mcp::test_tool_gaps
-cargo test --test lib mcp::test_parity
-cargo test --test lib mcp::test_profile_audience
-cargo test --test lib mcp::test_preflight
-cargo test --test lib mcp::test_determinism
 cargo package --verbose
 ```
 
-## Risk Assessment
+## Final Acceptance Criteria
 
-| Risk | Mitigation |
-|------|-----------|
-| Breaking existing edit_preflight calls | All new fields are Optional with defaults; backward-compatible |
-| Performance regression from composing 3 more sub-tools | Sub-tools are already in-process (no registry overhead); path_scope_check and text_security_inspect are cheap |
-| Schema drift between handler output and schema definition | Generated docs check catches drift; add new fields to schema |
-| EditVerdict expansion breaks typed wrapper | Keep existing 5 variants + Other(String); machine_code carries precise signal |
-| test_determinism timeout | Already known slow test; not a regression |
+Phase 6 is complete when:
+
+- `edit_preflight` is the single recommended harness preflight path for model-authored edits.
+- Each edit mode has strict, tested argument semantics.
+- Path scope, newline, Unicode, fingerprint, and metadata behavior are documented and tested.
+- Route decisions use deterministic machine-code priority.
+- Typed Rust wrappers expose all route-critical output fields.
+- Generated docs/tool cards are current.
+- Full CI passes.
