@@ -242,7 +242,7 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 
 | Tool | Tier | Exposure | Stability | Cost | Profiles |
 |------|------|----------|-----------|------|----------|
-| `dependency_edit_preflight` | 2 | default | stable | mod | codegg_config, codegg_preflight, codegg_repo_audit, full |
+| `dependency_edit_preflight` | 2 | contextual | stable | mod | codegg_config, codegg_preflight, codegg_repo_audit, full |
 
 ### Repo (2)
 
@@ -254,8 +254,6 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 
 <!-- END GENERATED: eggsact tools -->
 
-<!-- BEGIN GENERATED: eggsact tools -->
-67 tools across 18 categories. See `architecture/mcp-server.md` for the full reference.
 
 ### Math (4)
 
@@ -415,11 +413,6 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 | `config_file_inspect` | 2 | contextual | stable | mod | codegg_config, codegg_repo_audit, full |
 
 
-
-
-<!-- BEGIN GENERATED: eggsact tools -->
-67 tools across 18 categories. See `architecture/mcp-server.md` for the full reference.
-
 ### Math (4)
 
 | Tool | Tier | Exposure | Stability | Cost | Profiles |
@@ -563,8 +556,6 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 | Tool | Tier | Exposure | Stability | Cost | Profiles |
 |------|------|----------|-----------|------|----------|
 | `cargo_toml_inspect` | 3 | expert | stable | mod | codegg_core, codegg_repo_audit, full |
-
-
 
 
 ## Math Features

@@ -76,6 +76,7 @@ Every non-OK `ToolResponse` must carry a `machine_code`. Use constants from `src
 - Use `.with_machine_code(code)` on a success response when the code conveys meaningful routing info.
 - Use `finding(code, severity, message, details, disposition)` (from `src/mcp/response.rs`) to build structured findings with codes, severity, and disposition.
 - Use `severity::*` (`info`, `low`, `medium`, `high`, `critical`), `disposition::*` (`informational`, `caution`, `blocking`), and `verdict::*` constants for finding metadata.
+- Every UPPERCASE_SNAKE finding `code` emitted by a route-critical tool must be in `machine_codes::ALL`. Add the constant to `ALL` first, then use it via `machine_codes::FOO` (not a raw string). Enforced by `test_route_critical_finding_codes_are_enumerated` in `tests/mcp/test_route_contracts.rs`.
 
 ### Composite / Preflight Tools
 

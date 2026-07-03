@@ -115,6 +115,23 @@ impl ToolBudget {
             ..self
         }
     }
+
+    /// Derive a new budget with a custom `max_output_bytes` override.
+    /// Used by tests and by tools that need a tighter per-call output cap.
+    pub fn with_max_output_bytes(self, n: usize) -> Self {
+        Self {
+            max_output_bytes: n,
+            ..self
+        }
+    }
+
+    /// Derive a new budget with a custom `max_input_bytes` override.
+    pub fn with_max_input_bytes(self, n: usize) -> Self {
+        Self {
+            max_input_bytes: n,
+            ..self
+        }
+    }
 }
 
 /// Map a tool's declared `ToolCost` to an enforceable `ToolBudget`.

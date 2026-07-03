@@ -696,6 +696,14 @@ fn test_edit_preflight_metadata_oversized_rejected() {
         }),
     );
     assert_eq!(r["ok"], false);
+    // Oversized metadata must use EDIT_METADATA_TOO_LARGE, NOT
+    // EDIT_ARGUMENTS_MISSING (the field IS present, just too long).
+    let mc = r.get("machine_code").and_then(|v| v.as_str()).unwrap_or("");
+    assert_eq!(
+        mc, "EDIT_METADATA_TOO_LARGE",
+        "oversized metadata should use EDIT_METADATA_TOO_LARGE, got: {}",
+        mc
+    );
 }
 
 #[test]

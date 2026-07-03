@@ -74,7 +74,18 @@ cargo test --test lib parity
 
 The test `test_all_tool_responses_have_machine_code` verifies that every non-OK `ToolResponse` includes a `machine_code` field. If you add a new error path, ensure it uses `error_with_code()` or `.with_machine_code()` — the test will catch missing codes.
 
+`test_route_critical_finding_codes_are_enumerated` (in `tests/mcp/test_route_contracts.rs`) verifies that every UPPERCASE_SNAKE finding `code` emitted by a route-critical tool is present in `machine_codes::ALL`. Add new codes to `ALL` and reference them as constants (`machine_codes::FOO`), never as raw strings.
+
 See `architecture/machine-codes.md` for the full list of machine codes.
+
+## Budget / Truncation Testing
+
+Tests that need to exercise truncation or input-overflow behavior can override single budget fields via the `ToolBudget` builders:
+- `ToolBudget::with_max_findings(n)` — exercise findings cap (reserves 1 slot for synthetic `OUTPUT_TOO_LARGE` notice).
+- `ToolBudget::with_max_output_bytes(n)` — exercise result truncation (oversized result is replaced with summary object preserving `machine_code`/`verdict`/`ok`/caller-`summary`).
+- `ToolBudget::with_max_input_bytes(n)` — exercise input pre-check (`INPUT_TOO_LARGE` rejection before handler dispatch).
+
+Existing truncation tests live in `src/mcp/response.rs` (`truncate_*` tests) and in-process tests live in `src/agent/mod.rs` (`call_json_with_budget_*` tests).
 
 ## Edge Case Test Coverage
 

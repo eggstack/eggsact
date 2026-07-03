@@ -81,6 +81,16 @@ All composite tools use `finding()` / `finding_with_location()` helpers with can
 
 A subset of these tools are further classified as **route-critical** (`is_route_critical()` in `registry/listing.rs`). Route-critical tools (`edit_preflight`, `command_preflight`, `config_preflight`, `patch_apply_check`, `text_security_inspect`) must always emit `machine_code` and `verdict` fields in their response envelope. Route-critical tests verify this contract.
 
+### Finding-Code Enumeration
+
+Every UPPERCASE_SNAKE finding `code` emitted by a route-critical tool must be present in `machine_codes::ALL`. This is enforced by `test_route_critical_finding_codes_are_enumerated` in `tests/mcp/test_route_contracts.rs`, which iterates over each tool's `findings[]` collection and asserts each `code` appears in the canonical table. When adding a new finding code:
+
+1. Add the `pub const` to `src/mcp/machine_codes.rs` and append it to `ALL`.
+2. Use the constant via `machine_codes::FOO` in tool code (never a raw string).
+3. The route-contract test will fail otherwise.
+
+This prevents stringly-typed finding codes from drifting out of the public contract.
+
 ## Category-Prefixed Aliases
 
 Common error codes have category-prefixed aliases for use by orchestration layers (e.g. codegg) that prefer a uniform `CATEGORY_DETAIL` naming pattern. The Rust constant name differs but the string value is identical to the original, so they are wire-compatible.
@@ -149,7 +159,9 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | `EDIT_FAILED` | Edit could not be applied | high | yes | investigate | `edit_preflight` |
 | `EDIT_MODE_INVALID` | Unknown or unsupported replacement_mode | high | yes | fix mode | `edit_preflight` |
 | `EDIT_ARGUMENTS_MISSING` | Mode-specific required arguments are missing | high | yes | add missing args | `edit_preflight` |
+| `EDIT_ARGUMENTS_INVALID` | One or more arguments present but invalid (wrong type, malformed value) | high | yes | fix arguments | `edit_preflight` |
 | `EDIT_ARGUMENTS_CONFLICT` | Conflicting arguments provided for the current mode | high | yes | remove conflicts | `edit_preflight` |
+| `EDIT_METADATA_TOO_LARGE` | A metadata field exceeded `MAX_METADATA_FIELD_LENGTH` (1000 chars) | high | yes | trim metadata | `edit_preflight` |
 | `AMBIGUOUS_REPLACEMENT` | Multiple matches found | medium | yes | disambiguate | `edit_preflight`, `text_replace_check` |
 | `PATCH_FAILED` | Patch parse/apply error | high | yes | fix patch | `patch_apply_check` |
 | `LINE_RANGE_INVALID` | Line range out of bounds | medium | yes | fix range | `line_range_extract`, `line_range_compare` |
@@ -163,6 +175,7 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | `COMMAND_OK` | Command safe to execute | info | no | execute | `command_preflight` |
 | `SHELL_RISK` | Command has risky features | medium | review | review before exec | `command_preflight` |
 | `SHELL_PARSE_ERROR` | Shell command unparseable | high | yes | fix command | `shell_split`, `command_preflight` |
+| `SHELL_POLICY_REVIEW` | Command requires review under current policy (e.g. `cargo build`, `cargo bench`, `npm run`) | medium | review | review | `command_preflight` |
 | `REGEX_RISK` | Regex in command has safety issues | medium | review | review pattern | `command_preflight` |
 | `SHELL_NETWORK_ACCESS` | Command accesses the network | medium | review | review network access | `command_preflight` |
 | `SHELL_FILESYSTEM_WRITE` | Command writes to the filesystem | medium | review | review write ops | `command_preflight` |
@@ -252,6 +265,14 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | `CARGO_OK` | Cargo.toml parsed ok | info | no | proceed | `cargo_toml_inspect` |
 | `CARGO_PARSE_FAILED` | Cargo.toml parse failed | high | yes | fix Cargo.toml | `cargo_toml_inspect` |
 | `CARGO_HAS_FINDINGS` | Cargo.toml has findings | low | no | review findings | `cargo_toml_inspect` |
+
+### Dependency Manifests
+
+| Code | Meaning | Severity | Blocking | Harness Action | Used by |
+|------|---------|----------|----------|----------------|---------|
+| `DEPENDENCY_UNKNOWN_ECOSYSTEM` | Ecosystem value (`cargo`/`npm`/`pip`/...) is not recognized | high | yes | specify valid ecosystem | `dependency_edit_preflight` |
+| `DEPENDENCY_ADDED` | A dependency was added | low | no | review new dep | `dependency_edit_preflight` |
+| `DEPENDENCY_REMOVED` | A dependency was removed | low | no | review removal | `dependency_edit_preflight` |
 
 ### TOML
 

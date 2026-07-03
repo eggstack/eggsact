@@ -1049,13 +1049,15 @@ fn test_edit_preflight_line_range_mode() {
 }
 
 #[test]
-fn test_edit_preflight_line_range_conflicts_with_old_new() {
+fn test_edit_preflight_line_range_conflicts_with_old() {
+    // line_range mode now accepts `new` as the replacement text (validated
+    // for unicode/newline safety), but still rejects `old` because the
+    // old text is derived from the line range itself.
     let r = call_tool(
         "edit_preflight",
         serde_json::json!({
             "original": "line1\nline2\nline3",
             "old": "line2",
-            "new": "modified",
             "replacement_mode": "line_range",
             "start_line": 2,
             "end_line": 2
@@ -1064,9 +1066,31 @@ fn test_edit_preflight_line_range_conflicts_with_old_new() {
     assert_eq!(r.get("ok"), Some(&Value::Bool(false)));
     let err = r.get("error").and_then(|e| e.as_str()).unwrap_or("");
     assert!(
-        err.contains("does not accept"),
-        "Expected conflict error, got: {}",
+        err.contains("does not accept") && err.contains("old"),
+        "Expected conflict error mentioning 'old', got: {}",
         err
+    );
+}
+
+#[test]
+fn test_edit_preflight_line_range_accepts_new() {
+    // line_range mode accepts `new` as optional replacement text; the
+    // unicode/newline checks then inspect `new` if a policy is supplied.
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "line1\nline2\nline3",
+            "new": "modified",
+            "replacement_mode": "line_range",
+            "start_line": 2,
+            "end_line": 2
+        }),
+    );
+    assert_eq!(
+        r.get("ok"),
+        Some(&Value::Bool(true)),
+        "line_range with only `new` should succeed, got: {}",
+        r
     );
 }
 

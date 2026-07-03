@@ -25,7 +25,10 @@ pub const DEPENDENCY_TOOLS: &[ToolSpec] = &[
             "preflight",
             "composite",
         ],
-        exposure: ToolExposure::Default,
+        // `Contextual` because dependency preflight is a composite,
+        // harness-oriented gate. Models may ask for risk summaries, but
+        // the canonical use is to gate harness-applied dependency edits.
+        exposure: ToolExposure::Contextual,
         harness_use: &["dependency_edit_preflight"],
         aliases: &[],
         cost: ToolCost::Moderate,

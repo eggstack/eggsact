@@ -356,8 +356,14 @@ impl ToolRegistry {
     /// Set the compatibility mode for this registry.
     ///
     /// Use [`CompatibilityMode::EggcalcPython`] to preserve Python-parity
-    /// behavior (Python-style type names in error messages, bool-as-int
-    /// coercion). The default is [`CompatibilityMode::StrictNative`].
+    /// behavior (Python-style type names in error messages and selected
+    /// compatibility error wording). The default is
+    /// [`CompatibilityMode::StrictNative`].
+    ///
+    /// **Note**: Neither mode allows JSON booleans for numeric schema fields.
+    /// The validator rejects `true`/`false` for `integer`/`number` fields in
+    /// both modes; only this and selected error-message wording differ between
+    /// modes. See `architecture/compatibility.md` for the full comparison.
     pub fn with_compat_mode(mut self, compat_mode: CompatibilityMode) -> Self {
         self.compat_mode = compat_mode;
         self
@@ -520,6 +526,22 @@ impl ToolRegistry {
             Some(b) => b,
             None => budget_for_tool_resolved(name, spec),
         };
+        // Pre-execution input size check — reject oversized serialized args
+        // before dispatching to the handler. This is a hard limit, not just
+        // a hint.
+        let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
+        if serialized_len > effective_budget.max_input_bytes {
+            return Ok(ToolResponse::error_with_code(
+                "input_too_large",
+                crate::mcp::machine_codes::INPUT_TOO_LARGE,
+                &format!(
+                    "Serialized arguments ({} bytes) exceed budget max_input_bytes ({} bytes)",
+                    serialized_len, effective_budget.max_input_bytes
+                ),
+                None,
+                Some(name),
+            ));
+        }
         let mut response = self.call_json(name, args)?;
         truncate_response(&mut response, &effective_budget);
         Ok(response)

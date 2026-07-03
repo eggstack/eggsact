@@ -103,8 +103,17 @@ pub const EDIT_FAILED: &str = "EDIT_FAILED";
 pub const EDIT_MODE_INVALID: &str = "EDIT_MODE_INVALID";
 /// Mode-specific required arguments are missing.
 pub const EDIT_ARGUMENTS_MISSING: &str = "EDIT_ARGUMENTS_MISSING";
+/// One or more arguments are syntactically present but invalid (e.g. wrong
+/// type, oversized metadata field, malformed value). Distinct from
+/// `EDIT_ARGUMENTS_MISSING` (no value provided) and
+/// `EDIT_ARGUMENTS_CONFLICT` (value provided but incompatible with mode).
+pub const EDIT_ARGUMENTS_INVALID: &str = "EDIT_ARGUMENTS_INVALID";
 /// Conflicting arguments provided for the current mode.
 pub const EDIT_ARGUMENTS_CONFLICT: &str = "EDIT_ARGUMENTS_CONFLICT";
+/// A metadata field exceeded `MAX_METADATA_FIELD_LENGTH`. Distinct from
+/// `EDIT_ARGUMENTS_INVALID` to give callers a stable code for harness
+/// policy decisions on the metadata path.
+pub const EDIT_METADATA_TOO_LARGE: &str = "EDIT_METADATA_TOO_LARGE";
 /// old_text matched multiple locations — needs disambiguation.
 pub const AMBIGUOUS_REPLACEMENT: &str = "AMBIGUOUS_REPLACEMENT";
 /// Patch failed to parse or apply.
@@ -126,6 +135,10 @@ pub const COMMAND_OK: &str = "COMMAND_OK";
 pub const SHELL_RISK: &str = "SHELL_RISK";
 /// Shell command could not be parsed.
 pub const SHELL_PARSE_ERROR: &str = "SHELL_PARSE_ERROR";
+/// Command matches a policy classification that requires review
+/// (not blocked by default policy, but flagged for harness attention).
+/// Distinct from `SHELL_RISK` which indicates general risky shell features.
+pub const SHELL_POLICY_REVIEW: &str = "SHELL_POLICY_REVIEW";
 /// Regex pattern in the command has safety concerns (ReDoS, etc.).
 pub const REGEX_RISK: &str = "REGEX_RISK";
 
@@ -260,6 +273,9 @@ pub const DEPENDENCY_PATH_SOURCE: &str = "DEPENDENCY_PATH_SOURCE";
 pub const DEPENDENCY_BUILD_SCRIPT: &str = "DEPENDENCY_BUILD_SCRIPT";
 /// Patch/replace override detected.
 pub const DEPENDENCY_PATCH_OVERRIDE: &str = "DEPENDENCY_PATCH_OVERRIDE";
+/// Ecosystem could not be determined from filename or content auto-detection.
+/// Callers must retry with an explicit `ecosystem` value (rust/python/node).
+pub const DEPENDENCY_UNKNOWN_ECOSYSTEM: &str = "DEPENDENCY_UNKNOWN_ECOSYSTEM";
 
 // ---------------------------------------------------------------------------
 // Config Risk
@@ -382,7 +398,9 @@ pub const ALL: &[&str] = &[
     EDIT_FAILED,
     EDIT_MODE_INVALID,
     EDIT_ARGUMENTS_MISSING,
+    EDIT_ARGUMENTS_INVALID,
     EDIT_ARGUMENTS_CONFLICT,
+    EDIT_METADATA_TOO_LARGE,
     AMBIGUOUS_REPLACEMENT,
     PATCH_FAILED,
     LINE_RANGE_INVALID,
@@ -391,6 +409,7 @@ pub const ALL: &[&str] = &[
     COMMAND_OK,
     SHELL_RISK,
     SHELL_PARSE_ERROR,
+    SHELL_POLICY_REVIEW,
     REGEX_RISK,
     JSON_VALID,
     JSON_INVALID,
@@ -433,6 +452,7 @@ pub const ALL: &[&str] = &[
     DEPENDENCY_PATH_SOURCE,
     DEPENDENCY_BUILD_SCRIPT,
     DEPENDENCY_PATCH_OVERRIDE,
+    DEPENDENCY_UNKNOWN_ECOSYSTEM,
     CONFIG_RISK_SECRET_KEY,
     CONFIG_RISK_INSECURE_URL,
     CONFIG_RISK_DEBUG_FLAG,
@@ -467,6 +487,7 @@ pub const ALL: &[&str] = &[
     SHELL_PIPELINE,
     SHELL_BACKGROUND_EXECUTION,
     SHELL_UNAPPROVED_COMMAND,
+    SHELL_POLICY_REVIEW,
     CONFIG_VALID,
     CONFIG_INVALID,
     UNICODE_BIDI_DETECTED,

@@ -261,7 +261,7 @@ Composite: validate generated config text. Auto-detects format and runs the appr
 Composite: inspect proposed dependency file changes before applying. Detects additions, removals, version changes, source changes (registry/path/git/url), script/hook changes, and patch overrides across Rust, Python, and Node ecosystems.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
-- **Exposure**: default
+- **Exposure**: contextual
 - **Profile**: `codegg_preflight`
 - **Composite**: yes
 - **Required args**:
@@ -392,7 +392,7 @@ Composite: validate generated config text. Auto-detects format and runs the appr
 Composite: inspect proposed dependency file changes before applying. Detects additions, removals, version changes, source changes (registry/path/git/url), script/hook changes, and patch overrides across Rust, Python, and Node ecosystems.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
-- **Exposure**: default
+- **Exposure**: contextual
 - **Profile**: `codegg_config`
 - **Composite**: yes
 - **Required args**:
@@ -661,7 +661,7 @@ Composite: inspect a single config file beyond syntax validity. Detects risky ke
 Composite: inspect proposed dependency file changes before applying. Detects additions, removals, version changes, source changes (registry/path/git/url), script/hook changes, and patch overrides across Rust, Python, and Node ecosystems.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
-- **Exposure**: default
+- **Exposure**: contextual
 - **Profile**: `codegg_repo_audit`
 - **Composite**: yes
 - **Required args**:

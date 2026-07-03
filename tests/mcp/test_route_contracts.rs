@@ -300,3 +300,94 @@ fn test_route_critical_tools_use_known_machine_codes() {
         }
     }
 }
+
+/// All finding `code` strings emitted by route-critical tools must be
+/// either:
+///   - In `machine_codes::ALL`, OR
+///   - Lowercase / mixed-case descriptive strings (which are valid as
+///     local finding kinds, not wire-level machine codes).
+///
+/// Ad-hoc UPPERCASE_SNAKE_CASE finding codes that are NOT in
+/// `machine_codes::ALL` are forbidden: they violate the route-contract
+/// discipline and must be either promoted to constants or renamed to
+/// lowercase.
+#[test]
+fn test_route_critical_finding_codes_are_enumerated() {
+    use eggsact::mcp::machine_codes;
+
+    // Per-tool fixture cases that exercise representative code paths and
+    // produce at least one finding. Each tuple is (tool, args, label).
+    let cases: Vec<(&str, Value, &str)> = vec![
+        // edit_preflight literal missing new — emits EDIT_ARGUMENTS_MISSING
+        (
+            "edit_preflight",
+            json!({"original": "abc", "old": "a", "replacement_mode": "literal"}),
+            "edit_preflight literal missing new",
+        ),
+        // edit_preflight line_range missing start_line — emits EDIT_ARGUMENTS_MISSING
+        (
+            "edit_preflight",
+            json!({"original": "abc", "replacement_mode": "line_range", "end_line": 1}),
+            "edit_preflight line_range missing start",
+        ),
+        // edit_preflight metadata oversize — emits EDIT_METADATA_TOO_LARGE
+        (
+            "edit_preflight",
+            json!({
+                "original": "abc",
+                "old": "a",
+                "new": "b",
+                "replacement_mode": "literal",
+                "edit_metadata": {"description": "x".repeat(1500)}
+            }),
+            "edit_preflight metadata oversize",
+        ),
+        // command_preflight rm -rf / — emits SHELL_DESTRUCTIVE_COMMAND
+        (
+            "command_preflight",
+            json!({"command": "rm -rf /tmp"}),
+            "command_preflight rm -rf",
+        ),
+        // command_preflight cargo build — emits SHELL_POLICY_REVIEW
+        (
+            "command_preflight",
+            json!({"command": "cargo build"}),
+            "command_preflight cargo build",
+        ),
+        // command_preflight curl review
+        (
+            "command_preflight",
+            json!({"command": "curl https://example.com"}),
+            "command_preflight curl",
+        ),
+    ];
+
+    for (tool, args, label) in cases {
+        let resp = call_tool_response(tool, args);
+        let result = match resp.result.as_ref() {
+            Some(r) => r,
+            None => continue,
+        };
+        let findings = result
+            .get("findings")
+            .and_then(|f| f.as_array())
+            .cloned()
+            .unwrap_or_default();
+        for f in &findings {
+            let code = match f.get("code").and_then(|v| v.as_str()) {
+                Some(c) => c,
+                None => panic!("{label}: finding has no code field: {f}"),
+            };
+            // Allow lowercase / descriptive codes (local finding kinds).
+            let is_upper_snake = code
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+            if is_upper_snake {
+                assert!(
+                    machine_codes::ALL.contains(&code),
+                    "{label}: ad-hoc upper-snake finding code '{code}' is not in machine_codes::ALL; promote to a constant or rename to lowercase.\nFinding: {f}"
+                );
+            }
+        }
+    }
+}

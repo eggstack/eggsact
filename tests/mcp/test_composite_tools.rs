@@ -301,11 +301,33 @@ fn test_default_policy_cargo_test_allowed() {
 }
 
 #[test]
-fn test_default_policy_cargo_build_allowed() {
+fn test_default_policy_cargo_build_review() {
+    // `cargo build` runs build.rs scripts and may execute arbitrary code,
+    // so the default policy reviews it instead of allowing it.
     let r = cmd_preflight_with_policy("cargo build", "default");
-    assert_eq!(r["verdict"], "allow");
+    assert_eq!(r["verdict"], "review");
     assert_eq!(r["program"], "cargo");
     assert_eq!(r["subcommand"], "build");
+    let codes: Vec<&str> = r["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f.get("code").and_then(|v| v.as_str()))
+        .collect();
+    assert!(
+        codes.contains(&"SHELL_POLICY_REVIEW"),
+        "expected SHELL_POLICY_REVIEW in findings, got {:?}",
+        codes
+    );
+}
+
+#[test]
+fn test_default_policy_cargo_bench_review() {
+    // `cargo bench` compiles and executes benchmark harnesses; review by default.
+    let r = cmd_preflight_with_policy("cargo bench", "default");
+    assert_eq!(r["verdict"], "review");
+    assert_eq!(r["program"], "cargo");
+    assert_eq!(r["subcommand"], "bench");
 }
 
 #[test]

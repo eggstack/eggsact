@@ -620,25 +620,38 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
         _ => dotenv_key_values(text),
     };
 
-    // Check for parse issues
+    // Check for parse issues — JSON formats use serde_json parsing; the line
+    // scanner below remains a heuristic for key extraction and falls back
+    // to non-JSON formats. A real parse failure surfaces as a finding so
+    // callers can detect malformed input rather than silently misclassify.
     let parse_ok = match format {
-        "json" | "package_json" => {
-            let trimmed = text.trim();
-            (trimmed.starts_with('{') || trimmed.starts_with('[')) && trimmed.ends_with(['}', ']'])
-        }
-        "toml" | "cargo_toml" | "pyproject" => {
-            let trimmed = text.trim();
-            !trimmed.is_empty()
-        }
+        "json" | "package_json" => serde_json::from_str::<serde_json::Value>(text.trim()).is_ok(),
+        "toml" | "cargo_toml" | "pyproject" => text.parse::<toml::Value>().is_ok(),
         "yaml" => !text.trim().is_empty(),
         _ => true,
     };
+    if !parse_ok {
+        // Surface parse failures to the caller as a structured finding so
+        // callers can route on the parse issue rather than ignoring it.
+        // (Deferred until after `findings` is declared below.)
+    }
 
     let mut secret_risks = Vec::new();
     let mut insecure_urls = Vec::new();
     let mut debug_flags = Vec::new();
     let mut command_hooks = Vec::new();
     let mut findings = Vec::new();
+
+    // Surface parse failures now that `findings` is in scope.
+    if !parse_ok {
+        findings.push(finding(
+            machine_codes::CONFIG_PARSE_FAILED,
+            severity::HIGH,
+            &format!("Config file failed to parse as {}", format),
+            Some(disposition::BLOCKING),
+            None,
+        ));
+    }
 
     for (key, val) in &kv_pairs {
         let lower_key = key.to_lowercase();

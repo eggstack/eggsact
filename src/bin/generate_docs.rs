@@ -270,20 +270,110 @@ fn extract_between<'a>(content: &'a str, begin: &str, end: &str) -> Option<&'a s
     Some(&rest[..end_pos])
 }
 
-fn replace_between(content: &str, begin: &str, end: &str, replacement: &str) -> String {
-    let start = content.find(begin).expect("marker not found");
-    let after_begin = start + begin.len();
-    let rest = &content[after_begin..];
-    let end_pos = rest.find(end).expect("end marker not found");
-    let after_end = after_begin + end_pos + end.len();
+/// Find the byte range of all generated blocks for a (begin, end) marker pair.
+/// Returns `(start, end_exclusive, is_well_formed)` triples.
+///
+/// A block is well-formed when an end marker follows its begin marker
+/// (consumed in begin-order, end-order pairing). Otherwise it is an
+/// orphan whose stop point is the next `begin` marker or the next markdown
+/// heading (whichever comes first), so we never swallow unrelated content
+/// like adjacent sections.
+fn find_all_generated_spans(content: &str, begin: &str, end: &str) -> Vec<(usize, usize, bool)> {
+    let mut begins = Vec::new();
+    let mut ends = Vec::new();
+    let mut search = 0;
+    while let Some(pos) = content[search..].find(begin) {
+        begins.push(search + pos);
+        search = search + pos + begin.len();
+    }
+    search = 0;
+    while let Some(pos) = content[search..].find(end) {
+        ends.push(search + pos);
+        search = search + pos + end.len();
+    }
 
+    let mut spans = Vec::new();
+    if begins.is_empty() {
+        return spans;
+    }
+
+    let mut end_iter = ends.iter().peekable();
+    for (idx, &b) in begins.iter().enumerate() {
+        // Skip ends that precede this begin
+        while let Some(&&e) = end_iter.peek() {
+            if e < b {
+                end_iter.next();
+            } else {
+                break;
+            }
+        }
+        match end_iter.peek() {
+            Some(&&e) => {
+                // Well-formed block: begin..end (exclusive of end marker)
+                spans.push((b, e + end.len(), true));
+                end_iter.next();
+            }
+            None => {
+                // Orphaned begin — stop at next begin or next heading
+                // (whichever comes first), so we don't swallow adjacent
+                // sections that happen to follow an orphan block.
+                let after = b + begin.len();
+                let next_begin = begins.get(idx + 1).copied().unwrap_or(usize::MAX);
+                let mut stop = next_begin;
+                // Walk forward looking for a heading line
+                let mut cursor = after;
+                while cursor < content.len() && cursor < stop {
+                    let line_end = content[cursor..]
+                        .find('\n')
+                        .map(|p| cursor + p)
+                        .unwrap_or(content.len());
+                    let line = &content[cursor..line_end];
+                    if line.starts_with("# ") || line.starts_with("## ") || line.starts_with("### ")
+                    {
+                        stop = cursor;
+                        break;
+                    }
+                    cursor = line_end + 1;
+                }
+                // If no begin/heading limit applies, default to end of file.
+                if stop == usize::MAX {
+                    stop = content.len();
+                }
+                spans.push((b, stop, false));
+            }
+        }
+    }
+
+    spans
+}
+
+/// Strip all generated blocks (including orphans) and return cleaned content.
+fn strip_all_generated_blocks(content: &str, begin: &str, end: &str) -> String {
+    let spans = find_all_generated_spans(content, begin, end);
+    if spans.is_empty() {
+        return content.to_string();
+    }
     let mut result = String::with_capacity(content.len());
-    result.push_str(&content[..after_begin]);
-    result.push('\n');
-    result.push_str(replacement);
-    result.push('\n');
-    result.push_str(&content[after_end..]);
+    let mut last_end = 0;
+    for (start, stop, _) in &spans {
+        result.push_str(&content[last_end..*start]);
+        last_end = *stop;
+    }
+    result.push_str(&content[last_end..]);
+    // Collapse runs of > 2 blank lines introduced by removal
+    while result.contains("\n\n\n\n") {
+        result = result.replace("\n\n\n\n", "\n\n\n");
+    }
     result
+}
+
+/// Count orphan BEGIN markers (BEGIN without a matching END after it).
+fn count_orphan_begins(content: &str, begin: &str, end: &str) -> usize {
+    let spans = find_all_generated_spans(content, begin, end);
+    spans
+        .iter()
+        .filter(|(_, _, well_formed)| !well_formed)
+        .count()
 }
 
 fn read_file(path: &str) -> String {
@@ -326,66 +416,79 @@ fn main() {
     // Check/update README.md
     let readme_path = format!("{}/README.md", output_dir);
     let readme_file = read_file(&readme_path);
-    if readme_file.contains(BEGIN_TOOLS) && readme_file.contains(END_TOOLS) {
-        let existing = extract_between(&readme_file, BEGIN_TOOLS, END_TOOLS).unwrap_or("");
-        if existing.trim() != readme_content.trim() {
-            stale_files.push(readme_path.clone());
-            if !check_mode {
-                let updated =
-                    replace_between(&readme_file, BEGIN_TOOLS, END_TOOLS, &readme_content);
-                write_file(&readme_path, &updated);
-            }
-        }
+    let existing = extract_between(&readme_file, BEGIN_TOOLS, END_TOOLS).unwrap_or("");
+    let readme_orphans = count_orphan_begins(&readme_file, BEGIN_TOOLS, END_TOOLS);
+    let needs_update = if !readme_file.contains(BEGIN_TOOLS) {
+        // No markers — need to insert
+        true
+    } else if readme_orphans > 0 {
+        // Orphan BEGIN markers present (triplication bug) — must rebuild.
+        true
     } else {
-        // Markers not present — insert after "## MCP Tools" heading
+        existing.trim() != readme_content.trim()
+    };
+    if needs_update {
         stale_files.push(readme_path.clone());
         if !check_mode {
+            // Always strip ALL generated blocks (including orphans) first to
+            // guarantee a clean single-block output even when prior runs left
+            // triplicated or duplicated content.
+            let cleaned = strip_all_generated_blocks(&readme_file, BEGIN_TOOLS, END_TOOLS);
             let marker_section = format!("\n{}\n{}\n{}\n", BEGIN_TOOLS, readme_content, END_TOOLS);
-            if let Some(pos) = readme_file.find("## MCP Tools") {
+            let updated = if let Some(pos) = cleaned.find("## MCP Tools") {
                 let heading_end = pos + "## MCP Tools".len();
-                let rest = &readme_file[heading_end..];
-                // Find the next line after the heading that isn't blank
+                let rest = &cleaned[heading_end..];
                 let insert_at = heading_end + rest.find('\n').unwrap_or(0) + 1;
-                let mut updated = String::with_capacity(readme_file.len() + marker_section.len());
-                updated.push_str(&readme_file[..insert_at]);
-                updated.push_str(&marker_section);
-                updated.push_str(&readme_file[insert_at..]);
-                write_file(&readme_path, &updated);
-            }
+                let mut out = String::with_capacity(cleaned.len() + marker_section.len());
+                out.push_str(&cleaned[..insert_at]);
+                out.push_str(&marker_section);
+                out.push_str(&cleaned[insert_at..]);
+                out
+            } else {
+                let mut out = String::with_capacity(cleaned.len() + marker_section.len() + 1);
+                out.push_str(&cleaned);
+                out.push('\n');
+                out.push_str(&marker_section);
+                out
+            };
+            write_file(&readme_path, &updated);
         }
     }
 
     // Check/update architecture/mcp-server.md
     let arch_path = format!("{}/architecture/mcp-server.md", output_dir);
     let arch_file = read_file(&arch_path);
-    if arch_file.contains(BEGIN_PROFILES) && arch_file.contains(END_PROFILES) {
-        let existing = extract_between(&arch_file, BEGIN_PROFILES, END_PROFILES).unwrap_or("");
-        if existing.trim() != profile_content.trim() {
-            stale_files.push(arch_path.clone());
-            if !check_mode {
-                let updated =
-                    replace_between(&arch_file, BEGIN_PROFILES, END_PROFILES, &profile_content);
-                write_file(&arch_path, &updated);
-            }
-        }
-    } else {
+    let existing = extract_between(&arch_file, BEGIN_PROFILES, END_PROFILES).unwrap_or("");
+    let arch_orphans = count_orphan_begins(&arch_file, BEGIN_PROFILES, END_PROFILES);
+    let needs_update = !arch_file.contains(BEGIN_PROFILES)
+        || arch_orphans > 0
+        || existing.trim() != profile_content.trim();
+    if needs_update {
         stale_files.push(arch_path.clone());
         if !check_mode {
+            // Always strip ALL generated blocks (including orphans) first.
+            let cleaned = strip_all_generated_blocks(&arch_file, BEGIN_PROFILES, END_PROFILES);
             let marker_section = format!(
                 "\n{}\n{}\n{}\n",
                 BEGIN_PROFILES, profile_content, END_PROFILES
             );
-            // Insert after "### Profile Reference" heading
-            if let Some(pos) = arch_file.find("### Profile Reference") {
+            let updated = if let Some(pos) = cleaned.find("### Profile Reference") {
                 let heading_end = pos + "### Profile Reference".len();
-                let rest = &arch_file[heading_end..];
+                let rest = &cleaned[heading_end..];
                 let insert_at = heading_end + rest.find('\n').unwrap_or(0) + 1;
-                let mut updated = String::with_capacity(arch_file.len() + marker_section.len());
-                updated.push_str(&arch_file[..insert_at]);
-                updated.push_str(&marker_section);
-                updated.push_str(&arch_file[insert_at..]);
-                write_file(&arch_path, &updated);
-            }
+                let mut out = String::with_capacity(cleaned.len() + marker_section.len());
+                out.push_str(&cleaned[..insert_at]);
+                out.push_str(&marker_section);
+                out.push_str(&cleaned[insert_at..]);
+                out
+            } else {
+                let mut out = String::with_capacity(arch_file.len() + marker_section.len() + 1);
+                out.push_str(&cleaned);
+                out.push('\n');
+                out.push_str(&marker_section);
+                out
+            };
+            write_file(&arch_path, &updated);
         }
     }
 
@@ -599,5 +702,85 @@ mod tests {
             !REGENERATE_COMMAND.contains("generate_docs"),
             "REGENERATE_COMMAND must not use the underscore form, got: {REGENERATE_COMMAND}"
         );
+    }
+
+    // -- Orphan / triplication handling tests -----------------------------
+
+    const TB: &str = "<!-- BEGIN GENERATED: test -->";
+    const TE: &str = "<!-- END GENERATED: test -->";
+
+    #[test]
+    fn find_all_spans_handles_well_formed_block() {
+        let content = format!("pre\n{}hello\n{}post\n", TB, TE);
+        let spans = find_all_generated_spans(&content, TB, TE);
+        assert_eq!(spans.len(), 1);
+        let (s, e, well) = spans[0];
+        assert!(well, "well-formed block should be flagged well-formed");
+        assert_eq!(&content[s..e], format!("{}hello\n{}", TB, TE));
+    }
+
+    #[test]
+    fn find_all_spans_detects_orphans() {
+        // Two BEGIN, one END in middle — first well-formed, second orphan.
+        let content = format!("{}first\n{}\n{}second still going\n", TB, TE, TB);
+        let spans = find_all_generated_spans(&content, TB, TE);
+        assert_eq!(spans.len(), 2);
+        assert!(spans[0].2, "first should be well-formed");
+        assert!(!spans[1].2, "second should be orphan");
+    }
+
+    #[test]
+    fn find_all_spans_handles_triplication() {
+        // Three BEGINs, one END at first block — 1 well-formed, 2 orphans.
+        let content = format!("{}one\n{}\n{}two\n{}three\n", TB, TE, TB, TB);
+        let spans = find_all_generated_spans(&content, TB, TE);
+        assert_eq!(spans.len(), 3);
+        let well_count = spans.iter().filter(|(_, _, w)| *w).count();
+        let orphan_count = spans.iter().filter(|(_, _, w)| !*w).count();
+        assert_eq!(well_count, 1);
+        assert_eq!(orphan_count, 2);
+    }
+
+    #[test]
+    fn count_orphan_begins_zero_when_all_paired() {
+        // First pair is orphan, second pair is well-formed — still 1 orphan.
+        let content = format!("{}a\n{}b\n{}c\n{}", TB, "mid", TB, TE);
+        assert_eq!(count_orphan_begins(&content, TB, TE), 1);
+    }
+
+    #[test]
+    fn count_orphan_begins_zero_when_no_orphans() {
+        // One BEGIN, one END — no orphans.
+        let content = format!("{}a\n{}", TB, TE);
+        assert_eq!(count_orphan_begins(&content, TB, TE), 0);
+    }
+
+    #[test]
+    fn count_orphan_begins_correct_for_triplicated() {
+        let content = format!("{}one\n{}\n{}two\n{}three\n", TB, TE, TB, TB);
+        assert_eq!(count_orphan_begins(&content, TB, TE), 2);
+    }
+
+    #[test]
+    fn strip_all_removes_triplicated_blocks() {
+        // 1 well-formed (with `one`) and 2 orphans (`two` and `three`)
+        // followed by a clean section header `## Next` (which must survive).
+        let content = format!(
+            "## Heading\n\n{}one\n{}\n{}two\n{}three\n\n## Next\n",
+            TB, TE, TB, TB
+        );
+        let cleaned = strip_all_generated_blocks(&content, TB, TE);
+        assert!(!cleaned.contains(TB), "no BEGIN markers should remain");
+        assert!(!cleaned.contains(TE), "no END markers should remain");
+        assert!(
+            cleaned.contains("## Heading"),
+            "preceding heading preserved"
+        );
+        assert!(cleaned.contains("## Next"), "following heading preserved");
+        // Orphan blocks are intentionally discarded — the content under an
+        // orphan marker is from a prior failed run and is unsafe to keep.
+        assert!(!cleaned.contains("two"));
+        assert!(!cleaned.contains("three"));
+        assert!(!cleaned.contains("one"));
     }
 }

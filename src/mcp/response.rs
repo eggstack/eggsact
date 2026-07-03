@@ -521,7 +521,10 @@ pub fn preflight_block(
 pub fn truncate_response(response: &mut ToolResponse, budget: &crate::mcp::budget::ToolBudget) {
     let mut limits: Vec<String> = Vec::new();
 
-    // Truncate findings array
+    // Truncate findings array — keep total length <= max_findings.
+    // We reserve one slot for the synthetic truncation notice so the
+    // observed cap is `max_findings - 1` real findings + 1 notice,
+    // never exceeding `max_findings` total.
     if let Some(ref mut findings) = response.findings {
         if findings.len() > budget.max_findings {
             // Sort by severity (highest first) before truncating
@@ -538,9 +541,10 @@ pub fn truncate_response(response: &mut ToolResponse, budget: &crate::mcp::budge
                 let sev_b = b.get("severity").and_then(|v| v.as_str()).unwrap_or("info");
                 severity_order(sev_a).cmp(&severity_order(sev_b))
             });
-            let omitted = findings.len() - budget.max_findings;
-            findings.truncate(budget.max_findings);
-            // Add a synthetic finding noting the truncation
+            let omitted = findings.len().saturating_sub(budget.max_findings);
+            // Reserve last slot for the truncation notice.
+            let real_cap = budget.max_findings.saturating_sub(1);
+            findings.truncate(real_cap);
             findings.push(serde_json::json!({
                 "code": "OUTPUT_TOO_LARGE",
                 "severity": "info",
@@ -551,16 +555,46 @@ pub fn truncate_response(response: &mut ToolResponse, budget: &crate::mcp::budge
         }
     }
 
-    // Truncate result string if it exists and is too large
-    if let Some(ref result) = response.result {
+    // Truncate result string if it exists and is too large. We replace
+    // oversized result with a summary object that preserves route-critical
+    // top-level keys (machine_code, verdict, ok, summary) so callers can
+    // still route on the response. The existing user-supplied `summary`
+    // field is kept; only if absent do we emit a default placeholder.
+    if let Some(ref mut result) = response.result {
         let result_str = serde_json::to_string(result).unwrap_or_default();
         if result_str.len() > budget.max_output_bytes {
-            limits.push(format!(
-                "result_truncated:{}",
-                result_str.len() - budget.max_output_bytes
-            ));
-            // For route-critical tools, we keep the result but annotate truncation.
-            // The full OUTPUT_TOO_LARGE error is raised by the MCP server layer.
+            let original_len = result_str.len();
+            // Build a small summary and use it as the new result.
+            let summary = serde_json::json!({
+                "truncated": true,
+                "original_size_bytes": original_len,
+                "max_output_bytes": budget.max_output_bytes,
+            });
+            // Preserve route-critical keys at the top level if present.
+            let mut merged = serde_json::Map::new();
+            if let Some(obj) = result.as_object() {
+                for key in &["machine_code", "verdict", "summary", "ok"] {
+                    if let Some(v) = obj.get(*key) {
+                        merged.insert((*key).to_string(), v.clone());
+                    }
+                }
+            }
+            for (k, v) in summary.as_object().unwrap() {
+                merged.insert(k.clone(), v.clone());
+            }
+            // Inject default truncation message only when caller didn't
+            // supply a `summary` field — caller-supplied summaries are
+            // more informative for harnesses than our boilerplate.
+            if !merged.contains_key("summary") {
+                merged.insert(
+                    "summary".to_string(),
+                    serde_json::Value::String(
+                        "Result exceeded output budget; full payload suppressed.".to_string(),
+                    ),
+                );
+            }
+            *result = serde_json::Value::Object(merged);
+            limits.push(format!("result_truncated:{}", original_len));
         }
     }
 
@@ -758,13 +792,12 @@ mod tests {
             ]);
         truncate_response(&mut resp, &budget);
         let findings = resp.findings.as_ref().unwrap();
-        // 3 kept + 1 truncation notice = 4
-        assert_eq!(findings.len(), 4);
-        // Should keep highest severity first (critical, high, medium) + truncation notice
+        // Total findings length must not exceed max_findings: keep
+        // highest-severity (critical, high) + truncation notice.
+        assert_eq!(findings.len(), 3);
         assert_eq!(findings[0]["severity"], "critical");
         assert_eq!(findings[1]["severity"], "high");
-        assert_eq!(findings[2]["severity"], "medium");
-        assert_eq!(findings[3]["code"], "OUTPUT_TOO_LARGE");
+        assert_eq!(findings[2]["code"], "OUTPUT_TOO_LARGE");
     }
 
     #[test]
@@ -790,6 +823,107 @@ mod tests {
             .with_findings(vec![finding("A", severity::LOW, "a", None, None)]);
         truncate_response(&mut resp, &budget);
         assert_eq!(resp.findings.as_ref().unwrap().len(), 1);
+        assert!(resp.limits_applied.is_none());
+    }
+
+    #[test]
+    fn truncate_findings_total_never_exceeds_cap() {
+        // Exact-length contract: total findings length must be <= max_findings
+        // regardless of how many findings the source produced.
+        for max in 1usize..=10 {
+            let budget = crate::mcp::budget::ToolBudget::CHEAP.with_max_findings(max);
+            // Produce 5x the cap to force truncation.
+            let many: Vec<_> = (0..max * 5)
+                .map(|i| {
+                    let s = format!("F{}", i);
+                    finding(&s, severity::LOW, "msg", None, None)
+                })
+                .collect();
+            let mut resp =
+                ToolResponse::success(serde_json::json!({}), Some("t")).with_findings(many);
+            truncate_response(&mut resp, &budget);
+            let findings = resp.findings.as_ref().unwrap();
+            assert!(
+                findings.len() <= max,
+                "max_findings={} but total findings len={}",
+                max,
+                findings.len()
+            );
+            // Last entry should be the truncation notice.
+            let last = findings.last().unwrap();
+            assert_eq!(last["code"], "OUTPUT_TOO_LARGE");
+        }
+    }
+
+    #[test]
+    fn truncate_result_replaces_oversized_payload() {
+        // Result truncation is REAL: replaces oversized result with a
+        // summary object that preserves route-critical keys.
+        let budget = crate::mcp::budget::ToolBudget::CHEAP.with_max_output_bytes(50);
+        // Build a large result that's guaranteed to exceed 50 bytes.
+        let large_text = "x".repeat(500);
+        let mut resp = ToolResponse::success(
+            serde_json::json!({
+                "machine_code": "EDIT_OK",
+                "verdict": "allow",
+                "summary": "all good",
+                "data": large_text,
+            }),
+            Some("test_tool"),
+        )
+        .with_machine_code(machine_codes::EDIT_OK)
+        .with_verdict(verdict::ALLOW);
+        truncate_response(&mut resp, &budget);
+        // Serialized result must now be small enough to fit.
+        let result = resp.result.as_ref().unwrap();
+        let result_str = serde_json::to_string(result).unwrap();
+        assert!(
+            result_str.len() <= 200,
+            "result should have been replaced; len={}",
+            result_str.len()
+        );
+        // Route-critical keys preserved.
+        assert_eq!(result["machine_code"], "EDIT_OK");
+        assert_eq!(result["verdict"], "allow");
+        // Truncation marker set.
+        assert_eq!(result["truncated"], true);
+        assert!(result["original_size_bytes"].as_u64().unwrap() > 50);
+        assert_eq!(result["max_output_bytes"], 50);
+        // limits_applied records the truncation.
+        let limits = resp.limits_applied.as_ref().unwrap();
+        assert!(limits.iter().any(|l| l.starts_with("result_truncated:")));
+    }
+
+    #[test]
+    fn truncate_result_preserves_summary_when_present() {
+        // Existing top-level `summary` string should be kept alongside the
+        // truncation metadata so callers can show a human message.
+        let budget = crate::mcp::budget::ToolBudget::CHEAP.with_max_output_bytes(40);
+        let mut resp = ToolResponse::success(
+            serde_json::json!({
+                "machine_code": "EDIT_OK",
+                "summary": "edited 3 lines",
+                "ok": true,
+                "big_blob": "y".repeat(500),
+            }),
+            Some("test_tool"),
+        )
+        .with_machine_code(machine_codes::EDIT_OK);
+        truncate_response(&mut resp, &budget);
+        let result = resp.result.as_ref().unwrap();
+        assert_eq!(result["summary"], "edited 3 lines");
+        assert_eq!(result["ok"], true);
+        assert_eq!(result["truncated"], true);
+    }
+
+    #[test]
+    fn truncate_under_max_does_not_mutate_result() {
+        // When result fits within budget, it must be left intact.
+        let budget = crate::mcp::budget::ToolBudget::CHEAP; // 1 MB cap
+        let original = serde_json::json!({"k": "v", "n": 42});
+        let mut resp = ToolResponse::success(original.clone(), Some("test_tool"));
+        truncate_response(&mut resp, &budget);
+        assert_eq!(resp.result.as_ref().unwrap(), &original);
         assert!(resp.limits_applied.is_none());
     }
 

@@ -221,14 +221,23 @@ The MCP server applies per-tool resource budgets during `tools/call` dispatch:
 ### Budget Module (`src/mcp/budget.rs`)
 
 - **`BudgetTier`** enum: `Cheap`, `Moderate`, `Heavy` — maps from `ToolCost` in `ToolSpec`.
-- **`ToolBudget`** struct: per-tool resource limits — `max_elapsed_ms`, `max_output_bytes`, `max_text_chars`, `max_findings`, `max_list_items`, `max_pattern_length`.
+- **`ToolBudget`** struct: per-tool resource limits — `max_input_bytes`, `max_output_bytes`, `max_elapsed_ms`, `max_text_chars`, `max_findings`, `max_list_items`, `max_pattern_length`, `max_regex_pattern_chars`, `max_regex_samples`, `max_spawned_workers`.
 - **`budget_for_tool(tool_name)`**: resolves the effective `ToolBudget` for a tool, applying composite overrides when a tool orchestrates other tools internally.
+- **Builders**: `ToolBudget::with_max_findings(n)`, `with_max_output_bytes(n)`, `with_max_input_bytes(n)` — used by callers (especially tests) to override a single budget field without rebuilding the whole struct.
 - **`BudgetContext`**: runtime context passed into tool handlers — holds a deadline (`Instant`), a `cancelled` flag, and `should_stop()` which checks both deadline expiry and cancellation.
 - **Composite sub-budgets**: `SubBudget` and `CompositeBudgetAllocator` allow composite tools (e.g., `edit_preflight`, `command_preflight`) to split their parent budget across child tool calls via `sub_budget_context()`.
 
 ### Response Truncation (`src/mcp/response.rs`)
 
 `truncate_response()` enforces budget limits on completed tool responses. When a tool produces more findings, output bytes, or text characters than its budget allows, the response is truncated and `limits_applied` is populated with descriptions of what was capped.
+
+- **Findings cap** (`max_findings`): when findings exceed the cap, excess entries are dropped and a synthetic `OUTPUT_TOO_LARGE` notice is appended. The total findings length is always ≤ `max_findings` (the synthetic notice itself reserves one slot, so N findings + 1 synthetic ≤ N+1 entries).
+- **Result truncation** (`max_output_bytes`): when the serialized `result` object exceeds the cap, it is **replaced** with a summary object containing only `machine_code`, `verdict`, `ok`, and any caller-supplied `summary` key, plus `truncated: true`, `original_size_bytes`, `max_output_bytes`. This guarantees the wire payload fits the budget while preserving route-critical fields.
+- `limits_applied` in the response envelope reports what was truncated.
+
+### Input Pre-Check (`src/agent/mod.rs`)
+
+`call_json_with_budget()` checks the serialized input against `budget.max_input_bytes` **before** dispatching to the handler. Oversized input fails with `INPUT_TOO_LARGE` (high severity, blocking). The MCP server's `tools/call` handler runs `truncate_response` *before* the `MAX_OUTPUT_BYTES` hard cap so response shaping happens once.
 
 ### Runtime Metrics (`src/mcp/response.rs`)
 
@@ -242,7 +251,7 @@ The MCP server applies per-tool resource budgets during `tools/call` dispatch:
 4. After the handler returns, `truncate_response()` caps findings/output if the budget was exceeded
 5. `limits_applied` in the response envelope reports what was truncated
 
-For the in-process agent API, `call_json_with_budget()` on `ToolRegistry` accepts a custom `ToolBudget` to override the default per-tool limits.
+For the in-process agent API, `call_json_with_budget()` on `ToolRegistry` accepts a custom `ToolBudget` to override the default per-tool limits. Input is pre-checked against `max_input_bytes` and rejected with `INPUT_TOO_LARGE` before handler dispatch.
 
 ## Response Contract
 
@@ -321,39 +330,6 @@ Profiles control which tools are available. The `full` profile includes all non-
 | `human_math` | 4 | 4 | `constant_lookup`, `math_eval`, `unit_convert`, `unit_info` |  |
 
 <!-- END GENERATED: profile reference -->
-
-<!-- BEGIN GENERATED: profile reference -->
-| Profile | Model Tools | Harness Tools | Model Tool Names | Harness-Only Tools |
-|---------|-------------|---------------|------------------|--------------------|
-| `full` | 62 | 67 | `argv_compare`, `canonicalize_text`, `cargo_toml_inspect`, `code_fence_extract`, `command_preflight`, `config_file_inspect`, `config_preflight`, `constant_lookup`, `dependency_edit_preflight`, `dotenv_validate`, `edit_preflight`, `escape_text`, `glob_match`, `identifier_analyze`, `identifier_inspect`, `identifier_table_inspect`, `ini_validate`, `json_canonicalize`, `json_compare`, `json_extract`, `json_query`, `json_shape`, `line_range_compare`, `line_range_extract`, `list_compare`, `list_dedupe`, `list_sort`, `markdown_structure`, `math_eval`, `patch_summary`, `path_analyze`, `path_compare`, `path_normalize`, `regex_finditer`, `regex_safety_check`, `repo_manifest_inspect`, `shell_quote_join`, `structured_data_compare`, `text_count`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_hash`, `text_inspect`, `text_measure`, `text_position`, `text_replace_check`, `text_security_inspect`, `text_transform`, `text_truncate`, `text_window`, `toml_shape`, `unescape_text`, `unit_convert`, `unit_info`, `validate_brackets`, `validate_json`, `validate_regex`, `validate_schema_light`, `validate_toml`, `version_compare`, `version_constraint_check` | `patch_apply_check`, `path_scope_check`, `prompt_input_inspect`, `shell_split`, `unicode_policy_check` |
-| `default` | 25 | 25 | `escape_text`, `glob_match`, `identifier_inspect`, `json_canonicalize`, `json_compare`, `line_range_extract`, `list_dedupe`, `list_sort`, `math_eval`, `path_normalize`, `regex_finditer`, `regex_safety_check`, `text_count`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_inspect`, `text_measure`, `text_replace_check`, `text_window`, `unescape_text`, `validate_brackets`, `validate_json`, `validate_regex`, `validate_toml` |  |
-| `codegg_core_min` | 6 | 6 | `command_preflight`, `config_preflight`, `edit_preflight`, `text_replace_check`, `text_security_inspect`, `validate_json` |  |
-| `codegg_core` | 15 | 15 | `cargo_toml_inspect`, `command_preflight`, `config_preflight`, `edit_preflight`, `identifier_inspect`, `path_normalize`, `structured_data_compare`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_inspect`, `text_replace_check`, `text_security_inspect`, `validate_json`, `validate_toml` |  |
-| `codegg_preflight` | 5 | 10 | `command_preflight`, `config_preflight`, `dependency_edit_preflight`, `edit_preflight`, `text_security_inspect` | `patch_apply_check`, `path_scope_check`, `prompt_input_inspect`, `shell_split`, `unicode_policy_check` |
-| `codegg_patch` | 6 | 7 | `edit_preflight`, `line_range_compare`, `line_range_extract`, `patch_summary`, `text_diff_explain`, `text_replace_check` | `patch_apply_check` |
-| `codegg_config` | 14 | 14 | `config_file_inspect`, `config_preflight`, `dependency_edit_preflight`, `dotenv_validate`, `ini_validate`, `json_canonicalize`, `json_compare`, `json_extract`, `structured_data_compare`, `toml_shape`, `validate_json`, `validate_schema_light`, `validate_toml`, `version_compare` |  |
-| `codegg_unicode_security` | 6 | 8 | `canonicalize_text`, `identifier_inspect`, `text_inspect`, `text_position`, `text_security_inspect`, `text_transform` | `prompt_input_inspect`, `unicode_policy_check` |
-| `codegg_shell` | 4 | 5 | `argv_compare`, `command_preflight`, `regex_safety_check`, `shell_quote_join` | `shell_split` |
-| `codegg_repo_audit` | 9 | 9 | `cargo_toml_inspect`, `code_fence_extract`, `config_file_inspect`, `dependency_edit_preflight`, `identifier_table_inspect`, `json_shape`, `markdown_structure`, `repo_manifest_inspect`, `text_fingerprint` |  |
-| `human_math` | 4 | 4 | `constant_lookup`, `math_eval`, `unit_convert`, `unit_info` |  |
-
-
-
-<!-- BEGIN GENERATED: profile reference -->
-| Profile | Model Tools | Harness Tools | Model Tool Names | Harness-Only Tools |
-|---------|-------------|---------------|------------------|--------------------|
-| `full` | 59 | 64 | `argv_compare`, `canonicalize_text`, `cargo_toml_inspect`, `code_fence_extract`, `command_preflight`, `config_preflight`, `constant_lookup`, `dotenv_validate`, `edit_preflight`, `escape_text`, `glob_match`, `identifier_analyze`, `identifier_inspect`, `identifier_table_inspect`, `ini_validate`, `json_canonicalize`, `json_compare`, `json_extract`, `json_query`, `json_shape`, `line_range_compare`, `line_range_extract`, `list_compare`, `list_dedupe`, `list_sort`, `markdown_structure`, `math_eval`, `patch_summary`, `path_analyze`, `path_compare`, `path_normalize`, `regex_finditer`, `regex_safety_check`, `shell_quote_join`, `structured_data_compare`, `text_count`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_hash`, `text_inspect`, `text_measure`, `text_position`, `text_replace_check`, `text_security_inspect`, `text_transform`, `text_truncate`, `text_window`, `toml_shape`, `unescape_text`, `unit_convert`, `unit_info`, `validate_brackets`, `validate_json`, `validate_regex`, `validate_schema_light`, `validate_toml`, `version_compare`, `version_constraint_check` | `patch_apply_check`, `path_scope_check`, `prompt_input_inspect`, `shell_split`, `unicode_policy_check` |
-| `default` | 25 | 25 | `escape_text`, `glob_match`, `identifier_inspect`, `json_canonicalize`, `json_compare`, `line_range_extract`, `list_dedupe`, `list_sort`, `math_eval`, `path_normalize`, `regex_finditer`, `regex_safety_check`, `text_count`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_inspect`, `text_measure`, `text_replace_check`, `text_window`, `unescape_text`, `validate_brackets`, `validate_json`, `validate_regex`, `validate_toml` |  |
-| `codegg_core_min` | 6 | 6 | `command_preflight`, `config_preflight`, `edit_preflight`, `text_replace_check`, `text_security_inspect`, `validate_json` |  |
-| `codegg_core` | 15 | 15 | `cargo_toml_inspect`, `command_preflight`, `config_preflight`, `edit_preflight`, `identifier_inspect`, `path_normalize`, `structured_data_compare`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_inspect`, `text_replace_check`, `text_security_inspect`, `validate_json`, `validate_toml` |  |
-| `codegg_preflight` | 4 | 9 | `command_preflight`, `config_preflight`, `edit_preflight`, `text_security_inspect` | `patch_apply_check`, `path_scope_check`, `prompt_input_inspect`, `shell_split`, `unicode_policy_check` |
-| `codegg_patch` | 6 | 7 | `edit_preflight`, `line_range_compare`, `line_range_extract`, `patch_summary`, `text_diff_explain`, `text_replace_check` | `patch_apply_check` |
-| `codegg_config` | 12 | 12 | `config_preflight`, `dotenv_validate`, `ini_validate`, `json_canonicalize`, `json_compare`, `json_extract`, `structured_data_compare`, `toml_shape`, `validate_json`, `validate_schema_light`, `validate_toml`, `version_compare` |  |
-| `codegg_unicode_security` | 6 | 8 | `canonicalize_text`, `identifier_inspect`, `text_inspect`, `text_position`, `text_security_inspect`, `text_transform` | `prompt_input_inspect`, `unicode_policy_check` |
-| `codegg_shell` | 4 | 5 | `argv_compare`, `command_preflight`, `regex_safety_check`, `shell_quote_join` | `shell_split` |
-| `codegg_repo_audit` | 6 | 6 | `cargo_toml_inspect`, `code_fence_extract`, `identifier_table_inspect`, `json_shape`, `markdown_structure`, `text_fingerprint` |  |
-| `human_math` | 4 | 4 | `constant_lookup`, `math_eval`, `unit_convert`, `unit_info` |  |
-
 
 
 | Profile | Intended Consumer | Description |

@@ -402,11 +402,13 @@ fn classify_default(program: &str, subcommand: &str) -> CmdDisposition {
         | "where" | "type" | "echo" | "printf" | "realpath" | "pwd" | "readlink" | "stat"
         | "du" | "df" | "id" | "whoami" | "uname" | "date" => CmdDisposition::Allow,
 
-        // Rust build/test — allowed
+        // Rust build/test — `cargo build` and `cargo bench` are reviewed because
+        // build scripts and benches execute arbitrary code; safe subcommands are
+        // allowed.
         "cargo" | "rustc" | "rustup" => match subcommand {
             "check" | "test" | "clippy" | "doc" | "search" | "version" | "list" | "tree"
-            | "loc" | "build" | "bench" => CmdDisposition::Allow,
-            "fmt" | "fix" | "clean" | "publish" => CmdDisposition::Review,
+            | "loc" => CmdDisposition::Allow,
+            "fmt" | "fix" | "clean" | "publish" | "build" | "bench" => CmdDisposition::Review,
             _ => CmdDisposition::Review,
         },
 
@@ -995,7 +997,7 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         // Only add review finding if no higher-severity finding already present
         matched_rules.push("policy_classify_review".to_string());
         findings.push(finding(
-            "POLICY_REVIEW",
+            machine_codes::SHELL_POLICY_REVIEW,
             severity::MEDIUM,
             &format!("'{}' requires review under {} policy", program, policy),
             Some(disposition::CAUTION),

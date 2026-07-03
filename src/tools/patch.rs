@@ -474,14 +474,14 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                     Some("edit_preflight"),
                 );
             }
-            // Detect conflicting args: old/new/patch in line_range mode
-            if args.get("old").and_then(|v| v.as_str()).is_some()
-                || args.get("new").and_then(|v| v.as_str()).is_some()
-            {
+            // `line_range` mode accepts `new` as the replacement text for
+            // unicode/newline validation. It rejects `old` (the old text is
+            // derived from the line range) and `patch` (use patch mode).
+            if args.get("old").and_then(|v| v.as_str()).is_some() {
                 return ToolResponse::error_with_code(
                     "invalid_arguments",
                     machine_codes::EDIT_ARGUMENTS_CONFLICT,
-                    "line_range mode does not accept 'old' or 'new' arguments",
+                    "line_range mode does not accept 'old' argument (old text is derived from the range)",
                     None,
                     Some("edit_preflight"),
                 );
@@ -511,8 +511,8 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             if let Some(val) = meta.get(*field).and_then(|v| v.as_str()) {
                 if val.len() > MAX_METADATA_FIELD_LENGTH {
                     return ToolResponse::error_with_code(
-                        "invalid_arguments",
-                        machine_codes::EDIT_ARGUMENTS_MISSING,
+                        "metadata_oversize",
+                        machine_codes::EDIT_METADATA_TOO_LARGE,
                         &format!(
                             "edit_metadata.{} exceeds {} char limit",
                             field, MAX_METADATA_FIELD_LENGTH
@@ -790,6 +790,21 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                         .unwrap_or("unknown")
                         .to_string()
                 }),
+            // line_range mode: inspect `new` if provided; the plan makes
+            // `new` an optional replacement-text field validated for
+            // newline consistency and unicode risk.
+            "line_range" => args.get("new").and_then(|v| v.as_str()).map(|new_text| {
+                let fp_args_new =
+                    serde_json::json!({"text": new_text, "unicode": "raw", "newline": "raw"});
+                let fp_resp_new = crate::tools::text::text_fingerprint_tool(&fp_args_new);
+                fp_resp_new
+                    .result
+                    .as_ref()
+                    .and_then(|r| r.get("newline_style"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string()
+            }),
             _ => None,
         };
         // Determine composite style: mixed if original and replacement differ, or if original is mixed
@@ -837,13 +852,16 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
         // Determine text to inspect based on mode:
         // - literal: inspect `new` (the replacement text)
         // - patch: inspect the raw patch content (added lines are within it)
-        // - line_range: inspect original (replacement text not provided separately)
+        // - line_range: inspect `new` if provided (replacement text), else
+        //   fall back to the original. This makes `new` optional in
+        //   line_range mode but still inspects it when supplied.
         let inspect_text = match replacement_mode {
             "literal" => args.get("new").and_then(|v| v.as_str()).unwrap_or(original),
             "patch" => args
                 .get("patch")
                 .and_then(|v| v.as_str())
                 .unwrap_or(original),
+            "line_range" => args.get("new").and_then(|v| v.as_str()).unwrap_or(original),
             _ => original,
         };
         let us_args = serde_json::json!({

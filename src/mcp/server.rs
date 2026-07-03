@@ -326,8 +326,13 @@ async fn handle_request_async(
 
             match result {
                 Ok(Ok(tool_response)) => {
-                    // Check output size and apply budget-aware truncation
-                    let output = python_json_dumps(&tool_response);
+                    // Apply budget-aware truncation FIRST (findings cap,
+                    // result payload shrinking). This lets per-tool budget
+                    // limits have priority over the absolute MCP hard cap.
+                    let mut response = tool_response;
+                    truncate_response(&mut response, &budget_context.budget);
+
+                    let output = python_json_dumps(&response);
                     if output.is_empty() {
                         Some(wrap_tool_response(&ToolResponse::error_with_code(
                             "serialization_error",
@@ -356,9 +361,6 @@ async fn handle_request_async(
                             ]),
                         ))
                     } else {
-                        // Apply budget-aware truncation (findings cap, etc.)
-                        let mut response = tool_response;
-                        truncate_response(&mut response, &budget_context.budget);
                         Some(wrap_tool_response(&response))
                     }
                 }

@@ -406,7 +406,24 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
     }
 
     let ecosystem = if ecosystem_arg == "auto" {
-        detect_ecosystem(file_path, new_text).unwrap_or("rust")
+        match detect_ecosystem(file_path, new_text) {
+            Some(e) => e,
+            None => {
+                // Unknown ecosystem — fail closed with a clear machine code
+                // rather than silently defaulting to Rust and producing
+                // misleading findings.
+                return ToolResponse::error_with_code(
+                    "unknown_ecosystem",
+                    machine_codes::DEPENDENCY_UNKNOWN_ECOSYSTEM,
+                    &format!(
+                        "Could not detect ecosystem for '{}'. Pass an explicit ecosystem (rust, python, or node).",
+                        file_path
+                    ),
+                    None,
+                    Some("dependency_edit_preflight"),
+                );
+            }
+        }
     } else {
         ecosystem_arg
     };
@@ -438,7 +455,7 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                     if !old_deps.contains_key(name) {
                         added.push(name.clone());
                         findings.push(finding(
-                            "DEPENDENCY_ADDED",
+                            machine_codes::DEPENDENCY_ADDED,
                             severity::MEDIUM,
                             &format!("New dependency '{}' added to [{}]", name, section),
                             Some(disposition::CAUTION),
@@ -452,7 +469,7 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                     if !new_deps.contains_key(name) {
                         removed.push(name.clone());
                         findings.push(finding(
-                            "DEPENDENCY_REMOVED",
+                            machine_codes::DEPENDENCY_REMOVED,
                             severity::MEDIUM,
                             &format!("Dependency '{}' removed from [{}]", name, section),
                             Some(disposition::CAUTION),
@@ -611,7 +628,7 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                 if !old_deps.contains(name) {
                     added.push(name.clone());
                     findings.push(finding(
-                        "DEPENDENCY_ADDED",
+                        machine_codes::DEPENDENCY_ADDED,
                         severity::MEDIUM,
                         &format!("New dependency '{}' added", name),
                         Some(disposition::CAUTION),
@@ -623,7 +640,7 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                 if !new_deps.contains(name) {
                     removed.push(name.clone());
                     findings.push(finding(
-                        "DEPENDENCY_REMOVED",
+                        machine_codes::DEPENDENCY_REMOVED,
                         severity::MEDIUM,
                         &format!("Dependency '{}' removed", name),
                         Some(disposition::CAUTION),
@@ -663,7 +680,7 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                 if !old_deps.contains_key(name) {
                     added.push(name.clone());
                     findings.push(finding(
-                        "DEPENDENCY_ADDED",
+                        machine_codes::DEPENDENCY_ADDED,
                         severity::MEDIUM,
                         &format!("New dependency '{}' added", name),
                         Some(disposition::CAUTION),
@@ -675,7 +692,7 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                 if !new_deps.contains_key(name) {
                     removed.push(name.clone());
                     findings.push(finding(
-                        "DEPENDENCY_REMOVED",
+                        machine_codes::DEPENDENCY_REMOVED,
                         severity::MEDIUM,
                         &format!("Dependency '{}' removed", name),
                         Some(disposition::CAUTION),
