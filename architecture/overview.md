@@ -28,6 +28,7 @@ eggsact/
 │   │   ├── runtime.rs      # Rate limiter, constants, profile management
 │   │   ├── schema_validation.rs # Argument validation
 │   │   ├── machine_codes.rs # Machine-readable response codes
+│   │   ├── budget.rs       # Per-tool budgets, tiers, composite sub-budgets, BudgetContext
 │   │   └── schemas/        # JSON-schema builders per tool category
 │   │       ├── mod.rs      # Module declarations + re-exports
 │   │       ├── math.rs
@@ -100,7 +101,7 @@ but does not imply concurrent request reads. The in-process agent API
 ```
 main.rs → lib.rs → calc/normalize.rs → calc/evaluator.rs → calc/units.rs
                     mcp/server.rs → mcp/protocol.rs, mcp/response.rs, mcp/runtime.rs
-                                 → mcp/schema_validation.rs
+                                 → mcp/schema_validation.rs, mcp/budget.rs
                     mcp/registry/ → registry/types.rs, registry/all_tools.rs, registry/listing.rs
                                  → specs/* (category ToolSpec declarations)
                                  → tools/* → text/* modules

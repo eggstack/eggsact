@@ -1,15 +1,18 @@
 use crate::agent::{Profile, ToolAudience, ToolCallError, ToolCallOutcome, ToolRegistry};
+use crate::mcp::budget::{budget_for_tool, BudgetContext};
 use crate::mcp::compat::CompatibilityMode;
 use crate::mcp::machine_codes;
 use crate::mcp::protocol::{
     invalid_request, json_rpc_error, method_not_found, JsonRpcRequest, JsonRpcResponse,
 };
 use crate::mcp::registry;
-use crate::mcp::response::{python_json_dumps, sanitize_error, wrap_tool_response, ToolResponse};
+use crate::mcp::response::{
+    python_json_dumps, sanitize_error, truncate_response, wrap_tool_response, ToolResponse,
+};
 use crate::mcp::runtime::{
     self, get_active_profile, get_schema_detail, CancelledRequests, RateLimiter, MAX_OUTPUT_BYTES,
-    MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_TIMEOUT_SECONDS,
-    MAX_TOOL_WORKERS, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
+    MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS,
+    MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -301,19 +304,29 @@ async fn handle_request_async(
             let args_clone = arguments_val.clone();
             let sem = tool_semaphore.clone();
 
-            let result =
-                tokio::time::timeout(Duration::from_secs(MAX_TOOL_TIMEOUT_SECONDS), async move {
-                    let _permit = sem
-                        .acquire()
-                        .await
-                        .expect("tool semaphore unexpectedly closed");
-                    tokio::task::spawn_blocking(move || handler(&args_clone)).await
-                })
-                .await;
+            // Resolve budget for this tool from its declared cost.
+            // Composite tools get HEAVY budgets; others map from ToolCost.
+            let tool_budget = registry::get_tool(name)
+                .map(|spec| budget_for_tool(name, spec.cost))
+                .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
+            let budget_context = BudgetContext::new(tool_budget);
+
+            // Use budget-derived timeout. The outer tokio::time::timeout
+            // governs how long we wait; the spawned blocking task may
+            // continue after the timeout fires (Rust cannot kill threads).
+            let timeout_ms = tool_budget.max_elapsed_ms;
+            let result = tokio::time::timeout(Duration::from_millis(timeout_ms), async move {
+                let _permit = sem
+                    .acquire()
+                    .await
+                    .expect("tool semaphore unexpectedly closed");
+                tokio::task::spawn_blocking(move || handler(&args_clone)).await
+            })
+            .await;
 
             match result {
                 Ok(Ok(tool_response)) => {
-                    // Check output size
+                    // Check output size and apply budget-aware truncation
                     let output = python_json_dumps(&tool_response);
                     if output.is_empty() {
                         Some(wrap_tool_response(&ToolResponse::error_with_code(
@@ -343,7 +356,10 @@ async fn handle_request_async(
                             ]),
                         ))
                     } else {
-                        Some(wrap_tool_response(&tool_response))
+                        // Apply budget-aware truncation (findings cap, etc.)
+                        let mut response = tool_response;
+                        truncate_response(&mut response, &budget_context.budget);
+                        Some(wrap_tool_response(&response))
                     }
                 }
                 Ok(Err(join_err)) => Some(json_rpc_error(
@@ -359,7 +375,8 @@ async fn handle_request_async(
                     machine_codes::TIMEOUT,
                     &format!(
                         "Tool '{}' execution timed out after {}s",
-                        name_owned, MAX_TOOL_TIMEOUT_SECONDS
+                        name_owned,
+                        timeout_ms / 1000
                     ),
                     Some(vec!["Try a simpler input or shorter text".to_string()]),
                     Some(&name_owned),

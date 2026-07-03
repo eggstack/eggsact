@@ -9,7 +9,7 @@ use tokio::time::Instant;
 
 pub(crate) const MAX_REQUESTS_PER_SECOND: u32 = 10;
 pub(crate) const MAX_CANCELLED_REQUESTS: usize = 10_000;
-pub(crate) const MAX_TOOL_TIMEOUT_SECONDS: u64 = 30;
+
 pub(crate) const MAX_TOOL_WORKERS: usize = 16;
 pub(crate) const MAX_REQUEST_ID_LENGTH: usize = 1024;
 pub(crate) const MAX_REQUEST_BYTES: usize = 1_000_000;

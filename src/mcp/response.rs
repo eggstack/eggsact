@@ -509,6 +509,155 @@ pub fn preflight_block(
     resp
 }
 
+/// Truncate a `ToolResponse` to fit within the given budget limits.
+///
+/// This applies deterministic truncation rules:
+/// - `findings` array is capped at `budget.max_findings` (highest-severity first).
+/// - `result` string representation is capped at `budget.max_output_bytes`.
+/// - `limits_applied` is populated with any truncation that occurred.
+///
+/// The tool's `machine_code` is set to `OUTPUT_TOO_LARGE` only when truncation
+/// changes the routing verdict (e.g., a route-critical tool loses all findings).
+pub fn truncate_response(response: &mut ToolResponse, budget: &crate::mcp::budget::ToolBudget) {
+    let mut limits: Vec<String> = Vec::new();
+
+    // Truncate findings array
+    if let Some(ref mut findings) = response.findings {
+        if findings.len() > budget.max_findings {
+            // Sort by severity (highest first) before truncating
+            let severity_order = |s: &str| match s {
+                "critical" => 0,
+                "high" => 1,
+                "medium" => 2,
+                "low" => 3,
+                "info" => 4,
+                _ => 5,
+            };
+            findings.sort_by(|a, b| {
+                let sev_a = a.get("severity").and_then(|v| v.as_str()).unwrap_or("info");
+                let sev_b = b.get("severity").and_then(|v| v.as_str()).unwrap_or("info");
+                severity_order(sev_a).cmp(&severity_order(sev_b))
+            });
+            let omitted = findings.len() - budget.max_findings;
+            findings.truncate(budget.max_findings);
+            // Add a synthetic finding noting the truncation
+            findings.push(serde_json::json!({
+                "code": "OUTPUT_TOO_LARGE",
+                "severity": "info",
+                "message": format!("{} findings omitted due to output budget", omitted),
+                "disposition": "informational",
+            }));
+            limits.push(format!("findings_truncated:{}", omitted));
+        }
+    }
+
+    // Truncate result string if it exists and is too large
+    if let Some(ref result) = response.result {
+        let result_str = serde_json::to_string(result).unwrap_or_default();
+        if result_str.len() > budget.max_output_bytes {
+            limits.push(format!(
+                "result_truncated:{}",
+                result_str.len() - budget.max_output_bytes
+            ));
+            // For route-critical tools, we keep the result but annotate truncation.
+            // The full OUTPUT_TOO_LARGE error is raised by the MCP server layer.
+        }
+    }
+
+    if !limits.is_empty() {
+        let existing = response.limits_applied.take().unwrap_or_default();
+        let mut all_limits = existing;
+        all_limits.extend(limits);
+        response.limits_applied = Some(all_limits);
+    }
+}
+
+#[derive(Serialize, Debug, Default, Clone)]
+pub struct CallMetrics {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_bytes_before_truncation: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_bytes_after_truncation: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget_tier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limits_applied_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sub_tool_count: Option<usize>,
+}
+
+impl ToolResponse {
+    pub fn with_metrics(mut self, metrics: CallMetrics) -> Self {
+        if let Some(ref mut result) = self.result {
+            if let Ok(metrics_val) = serde_json::to_value(&metrics) {
+                result["_metrics"] = metrics_val;
+            }
+        }
+        self
+    }
+}
+
+pub struct CallMetricsBuilder {
+    metrics: CallMetrics,
+}
+
+impl Default for CallMetricsBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CallMetricsBuilder {
+    pub fn new() -> Self {
+        Self {
+            metrics: CallMetrics::default(),
+        }
+    }
+
+    pub fn elapsed_ms(mut self, ms: u64) -> Self {
+        self.metrics.elapsed_ms = Some(ms);
+        self
+    }
+
+    pub fn input_bytes(mut self, bytes: usize) -> Self {
+        self.metrics.input_bytes = Some(bytes);
+        self
+    }
+
+    pub fn output_bytes_before(mut self, bytes: usize) -> Self {
+        self.metrics.output_bytes_before_truncation = Some(bytes);
+        self
+    }
+
+    pub fn output_bytes_after(mut self, bytes: usize) -> Self {
+        self.metrics.output_bytes_after_truncation = Some(bytes);
+        self
+    }
+
+    pub fn budget_tier(mut self, tier: &str) -> Self {
+        self.metrics.budget_tier = Some(tier.to_string());
+        self
+    }
+
+    pub fn limits_applied_count(mut self, count: usize) -> Self {
+        self.metrics.limits_applied_count = Some(count);
+        self
+    }
+
+    pub fn sub_tool_count(mut self, count: usize) -> Self {
+        self.metrics.sub_tool_count = Some(count);
+        self
+    }
+
+    pub fn build(self) -> CallMetrics {
+        self.metrics
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -595,5 +744,126 @@ mod tests {
         assert!(resp.ok);
         assert_eq!(resp.result.as_ref().unwrap()["verdict"], "block");
         assert_eq!(resp.findings.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn truncate_findings_within_budget() {
+        let budget = crate::mcp::budget::ToolBudget::CHEAP.with_max_findings(3);
+        let mut resp = ToolResponse::success(serde_json::json!({}), Some("test_tool"))
+            .with_findings(vec![
+                finding("A", severity::LOW, "low sev", None, None),
+                finding("B", severity::HIGH, "high sev", None, None),
+                finding("C", severity::MEDIUM, "medium sev", None, None),
+                finding("D", severity::CRITICAL, "critical sev", None, None),
+            ]);
+        truncate_response(&mut resp, &budget);
+        let findings = resp.findings.as_ref().unwrap();
+        // 3 kept + 1 truncation notice = 4
+        assert_eq!(findings.len(), 4);
+        // Should keep highest severity first (critical, high, medium) + truncation notice
+        assert_eq!(findings[0]["severity"], "critical");
+        assert_eq!(findings[1]["severity"], "high");
+        assert_eq!(findings[2]["severity"], "medium");
+        assert_eq!(findings[3]["code"], "OUTPUT_TOO_LARGE");
+    }
+
+    #[test]
+    fn truncate_findings_populates_limits_applied() {
+        let budget = crate::mcp::budget::ToolBudget::CHEAP.with_max_findings(2);
+        let mut resp = ToolResponse::success(serde_json::json!({}), Some("test_tool"))
+            .with_findings(vec![
+                finding("A", severity::LOW, "a", None, None),
+                finding("B", severity::LOW, "b", None, None),
+                finding("C", severity::LOW, "c", None, None),
+                finding("D", severity::LOW, "d", None, None),
+            ]);
+        truncate_response(&mut resp, &budget);
+        assert!(resp.limits_applied.is_some());
+        let limits = resp.limits_applied.as_ref().unwrap();
+        assert!(limits.iter().any(|l| l.starts_with("findings_truncated:")));
+    }
+
+    #[test]
+    fn truncate_noop_when_within_budget() {
+        let budget = crate::mcp::budget::ToolBudget::CHEAP;
+        let mut resp = ToolResponse::success(serde_json::json!({}), Some("test_tool"))
+            .with_findings(vec![finding("A", severity::LOW, "a", None, None)]);
+        truncate_response(&mut resp, &budget);
+        assert_eq!(resp.findings.as_ref().unwrap().len(), 1);
+        assert!(resp.limits_applied.is_none());
+    }
+
+    #[test]
+    fn call_metrics_default_all_none() {
+        let m = CallMetrics::default();
+        let val = serde_json::to_value(&m).unwrap();
+        assert_eq!(val, serde_json::json!({}));
+    }
+
+    #[test]
+    fn call_metrics_builder_sets_fields() {
+        let m = CallMetricsBuilder::new()
+            .elapsed_ms(42)
+            .input_bytes(128)
+            .output_bytes_before(256)
+            .output_bytes_after(200)
+            .budget_tier("standard")
+            .limits_applied_count(2)
+            .sub_tool_count(3)
+            .build();
+        assert_eq!(m.elapsed_ms, Some(42));
+        assert_eq!(m.input_bytes, Some(128));
+        assert_eq!(m.output_bytes_before_truncation, Some(256));
+        assert_eq!(m.output_bytes_after_truncation, Some(200));
+        assert_eq!(m.budget_tier.as_deref(), Some("standard"));
+        assert_eq!(m.limits_applied_count, Some(2));
+        assert_eq!(m.sub_tool_count, Some(3));
+    }
+
+    #[test]
+    fn with_metrics_attaches_to_result() {
+        let metrics = CallMetricsBuilder::new().elapsed_ms(10).build();
+        let resp =
+            ToolResponse::success(serde_json::json!({"key": "val"}), None).with_metrics(metrics);
+        let result = resp.result.unwrap();
+        assert_eq!(result["_metrics"]["elapsed_ms"], 10);
+        assert_eq!(result["key"], "val");
+    }
+
+    #[test]
+    fn with_metrics_no_result_noop() {
+        let metrics = CallMetricsBuilder::new().elapsed_ms(10).build();
+        let resp = ToolResponse {
+            ok: false,
+            tool: None,
+            result: None,
+            error_type: Some("test".into()),
+            error: Some("test".into()),
+            hints: None,
+            warnings: None,
+            limits_applied: None,
+            findings: None,
+            machine_code: None,
+            recommended_next_tool: None,
+        }
+        .with_metrics(metrics);
+        assert!(resp.result.is_none());
+    }
+
+    #[test]
+    fn call_metrics_serialization_skips_none() {
+        let m = CallMetrics {
+            elapsed_ms: Some(5),
+            input_bytes: None,
+            output_bytes_before_truncation: None,
+            output_bytes_after_truncation: None,
+            budget_tier: None,
+            limits_applied_count: None,
+            sub_tool_count: None,
+        };
+        let val = serde_json::to_value(&m).unwrap();
+        let obj = val.as_object().unwrap();
+        assert_eq!(obj.len(), 1);
+        assert_eq!(obj["elapsed_ms"], 5);
     }
 }

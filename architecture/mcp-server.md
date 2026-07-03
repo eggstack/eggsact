@@ -11,9 +11,11 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | `specs/` | `ToolSpec` declarations per tool category (single source of truth) |
 | `protocol.rs` | JSON-RPC types: `JsonRpcRequest`, `JsonRpcResponse`, `InitializeResult`, error constructors |
 | `response.rs` | `ToolResponse` struct, `sanitize_error`, response builders |
-| `runtime.rs` | Rate limiter, cancelled requests, timeout constants, profile management |
+| `runtime.rs` | Rate limiter, constants, profile management |
 | `schema_validation.rs` | MCP argument validation against tool input schemas |
 | `compat.rs` | `CompatibilityMode` enum (EggcalcPython vs StrictNative) |
+| `machine_codes.rs` | Machine-readable response codes, severity/disposition/verdict constants |
+| `budget.rs` | Per-tool budget limits, `BudgetTier` enum, composite sub-budgets, `BudgetContext` |
 | `schemas/` | JSON-schema builders per tool category (math, text, json, regex, etc.) |
 | `mod.rs` | Module declarations |
 
@@ -208,8 +210,39 @@ IPC overhead of the stdio transport.
 Defined in `src/mcp/runtime.rs`:
 - `MAX_REQUESTS_PER_SECOND`: 10
 - `MAX_CANCELLED_REQUESTS`: 10,000
-- `MAX_TOOL_TIMEOUT_SECONDS`: 30
 - `MAX_TOOL_WORKERS`: 16
+
+Tool timeouts are now **budget-derived** rather than using a fixed `MAX_TOOL_TIMEOUT_SECONDS`. Each `ToolSpec` declares a `cost` field (`ToolCost::Cheap`, `Moderate`, `Heavy`), which maps to a `ToolBudget` with per-tool limits including `max_elapsed_ms`. The `budget_for_tool()` function in `src/mcp/budget.rs` resolves the effective budget, and `tools/call` uses `budget.max_elapsed_ms` as the timeout instead of the previous fixed 30s constant.
+
+## Budget-Aware Dispatch
+
+The MCP server applies per-tool resource budgets during `tools/call` dispatch:
+
+### Budget Module (`src/mcp/budget.rs`)
+
+- **`BudgetTier`** enum: `Cheap`, `Moderate`, `Heavy` — maps from `ToolCost` in `ToolSpec`.
+- **`ToolBudget`** struct: per-tool resource limits — `max_elapsed_ms`, `max_output_bytes`, `max_text_chars`, `max_findings`, `max_list_items`, `max_pattern_length`.
+- **`budget_for_tool(tool_name)`**: resolves the effective `ToolBudget` for a tool, applying composite overrides when a tool orchestrates other tools internally.
+- **`BudgetContext`**: runtime context passed into tool handlers — holds a deadline (`Instant`), a `cancelled` flag, and `should_stop()` which checks both deadline expiry and cancellation.
+- **Composite sub-budgets**: `SubBudget` and `CompositeBudgetAllocator` allow composite tools (e.g., `edit_preflight`, `command_preflight`) to split their parent budget across child tool calls via `sub_budget_context()`.
+
+### Response Truncation (`src/mcp/response.rs`)
+
+`truncate_response()` enforces budget limits on completed tool responses. When a tool produces more findings, output bytes, or text characters than its budget allows, the response is truncated and `limits_applied` is populated with descriptions of what was capped.
+
+### Runtime Metrics (`src/mcp/response.rs`)
+
+`CallMetrics` struct captures per-call resource usage. `CallMetricsBuilder` (via `.with_metrics()`) collects elapsed time, output size, and other metrics during execution, feeding back into budget enforcement.
+
+### Integration
+
+1. `tools/call` resolves `ToolBudget` from `ToolSpec.cost` via `budget_for_tool()`
+2. A `BudgetContext` is constructed with a deadline derived from `budget.max_elapsed_ms`
+3. The context is passed to the tool handler; `should_stop()` allows cooperative cancellation
+4. After the handler returns, `truncate_response()` caps findings/output if the budget was exceeded
+5. `limits_applied` in the response envelope reports what was truncated
+
+For the in-process agent API, `call_json_with_budget()` on `ToolRegistry` accepts a custom `ToolBudget` to override the default per-tool limits.
 
 ## Response Contract
 

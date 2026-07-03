@@ -1,3 +1,4 @@
+pub mod budget;
 pub mod compat;
 #[doc(hidden)]
 pub mod machine_codes;

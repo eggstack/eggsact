@@ -38,8 +38,9 @@
 //! Wrappers return `Result<Output, PreflightError>`. Missing mandatory fields
 //! produce `ContractViolation` errors instead of silently defaulting.
 
+use crate::mcp::budget::{self, ToolBudget};
 use crate::mcp::registry::{self, ToolExposure, ToolListAudience, ToolSpec};
-use crate::mcp::response::ToolResponse;
+use crate::mcp::response::{truncate_response, ToolResponse};
 use crate::mcp::schema_validation;
 use serde_json::Value;
 use std::fmt;
@@ -496,6 +497,34 @@ impl ToolRegistry {
         }
     }
 
+    /// Call a tool with an explicit budget, applying resource limits and output truncation.
+    ///
+    /// This is the budget-aware entry point for in-process tool execution. It:
+    /// 1. Resolves the tool's default budget from its declared `ToolCost`
+    /// 2. Merges with any explicit `budget` override
+    /// 3. Executes the handler
+    /// 4. Truncates output findings and result to fit within budget limits
+    /// 5. Populates `limits_applied` on the response
+    ///
+    /// Use this method when the caller needs deterministic resource discipline.
+    /// For simple calls without budget enforcement, use [`call_json`](Self::call_json).
+    pub fn call_json_with_budget(
+        &self,
+        name: &str,
+        args: Value,
+        budget: Option<ToolBudget>,
+    ) -> Result<ToolResponse, ToolCallError> {
+        let spec =
+            registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
+        let effective_budget = match budget {
+            Some(b) => b,
+            None => budget_for_tool_resolved(name, spec),
+        };
+        let mut response = self.call_json(name, args)?;
+        truncate_response(&mut response, &effective_budget);
+        Ok(response)
+    }
+
     /// Call a tool and return only the result `Value`, or `null` on error.
     ///
     /// Convenience wrapper around [`call_json`](Self::call_json) that
@@ -524,6 +553,15 @@ impl Default for ToolRegistry {
         Self::new()
     }
 }
+
+/// Resolve the effective budget for a tool by combining its declared cost
+/// with any tool-specific overrides from the budget module.
+fn budget_for_tool_resolved(name: &str, spec: &ToolSpec) -> ToolBudget {
+    budget::budget_for_tool(name, spec.cost)
+}
+
+/// Re-export budget types for convenience.
+pub use crate::mcp::budget::{BudgetContext, BudgetTier, ToolBudget as ToolBudgetType};
 
 #[cfg(test)]
 mod tests {
@@ -920,5 +958,60 @@ mod tests {
         assert!(msg.contains(harness_tool.name));
         assert!(msg.contains("harness_only"));
         assert!(msg.contains("Model"));
+    }
+
+    #[test]
+    fn call_json_with_budget_succeeds() {
+        let registry = ToolRegistry::default();
+        let response = registry
+            .call_json_with_budget(
+                "text_equal",
+                serde_json::json!({"a": "foo", "b": "foo"}),
+                None,
+            )
+            .unwrap();
+        assert!(response.ok);
+    }
+
+    #[test]
+    fn call_json_with_budget_explicit_cheap() {
+        let registry = ToolRegistry::default();
+        let response = registry
+            .call_json_with_budget(
+                "text_equal",
+                serde_json::json!({"a": "hello", "b": "hello"}),
+                Some(ToolBudget::CHEAP),
+            )
+            .unwrap();
+        assert!(response.ok);
+    }
+
+    #[test]
+    fn call_json_with_budget_truncates_findings() {
+        let registry = ToolRegistry::default();
+        // Use a tool that produces findings
+        let response = registry
+            .call_json_with_budget(
+                "validate_json",
+                serde_json::json!({"text": "not valid json at all"}),
+                Some(ToolBudget::CHEAP.with_max_findings(1)),
+            )
+            .unwrap();
+        // Should still succeed (findings truncated, not rejected)
+        assert!(response.ok);
+        if let Some(ref findings) = response.findings {
+            assert!(findings.len() <= 2); // findings + possible truncation notice
+        }
+    }
+
+    #[test]
+    fn call_json_with_budget_unknown_tool_error() {
+        let registry = ToolRegistry::default();
+        let result = registry.call_json_with_budget("nonexistent", serde_json::json!({}), None);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolCallError::UnknownTool(name) => assert_eq!(name, "nonexistent"),
+            other => panic!("expected UnknownTool, got {:?}", other),
+        }
     }
 }

@@ -31,7 +31,7 @@ pub const OK: &str = "OK";
 
 /// Request was cancelled before execution.
 pub const CANCELLED: &str = "CANCELLED";
-/// Tool timed out (exceeded MAX_TOOL_TIMEOUT_SECONDS).
+/// Tool timed out (exceeded budget-derived timeout).
 pub const TIMEOUT: &str = "TIMEOUT";
 /// Output exceeded MAX_OUTPUT_BYTES and was truncated.
 pub const OUTPUT_TOO_LARGE: &str = "OUTPUT_TOO_LARGE";
