@@ -58,7 +58,7 @@ eggsact/
 ├── tests/                  # Integration tests
 │   ├── lib.rs              # Test module declarations
 │   ├── calc/               # Calculator tests (4 files)
-│   ├── mcp/                # MCP protocol + tool tests (17 files)
+│   ├── mcp/                # MCP protocol + tool tests (20 files)
 │   ├── parity/             # Python/Rust parity tests (12 files)
 │   └── text/               # Text processing tests (24 files)
 ├── scripts/

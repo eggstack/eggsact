@@ -454,7 +454,7 @@ fn detect_config_format(file_path: &str, text: &str) -> &'static str {
     }
 }
 
-/// Extract TOML key-value pairs.
+/// Extract TOML key-value pairs (line-based heuristic, used as fallback).
 fn toml_key_values(text: &str) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
     for line in text.lines() {
@@ -471,6 +471,95 @@ fn toml_key_values(text: &str) -> Vec<(String, String)> {
         }
     }
     pairs
+}
+
+/// Recursively walk a `serde_json::Value` and emit (dotted.path, string_value) pairs.
+fn json_walk(value: &serde_json::Value, prefix: &str, out: &mut Vec<(String, String)>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                let path = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{}.{}", prefix, k)
+                };
+                json_walk(v, &path, out);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for (i, v) in arr.iter().enumerate() {
+                let path = format!("{}[{}]", prefix, i);
+                json_walk(v, &path, out);
+            }
+        }
+        serde_json::Value::String(s) => {
+            out.push((prefix.to_string(), s.clone()));
+        }
+        serde_json::Value::Bool(b) => {
+            out.push((prefix.to_string(), b.to_string()));
+        }
+        serde_json::Value::Number(n) => {
+            out.push((prefix.to_string(), n.to_string()));
+        }
+        serde_json::Value::Null => {
+            out.push((prefix.to_string(), "null".to_string()));
+        }
+    }
+}
+
+/// Parse JSON and extract key-value pairs using recursive object traversal.
+/// Returns None if the text is not valid JSON.
+fn json_kv_pairs(text: &str) -> Option<Vec<(String, String)>> {
+    let value: serde_json::Value = serde_json::from_str(text.trim()).ok()?;
+    let mut pairs = Vec::new();
+    json_walk(&value, "", &mut pairs);
+    Some(pairs)
+}
+
+/// Recursively walk a `toml::Value` and emit (dotted.path, string_value) pairs.
+fn toml_walk(value: &toml::Value, prefix: &str, out: &mut Vec<(String, String)>) {
+    match value {
+        toml::Value::Table(map) => {
+            for (k, v) in map {
+                let path = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{}.{}", prefix, k)
+                };
+                toml_walk(v, &path, out);
+            }
+        }
+        toml::Value::Array(arr) => {
+            for (i, v) in arr.iter().enumerate() {
+                let path = format!("{}[{}]", prefix, i);
+                toml_walk(v, &path, out);
+            }
+        }
+        toml::Value::String(s) => {
+            out.push((prefix.to_string(), s.clone()));
+        }
+        toml::Value::Boolean(b) => {
+            out.push((prefix.to_string(), b.to_string()));
+        }
+        toml::Value::Integer(n) => {
+            out.push((prefix.to_string(), n.to_string()));
+        }
+        toml::Value::Float(n) => {
+            out.push((prefix.to_string(), n.to_string()));
+        }
+        toml::Value::Datetime(dt) => {
+            out.push((prefix.to_string(), dt.to_string()));
+        }
+    }
+}
+
+/// Parse TOML and extract key-value pairs using recursive table traversal.
+/// Returns None if the text is not valid TOML.
+fn toml_parsed_kv_pairs(text: &str) -> Option<Vec<(String, String)>> {
+    let value: toml::Value = text.parse().ok()?;
+    let mut pairs = Vec::new();
+    toml_walk(&value, "", &mut pairs);
+    Some(pairs)
 }
 
 /// Extract dotenv key-value pairs.
@@ -551,6 +640,8 @@ fn is_wildcard_host(key: &str, val: &str) -> bool {
 }
 
 pub fn config_file_inspect(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::BudgetContext::new(crate::mcp::budget::ToolBudget::HEAVY);
+
     let file_path = match args.get("file_path").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
@@ -610,11 +701,17 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
         format_arg
     };
 
-    // Parse key-value pairs based on format
+    // Parse key-value pairs based on format — JSON and TOML use parser-backed
+    // recursive traversal; dotenv/INI retain line scanners; YAML is heuristic-only.
     let kv_pairs: Vec<(String, String)> = match format {
-        "json" | "package_json" | "pyproject" | "cargo_toml" | "toml" | "yaml" => {
+        "json" | "package_json" => json_kv_pairs(text).unwrap_or_else(|| {
+            // Fallback to line scanner if parse fails (parse_ok will catch it)
             toml_key_values(text)
+        }),
+        "pyproject" | "cargo_toml" | "toml" => {
+            toml_parsed_kv_pairs(text).unwrap_or_else(|| toml_key_values(text))
         }
+        "yaml" => toml_key_values(text),
         "dotenv" => dotenv_key_values(text),
         "ini" => ini_key_values(text),
         _ => dotenv_key_values(text),
@@ -651,6 +748,12 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
             Some(disposition::BLOCKING),
             None,
         ));
+    }
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_deadline("config_file_inspect")
+            .unwrap_err();
     }
 
     for (key, val) in &kv_pairs {

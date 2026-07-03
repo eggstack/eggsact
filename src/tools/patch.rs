@@ -320,6 +320,8 @@ fn derive_verdict(
 }
 
 pub fn edit_preflight(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::BudgetContext::new(crate::mcp::budget::ToolBudget::HEAVY);
+
     let original = match args.get("original").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
@@ -443,7 +445,8 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
         "line_range" => {
             let has_start = args.get("start_line").and_then(|v| v.as_u64()).is_some();
             let has_end = args.get("end_line").and_then(|v| v.as_u64()).is_some();
-            if !has_start || !has_end {
+            let has_new = args.get("new").and_then(|v| v.as_str()).is_some();
+            if !has_start || !has_end || !has_new {
                 let mut missing = Vec::new();
                 if !has_start {
                     missing.push("start_line");
@@ -451,11 +454,14 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 if !has_end {
                     missing.push("end_line");
                 }
+                if !has_new {
+                    missing.push("new");
+                }
                 return ToolResponse::error_with_code(
                     "invalid_arguments",
                     machine_codes::EDIT_ARGUMENTS_MISSING,
                     &format!(
-                        "line_range mode requires 'start_line' and 'end_line'; missing: {}",
+                        "line_range mode requires 'start_line', 'end_line', and 'new'; missing: {}",
                         missing.join(", ")
                     ),
                     None,
@@ -474,7 +480,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                     Some("edit_preflight"),
                 );
             }
-            // `line_range` mode accepts `new` as the replacement text for
+            // `line_range` mode requires `new` as the replacement text for
             // unicode/newline validation. It rejects `old` (the old text is
             // derived from the line range) and `patch` (use patch mode).
             if args.get("old").and_then(|v| v.as_str()).is_some() {
@@ -527,6 +533,10 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
 
     let mut subresults = serde_json::Map::new();
     let mut findings: Vec<serde_json::Value> = Vec::new();
+
+    if budget_ctx.should_stop() {
+        return budget_ctx.check_deadline("edit_preflight").unwrap_err();
+    }
 
     match replacement_mode {
         "literal" => {
@@ -635,6 +645,10 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     //   literal mode: fingerprints original text
     //   patch mode:   fingerprints result_fingerprint from patch_apply_check
     //   line_range mode: fingerprints fingerprint from line_range_extract
+    if budget_ctx.should_stop() {
+        return budget_ctx.check_deadline("edit_preflight").unwrap_err();
+    }
+
     let mut fingerprint_result: Option<Value> = None;
     if let Some(fp) = expected_fingerprint {
         let (actual_fp, fp_source, newline_style) = if replacement_mode == "patch" {
@@ -748,6 +762,10 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     }
 
     // --- Newline style detection (when policy is not "skip") ---
+    if budget_ctx.should_stop() {
+        return budget_ctx.check_deadline("edit_preflight").unwrap_err();
+    }
+
     let mut newline_check_result: Option<Value> = None;
     if newline_policy != "skip" {
         // Detect newline style on original text using text_fingerprint
@@ -790,8 +808,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                         .unwrap_or("unknown")
                         .to_string()
                 }),
-            // line_range mode: inspect `new` if provided; the plan makes
-            // `new` an optional replacement-text field validated for
+            // line_range mode: inspect `new` (required replacement text) for
             // newline consistency and unicode risk.
             "line_range" => args.get("new").and_then(|v| v.as_str()).map(|new_text| {
                 let fp_args_new =
@@ -847,14 +864,16 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     }
 
     // --- Unicode security check (when policy is not "skip") ---
+    if budget_ctx.should_stop() {
+        return budget_ctx.check_deadline("edit_preflight").unwrap_err();
+    }
+
     let mut unicode_check_result: Option<Value> = None;
     if unicode_policy != "skip" {
         // Determine text to inspect based on mode:
         // - literal: inspect `new` (the replacement text)
         // - patch: inspect the raw patch content (added lines are within it)
-        // - line_range: inspect `new` if provided (replacement text), else
-        //   fall back to the original. This makes `new` optional in
-        //   line_range mode but still inspects it when supplied.
+        // - line_range: inspect `new` (required replacement text)
         let inspect_text = match replacement_mode {
             "literal" => args.get("new").and_then(|v| v.as_str()).unwrap_or(original),
             "patch" => args

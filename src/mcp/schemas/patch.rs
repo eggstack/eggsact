@@ -29,7 +29,7 @@ pub fn edit_preflight_input() -> Value {
             "original": {"type": "string", "description": "Original source text"},
             "replacement_mode": {"type": "string", "enum": ["literal", "patch", "line_range"], "default": "literal", "description": "Edit mode: literal (old/new), patch (unified diff), or line_range"},
             "old": {"type": "string", "description": "Text to find (literal mode)"},
-            "new": {"type": "string", "description": "Replacement text (literal mode)"},
+            "new": {"type": "string", "description": "Replacement text (required for literal and line_range modes)"},
             "patch": {"type": "string", "description": "Unified diff patch (patch mode)"},
             "start_line": {"type": "integer", "description": "First line (line_range mode)"},
             "end_line": {"type": "integer", "description": "Last line inclusive (line_range mode)"},

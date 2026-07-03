@@ -195,6 +195,8 @@ pub fn ini_validate(args: &Value) -> ToolResponse {
 }
 
 pub fn config_preflight(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::BudgetContext::new(crate::mcp::budget::ToolBudget::HEAVY);
+
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
@@ -270,6 +272,10 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
     let mut findings: Vec<serde_json::Value> = Vec::new();
     let mut code_list: Vec<String> = Vec::new();
     let mut config_verdict = verdict::VALID;
+
+    if budget_ctx.should_stop() {
+        return budget_ctx.check_deadline("config_preflight").unwrap_err();
+    }
 
     match detected_format {
         "json" => {

@@ -327,8 +327,14 @@ fn test_route_critical_finding_codes_are_enumerated() {
         // edit_preflight line_range missing start_line — emits EDIT_ARGUMENTS_MISSING
         (
             "edit_preflight",
-            json!({"original": "abc", "replacement_mode": "line_range", "end_line": 1}),
+            json!({"original": "abc", "replacement_mode": "line_range", "end_line": 1, "new": "x"}),
             "edit_preflight line_range missing start",
+        ),
+        // edit_preflight line_range missing new — emits EDIT_ARGUMENTS_MISSING
+        (
+            "edit_preflight",
+            json!({"original": "abc", "replacement_mode": "line_range", "start_line": 1, "end_line": 1}),
+            "edit_preflight line_range missing new",
         ),
         // edit_preflight metadata oversize — emits EDIT_METADATA_TOO_LARGE
         (

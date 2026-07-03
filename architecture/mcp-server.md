@@ -15,7 +15,7 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | `schema_validation.rs` | MCP argument validation against tool input schemas |
 | `compat.rs` | `CompatibilityMode` enum (EggcalcPython vs StrictNative) |
 | `machine_codes.rs` | Machine-readable response codes, severity/disposition/verdict constants |
-| `budget.rs` | Per-tool budget limits, `BudgetTier` enum, composite sub-budgets, `BudgetContext` |
+| `budget.rs` | Per-tool budget limits, `BudgetTier` enum, composite sub-budgets, `BudgetContext` with cooperative helpers (`check_not_cancelled`, `check_deadline`, `check_text_len`, `check_list_len`, `remaining_time_ms`) |
 | `schemas/` | JSON-schema builders per tool category (math, text, json, regex, etc.) |
 | `mod.rs` | Module declarations |
 
@@ -224,7 +224,7 @@ The MCP server applies per-tool resource budgets during `tools/call` dispatch:
 - **`ToolBudget`** struct: per-tool resource limits — `max_input_bytes`, `max_output_bytes`, `max_elapsed_ms`, `max_text_chars`, `max_findings`, `max_list_items`, `max_pattern_length`, `max_regex_pattern_chars`, `max_regex_samples`, `max_spawned_workers`.
 - **`budget_for_tool(tool_name)`**: resolves the effective `ToolBudget` for a tool, applying composite overrides when a tool orchestrates other tools internally.
 - **Builders**: `ToolBudget::with_max_findings(n)`, `with_max_output_bytes(n)`, `with_max_input_bytes(n)` — used by callers (especially tests) to override a single budget field without rebuilding the whole struct.
-- **`BudgetContext`**: runtime context passed into tool handlers — holds a deadline (`Instant`), a `cancelled` flag, and `should_stop()` which checks both deadline expiry and cancellation.
+- **`BudgetContext`**: runtime context passed into tool handlers — holds a deadline (`Instant`), a `cancelled` flag, and `should_stop()` which checks both deadline expiry and cancellation. Helper methods: `check_not_cancelled(tool_name)`, `check_deadline(tool_name)`, `check_text_len(field, text, tool_name)`, `check_list_len(field, len, tool_name)`, `remaining_time_ms()`.
 - **Composite sub-budgets**: `SubBudget` and `CompositeBudgetAllocator` allow composite tools (e.g., `edit_preflight`, `command_preflight`) to split their parent budget across child tool calls via `sub_budget_context()`.
 
 ### Response Truncation (`src/mcp/response.rs`)
@@ -247,9 +247,13 @@ The MCP server applies per-tool resource budgets during `tools/call` dispatch:
 
 1. `tools/call` resolves `ToolBudget` from `ToolSpec.cost` via `budget_for_tool()`
 2. A `BudgetContext` is constructed with a deadline derived from `budget.max_elapsed_ms`
-3. The context is passed to the tool handler; `should_stop()` allows cooperative cancellation
-4. After the handler returns, `truncate_response()` caps findings/output if the budget was exceeded
-5. `limits_applied` in the response envelope reports what was truncated
+3. An `Arc<AtomicBool>` cancel flag is created and attached via `with_cancellation()`
+4. The context is passed to the tool handler; `should_stop()` allows cooperative cancellation at key pipeline stages
+5. On timeout, the cancel flag is set before returning a TIMEOUT error (cooperative — blocking work may continue)
+6. After the handler returns, `truncate_response()` caps findings/output if the budget was exceeded
+7. `limits_applied` in the response envelope reports what was truncated
+
+High-risk handlers (`edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`) create a `BudgetContext` internally and call `should_stop()` at key pipeline stages (after format detection, before sub-tool dispatches, in iteration loops). Since `ToolHandler` signatures are `fn(&Value) -> ToolResponse`, the MCP server attaches the cancel flag to a shared context that handlers access via internal initialization.
 
 For the in-process agent API, `call_json_with_budget()` on `ToolRegistry` accepts a custom `ToolBudget` to override the default per-tool limits. Input is pre-checked against `max_input_bytes` and rejected with `INPUT_TOO_LARGE` before handler dispatch.
 

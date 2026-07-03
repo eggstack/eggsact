@@ -2613,7 +2613,7 @@ fn test_edit_preflight_line_range() {
     let result = call_tool(
         "edit_preflight",
         serde_json::json!({
-            "original": "line1\nline2\nline3\nline4", "replacement_mode": "line_range", "start_line": 2, "end_line": 3
+            "original": "line1\nline2\nline3\nline4", "replacement_mode": "line_range", "start_line": 2, "end_line": 3, "new": "replaced"
         }),
     );
     assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
@@ -3201,4 +3201,643 @@ fn test_validate_json_array() {
     let inner = result.get("result").unwrap();
     assert_eq!(inner.get("valid"), Some(&Value::Bool(true)));
     assert_eq!(inner.get("type"), Some(&Value::String("array".to_string())));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// config_file_inspect — parser-backed traversal tests
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_config_file_inspect_json_nested_secret() {
+    let json = r#"{"server": {"database": {"password": "s3cret123"}}}"#;
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "config.json", "text": json}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("parse_ok"), Some(&Value::Bool(true)));
+    // Should detect the nested secret key via parsed traversal
+    let secrets = inner.get("secret_risks").unwrap().as_array().unwrap();
+    assert!(!secrets.is_empty());
+    assert!(secrets[0]
+        .get("key")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .contains("password"));
+}
+
+#[test]
+fn test_config_file_inspect_package_json_scripts() {
+    let pkg = r#"{"name": "myapp", "scripts": {"postinstall": "node setup.js", "build": "tsc"}}"#;
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "package.json", "text": pkg}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("parse_ok"), Some(&Value::Bool(true)));
+    // postinstall should be detected as a command hook
+    let hooks = inner.get("command_hooks").unwrap().as_array().unwrap();
+    assert!(!hooks.is_empty());
+    let has_postinstall = hooks.iter().any(|h| {
+        h.get("key")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("postinstall")
+    });
+    assert!(has_postinstall);
+}
+
+#[test]
+fn test_config_file_inspect_malformed_json() {
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "config.json", "text": "{not valid json}"}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("parse_ok"), Some(&Value::Bool(false)));
+    let verdict = inner.get("verdict").and_then(|v| v.as_str()).unwrap();
+    assert!(verdict == "invalid" || verdict == "block");
+}
+
+#[test]
+fn test_config_file_inspect_toml_nested_debug() {
+    let toml = "[app]\nverbose = true\n\n[app.logging]\nlog_level = \"debug\"\n";
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "app.toml", "text": toml}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("parse_ok"), Some(&Value::Bool(true)));
+    let debug = inner.get("debug_flags").unwrap().as_array().unwrap();
+    assert!(!debug.is_empty());
+}
+
+#[test]
+fn test_config_file_inspect_cargo_toml() {
+    let cargo =
+        "[package]\nname = \"mycrate\"\nbuild = \"build.rs\"\n\n[dependencies]\nserde = \"1.0\"\n";
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "Cargo.toml", "text": cargo}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("parse_ok"), Some(&Value::Bool(true)));
+    // build key should be detected as a command hook
+    let hooks = inner.get("command_hooks").unwrap().as_array().unwrap();
+    let has_build = hooks.iter().any(|h| {
+        h.get("key")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("build")
+    });
+    assert!(has_build);
+}
+
+#[test]
+fn test_config_file_inspect_pyproject() {
+    let pyproject =
+        "[project]\nname = \"myproj\"\nversion = \"1.0\"\n\n[tool.ruff]\nline-length = 88\n";
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "pyproject.toml", "text": pyproject}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("parse_ok"), Some(&Value::Bool(true)));
+    // Should have parsed nested keys (e.g., tool.ruff.line-length)
+    let shape = inner.get("shape_summary").unwrap();
+    let key_count = shape.get("key_count").and_then(|v| v.as_u64()).unwrap();
+    assert!(
+        key_count >= 3,
+        "expected at least 3 parsed keys, got {}",
+        key_count
+    );
+}
+
+#[test]
+fn test_config_file_inspect_yaml_heuristic() {
+    let yaml = "key: value\nlist:\n  - item1\n  - item2\n";
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "config.yaml", "text": yaml}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("parse_ok"), Some(&Value::Bool(true)));
+    assert_eq!(
+        inner.get("format"),
+        Some(&Value::String("yaml".to_string()))
+    );
+}
+
+#[test]
+fn test_config_file_inspect_json_tls_disabled() {
+    let json = r#"{"http_client": {"verify_ssl": false}}"#;
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "config.json", "text": json}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    let findings = inner.get("risky_keys").unwrap().as_array().unwrap();
+    let has_tls = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("TLS")
+    });
+    assert!(has_tls);
+}
+
+#[test]
+fn test_config_file_inspect_json_array_of_secrets() {
+    let json = r#"{"tokens": ["secret_abc123", "token_xyz789"]}"#;
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "config.json", "text": json}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    // Array elements with secret-like parent key should be detected
+    let secrets = inner.get("secret_risks").unwrap().as_array().unwrap();
+    assert!(!secrets.is_empty());
+}
+
+#[test]
+fn test_config_file_inspect_verdict_block_on_parse_fail() {
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "config.json", "text": "???"}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    let verdict = inner.get("verdict").and_then(|v| v.as_str()).unwrap();
+    assert!(verdict == "invalid" || verdict == "block");
+}
+
+#[test]
+fn test_config_file_inspect_masked_secret_values() {
+    let json = r#"{"api_key": "supersecretvalue123"}"#;
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "config.json", "text": json}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let secrets = result
+        .get("result")
+        .unwrap()
+        .get("secret_risks")
+        .unwrap()
+        .as_array()
+        .unwrap();
+    assert!(!secrets.is_empty());
+    // Value should be masked, not full
+    let preview = secrets[0]
+        .get("value_preview")
+        .and_then(|v| v.as_str())
+        .unwrap();
+    assert!(preview.contains("***"));
+    assert!(!preview.contains("supersecretvalue123"));
+}
+
+// ---------------------------------------------------------------------------
+// dependency_edit_preflight: parser-backed traversal tests
+// ---------------------------------------------------------------------------
+
+fn dep_call(args: serde_json::Value) -> Value {
+    call_tool("dependency_edit_preflight", args)
+}
+
+#[test]
+fn test_dep_cargo_inline_table_dependency() {
+    let old = r#"[dependencies]
+serde = "1.0"
+"#;
+    let new = r#"[dependencies]
+serde = "1.0"
+tokio = { version = "1", features = ["full"] }
+"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "Cargo.toml",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let changes = result
+        .get("result")
+        .unwrap()
+        .get("dependency_changes")
+        .unwrap();
+    let added = changes.get("added").unwrap().as_array().unwrap();
+    assert!(added.contains(&Value::String("tokio".to_string())));
+}
+
+#[test]
+fn test_dep_cargo_git_dependency() {
+    let old = r#"[dependencies]
+serde = "1.0"
+"#;
+    let new = r#"[dependencies]
+serde = "1.0"
+mylib = { git = "https://github.com/user/repo" }
+"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "Cargo.toml",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_git = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "DEPENDENCY_GIT_SOURCE")
+            .unwrap_or(false)
+    });
+    assert!(
+        has_git,
+        "Expected DEPENDENCY_GIT_SOURCE finding for git dependency"
+    );
+}
+
+#[test]
+fn test_dep_cargo_path_dependency() {
+    let old = r#"[dependencies]
+serde = "1.0"
+"#;
+    let new = r#"[dependencies]
+serde = "1.0"
+mylib = { path = "../mylib" }
+"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "Cargo.toml",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_path = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "DEPENDENCY_PATH_SOURCE")
+            .unwrap_or(false)
+    });
+    assert!(
+        has_path,
+        "Expected DEPENDENCY_PATH_SOURCE finding for path dependency"
+    );
+}
+
+#[test]
+fn test_dep_cargo_workspace_dependency() {
+    let old = r#"[dependencies]
+serde = "1.0"
+"#;
+    let new = r#"[dependencies]
+serde = "1.0"
+tokio = { workspace = true }
+"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "Cargo.toml",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let changes = result
+        .get("result")
+        .unwrap()
+        .get("dependency_changes")
+        .unwrap();
+    let added = changes.get("added").unwrap().as_array().unwrap();
+    assert!(added.contains(&Value::String("tokio".to_string())));
+}
+
+#[test]
+fn test_dep_cargo_build_script_addition() {
+    let old = r#"[package]
+name = "myapp"
+version = "0.1.0"
+"#;
+    let new = r#"[package]
+name = "myapp"
+version = "0.1.0"
+build = "build.rs"
+"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "Cargo.toml",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_build = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "DEPENDENCY_BUILD_SCRIPT")
+            .unwrap_or(false)
+    });
+    assert!(has_build, "Expected DEPENDENCY_BUILD_SCRIPT finding");
+}
+
+#[test]
+fn test_dep_cargo_patch_section() {
+    let old = r#"[package]
+name = "myapp"
+version = "0.1.0"
+"#;
+    let new = r#"[package]
+name = "myapp"
+version = "0.1.0"
+
+[patch.crates-io]
+serde = { path = "../serde" }
+"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "Cargo.toml",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_patch = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "DEPENDENCY_PATCH_OVERRIDE")
+            .unwrap_or(false)
+    });
+    assert!(has_patch, "Expected DEPENDENCY_PATCH_OVERRIDE finding");
+}
+
+#[test]
+fn test_dep_pyproject_build_backend_change() {
+    let old = r#"[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+"#;
+    let new = r#"[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "pyproject.toml",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_build = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "DEPENDENCY_BUILD_SCRIPT")
+            .unwrap_or(false)
+    });
+    assert!(
+        has_build,
+        "Expected DEPENDENCY_BUILD_SCRIPT finding for build backend change"
+    );
+}
+
+#[test]
+fn test_dep_pyproject_optional_deps() {
+    let old = r#"[project]
+name = "myapp"
+dependencies = ["requests>=2.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=6.0"]
+"#;
+    let new = r#"[project]
+name = "myapp"
+dependencies = ["requests>=2.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=6.0"]
+test = ["coverage>=5.0"]
+"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "pyproject.toml",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let changes = result
+        .get("result")
+        .unwrap()
+        .get("dependency_changes")
+        .unwrap();
+    let added = changes.get("added").unwrap().as_array().unwrap();
+    assert!(added.contains(&Value::String("coverage".to_string())));
+}
+
+#[test]
+fn test_dep_package_json_postinstall() {
+    let old = r#"{
+  "name": "myapp",
+  "dependencies": {"lodash": "^4.0"},
+  "scripts": {}
+}"#;
+    let new = r#"{
+  "name": "myapp",
+  "dependencies": {"lodash": "^4.0"},
+  "scripts": {"postinstall": "node setup.js"}
+}"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "package.json",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_risky = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "DEPENDENCY_BUILD_SCRIPT")
+            .unwrap_or(false)
+            && f.get("severity")
+                .and_then(|s| s.as_str())
+                .map(|s| s == "high")
+                .unwrap_or(false)
+    });
+    assert!(
+        has_risky,
+        "Expected high-severity DEPENDENCY_BUILD_SCRIPT finding for postinstall"
+    );
+}
+
+#[test]
+fn test_dep_package_json_git_dependency() {
+    let old = r#"{"dependencies": {"lodash": "^4.0"}}"#;
+    let new = r#"{"dependencies": {"lodash": "^4.0", "mylib": "github:user/repo"}}"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "package.json",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_git = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "DEPENDENCY_GIT_SOURCE")
+            .unwrap_or(false)
+    });
+    assert!(
+        has_git,
+        "Expected DEPENDENCY_GIT_SOURCE finding for git specifier"
+    );
+}
+
+#[test]
+fn test_dep_package_json_optional_dependencies() {
+    let old = r#"{"dependencies": {"lodash": "^4.0"}}"#;
+    let new = r#"{"dependencies": {"lodash": "^4.0"}, "optionalDependencies": {"sharp": "^0.30"}}"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "package.json",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let changes = result
+        .get("result")
+        .unwrap()
+        .get("dependency_changes")
+        .unwrap();
+    let added = changes.get("added").unwrap().as_array().unwrap();
+    assert!(added.contains(&Value::String("sharp".to_string())));
+}
+
+#[test]
+fn test_dep_package_json_package_manager() {
+    let old = r#"{"name": "myapp"}"#;
+    let new = r#"{"name": "myapp", "packageManager": "pnpm@8.0.0"}"#;
+    let result = dep_call(serde_json::json!({
+        "file_path": "package.json",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_pm = findings.iter().any(|f| {
+        f.get("message")
+            .and_then(|m| m.as_str())
+            .map(|m| m.contains("packageManager"))
+            .unwrap_or(false)
+    });
+    assert!(has_pm, "Expected packageManager change finding");
+}
+
+#[test]
+fn test_dep_requirements_editable_install() {
+    let old = "requests>=2.0\n";
+    let new = "requests>=2.0\n-e ./mypackage\n";
+    let result = dep_call(serde_json::json!({
+        "file_path": "requirements.txt",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_editable = findings.iter().any(|f| {
+        f.get("message")
+            .and_then(|m| m.as_str())
+            .map(|m| m.contains("Editable install"))
+            .unwrap_or(false)
+    });
+    assert!(has_editable, "Expected editable install finding");
+}
+
+#[test]
+fn test_dep_requirements_local_path() {
+    let old = "requests>=2.0\n";
+    let new = "requests>=2.0\n./local-package\n";
+    let result = dep_call(serde_json::json!({
+        "file_path": "requirements.txt",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_path = findings.iter().any(|f| {
+        f.get("message")
+            .and_then(|m| m.as_str())
+            .map(|m| m.contains("Local path"))
+            .unwrap_or(false)
+    });
+    assert!(has_path, "Expected local path dependency finding");
+}
+
+#[test]
+fn test_dep_requirements_url_dependency() {
+    let old = "requests>=2.0\n";
+    let new =
+        "requests>=2.0\nflask @ https://github.com/pallets/flask/archive/refs/heads/main.zip\n";
+    let result = dep_call(serde_json::json!({
+        "file_path": "requirements.txt",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_url = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "DEPENDENCY_GIT_SOURCE")
+            .unwrap_or(false)
+    });
+    assert!(
+        has_url,
+        "Expected DEPENDENCY_GIT_SOURCE finding for URL dependency"
+    );
+}
+
+#[test]
+fn test_dep_requirements_constraints_flag() {
+    let old = "requests>=2.0\n";
+    let new = "requests>=2.0\n-c constraints.txt\n";
+    let result = dep_call(serde_json::json!({
+        "file_path": "requirements.txt",
+        "old_text": old,
+        "new_text": new,
+    }));
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_ref = findings.iter().any(|f| {
+        f.get("message")
+            .and_then(|m| m.as_str())
+            .map(|m| m.contains("Reference file flag"))
+            .unwrap_or(false)
+    });
+    assert!(has_ref, "Expected reference file flag finding");
+}
+
+#[test]
+fn test_dep_malformed_toml_falls_back_to_heuristic() {
+    let old = "[dependencies]\nserde = \"1.0\"\n";
+    let new = "[dependencies]\nserde = \"1.0\"\ntokio = { version = \"1\"\n"; // malformed TOML
+    let result = dep_call(serde_json::json!({
+        "file_path": "Cargo.toml",
+        "old_text": old,
+        "new_text": new,
+    }));
+    // Should still work via heuristic fallback
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+}
+
+#[test]
+fn test_dep_malformed_json_falls_back_to_heuristic() {
+    let old = r#"{"dependencies": {"lodash": "^4.0"}}"#;
+    let new = r#"{"dependencies": {"lodash": "^4.0", "tokio": "1""#; // malformed JSON
+    let result = dep_call(serde_json::json!({
+        "file_path": "package.json",
+        "old_text": old,
+        "new_text": new,
+    }));
+    // Should still work via heuristic fallback
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
 }

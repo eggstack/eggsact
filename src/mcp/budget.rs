@@ -1,4 +1,5 @@
 use crate::mcp::registry::ToolCost;
+use crate::mcp::response::ToolResponse;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -218,6 +219,106 @@ impl BudgetContext {
     /// Returns `true` when the context should stop (expired or cancelled).
     pub fn should_stop(&self) -> bool {
         self.is_expired() || self.is_cancelled()
+    }
+
+    /// Returns `Err(TOOL_RESPONSE)` if the context has been cancelled.
+    ///
+    /// Use this at the top of long-running handlers or loops to bail out
+    /// early when the caller has signalled cancellation.
+    #[allow(clippy::result_large_err)]
+    pub fn check_not_cancelled(&self, tool_name: &str) -> Result<(), ToolResponse> {
+        if self.is_cancelled() {
+            Err(ToolResponse::error_with_code(
+                "cancelled",
+                crate::mcp::machine_codes::CANCELLED,
+                &format!("Tool '{}' was cancelled", tool_name),
+                None,
+                Some(tool_name),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Returns `Err(TOOL_RESPONSE)` if the deadline has been exceeded.
+    ///
+    /// Use this inside loops that may run long to produce a clean timeout
+    /// error instead of relying on the outer `tokio::time::timeout`.
+    #[allow(clippy::result_large_err)]
+    pub fn check_deadline(&self, tool_name: &str) -> Result<(), ToolResponse> {
+        if self.is_expired() {
+            Err(ToolResponse::error_with_code(
+                "timeout",
+                crate::mcp::machine_codes::TIMEOUT,
+                &format!("Tool '{}' exceeded its time budget", tool_name),
+                Some(vec!["Try a simpler input or shorter text".to_string()]),
+                Some(tool_name),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Returns `Err(TOOL_RESPONSE)` if the text exceeds `max_text_chars`.
+    #[allow(clippy::result_large_err)]
+    pub fn check_text_len(
+        &self,
+        field_name: &str,
+        text: &str,
+        tool_name: &str,
+    ) -> Result<(), ToolResponse> {
+        if text.len() > self.budget.max_text_chars {
+            Err(ToolResponse::error_with_code(
+                "input_too_large",
+                crate::mcp::machine_codes::INPUT_TOO_LARGE,
+                &format!(
+                    "Field '{}' length {} exceeds limit {}",
+                    field_name,
+                    text.len(),
+                    self.budget.max_text_chars
+                ),
+                None,
+                Some(tool_name),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Returns `Err(TOOL_RESPONSE)` if the list length exceeds `max_list_items`.
+    #[allow(clippy::result_large_err)]
+    pub fn check_list_len(
+        &self,
+        field_name: &str,
+        len: usize,
+        tool_name: &str,
+    ) -> Result<(), ToolResponse> {
+        if len > self.budget.max_list_items {
+            Err(ToolResponse::error_with_code(
+                "input_too_large",
+                crate::mcp::machine_codes::INPUT_TOO_LARGE,
+                &format!(
+                    "Field '{}' length {} exceeds limit {}",
+                    field_name, len, self.budget.max_list_items
+                ),
+                None,
+                Some(tool_name),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Returns the remaining time before deadline, or `None` if no deadline.
+    pub fn remaining_time_ms(&self) -> Option<u64> {
+        self.deadline.map(|d| {
+            let now = Instant::now();
+            if now >= d {
+                0
+            } else {
+                d.duration_since(now).as_millis() as u64
+            }
+        })
     }
 }
 
@@ -478,5 +579,96 @@ mod tests {
         let ctx = sub_budget_context(&parent, &sub);
         assert!(ctx.is_cancelled());
         assert!(ctx.should_stop());
+    }
+
+    #[test]
+    fn check_not_cancelled_ok_when_not_cancelled() {
+        let ctx = BudgetContext::new(ToolBudget::CHEAP);
+        assert!(ctx.check_not_cancelled("test").is_ok());
+    }
+
+    #[test]
+    fn check_not_cancelled_err_when_cancelled() {
+        let flag = Arc::new(AtomicBool::new(true));
+        let ctx = BudgetContext::new(ToolBudget::CHEAP).with_cancellation(flag);
+        let err = ctx.check_not_cancelled("my_tool").unwrap_err();
+        assert!(err.error.as_deref().unwrap_or("").contains("cancelled"));
+    }
+
+    #[test]
+    fn check_deadline_ok_when_not_expired() {
+        let ctx = BudgetContext::new(ToolBudget::CHEAP);
+        assert!(ctx.check_deadline("test").is_ok());
+    }
+
+    #[test]
+    fn check_deadline_err_when_expired() {
+        let ctx = BudgetContext {
+            deadline: Some(Instant::now() - Duration::from_millis(100)),
+            budget: ToolBudget::CHEAP,
+            cancelled: None,
+        };
+        let err = ctx.check_deadline("my_tool").unwrap_err();
+        assert!(err.error.as_deref().unwrap_or("").contains("time budget"));
+    }
+
+    #[test]
+    fn check_text_len_ok_when_within_limit() {
+        let ctx = BudgetContext::new(ToolBudget::CHEAP);
+        assert!(ctx.check_text_len("text", "hello", "test").is_ok());
+    }
+
+    #[test]
+    fn check_text_len_err_when_exceeds_limit() {
+        let ctx = BudgetContext::new(ToolBudget::CHEAP);
+        let long_text = "x".repeat(ToolBudget::CHEAP.max_text_chars + 1);
+        let err = ctx
+            .check_text_len("text", &long_text, "my_tool")
+            .unwrap_err();
+        assert!(err.error.as_deref().unwrap_or("").contains("exceeds limit"));
+    }
+
+    #[test]
+    fn check_list_len_ok_when_within_limit() {
+        let ctx = BudgetContext::new(ToolBudget::CHEAP);
+        assert!(ctx.check_list_len("items", 5, "test").is_ok());
+    }
+
+    #[test]
+    fn check_list_len_err_when_exceeds_limit() {
+        let ctx = BudgetContext::new(ToolBudget::CHEAP);
+        let err = ctx
+            .check_list_len("items", ToolBudget::CHEAP.max_list_items + 1, "my_tool")
+            .unwrap_err();
+        assert!(err.error.as_deref().unwrap_or("").contains("exceeds limit"));
+    }
+
+    #[test]
+    fn remaining_time_ms_some_when_deadline_set() {
+        let ctx = BudgetContext::new(ToolBudget::CHEAP);
+        let remaining = ctx.remaining_time_ms();
+        assert!(remaining.is_some());
+        assert!(remaining.unwrap() > 0);
+        assert!(remaining.unwrap() <= ToolBudget::CHEAP.max_elapsed_ms);
+    }
+
+    #[test]
+    fn remaining_time_ms_none_when_no_deadline() {
+        let ctx = BudgetContext {
+            deadline: None,
+            budget: ToolBudget::CHEAP,
+            cancelled: None,
+        };
+        assert_eq!(ctx.remaining_time_ms(), None);
+    }
+
+    #[test]
+    fn remaining_time_ms_zero_when_expired() {
+        let ctx = BudgetContext {
+            deadline: Some(Instant::now() - Duration::from_millis(100)),
+            budget: ToolBudget::CHEAP,
+            cancelled: None,
+        };
+        assert_eq!(ctx.remaining_time_ms(), Some(0));
     }
 }

@@ -933,6 +933,36 @@ fn test_windows_platform_unsupported() {
 }
 
 #[test]
+fn test_windows_platform_unsupported_machine_code() {
+    let id = next_id();
+    let req = format!(
+        r#"{{"jsonrpc":"2.0","method":"tools/call","params":{{"name":"command_preflight","arguments":{{"command":"dir","platform":"windows"}}}},"id":{}}}"#,
+        id,
+    );
+    let r = call_tool_and_get_result(&req);
+    assert_eq!(r.get("ok"), Some(&Value::Bool(false)));
+    let mc = r.get("machine_code").and_then(|v| v.as_str()).unwrap_or("");
+    assert_eq!(
+        mc, "UNSUPPORTED_FEATURE",
+        "windows platform must return UNSUPPORTED_FEATURE machine code, got: {}",
+        mc
+    );
+}
+
+#[test]
+fn test_auto_platform_uses_posix() {
+    let id = next_id();
+    let req = format!(
+        r#"{{"jsonrpc":"2.0","method":"tools/call","params":{{"name":"command_preflight","arguments":{{"command":"ls -la","platform":"auto"}}}},"id":{}}}"#,
+        id,
+    );
+    let r = call_tool_and_get_result(&req);
+    assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
+    // auto resolves to POSIX behavior (succeeds with POSIX parsing)
+    assert_eq!(r["result"]["program"], "ls");
+}
+
+#[test]
 fn test_invalid_policy() {
     let id = next_id();
     let req = format!(

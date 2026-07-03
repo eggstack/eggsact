@@ -5,6 +5,299 @@ use regex::Regex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+// ---------------------------------------------------------------------------
+// Parser-backed TOML helpers
+// ---------------------------------------------------------------------------
+
+/// Extract dependency info from a TOML table of dependencies.
+/// Returns Vec<(name, version, source_type)>.
+fn toml_dep_table(deps: &toml::Value, _section: &str) -> Vec<(String, String, String)> {
+    let mut result = Vec::new();
+    let map = match deps.as_table() {
+        Some(m) => m,
+        None => return result,
+    };
+    for (name, val) in map {
+        match val {
+            // Simple string version: `name = "1.0"`
+            toml::Value::String(s) => {
+                result.push((name.clone(), s.clone(), "registry".to_string()));
+            }
+            // Inline table: `name = { version = "1", git = "...", ... }`
+            toml::Value::Table(t) => {
+                let version = t
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let source = if t.contains_key("git") {
+                    "git".to_string()
+                } else if t.contains_key("path") {
+                    "path".to_string()
+                } else if t.contains_key("registry") {
+                    "registry".to_string()
+                } else if t.get("workspace").and_then(|v| v.as_bool()) == Some(true) {
+                    "workspace".to_string()
+                } else {
+                    "registry".to_string()
+                };
+                result.push((name.clone(), version, source));
+            }
+            _ => {}
+        }
+    }
+    result
+}
+
+/// Parse Cargo.toml dependencies using the `toml` parser.
+/// Returns `None` if the document is malformed (caller should fall back to heuristic).
+fn parse_cargo_deps_toml(text: &str, section: &str) -> Option<Vec<(String, String, String)>> {
+    let doc: toml::Value = toml::from_str(text).ok()?;
+
+    let mut result = Vec::new();
+
+    // Standard sections: [dependencies], [dev-dependencies], [build-dependencies]
+    if let Some(deps) = doc.get(section) {
+        result.extend(toml_dep_table(deps, section));
+    }
+
+    // Also check [section.name] sub-tables for inline table dependencies
+    // that were declared as `name = { ... }` at the top level
+    if let Some(table) = doc.as_table() {
+        let prefix = format!("{}.", section);
+        for (key, val) in table {
+            if key.starts_with(&prefix) {
+                // This is a sub-table like [dependencies.name]
+                let dep_name = &key[prefix.len()..];
+                // Check if this dep was already captured from the top-level table
+                if !result.iter().any(|(n, _, _)| n == dep_name) {
+                    // Extract version/source from sub-table
+                    if let Some(sub) = val.as_table() {
+                        let version = sub
+                            .get("version")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let source = if sub.contains_key("git") {
+                            "git".to_string()
+                        } else if sub.contains_key("path") {
+                            "path".to_string()
+                        } else if sub.contains_key("registry") {
+                            "registry".to_string()
+                        } else if sub.get("workspace").and_then(|v| v.as_bool()) == Some(true) {
+                            "workspace".to_string()
+                        } else {
+                            "registry".to_string()
+                        };
+                        result.push((dep_name.to_string(), version, source));
+                    }
+                }
+            }
+        }
+    }
+
+    // Target-specific dependencies: [target.'cfg(...)'.dependencies]
+    if let Some(targets) = doc.get("target").and_then(|t| t.as_table()) {
+        for (_cfg, target_cfg) in targets {
+            if let Some(deps) = target_cfg.get(section) {
+                result.extend(toml_dep_table(deps, section));
+            }
+        }
+    }
+
+    // Workspace dependencies: [workspace.dependencies]
+    if section == "dependencies" {
+        if let Some(ws_deps) = doc.get("workspace").and_then(|w| w.get("dependencies")) {
+            for (name, val) in ws_deps.as_table()? {
+                // Only add if not already present from [dependencies]
+                if !result.iter().any(|(n, _, _)| n == name) {
+                    match val {
+                        toml::Value::String(s) => {
+                            result.push((name.clone(), s.clone(), "registry".to_string()));
+                        }
+                        toml::Value::Table(t) => {
+                            let version = t
+                                .get("version")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let source = if t.contains_key("git") {
+                                "git".to_string()
+                            } else if t.contains_key("path") {
+                                "path".to_string()
+                            } else if t.get("workspace").and_then(|v| v.as_bool()) == Some(true) {
+                                "workspace".to_string()
+                            } else {
+                                "registry".to_string()
+                            };
+                            result.push((name.clone(), version, source));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    Some(result)
+}
+
+/// Check if a Cargo.toml has a build script using TOML parser.
+fn has_cargo_build_script_toml(text: &str) -> Option<bool> {
+    let doc: toml::Value = toml::from_str(text).ok()?;
+    let package = doc.get("package")?;
+    // Check [package].build = "..." or [package].build = true
+    Some(package.get("build").is_some())
+}
+
+/// Check for [patch] or [replace] sections using TOML parser.
+fn has_cargo_patch_section_toml(text: &str) -> Option<bool> {
+    let doc: toml::Value = toml::from_str(text).ok()?;
+    let table = doc.as_table()?;
+    // Check for any key starting with "patch" or "replace"
+    Some(table.keys().any(|k| {
+        k == "patch" || k.starts_with("patch.") || k == "replace" || k.starts_with("replace.")
+    }))
+}
+
+/// Detect pyproject.toml build backend changes.
+fn detect_pyproject_build_backend_changes(old_text: &str, new_text: &str) -> Vec<Value> {
+    let mut changes = Vec::new();
+    let old_doc: Option<toml::Value> = toml::from_str(old_text).ok();
+    let new_doc: Option<toml::Value> = toml::from_str(new_text).ok();
+
+    if let (Some(old), Some(new)) = (old_doc, new_doc) {
+        let old_backend = old
+            .get("build-system")
+            .and_then(|bs| bs.get("build-backend"))
+            .and_then(|bb| bb.as_str());
+        let new_backend = new
+            .get("build-system")
+            .and_then(|bs| bs.get("build-backend"))
+            .and_then(|bb| bb.as_str());
+
+        if old_backend != new_backend && new_backend.is_some() {
+            changes.push(serde_json::json!({
+                "type": "build_backend",
+                "old": old_backend,
+                "new": new_backend,
+            }));
+        }
+    }
+    changes
+}
+
+/// Parse pyproject.toml dependencies using the TOML parser.
+fn parse_pyproject_deps_toml(text: &str) -> Option<Vec<String>> {
+    let doc: toml::Value = toml::from_str(text).ok()?;
+    let mut deps = Vec::new();
+
+    // [project] dependencies = [...]
+    if let Some(project) = doc.get("project") {
+        if let Some(dep_list) = project.get("dependencies").and_then(|d| d.as_array()) {
+            for item in dep_list {
+                if let Some(s) = item.as_str() {
+                    // Extract name before version specifier
+                    if let Some(name) = s
+                        .split(['>', '<', '=', '!', ';', '['])
+                        .next()
+                        .map(|n| n.trim().to_string())
+                    {
+                        if !name.is_empty() {
+                            deps.push(name);
+                        }
+                    }
+                }
+            }
+        }
+
+        // [project.optional-dependencies] groups
+        if let Some(opt_deps) = project
+            .get("optional-dependencies")
+            .and_then(|d| d.as_table())
+        {
+            for (_group, items) in opt_deps {
+                if let Some(arr) = items.as_array() {
+                    for item in arr {
+                        if let Some(s) = item.as_str() {
+                            if let Some(name) = s
+                                .split(['>', '<', '=', '!', ';', '['])
+                                .next()
+                                .map(|n| n.trim().to_string())
+                            {
+                                if !name.is_empty() {
+                                    deps.push(name);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // [build-system] requires = [...]
+    if let Some(build_system) = doc.get("build-system") {
+        if let Some(requires) = build_system.get("requires").and_then(|r| r.as_array()) {
+            for item in requires {
+                if let Some(s) = item.as_str() {
+                    if let Some(name) = s
+                        .split(['>', '<', '=', '!', ';', '['])
+                        .next()
+                        .map(|n| n.trim().to_string())
+                    {
+                        if !name.is_empty() {
+                            deps.push(name);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Some(deps)
+}
+
+/// Parse package.json dependencies using serde_json.
+fn parse_package_json_deps_json(text: &str) -> Option<Vec<(String, String, String)>> {
+    let doc: serde_json::Value = serde_json::from_str(text).ok()?;
+    let mut result = Vec::new();
+
+    let sections = [
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+    ];
+
+    for section in &sections {
+        if let Some(obj) = doc.get(*section).and_then(|d| d.as_object()) {
+            for (name, val) in obj {
+                let version = val.as_str().unwrap_or("").to_string();
+                result.push((name.clone(), version, section.to_string()));
+            }
+        }
+    }
+
+    Some(result)
+}
+
+/// Parse package.json scripts using serde_json.
+fn parse_package_json_scripts_json(text: &str) -> Option<Vec<(String, String)>> {
+    let doc: serde_json::Value = serde_json::from_str(text).ok()?;
+    let mut result = Vec::new();
+
+    if let Some(scripts) = doc.get("scripts").and_then(|s| s.as_object()) {
+        for (key, val) in scripts {
+            if let Some(v) = val.as_str() {
+                result.push((key.clone(), v.to_string()));
+            }
+        }
+    }
+
+    Some(result)
+}
+
 /// Detect ecosystem from file path and content.
 fn detect_ecosystem(file_path: &str, text: &str) -> Option<&'static str> {
     let lower = file_path.to_lowercase();
@@ -207,20 +500,63 @@ fn parse_pyproject_deps(text: &str) -> Vec<String> {
 }
 
 /// Parse requirements.txt dependency names.
+/// Returns (name, spec) tuples. Improved to detect:
+/// - direct URLs (http/https/file)
+/// - editable installs (-e)
+/// - local paths (relative/absolute)
+/// - unconstrained specs (no version pin)
 fn parse_requirements_deps(text: &str) -> Vec<(String, String)> {
     let mut deps = Vec::new();
     for line in text.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('-') {
+        if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        // Format: name[extras]>=version or name==version
+
+        // Editable installs: -e package @ url or -e .
+        if trimmed.starts_with("-e ") || trimmed.starts_with("--editable ") {
+            let rest = trimmed
+                .trim_start_matches("-e")
+                .trim_start_matches("--editable")
+                .trim()
+                .trim_start_matches('=');
+            deps.push(("editable".to_string(), format!("-e {}", rest)));
+            continue;
+        }
+
+        // Constraints/includes flags: -c constraints.txt, -r requirements.txt
+        if trimmed.starts_with("-c ") || trimmed.starts_with("-r ") || trimmed.starts_with("-f ") {
+            deps.push(("reference".to_string(), trimmed.to_string()));
+            continue;
+        }
+
+        // URL deps: name @ https://... or just https://...
+        if trimmed.contains('@') && (trimmed.contains("://") || trimmed.contains("git+")) {
+            deps.push(("url".to_string(), trimmed.to_string()));
+            continue;
+        }
+
+        // Local path deps: ./path or /absolute/path or name @ ./path
+        if trimmed.starts_with("./") || trimmed.starts_with("../") || trimmed.starts_with('/') {
+            deps.push(("path".to_string(), trimmed.to_string()));
+            continue;
+        }
+
+        // Standard dependency: name[extras]>=version or name==version
         let name = trimmed
-            .split(['>', '<', '=', '!', '['])
+            .split(['>', '<', '=', '!', '[', ';'])
             .next()
             .unwrap_or(trimmed)
             .trim();
-        if !name.is_empty() {
+
+        // Check if unconstrained (no version specifier at all)
+        let has_version_spec = trimmed.contains('>')
+            || trimmed.contains('<')
+            || trimmed.contains('=')
+            || trimmed.contains('!');
+        if !name.is_empty() && !has_version_spec {
+            deps.push((name.to_string(), format!("{} (unconstrained)", trimmed)));
+        } else if !name.is_empty() {
             deps.push((name.to_string(), trimmed.to_string()));
         }
     }
@@ -331,6 +667,9 @@ fn classify_version_change(old_ver: &str, new_ver: &str) -> Option<&'static str>
 }
 
 pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
+    let budget_ctx =
+        crate::mcp::budget::BudgetContext::new(crate::mcp::budget::ToolBudget::MODERATE);
+
     let file_path = match args.get("file_path").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
@@ -435,17 +774,25 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
     let mut source_changed: Vec<Value> = Vec::new();
     let mut hook_changes: Vec<Value> = Vec::new();
 
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_deadline("dependency_edit_preflight")
+            .unwrap_err();
+    }
+
     match ecosystem {
         "rust" => {
             let sections = ["dependencies", "dev-dependencies", "build-dependencies"];
             for section in &sections {
                 let old_deps: HashMap<String, (String, String)> =
-                    parse_cargo_deps(old_text, section)
+                    parse_cargo_deps_toml(old_text, section)
+                        .unwrap_or_else(|| parse_cargo_deps(old_text, section))
                         .into_iter()
                         .map(|(n, v, s)| (n, (v, s)))
                         .collect();
                 let new_deps: HashMap<String, (String, String)> =
-                    parse_cargo_deps(new_text, section)
+                    parse_cargo_deps_toml(new_text, section)
+                        .unwrap_or_else(|| parse_cargo_deps(new_text, section))
                         .into_iter()
                         .map(|(n, v, s)| (n, (v, s)))
                         .collect();
@@ -461,6 +808,32 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                             Some(disposition::CAUTION),
                             None,
                         ));
+                        // Emit source-specific findings for newly added deps
+                        if let Some((_ver, src)) = new_deps.get(name) {
+                            if src == "git" {
+                                findings.push(finding(
+                                    machine_codes::DEPENDENCY_GIT_SOURCE,
+                                    severity::MEDIUM,
+                                    &format!(
+                                        "New git dependency '{}' added to [{}]",
+                                        name, section
+                                    ),
+                                    Some(disposition::CAUTION),
+                                    None,
+                                ));
+                            } else if src == "path" {
+                                findings.push(finding(
+                                    machine_codes::DEPENDENCY_PATH_SOURCE,
+                                    severity::MEDIUM,
+                                    &format!(
+                                        "New path dependency '{}' added to [{}]",
+                                        name, section
+                                    ),
+                                    Some(disposition::CAUTION),
+                                    None,
+                                ));
+                            }
+                        }
                     }
                 }
 
@@ -572,8 +945,10 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
             }
 
             // Check for new build script
-            let old_has_build = has_cargo_build_script(old_text);
-            let new_has_build = has_cargo_build_script(new_text);
+            let old_has_build = has_cargo_build_script_toml(old_text)
+                .unwrap_or_else(|| has_cargo_build_script(old_text));
+            let new_has_build = has_cargo_build_script_toml(new_text)
+                .unwrap_or_else(|| has_cargo_build_script(new_text));
             if !old_has_build && new_has_build {
                 findings.push(finding(
                     machine_codes::DEPENDENCY_BUILD_SCRIPT,
@@ -585,8 +960,10 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
             }
 
             // Check for patch/replace sections
-            let old_has_patch = has_cargo_patch_section(old_text);
-            let new_has_patch = has_cargo_patch_section(new_text);
+            let old_has_patch = has_cargo_patch_section_toml(old_text)
+                .unwrap_or_else(|| has_cargo_patch_section(old_text));
+            let new_has_patch = has_cargo_patch_section_toml(new_text)
+                .unwrap_or_else(|| has_cargo_patch_section(new_text));
             if !old_has_patch && new_has_patch {
                 let sev = if allow_patch {
                     severity::LOW
@@ -613,7 +990,10 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                     .map(|(n, _)| n)
                     .collect()
             } else {
-                parse_pyproject_deps(old_text).into_iter().collect()
+                parse_pyproject_deps_toml(old_text)
+                    .unwrap_or_else(|| parse_pyproject_deps(old_text))
+                    .into_iter()
+                    .collect()
             };
             let new_deps: HashSet<String> = if file_path.ends_with("requirements.txt") {
                 parse_requirements_deps(new_text)
@@ -621,7 +1001,10 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                     .map(|(n, _)| n)
                     .collect()
             } else {
-                parse_pyproject_deps(new_text).into_iter().collect()
+                parse_pyproject_deps_toml(new_text)
+                    .unwrap_or_else(|| parse_pyproject_deps(new_text))
+                    .into_iter()
+                    .collect()
             };
 
             for name in &new_deps {
@@ -656,7 +1039,7 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                 for url in &new_urls {
                     if !old_urls.contains(url) {
                         findings.push(finding(
-                            "DEPENDENCY_GIT_SOURCE",
+                            machine_codes::DEPENDENCY_GIT_SOURCE,
                             severity::MEDIUM,
                             &format!("Direct URL dependency detected: {}", url),
                             Some(disposition::CAUTION),
@@ -664,17 +1047,122 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                         ));
                     }
                 }
+
+                // Detect editable installs in new text
+                for line in new_text.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("-e ") || trimmed.starts_with("--editable ") {
+                        let was_present = old_text.lines().any(|l| l.trim() == trimmed);
+                        if !was_present {
+                            findings.push(finding(
+                                machine_codes::DEPENDENCY_PATH_SOURCE,
+                                severity::MEDIUM,
+                                &format!("Editable install added: {}", trimmed),
+                                Some(disposition::CAUTION),
+                                None,
+                            ));
+                        }
+                    }
+                }
+
+                // Detect local path dependencies in new text
+                for line in new_text.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("./")
+                        || trimmed.starts_with("../")
+                        || trimmed.starts_with('/')
+                    {
+                        let was_present = old_text.lines().any(|l| l.trim() == trimmed);
+                        if !was_present {
+                            findings.push(finding(
+                                machine_codes::DEPENDENCY_PATH_SOURCE,
+                                severity::MEDIUM,
+                                &format!("Local path dependency detected: {}", trimmed),
+                                Some(disposition::CAUTION),
+                                None,
+                            ));
+                        }
+                    }
+                }
+
+                // Detect unconstrained specs in new text
+                for (name, spec) in parse_requirements_deps(new_text) {
+                    if spec.ends_with(" (unconstrained)")
+                        && name != "editable"
+                        && name != "reference"
+                    {
+                        let was_constrained = parse_requirements_deps(old_text)
+                            .iter()
+                            .any(|(n, s)| n == &name && !s.ends_with(" (unconstrained)"));
+                        if was_constrained
+                            || !parse_requirements_deps(old_text)
+                                .iter()
+                                .any(|(n, _)| n == &name)
+                        {
+                            findings.push(finding(
+                                machine_codes::DEPENDENCY_VERSION_WIDENED,
+                                severity::LOW,
+                                &format!("Unconstrained version for '{}': {}", name, spec),
+                                Some(disposition::INFORMATIONAL),
+                                None,
+                            ));
+                        }
+                    }
+                }
+
+                // Detect constraints/includes flags
+                for line in new_text.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("-c ")
+                        || trimmed.starts_with("-r ")
+                        || trimmed.starts_with("-f ")
+                    {
+                        let was_present = old_text.lines().any(|l| l.trim() == trimmed);
+                        if !was_present {
+                            findings.push(finding(
+                                machine_codes::DEPENDENCY_ADDED,
+                                severity::LOW,
+                                &format!("Reference file flag added: {}", trimmed),
+                                Some(disposition::INFORMATIONAL),
+                                None,
+                            ));
+                        }
+                    }
+                }
+            }
+
+            // Detect build backend changes in pyproject.toml
+            if !file_path.ends_with("requirements.txt") {
+                let backend_changes = detect_pyproject_build_backend_changes(old_text, new_text);
+                for change in backend_changes {
+                    hook_changes.push(change.clone());
+                    findings.push(finding(
+                        machine_codes::DEPENDENCY_BUILD_SCRIPT,
+                        severity::MEDIUM,
+                        &format!(
+                            "Build backend changed: {} → {}",
+                            change.get("old").and_then(|v| v.as_str()).unwrap_or("none"),
+                            change.get("new").and_then(|v| v.as_str()).unwrap_or("none")
+                        ),
+                        Some(disposition::CAUTION),
+                        None,
+                    ));
+                }
             }
         }
         "node" => {
-            let old_deps: HashMap<String, (String, String)> = parse_package_json_deps(old_text)
-                .into_iter()
-                .map(|(n, v, s)| (n, (v, s)))
-                .collect();
-            let new_deps: HashMap<String, (String, String)> = parse_package_json_deps(new_text)
-                .into_iter()
-                .map(|(n, v, s)| (n, (v, s)))
-                .collect();
+            let old_deps: HashMap<String, (String, String)> =
+                parse_package_json_deps_json(old_text)
+                    .unwrap_or_else(|| parse_package_json_deps(old_text))
+                    .into_iter()
+                    .map(|(n, v, s)| (n, (v, s)))
+                    .collect();
+            let new_deps: HashMap<String, (String, String)> =
+                parse_package_json_deps_json(new_text)
+                    .unwrap_or_else(|| parse_package_json_deps(new_text))
+                    .into_iter()
+                    .map(|(n, v, s)| (n, (v, s)))
+                    .collect();
 
             for name in new_deps.keys() {
                 if !old_deps.contains_key(name) {
@@ -686,6 +1174,29 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                         Some(disposition::CAUTION),
                         None,
                     ));
+                    // Emit git/tarball specifier finding for newly added deps
+                    if let Some((ver, _sec)) = new_deps.get(name) {
+                        if ver.starts_with("http")
+                            || ver.starts_with("git+")
+                            || ver.starts_with("git://")
+                            || ver.starts_with("github:")
+                            || ver.starts_with("gitlab:")
+                            || ver.contains("tarball")
+                            || ver.contains(".tgz")
+                            || ver.contains("bitbucket:")
+                        {
+                            findings.push(finding(
+                                machine_codes::DEPENDENCY_GIT_SOURCE,
+                                severity::MEDIUM,
+                                &format!(
+                                    "New dependency '{}' uses URL/tarball specifier: {}",
+                                    name, ver
+                                ),
+                                Some(disposition::CAUTION),
+                                None,
+                            ));
+                        }
+                    }
                 }
             }
             for name in old_deps.keys() {
@@ -729,9 +1240,12 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
             }
 
             // Script changes
-            let old_scripts = parse_package_json_scripts(old_text);
-            let new_scripts: HashMap<String, String> =
-                parse_package_json_scripts(new_text).into_iter().collect();
+            let old_scripts = parse_package_json_scripts_json(old_text)
+                .unwrap_or_else(|| parse_package_json_scripts(old_text));
+            let new_scripts: HashMap<String, String> = parse_package_json_scripts_json(new_text)
+                .unwrap_or_else(|| parse_package_json_scripts(new_text))
+                .into_iter()
+                .collect();
 
             for (key, val) in &old_scripts {
                 if let Some(new_val) = new_scripts.get(key) {
@@ -781,6 +1295,65 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
                         None,
                     ));
                 }
+            }
+
+            // Detect URL/tarball/git specifiers in dependencies
+            for (name, (ver, _sec)) in &new_deps {
+                if ver.starts_with("http")
+                    || ver.starts_with("git+")
+                    || ver.starts_with("git://")
+                    || ver.starts_with("github:")
+                    || ver.starts_with("gitlab:")
+                    || ver.starts_with("bitbucket:")
+                    || ver.contains("tarball")
+                    || ver.contains(".tgz")
+                {
+                    let was_url = old_deps
+                        .get(name)
+                        .map(|(v, _)| {
+                            v.starts_with("http")
+                                || v.starts_with("git+")
+                                || v.starts_with("git://")
+                                || v.starts_with("github:")
+                                || v.starts_with("gitlab:")
+                                || v.starts_with("bitbucket:")
+                        })
+                        .unwrap_or(false);
+                    if !was_url {
+                        findings.push(finding(
+                            machine_codes::DEPENDENCY_GIT_SOURCE,
+                            severity::MEDIUM,
+                            &format!("Dependency '{}' uses URL/tarball specifier: {}", name, ver),
+                            Some(disposition::CAUTION),
+                            None,
+                        ));
+                    }
+                }
+            }
+
+            // Detect packageManager changes
+            let old_pm = serde_json::from_str::<serde_json::Value>(old_text)
+                .ok()
+                .and_then(|d| {
+                    d.get("packageManager")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                });
+            let new_pm = serde_json::from_str::<serde_json::Value>(new_text)
+                .ok()
+                .and_then(|d| {
+                    d.get("packageManager")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                });
+            if old_pm != new_pm && new_pm.is_some() {
+                findings.push(finding(
+                    machine_codes::DEPENDENCY_BUILD_SCRIPT,
+                    severity::LOW,
+                    &format!("packageManager changed: {:?} → {:?}", old_pm, new_pm),
+                    Some(disposition::INFORMATIONAL),
+                    None,
+                ));
             }
         }
         _ => {}

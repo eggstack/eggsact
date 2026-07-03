@@ -826,6 +826,7 @@ fn test_edit_preflight_line_range_conflicts_with_patch() {
         "edit_preflight",
         serde_json::json!({
             "original": "line1\nline2\nline3",
+            "new": "modified",
             "patch": "--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n line1\n-line2\n+modified\n line3\n",
             "replacement_mode": "line_range",
             "start_line": 2,

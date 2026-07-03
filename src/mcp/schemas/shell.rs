@@ -42,7 +42,7 @@ pub fn command_preflight_input() -> Value {
         "type": "object",
         "properties": {
             "command": {"type": "string", "description": "Command string to analyze"},
-            "platform": {"type": "string", "enum": ["posix", "windows", "auto"], "default": "posix", "description": "Target platform"},
+            "platform": {"type": "string", "enum": ["posix", "windows", "auto"], "default": "posix", "description": "Target platform: 'posix' (fully supported), 'auto' (currently resolves to POSIX behavior), or 'windows' (recognized but unsupported — returns UNSUPPORTED_FEATURE)"},
             "policy": {"type": "string", "enum": ["default", "strict", "permissive"], "default": "default", "description": "Built-in analysis policy"},
             "policy_config": {
                 "type": "object",

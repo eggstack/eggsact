@@ -60,7 +60,7 @@ src/
     protocol.rs     # JSON-RPC types (Request, Response, Error, InitializeResult)
     response.rs     # ToolResponse, error sanitization, finding() helpers, with_verdict, preflight builders
     machine_codes.rs # machine-readable response codes, severity/disposition/verdict constants
-    budget.rs       # per-tool budgets, tiers, composite sub-budgets, BudgetContext
+    budget.rs       # per-tool budgets, tiers, composite sub-budgets, BudgetContext with cooperative helpers
     runtime.rs      # rate limiter, constants, profile management
     schema_validation.rs # argument validation against tool schemas
     schemas/        # JSON-schema builders per tool category
@@ -158,6 +158,8 @@ Agent task skills in `.skills/`:
 
 - **Tool timeouts are budget-derived**: `tools/call` uses `budget.max_elapsed_ms` from `ToolBudget` (resolved via `budget_for_tool()` from `ToolSpec.cost`), not a fixed 30s constant. Composite tools get sub-budgets via `SubBudget`/`CompositeBudgetAllocator`.
 
+- **Cooperative budget checks in high-risk handlers**: `edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, and `dependency_edit_preflight` create a `BudgetContext` internally (since `ToolHandler` is `fn(&Value) -> ToolResponse` and cannot receive context). They call `should_stop()` at key pipeline stages. The MCP server creates an `Arc<AtomicBool>` cancel flag and attaches it via `with_cancellation()` before dispatch; on timeout, the flag is set but blocking work may continue (cooperative, not forceful).
+
 - **Response truncation is automatic**: `truncate_response()` caps findings/output when a tool exceeds its budget limits. Check `limits_applied` in the response envelope to detect truncation. Findings cap reserves one slot for a synthetic `OUTPUT_TOO_LARGE` notice (so total ≤ `max_findings`); result over-cap is replaced with a summary object preserving `machine_code`/`verdict`/`ok`/caller-`summary`, plus `truncated: true`, `original_size_bytes`, `max_output_bytes`.
 - **Input pre-check**: `call_json_with_budget()` (in-process) and `tools/call` (MCP) check serialized input against `budget.max_input_bytes` *before* dispatch. Oversized input fails with `INPUT_TOO_LARGE` (high, blocking) instead of wasting compute.
 
@@ -171,4 +173,5 @@ Agent task skills in `.skills/`:
 - **`Cargo.lock` is gitignored** but present. This is unusual for a binary crate — don't commit it.
 - **`serde_json` uses `preserve_order`** feature — key order is intentional in serialized JSON.
 - **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_SCHEMA_DETAIL`.
+- **Platform support**: `command_preflight` recognizes `platform` values `posix`, `windows`, and `auto`. Only `posix` is implemented; `windows` returns `UNSUPPORTED_FEATURE` and `auto` resolves to `posix`.
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.

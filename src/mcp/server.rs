@@ -309,7 +309,9 @@ async fn handle_request_async(
             let tool_budget = registry::get_tool(name)
                 .map(|spec| budget_for_tool(name, spec.cost))
                 .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
-            let budget_context = BudgetContext::new(tool_budget);
+            let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let budget_context =
+                BudgetContext::new(tool_budget).with_cancellation(cancel_flag.clone());
 
             // Use budget-derived timeout. The outer tokio::time::timeout
             // governs how long we wait; the spawned blocking task may
@@ -372,17 +374,24 @@ async fn handle_request_async(
                     ),
                     request.id.clone(),
                 )),
-                Err(_timeout) => Some(wrap_tool_response(&ToolResponse::error_with_code(
-                    "timeout",
-                    machine_codes::TIMEOUT,
-                    &format!(
-                        "Tool '{}' execution timed out after {}s",
-                        name_owned,
-                        timeout_ms / 1000
-                    ),
-                    Some(vec!["Try a simpler input or shorter text".to_string()]),
-                    Some(&name_owned),
-                ))),
+                Err(_timeout) => {
+                    // Signal cancellation to the running handler so it can
+                    // exit cooperatively at the next should_stop() check.
+                    // Note: the spawned blocking task may continue running
+                    // after this point — we cannot kill threads in Rust.
+                    cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                    Some(wrap_tool_response(&ToolResponse::error_with_code(
+                        "timeout",
+                        machine_codes::TIMEOUT,
+                        &format!(
+                            "Tool '{}' execution timed out after {}s",
+                            name_owned,
+                            timeout_ms / 1000
+                        ),
+                        Some(vec!["Try a simpler input or shorter text".to_string()]),
+                        Some(&name_owned),
+                    )))
+                }
             }
         }
 
