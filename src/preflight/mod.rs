@@ -1040,6 +1040,14 @@ pub struct CommandPreflightOutput {
     pub summary: String,
     /// Structured findings.
     pub findings: Vec<Finding>,
+    /// Extracted program name.
+    pub program: Option<String>,
+    /// Extracted subcommand.
+    pub subcommand: Option<String>,
+    /// Detected risky shell features.
+    pub features: Vec<String>,
+    /// Policy rules that matched.
+    pub matched_rules: Vec<String>,
     /// Parsed argv if available.
     pub argv: Option<Vec<String>>,
     /// The raw tool response for diagnostics and forward compatibility.
@@ -1099,6 +1107,33 @@ impl CommandPreflight {
                 .collect()
         });
 
+        let program = result
+            .get("program")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let subcommand = result
+            .get("subcommand")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let features = result
+            .get("features")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let matched_rules = result
+            .get("matched_rules")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let raw = response.result.unwrap_or(Value::Null);
 
         Ok(CommandPreflightOutput {
@@ -1106,6 +1141,10 @@ impl CommandPreflight {
             machine_code,
             summary,
             findings,
+            program,
+            subcommand,
+            features,
+            matched_rules,
             argv,
             raw,
         })

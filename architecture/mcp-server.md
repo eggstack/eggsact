@@ -163,7 +163,7 @@ Tools marked `composite: true` orchestrate other tools internally. All emit a `v
 | Tool | Verdict domain | What it does |
 |------|---------------|-------------|
 | `edit_preflight` | allow / review / block | Pre-checks an edit operation using text tools. Optionally composes `path_scope_check`, `text_security_inspect`, and `text_fingerprint` (newline detection) when the corresponding input fields are provided. |
-| `command_preflight` | allow / review / block | Pre-checks a shell command using shell/identifier tools |
+| `command_preflight` | allow / review / block | Pre-checks a shell command using a policy engine. Classifies commands via per-policy allow/review/block matrices (`default`, `strict`, `permissive`), detects behavioral features (network, filesystem, process, env, shell features), checks destructive patterns, applies custom `policy_config` allow/deny lists, and runs regex safety on regex-like args. |
 | `config_preflight` | valid / valid_with_warnings / invalid | Pre-checks a config file using validation tools |
 | `text_security_inspect` | allow / review / block | Calls multiple text inspection tools and aggregates results |
 | `cargo_toml_inspect` | allow / review / block | Inspects Cargo.toml structure and naming |

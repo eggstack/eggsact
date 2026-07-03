@@ -109,6 +109,15 @@ Category-specific aliases for codegg routing. These share string values with the
 | `SHELL_SAFE_COMMAND` | `COMMAND_OK` | `"COMMAND_OK"` |
 | `SHELL_DESTRUCTIVE_COMMAND` | `SHELL_RISK` | `"SHELL_RISK"` |
 | `SHELL_NETWORK_ACCESS` | `SHELL_RISK` | `"SHELL_RISK"` |
+| `SHELL_FILESYSTEM_WRITE` | `SHELL_RISK` | `"SHELL_RISK"` |
+| `SHELL_PROCESS_CONTROL` | `SHELL_RISK` | `"SHELL_RISK"` |
+| `SHELL_ENV_MUTATION` | `SHELL_RISK` | `"SHELL_RISK"` |
+| `SHELL_PRIVILEGE_ESCALATION` | `SHELL_RISK` | `"SHELL_RISK"` |
+| `SHELL_COMMAND_SUBSTITUTION` | `SHELL_RISK` | `"SHELL_RISK"` |
+| `SHELL_REDIRECTION` | `SHELL_RISK` | `"SHELL_RISK"` |
+| `SHELL_PIPELINE` | `SHELL_RISK` | `"SHELL_RISK"` |
+| `SHELL_BACKGROUND_EXECUTION` | `SHELL_RISK` | `"SHELL_RISK"` |
+| `SHELL_UNAPPROVED_COMMAND` | `SHELL_RISK` | `"SHELL_RISK"` |
 | `CONFIG_VALID` | `CONFIG_OK` | `"CONFIG_OK"` |
 | `CONFIG_INVALID` | `CONFIG_PARSE_FAILED` | `"CONFIG_PARSE_FAILED"` |
 | `UNICODE_BIDI_DETECTED` | `BIDI_DETECTED` | `"BIDI_DETECTED"` |
@@ -152,6 +161,16 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | `SHELL_RISK` | Command has risky features | medium | review | review before exec | `command_preflight` |
 | `SHELL_PARSE_ERROR` | Shell command unparseable | high | yes | fix command | `shell_split`, `command_preflight` |
 | `REGEX_RISK` | Regex in command has safety issues | medium | review | review pattern | `command_preflight` |
+| `SHELL_NETWORK_ACCESS` | Command accesses the network | medium | review | review network access | `command_preflight` |
+| `SHELL_FILESYSTEM_WRITE` | Command writes to the filesystem | medium | review | review write ops | `command_preflight` |
+| `SHELL_PROCESS_CONTROL` | Command controls processes (kill, etc.) | medium | review | review process ops | `command_preflight` |
+| `SHELL_ENV_MUTATION` | Command mutates environment | low | no | note env change | `command_preflight` |
+| `SHELL_PRIVILEGE_ESCALATION` | Command elevates privileges (sudo, etc.) | high | yes | block or escalate | `command_preflight` |
+| `SHELL_COMMAND_SUBSTITUTION` | Command uses command substitution | info | no | note | `command_preflight` |
+| `SHELL_REDIRECTION` | Command uses I/O redirection | info | no | note | `command_preflight` |
+| `SHELL_PIPELINE` | Command uses pipes | info | no | note | `command_preflight` |
+| `SHELL_BACKGROUND_EXECUTION` | Command runs in background (&, nohup) | info | no | note | `command_preflight` |
+| `SHELL_UNAPPROVED_COMMAND` | Command not on the allow list (policy_config) | varies | varies | depends on policy | `command_preflight` |
 
 ### JSON
 

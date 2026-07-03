@@ -6,7 +6,7 @@ Generated from the ToolSpec registry. Each section corresponds to a codegg profi
 
 ### `command_preflight`
 
-Composite: analyze a command before user approval or execution. Calls shell_split and regex_safety_check. Returns parsed argv, shell operators, risk findings, and a verdict. Must not execute anything.
+Composite: analyze a command before user approval or execution. Applies a policy engine (default/strict/permissive) with optional policy_config allow/deny overrides. Calls shell_split and regex_safety_check. Detects behavioral features (network, filesystem, process, env) and destructive patterns. Returns parsed argv, program, subcommand, features, risk findings, matched_rules, and a verdict. Must not execute anything.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -84,7 +84,7 @@ Inspect Cargo.toml text without network or filesystem access. Reports package me
 
 ### `command_preflight`
 
-Composite: analyze a command before user approval or execution. Calls shell_split and regex_safety_check. Returns parsed argv, shell operators, risk findings, and a verdict. Must not execute anything.
+Composite: analyze a command before user approval or execution. Applies a policy engine (default/strict/permissive) with optional policy_config allow/deny overrides. Calls shell_split and regex_safety_check. Detects behavioral features (network, filesystem, process, env) and destructive patterns. Returns parsed argv, program, subcommand, features, risk findings, matched_rules, and a verdict. Must not execute anything.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -236,7 +236,7 @@ Validate TOML configuration files (Cargo.toml, pyproject.toml, etc.) and report 
 
 ### `command_preflight`
 
-Composite: analyze a command before user approval or execution. Calls shell_split and regex_safety_check. Returns parsed argv, shell operators, risk findings, and a verdict. Must not execute anything.
+Composite: analyze a command before user approval or execution. Applies a policy engine (default/strict/permissive) with optional policy_config allow/deny overrides. Calls shell_split and regex_safety_check. Detects behavioral features (network, filesystem, process, env) and destructive patterns. Returns parsed argv, program, subcommand, features, risk findings, matched_rules, and a verdict. Must not execute anything.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -555,7 +555,7 @@ Compare two command strings or argv lists by parsed argv tokens rather than raw 
 
 ### `command_preflight`
 
-Composite: analyze a command before user approval or execution. Calls shell_split and regex_safety_check. Returns parsed argv, shell operators, risk findings, and a verdict. Must not execute anything.
+Composite: analyze a command before user approval or execution. Applies a policy engine (default/strict/permissive) with optional policy_config allow/deny overrides. Calls shell_split and regex_safety_check. Detects behavioral features (network, filesystem, process, env) and destructive patterns. Returns parsed argv, program, subcommand, features, risk findings, matched_rules, and a verdict. Must not execute anything.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default

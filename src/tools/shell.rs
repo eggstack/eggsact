@@ -378,6 +378,370 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
     .with_tool("argv_compare")
 }
 
+// ---------------------------------------------------------------------------
+// Command Policy Engine
+// ---------------------------------------------------------------------------
+
+/// Command classification for the allow/review/block matrix.
+/// `allow` = permitted under this policy; `review` = needs human review;
+/// `block` = always blocked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CmdDisposition {
+    Allow,
+    Review,
+    Block,
+}
+
+/// Default classification matrix for the "default" policy.
+/// Returns `(program, subcommand) -> CmdDisposition`.
+fn classify_default(program: &str, subcommand: &str) -> CmdDisposition {
+    match program {
+        // Read-only tools — always allowed
+        "rg" | "grep" | "find" | "ls" | "cat" | "head" | "tail" | "wc" | "file" | "which"
+        | "where" | "type" | "echo" | "printf" | "realpath" | "pwd" | "readlink" | "stat"
+        | "du" | "df" | "id" | "whoami" | "uname" | "date" => CmdDisposition::Allow,
+
+        // Rust build/test — allowed
+        "cargo" | "rustc" | "rustup" => match subcommand {
+            "check" | "test" | "clippy" | "doc" | "search" | "version" | "list" | "tree"
+            | "loc" | "build" | "bench" => CmdDisposition::Allow,
+            "fmt" | "fix" | "clean" | "publish" => CmdDisposition::Review,
+            _ => CmdDisposition::Review,
+        },
+
+        // Git — read operations allowed, write operations reviewed
+        "git" => match subcommand {
+            "status" | "diff" | "log" | "show" | "describe" | "rev-parse" | "remote" | "tag"
+            | "blame" | "shortlog" => CmdDisposition::Allow,
+            "add" | "checkout" | "restore" | "merge" | "rebase" | "cherry-pick" | "commit"
+            | "fetch" | "pull" | "push" | "reset" | "revert" | "clean" | "config" | "branch"
+            | "stash" => CmdDisposition::Review,
+            _ => CmdDisposition::Review,
+        },
+
+        // Package managers
+        "npm" | "yarn" | "pnpm" | "bun" => match subcommand {
+            "list" | "ls" | "outdated" | "version" => CmdDisposition::Allow,
+            "install" | "ci" | "update" | "add" | "remove" | "run" => CmdDisposition::Review,
+            _ => CmdDisposition::Review,
+        },
+        "pip" | "pip3" | "python" | "python3" => match subcommand {
+            "-c" | "-m" => CmdDisposition::Allow,
+            "install" | "uninstall" | "upgrade" => CmdDisposition::Review,
+            _ => CmdDisposition::Review,
+        },
+
+        // Network tools — review
+        "curl" | "wget" | "http" | "https" => CmdDisposition::Review,
+
+        // Destructive tools — blocked
+        "rm" | "rmdir" | "shred" | "wipefs" => CmdDisposition::Block,
+        "chmod" | "chown" | "chgrp" => CmdDisposition::Block,
+        "dd" | "mkfs" | "fdisk" | "parted" => CmdDisposition::Block,
+        "sudo" | "su" | "doas" | "pkexec" => CmdDisposition::Block,
+
+        // Process control — review
+        "kill" | "pkill" | "killall" | "xkill" => CmdDisposition::Review,
+        "nohup" | "screen" | "tmux" | "setsid" => CmdDisposition::Review,
+
+        _ => CmdDisposition::Review,
+    }
+}
+
+/// Strict policy: only explicitly safe commands are allowed.
+fn classify_strict(program: &str, subcommand: &str) -> CmdDisposition {
+    match program {
+        "cargo" | "rustc" | "rustup" => match subcommand {
+            "check" | "test" | "clippy" | "fmt" | "doc" | "search" | "version" | "list"
+            | "tree" | "loc" => CmdDisposition::Allow,
+            _ => CmdDisposition::Review,
+        },
+        "git" => match subcommand {
+            "status" | "diff" | "log" | "show" | "describe" | "rev-parse" => CmdDisposition::Allow,
+            _ => CmdDisposition::Review,
+        },
+        "rg" | "grep" | "find" | "ls" | "cat" | "head" | "tail" | "wc" | "which" | "echo"
+        | "pwd" | "uname" | "date" => CmdDisposition::Allow,
+        "rm" | "rmdir" | "shred" | "chmod" | "chown" | "chgrp" | "dd" | "mkfs" | "sudo" | "su"
+        | "doas" => CmdDisposition::Block,
+        _ => CmdDisposition::Review,
+    }
+}
+
+/// Permissive policy: only block clearly destructive or exfiltration patterns.
+fn classify_permissive(program: &str, _subcommand: &str) -> CmdDisposition {
+    match program {
+        "rm" | "rmdir" | "shred" | "wipefs" | "dd" | "mkfs" | "fdisk" | "parted" | "chmod"
+        | "chown" | "chgrp" | "sudo" | "su" | "doas" | "pkexec" => CmdDisposition::Block,
+        _ => CmdDisposition::Allow,
+    }
+}
+
+/// Select the classification function based on policy mode.
+fn classify(program: &str, subcommand: &str, policy: &str) -> CmdDisposition {
+    match policy {
+        "strict" => classify_strict(program, subcommand),
+        "permissive" => classify_permissive(program, subcommand),
+        _ => classify_default(program, subcommand),
+    }
+}
+
+/// Detect behavioral features of a command that may trigger findings.
+fn detect_behavioral_features(
+    argv: &[String],
+    features: &Value,
+) -> Vec<(&'static str, &'static str, &'static str)> {
+    let mut result: Vec<(&str, &str, &str)> = Vec::new();
+    if argv.is_empty() {
+        return result;
+    }
+    let program = argv[0].as_str();
+
+    // Network access detection
+    let network_programs = [
+        "curl",
+        "wget",
+        "http",
+        "https",
+        "nc",
+        "ncat",
+        "socat",
+        "ssh",
+        "scp",
+        "sftp",
+        "rsync",
+        "telnet",
+        "ftp",
+        "nmap",
+        "ping",
+        "traceroute",
+        "dig",
+        "nslookup",
+        "host",
+    ];
+    if network_programs.contains(&program) {
+        result.push((
+            machine_codes::SHELL_NETWORK_ACCESS,
+            "NetworkAccess",
+            "command accesses the network",
+        ));
+    }
+
+    // Filesystem write detection
+    let fs_write_programs = [
+        "rm", "rmdir", "shred", "wipefs", "dd", "mkfs", "fdisk", "parted",
+    ];
+    let fs_write_subcommands = ["write", "create", "delete", "remove", "unlink"];
+    if fs_write_programs.contains(&program) {
+        result.push((
+            machine_codes::SHELL_FILESYSTEM_WRITE,
+            "FilesystemWrite",
+            "command performs filesystem write/deletion",
+        ));
+    }
+    if argv.len() > 1 && fs_write_subcommands.contains(&argv[1].as_str()) {
+        result.push((
+            machine_codes::SHELL_FILESYSTEM_WRITE,
+            "FilesystemWrite",
+            "subcommand performs filesystem write/deletion",
+        ));
+    }
+
+    // Privilege escalation detection
+    let priv_esc_programs = ["sudo", "su", "doas", "pkexec", "runas"];
+    if priv_esc_programs.contains(&program) {
+        result.push((
+            machine_codes::SHELL_PRIVILEGE_ESCALATION,
+            "PrivilegeEscalation",
+            "command attempts privilege escalation",
+        ));
+    }
+
+    // Process control detection
+    let proc_control_programs = [
+        "kill", "pkill", "killall", "xkill", "nohup", "screen", "tmux", "setsid",
+    ];
+    if proc_control_programs.contains(&program) {
+        result.push((
+            machine_codes::SHELL_PROCESS_CONTROL,
+            "ProcessControl",
+            "command controls system processes",
+        ));
+    }
+
+    // Environment mutation detection (FOO=bar cmd pattern)
+    if let Some(first) = argv.first() {
+        if first.contains('=') && !first.starts_with('-') {
+            result.push((
+                machine_codes::SHELL_ENV_MUTATION,
+                "EnvMutation",
+                "command mutates environment variables",
+            ));
+        }
+    }
+
+    // Shell feature-based detection
+    if let Some(obj) = features.as_object() {
+        if obj
+            .get("has_command_substitution")
+            .and_then(|v| v.as_bool())
+            == Some(true)
+        {
+            result.push((
+                machine_codes::SHELL_COMMAND_SUBSTITUTION,
+                "CommandSubstitution",
+                "command uses command substitution",
+            ));
+        }
+        if obj.get("has_redirection").and_then(|v| v.as_bool()) == Some(true) {
+            result.push((
+                machine_codes::SHELL_REDIRECTION,
+                "Redirection",
+                "command uses I/O redirection",
+            ));
+        }
+        if obj.get("has_pipe").and_then(|v| v.as_bool()) == Some(true) {
+            result.push((
+                machine_codes::SHELL_PIPELINE,
+                "Pipeline",
+                "command uses a pipeline",
+            ));
+        }
+    }
+
+    result
+}
+
+/// Priority-ordered primary code selection.
+/// Returns the highest-priority machine code from the collected codes.
+fn select_primary_code(codes: &[String]) -> String {
+    let priority = [
+        machine_codes::SHELL_PARSE_ERROR,
+        machine_codes::SHELL_DESTRUCTIVE_COMMAND,
+        machine_codes::SHELL_PRIVILEGE_ESCALATION,
+        machine_codes::SHELL_NETWORK_ACCESS,
+        machine_codes::SHELL_FILESYSTEM_WRITE,
+        machine_codes::SHELL_PROCESS_CONTROL,
+        machine_codes::SHELL_COMMAND_SUBSTITUTION,
+        machine_codes::SHELL_REDIRECTION,
+        machine_codes::SHELL_PIPELINE,
+        machine_codes::SHELL_BACKGROUND_EXECUTION,
+        machine_codes::SHELL_UNAPPROVED_COMMAND,
+        machine_codes::SHELL_RISK,
+        machine_codes::REGEX_RISK,
+    ];
+    for code in priority {
+        if codes.iter().any(|c| c == code) {
+            return code.to_string();
+        }
+    }
+    machine_codes::COMMAND_OK.to_string()
+}
+
+/// Check for destructive shell patterns that should always block.
+fn check_destructive_patterns(
+    command: &str,
+    argv: &[String],
+) -> Vec<(&'static str, &'static str, &'static str)> {
+    let mut result = Vec::new();
+    let lower = command.to_lowercase();
+
+    // Pipe-to-shell pattern: curl/wget ... | sh/bash/zsh
+    if lower.contains("| sh")
+        || lower.contains("| bash")
+        || lower.contains("| zsh")
+        || lower.contains("| python")
+        || lower.contains("| perl")
+        || lower.contains("| ruby")
+    {
+        result.push((
+            machine_codes::SHELL_DESTRUCTIVE_COMMAND,
+            "PipeToShell",
+            "piping output to a shell interpreter is dangerous",
+        ));
+    }
+
+    // rm -rf / or similar
+    if argv.len() >= 2 && argv[0] == "rm" {
+        let has_force_recursive = argv
+            .iter()
+            .any(|a| a == "-rf" || a == "-fr" || a == "-r" || a == "-f");
+        let has_root = argv.iter().any(|a| a == "/" || a == "/*" || a == ".");
+        if has_force_recursive && has_root {
+            result.push((
+                machine_codes::SHELL_DESTRUCTIVE_COMMAND,
+                "DestructiveRemove",
+                "rm -rf on root/parent paths is destructive",
+            ));
+        }
+    }
+
+    // git reset --hard, git clean -fdx, git push --force
+    if argv.len() >= 3 && argv[0] == "git" {
+        match argv[1].as_str() {
+            "reset" if argv[2] == "--hard" => {
+                result.push((
+                    machine_codes::SHELL_DESTRUCTIVE_COMMAND,
+                    "DestructiveGitReset",
+                    "git reset --hard discards uncommitted changes",
+                ));
+            }
+            "clean" => {
+                let has_force = argv
+                    .iter()
+                    .any(|a| a == "-f" || a == "-fd" || a == "-fdx" || a == "-xdf");
+                if has_force {
+                    result.push((
+                        machine_codes::SHELL_DESTRUCTIVE_COMMAND,
+                        "DestructiveGitClean",
+                        "git clean -f removes untracked files",
+                    ));
+                }
+            }
+            "push" => {
+                let has_force = argv
+                    .iter()
+                    .any(|a| a == "--force" || a == "-f" || a == "--force-with-lease");
+                if has_force {
+                    result.push((
+                        machine_codes::SHELL_DESTRUCTIVE_COMMAND,
+                        "ForceGitPush",
+                        "force-pushing rewrites remote history",
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // chmod -R 777 or chown -R
+    if argv.len() >= 2 && argv[0] == "chmod" {
+        let has_recursive = argv.iter().any(|a| a == "-R" || a == "--recursive");
+        let has_permissive = argv
+            .iter()
+            .any(|a| a == "777" || a == "a+rwx" || a == "u+s");
+        if has_recursive && has_permissive {
+            result.push((
+                machine_codes::SHELL_DESTRUCTIVE_COMMAND,
+                "PermissiveChmod",
+                "chmod -R 777 opens permissions globally",
+            ));
+        }
+    }
+    if argv.len() >= 2 && argv[0] == "chown" {
+        let has_recursive = argv.iter().any(|a| a == "-R" || a == "--recursive");
+        if has_recursive {
+            result.push((
+                machine_codes::SHELL_DESTRUCTIVE_COMMAND,
+                "RecursiveChown",
+                "recursive chown changes ownership broadly",
+            ));
+        }
+    }
+
+    result
+}
+
 pub fn command_preflight(args: &Value) -> ToolResponse {
     let command = match args.get("command").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -433,11 +797,29 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         );
     }
 
+    // Parse optional policy_config (structured override on top of policy enum)
+    let policy_config = args.get("policy_config").cloned();
+    let max_command_length = policy_config
+        .as_ref()
+        .and_then(|pc| pc.get("max_command_length").and_then(|v| v.as_u64()))
+        .unwrap_or(MAX_TEXT_LENGTH as u64);
+
+    if command.chars().count() > max_command_length as usize {
+        return ToolResponse::error_with_code(
+            "input_too_large",
+            machine_codes::INVALID_ARGUMENTS,
+            &format!("Command exceeds {} chars", max_command_length),
+            None,
+            Some("command_preflight"),
+        );
+    }
+
     let mut subresults = serde_json::Map::new();
     let mut findings: Vec<serde_json::Value> = Vec::new();
     let mut code_list: Vec<String> = Vec::new();
+    let mut matched_rules: Vec<String> = Vec::new();
 
-    // 1. Always call shell_split
+    // 1. Parse command via shell_split
     if platform == "windows" {
         return ToolResponse::error_with_code(
             "unsupported_platform",
@@ -458,27 +840,6 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
                 "features": r.get("features").cloned().unwrap_or(serde_json::json!({})),
             }),
         );
-        if let Some(features) = r.get("features") {
-            if let Some(obj) = features.as_object() {
-                let risky: Vec<&String> = obj
-                    .iter()
-                    .filter(|(_, v)| v.as_bool() == Some(true))
-                    .map(|(k, _)| k)
-                    .collect();
-                for rf in &risky {
-                    let (sev, disp) = if policy == "strict" {
-                        (severity::HIGH, disposition::BLOCKING)
-                    } else {
-                        (severity::MEDIUM, disposition::CAUTION)
-                    };
-                    findings.push(finding("RISKY_SHELL_FEATURE", sev, rf, Some(disp), None));
-                }
-                if !risky.is_empty() && !code_list.contains(&machine_codes::SHELL_RISK.to_string())
-                {
-                    code_list.push(machine_codes::SHELL_RISK.to_string());
-                }
-            }
-        }
     } else if let Some(ref e) = ss_result.error {
         code_list.push(machine_codes::SHELL_PARSE_ERROR.to_string());
         findings.push(finding(
@@ -488,13 +849,10 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
             Some(disposition::BLOCKING),
             None,
         ));
+        matched_rules.push("parse_error".to_string());
     }
 
-    // 2. Check for regex-like args in the command
-    let looks_like_regex = command.contains("grep")
-        || command.contains("sed")
-        || command.contains("awk")
-        || command.to_lowercase().contains("regex");
+    // Extract argv and features for downstream analysis
     let argv: Vec<String> = subresults
         .get("shell_split")
         .and_then(|r| r.get("argv"))
@@ -505,6 +863,209 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
                 .collect()
         })
         .unwrap_or_default();
+
+    let shell_features = subresults
+        .get("shell_split")
+        .and_then(|r| r.get("features"))
+        .cloned()
+        .unwrap_or(serde_json::json!({}));
+
+    let program = argv.first().map(|s| s.as_str()).unwrap_or("");
+    let subcommand = if argv.len() > 1 { argv[1].as_str() } else { "" };
+
+    // 2. Apply policy_config custom allow/deny rules (deny beats allow)
+    if let Some(ref config) = policy_config {
+        let deny_commands: Vec<String> = config
+            .get("deny_commands")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let allow_commands: Vec<String> = config
+            .get("allow_commands")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if deny_commands.iter().any(|d| d == program) {
+            code_list.push(machine_codes::SHELL_UNAPPROVED_COMMAND.to_string());
+            findings.push(finding(
+                "SHELL_UNAPPROVED_COMMAND",
+                severity::HIGH,
+                &format!("'{}' is in the deny list", program),
+                Some(disposition::BLOCKING),
+                None,
+            ));
+            matched_rules.push("deny_command".to_string());
+        } else if !allow_commands.is_empty() && !allow_commands.iter().any(|a| a == program) {
+            code_list.push(machine_codes::SHELL_UNAPPROVED_COMMAND.to_string());
+            findings.push(finding(
+                "SHELL_UNAPPROVED_COMMAND",
+                severity::MEDIUM,
+                &format!("'{}' is not in the allow list", program),
+                Some(disposition::CAUTION),
+                None,
+            ));
+            matched_rules.push("not_in_allow_list".to_string());
+        }
+
+        // Subcommand-level allow/deny
+        let deny_subcommands: std::collections::HashMap<String, Vec<String>> = config
+            .get("deny_subcommands")
+            .and_then(|v| v.as_object())
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| {
+                        v.as_array().map(|arr| {
+                            (
+                                k.clone(),
+                                arr.iter()
+                                    .filter_map(|v| v.as_str().map(String::from))
+                                    .collect(),
+                            )
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Some(denied_subs) = deny_subcommands.get(program) {
+            if denied_subs.iter().any(|s| s == subcommand) {
+                code_list.push(machine_codes::SHELL_UNAPPROVED_COMMAND.to_string());
+                findings.push(finding(
+                    "SHELL_UNAPPROVED_COMMAND",
+                    severity::HIGH,
+                    &format!(
+                        "'{} {}' is in the deny subcommands list",
+                        program, subcommand
+                    ),
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
+                matched_rules.push("deny_subcommand".to_string());
+            }
+        }
+    }
+
+    // 3. Apply built-in policy classification (deny rules beat allow rules)
+    let classify_disposition =
+        if !code_list.contains(&machine_codes::SHELL_UNAPPROVED_COMMAND.to_string()) {
+            classify(program, subcommand, policy)
+        } else {
+            CmdDisposition::Block
+        };
+
+    // If policy classifies as block and we don't already have a block finding, add it
+    if classify_disposition == CmdDisposition::Block
+        && !findings
+            .iter()
+            .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::HIGH))
+    {
+        code_list.push(machine_codes::SHELL_UNAPPROVED_COMMAND.to_string());
+        findings.push(finding(
+            "SHELL_UNAPPROVED_COMMAND",
+            severity::HIGH,
+            &format!("'{}' is not permitted under {} policy", program, policy),
+            Some(disposition::BLOCKING),
+            None,
+        ));
+        matched_rules.push("policy_classify_block".to_string());
+    } else if classify_disposition == CmdDisposition::Review
+        && !findings
+            .iter()
+            .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::HIGH))
+        && !findings
+            .iter()
+            .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::MEDIUM))
+    {
+        // Only add review finding if no higher-severity finding already present
+        matched_rules.push("policy_classify_review".to_string());
+        findings.push(finding(
+            "POLICY_REVIEW",
+            severity::MEDIUM,
+            &format!("'{}' requires review under {} policy", program, policy),
+            Some(disposition::CAUTION),
+            None,
+        ));
+    } else if classify_disposition == CmdDisposition::Allow {
+        matched_rules.push("policy_classify_allow".to_string());
+    }
+
+    // 4. Detect destructive patterns (always block regardless of policy)
+    let destructive = check_destructive_patterns(command, &argv);
+    for (code, kind, message) in &destructive {
+        if !code_list.contains(&code.to_string()) {
+            code_list.push(code.to_string());
+        }
+        findings.push(finding(
+            kind,
+            severity::HIGH,
+            message,
+            Some(disposition::BLOCKING),
+            None,
+        ));
+        matched_rules.push(format!("destructive:{}", kind));
+    }
+
+    // 5. Detect behavioral features (network, filesystem, process, env, shell features)
+    let behavioral = detect_behavioral_features(&argv, &shell_features);
+    for (code, kind, message) in &behavioral {
+        let (sev, disp) = match *code {
+            c if c == machine_codes::SHELL_PRIVILEGE_ESCALATION
+                || c == machine_codes::SHELL_NETWORK_ACCESS =>
+            {
+                if policy == "strict" {
+                    (severity::HIGH, disposition::BLOCKING)
+                } else {
+                    (severity::MEDIUM, disposition::CAUTION)
+                }
+            }
+            _ => {
+                if policy == "strict" {
+                    (severity::MEDIUM, disposition::CAUTION)
+                } else {
+                    (severity::INFO, disposition::INFORMATIONAL)
+                }
+            }
+        };
+        if !code_list.contains(&code.to_string()) {
+            code_list.push(code.to_string());
+        }
+        findings.push(finding(kind, sev, message, Some(disp), None));
+        matched_rules.push(format!("feature:{}", kind));
+    }
+
+    // 6. Emit shell feature findings (pipe, redirect, command substitution, etc.)
+    if let Some(obj) = shell_features.as_object() {
+        let risky: Vec<&String> = obj
+            .iter()
+            .filter(|(_, v)| v.as_bool() == Some(true))
+            .map(|(k, _)| k)
+            .collect();
+        for rf in &risky {
+            let (sev, disp) = if policy == "strict" {
+                (severity::HIGH, disposition::BLOCKING)
+            } else {
+                (severity::MEDIUM, disposition::CAUTION)
+            };
+            findings.push(finding("RISKY_SHELL_FEATURE", sev, rf, Some(disp), None));
+        }
+        if !risky.is_empty() && !code_list.contains(&machine_codes::SHELL_RISK.to_string()) {
+            code_list.push(machine_codes::SHELL_RISK.to_string());
+        }
+    }
+
+    // 7. Check for regex-like args in the command
+    let looks_like_regex = command.contains("grep")
+        || command.contains("sed")
+        || command.contains("awk")
+        || command.to_lowercase().contains("regex");
 
     if looks_like_regex && !argv.is_empty() {
         let regex_metachars: std::collections::HashSet<char> = ".*+?[]|^$\\(){}".chars().collect();
@@ -566,14 +1127,17 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         }
     }
 
-    // 3. Determine verdict
+    // 8. Determine verdict based on findings severity
+    let has_critical = findings
+        .iter()
+        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::CRITICAL));
     let has_error = findings
         .iter()
         .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::HIGH));
     let has_warn = findings
         .iter()
         .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::MEDIUM));
-    let response_verdict = if has_error {
+    let response_verdict = if has_critical || has_error {
         verdict::BLOCK
     } else if has_warn {
         verdict::REVIEW
@@ -581,21 +1145,29 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         verdict::ALLOW
     };
 
-    // Build primary machine_code
+    // 9. Select primary machine code by priority
     let unique_codes: Vec<String> = code_list.into_iter().fold(Vec::new(), |mut acc, c| {
         if !acc.contains(&c) {
             acc.push(c);
         }
         acc
     });
-    let primary_code = unique_codes
-        .first()
-        .cloned()
-        .unwrap_or_else(|| machine_codes::COMMAND_OK.to_string());
+    let primary_code = select_primary_code(&unique_codes);
+
+    let feature_names: Vec<String> = shell_features
+        .as_object()
+        .map(|obj| {
+            obj.iter()
+                .filter(|(_, v)| v.as_bool() == Some(true))
+                .map(|(k, _)| k.clone())
+                .collect()
+        })
+        .unwrap_or_default();
 
     let summary = format!(
-        "Command {} ({} finding(s))",
+        "Command {} under {} policy ({} finding(s))",
         response_verdict,
+        policy,
         findings.len()
     );
 
@@ -604,7 +1176,11 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         "command": command,
         "platform": platform,
         "policy": policy,
+        "program": program,
+        "subcommand": subcommand,
+        "features": feature_names,
         "findings": findings,
+        "matched_rules": matched_rules,
         "machine_code": primary_code,
         "summary": summary,
     });

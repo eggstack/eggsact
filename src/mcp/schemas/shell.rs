@@ -43,7 +43,22 @@ pub fn command_preflight_input() -> Value {
         "properties": {
             "command": {"type": "string", "description": "Command string to analyze"},
             "platform": {"type": "string", "enum": ["posix", "windows", "auto"], "default": "posix", "description": "Target platform"},
-            "policy": {"type": "string", "enum": ["default", "strict", "permissive"], "default": "default", "description": "Analysis policy"},
+            "policy": {"type": "string", "enum": ["default", "strict", "permissive"], "default": "default", "description": "Built-in analysis policy"},
+            "policy_config": {
+                "type": "object",
+                "description": "Structured policy configuration that refines or overrides the built-in policy enum",
+                "properties": {
+                    "allow_commands": {"type": "array", "items": {"type": "string"}, "description": "Explicit allow list of programs"},
+                    "deny_commands": {"type": "array", "items": {"type": "string"}, "description": "Explicit deny list of programs (overrides allow)"},
+                    "allow_subcommands": {"type": "object", "description": "Per-program allowed subcommands", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+                    "deny_subcommands": {"type": "object", "description": "Per-program denied subcommands (overrides allow)", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+                    "allow_network": {"type": "boolean", "description": "Allow network access (default false)"},
+                    "allow_filesystem_write": {"type": "boolean", "description": "Allow filesystem writes (default false)"},
+                    "allow_process_control": {"type": "boolean", "description": "Allow process control (default false)"},
+                    "allow_env_mutation": {"type": "boolean", "description": "Allow environment variable mutation (default false)"},
+                    "max_command_length": {"type": "integer", "description": "Maximum command length in characters", "default": 10000}
+                }
+            },
             "working_directory": {"type": "string", "description": "Working directory context (informational)"}
         },
         "required": ["command"]
@@ -63,5 +78,5 @@ pub fn argv_compare_output() -> Value {
 }
 
 pub fn command_preflight_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"verdict":{"type":"string","enum":["allow","review","block"]},"command":{"type":"string"},"platform":{"type":"string"},"policy":{"type":"string"},"findings":{"type":"array"},"machine_code":{"type":"string"},"summary":{"type":"string"},"subresults":{"type":"object"}}})
+    serde_json::json!({"type":"object","properties":{"verdict":{"type":"string","enum":["allow","review","block"]},"command":{"type":"string"},"platform":{"type":"string"},"policy":{"type":"string"},"program":{"type":"string","description":"Extracted program name"},"subcommand":{"type":"string","description":"Extracted subcommand"},"features":{"type":"array","items":{"type":"string"},"description":"Detected risky shell features"},"findings":{"type":"array"},"matched_rules":{"type":"array","items":{"type":"string"},"description":"Policy rules that matched"},"machine_code":{"type":"string"},"summary":{"type":"string"},"subresults":{"type":"object"},"working_directory":{"type":"string"}}})
 }
