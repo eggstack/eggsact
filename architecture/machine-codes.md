@@ -147,6 +147,9 @@ These aliases are included in the `ALL` array and are interchangeable with their
 |------|---------|----------|----------|----------------|---------|
 | `EDIT_OK` | Edit safe to apply | info | no | apply | `edit_preflight` |
 | `EDIT_FAILED` | Edit could not be applied | high | yes | investigate | `edit_preflight` |
+| `EDIT_MODE_INVALID` | Unknown or unsupported replacement_mode | high | yes | fix mode | `edit_preflight` |
+| `EDIT_ARGUMENTS_MISSING` | Mode-specific required arguments are missing | high | yes | add missing args | `edit_preflight` |
+| `EDIT_ARGUMENTS_CONFLICT` | Conflicting arguments provided for the current mode | high | yes | remove conflicts | `edit_preflight` |
 | `AMBIGUOUS_REPLACEMENT` | Multiple matches found | medium | yes | disambiguate | `edit_preflight`, `text_replace_check` |
 | `PATCH_FAILED` | Patch parse/apply error | high | yes | fix patch | `patch_apply_check` |
 | `LINE_RANGE_INVALID` | Line range out of bounds | medium | yes | fix range | `line_range_extract`, `line_range_compare` |

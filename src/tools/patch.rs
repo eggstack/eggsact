@@ -237,6 +237,88 @@ pub fn patch_summary(args: &Value) -> ToolResponse {
     resp
 }
 
+/// Priority-ordered machine code selection from findings.
+///
+/// Returns `(primary_machine_code, recommended_next_tool_name, recommended_next_reason)`.
+/// The first matching code wins (priority order):
+///   path scope escape > line range invalid > patch failed >
+///   ambiguous replacement > fingerprint mismatch > unicode risk >
+///   newline inconsistency > success.
+fn derive_primary_machine_code(
+    findings: &[serde_json::Value],
+) -> (&'static str, Option<(&'static str, &'static str)>) {
+    for f in findings {
+        let code = match f.get("code").and_then(|v| v.as_str()) {
+            Some(c) => c,
+            None => continue,
+        };
+        match code {
+            "PATH_SCOPE_ESCAPE" => {
+                return (machine_codes::PATH_SCOPE_ESCAPE, None);
+            }
+            "INVALID_RANGE" => {
+                return (machine_codes::LINE_RANGE_INVALID, None);
+            }
+            "PATCH_FAILED" | "PATCH_ERROR" => {
+                return (machine_codes::PATCH_FAILED, None);
+            }
+            "NO_MATCH" | "MULTIPLE_MATCHES" => {
+                return (
+                    machine_codes::AMBIGUOUS_REPLACEMENT,
+                    Some(("text_diff_explain", "literal replacement was ambiguous")),
+                );
+            }
+            "FINGERPRINT_MISMATCH" => {
+                return (
+                    machine_codes::FINGERPRINT_MISMATCH,
+                    Some(("text_diff_explain", "content fingerprint mismatch")),
+                );
+            }
+            "UNICODE_RISK" => {
+                return (machine_codes::UNICODE_RISK, None);
+            }
+            "NEWLINE_INCONSISTENCY" => {
+                return (machine_codes::NEWLINE_INCONSISTENCY, None);
+            }
+            _ => continue,
+        }
+    }
+    (machine_codes::EDIT_OK, None)
+}
+
+/// Derive verdict, ok_to_apply, and summary from findings and primary machine code.
+fn derive_verdict(
+    findings: &[serde_json::Value],
+    _primary_code: &str,
+    replacement_mode: &str,
+) -> (&'static str, bool, String) {
+    let has_error = findings
+        .iter()
+        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::HIGH));
+    let has_warning = findings
+        .iter()
+        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::MEDIUM));
+    let ok_to_apply = !has_error;
+    let response_verdict = if has_error {
+        verdict::BLOCK
+    } else if has_warning {
+        verdict::REVIEW
+    } else {
+        verdict::ALLOW
+    };
+    let summary = if ok_to_apply {
+        format!("Edit OK ({} mode)", replacement_mode)
+    } else {
+        format!("Edit blocked ({} mode)", replacement_mode)
+    };
+    let summary = if findings.is_empty() {
+        summary
+    } else {
+        format!("{}; {} finding(s)", summary, findings.len())
+    };
+    (response_verdict, ok_to_apply, summary)
+}
+
 pub fn edit_preflight(args: &Value) -> ToolResponse {
     let original = match args.get("original").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -281,7 +363,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     if !valid_modes.contains(&replacement_mode) {
         return ToolResponse::error_with_code(
             "invalid_arguments",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::EDIT_MODE_INVALID,
             &format!(
                 "replacement_mode must be one of: {}",
                 valid_modes.join(", ")
@@ -291,35 +373,165 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
         );
     }
 
+    // Mode-specific argument contract validation
+    match replacement_mode {
+        "literal" => {
+            let has_old = args.get("old").and_then(|v| v.as_str()).is_some();
+            let has_new = args.get("new").and_then(|v| v.as_str()).is_some();
+            if !has_old || !has_new {
+                let mut missing = Vec::new();
+                if !has_old {
+                    missing.push("old");
+                }
+                if !has_new {
+                    missing.push("new");
+                }
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::EDIT_ARGUMENTS_MISSING,
+                    &format!(
+                        "literal mode requires 'old' and 'new'; missing: {}",
+                        missing.join(", ")
+                    ),
+                    None,
+                    Some("edit_preflight"),
+                );
+            }
+            // Detect conflicting args: patch or line_range args in literal mode
+            if args.get("patch").and_then(|v| v.as_str()).is_some() {
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::EDIT_ARGUMENTS_CONFLICT,
+                    "literal mode does not accept 'patch' argument",
+                    None,
+                    Some("edit_preflight"),
+                );
+            }
+            if args.get("start_line").is_some() || args.get("end_line").is_some() {
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::EDIT_ARGUMENTS_CONFLICT,
+                    "literal mode does not accept 'start_line' or 'end_line' arguments",
+                    None,
+                    Some("edit_preflight"),
+                );
+            }
+        }
+        "patch" => {
+            if args.get("patch").and_then(|v| v.as_str()).is_none() {
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::EDIT_ARGUMENTS_MISSING,
+                    "patch mode requires 'patch'",
+                    None,
+                    Some("edit_preflight"),
+                );
+            }
+            // Detect conflicting args: old/new in patch mode
+            if args.get("old").and_then(|v| v.as_str()).is_some()
+                || args.get("new").and_then(|v| v.as_str()).is_some()
+            {
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::EDIT_ARGUMENTS_CONFLICT,
+                    "patch mode does not accept 'old' or 'new' arguments",
+                    None,
+                    Some("edit_preflight"),
+                );
+            }
+        }
+        "line_range" => {
+            let has_start = args.get("start_line").and_then(|v| v.as_u64()).is_some();
+            let has_end = args.get("end_line").and_then(|v| v.as_u64()).is_some();
+            if !has_start || !has_end {
+                let mut missing = Vec::new();
+                if !has_start {
+                    missing.push("start_line");
+                }
+                if !has_end {
+                    missing.push("end_line");
+                }
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::EDIT_ARGUMENTS_MISSING,
+                    &format!(
+                        "line_range mode requires 'start_line' and 'end_line'; missing: {}",
+                        missing.join(", ")
+                    ),
+                    None,
+                    Some("edit_preflight"),
+                );
+            }
+            // Detect inverted range before sub-tool dispatch
+            let start = args.get("start_line").and_then(|v| v.as_u64()).unwrap();
+            let end = args.get("end_line").and_then(|v| v.as_u64()).unwrap();
+            if start > end {
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::LINE_RANGE_INVALID,
+                    &format!("start_line ({}) must be <= end_line ({})", start, end),
+                    None,
+                    Some("edit_preflight"),
+                );
+            }
+            // Detect conflicting args: old/new/patch in line_range mode
+            if args.get("old").and_then(|v| v.as_str()).is_some()
+                || args.get("new").and_then(|v| v.as_str()).is_some()
+            {
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::EDIT_ARGUMENTS_CONFLICT,
+                    "line_range mode does not accept 'old' or 'new' arguments",
+                    None,
+                    Some("edit_preflight"),
+                );
+            }
+            if args.get("patch").and_then(|v| v.as_str()).is_some() {
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::EDIT_ARGUMENTS_CONFLICT,
+                    "line_range mode does not accept 'patch' argument",
+                    None,
+                    Some("edit_preflight"),
+                );
+            }
+        }
+        _ => unreachable!(),
+    }
+
+    // --- Metadata bounds checking ---
+    if let Some(meta) = args.get("edit_metadata").and_then(|v| v.as_object()) {
+        for field in &[
+            "description",
+            "author",
+            "source_tool",
+            "session_id",
+            "request_id",
+        ] {
+            if let Some(val) = meta.get(*field).and_then(|v| v.as_str()) {
+                if val.len() > MAX_METADATA_FIELD_LENGTH {
+                    return ToolResponse::error_with_code(
+                        "invalid_arguments",
+                        machine_codes::EDIT_ARGUMENTS_MISSING,
+                        &format!(
+                            "edit_metadata.{} exceeds {} char limit",
+                            field, MAX_METADATA_FIELD_LENGTH
+                        ),
+                        None,
+                        Some("edit_preflight"),
+                    );
+                }
+            }
+        }
+    }
+
     let mut subresults = serde_json::Map::new();
     let mut findings: Vec<serde_json::Value> = Vec::new();
 
     match replacement_mode {
         "literal" => {
-            let old = match args.get("old").and_then(|v| v.as_str()) {
-                Some(s) => s,
-                None => {
-                    return ToolResponse::error_with_code(
-                        "invalid_arguments",
-                        machine_codes::INVALID_ARGUMENTS,
-                        "literal mode requires both 'old' and 'new'",
-                        None,
-                        Some("edit_preflight"),
-                    )
-                }
-            };
-            let new = match args.get("new").and_then(|v| v.as_str()) {
-                Some(s) => s,
-                None => {
-                    return ToolResponse::error_with_code(
-                        "invalid_arguments",
-                        machine_codes::INVALID_ARGUMENTS,
-                        "literal mode requires both 'old' and 'new'",
-                        None,
-                        Some("edit_preflight"),
-                    )
-                }
-            };
+            let old = args.get("old").and_then(|v| v.as_str()).unwrap();
+            let new = args.get("new").and_then(|v| v.as_str()).unwrap();
             let tr_args = serde_json::json!({
                 "text": original,
                 "old": old,
@@ -350,18 +562,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             }
         }
         "patch" => {
-            let patch_text = match args.get("patch").and_then(|v| v.as_str()) {
-                Some(s) => s,
-                None => {
-                    return ToolResponse::error_with_code(
-                        "invalid_arguments",
-                        machine_codes::INVALID_ARGUMENTS,
-                        "patch mode requires 'patch'",
-                        None,
-                        Some("edit_preflight"),
-                    )
-                }
-            };
+            let patch_text = args.get("patch").and_then(|v| v.as_str()).unwrap();
             let pa_args = serde_json::json!({
                 "original_text": original,
                 "patch_text": patch_text,
@@ -403,30 +604,8 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             }
         }
         "line_range" => {
-            let start_line = match args.get("start_line").and_then(|v| v.as_u64()) {
-                Some(n) => n as usize,
-                None => {
-                    return ToolResponse::error_with_code(
-                        "invalid_arguments",
-                        machine_codes::INVALID_ARGUMENTS,
-                        "line_range mode requires 'start_line' and 'end_line'",
-                        None,
-                        Some("edit_preflight"),
-                    )
-                }
-            };
-            let end_line = match args.get("end_line").and_then(|v| v.as_u64()) {
-                Some(n) => n as usize,
-                None => {
-                    return ToolResponse::error_with_code(
-                        "invalid_arguments",
-                        machine_codes::INVALID_ARGUMENTS,
-                        "line_range mode requires 'start_line' and 'end_line'",
-                        None,
-                        Some("edit_preflight"),
-                    )
-                }
-            };
+            let start_line = args.get("start_line").and_then(|v| v.as_u64()).unwrap() as usize;
+            let end_line = args.get("end_line").and_then(|v| v.as_u64()).unwrap() as usize;
             let lr_args = serde_json::json!({
                 "text": original,
                 "start_line": start_line,
@@ -534,12 +713,28 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
         });
         let ps_resp = crate::tools::path::path_scope_check(&ps_args);
         if let Some(ref r) = ps_resp.result {
-            path_scope_result = Some(r.clone());
-            subresults.insert("path_scope_check".to_string(), r.clone());
             let inside_root = r
                 .get("inside_root")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
+            let normalized_target = r
+                .get("target_normalized")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let reason = if !inside_root {
+                Some("Target path is outside workspace root".to_string())
+            } else {
+                None
+            };
+            let ps_enhanced = serde_json::json!({
+                "inside_root": inside_root,
+                "escapes_via_dotdot": r.get("escapes_via_dotdot").and_then(|v| v.as_bool()).unwrap_or(false),
+                "relative_path": r.get("relative_path").and_then(|v| v.as_str()).unwrap_or(""),
+                "normalized_target": normalized_target,
+                "reason": reason,
+            });
+            path_scope_result = Some(ps_enhanced.clone());
+            subresults.insert("path_scope_check".to_string(), r.clone());
             if !inside_root {
                 findings.push(finding(
                     "PATH_SCOPE_ESCAPE",
@@ -556,42 +751,105 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     let mut newline_check_result: Option<Value> = None;
     if newline_policy != "skip" {
         // Detect newline style on original text using text_fingerprint
-        let fp_args = serde_json::json!({"text": original, "unicode": "raw", "newline": "raw"});
-        let fp_resp = crate::tools::text::text_fingerprint_tool(&fp_args);
-        if let Some(ref r) = fp_resp.result {
-            let style = r
-                .get("newline_style")
+        let fp_args_orig =
+            serde_json::json!({"text": original, "unicode": "raw", "newline": "raw"});
+        let fp_resp_orig = crate::tools::text::text_fingerprint_tool(&fp_args_orig);
+        let orig_style = fp_resp_orig
+            .result
+            .as_ref()
+            .and_then(|r| r.get("newline_style"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        // Detect newline style on replacement text when available
+        let repl_style = match replacement_mode {
+            "literal" => args.get("new").and_then(|v| v.as_str()).map(|new_text| {
+                let fp_args_new =
+                    serde_json::json!({"text": new_text, "unicode": "raw", "newline": "raw"});
+                let fp_resp_new = crate::tools::text::text_fingerprint_tool(&fp_args_new);
+                fp_resp_new
+                    .result
+                    .as_ref()
+                    .and_then(|r| r.get("newline_style"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string()
+            }),
+            "patch" => args
+                .get("patch")
                 .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
-            let mixed = style == "mixed";
-            let nc = serde_json::json!({
-                "style": style,
-                "mixed": mixed,
-            });
-            newline_check_result = Some(nc.clone());
-            subresults.insert("newline_check".to_string(), nc);
-            if mixed {
-                findings.push(finding(
-                    "NEWLINE_INCONSISTENCY",
-                    severity::MEDIUM,
-                    "File has mixed newline styles (CRLF and LF)",
-                    Some(disposition::CAUTION),
-                    None,
-                ));
+                .map(|patch_text| {
+                    let fp_args_p =
+                        serde_json::json!({"text": patch_text, "unicode": "raw", "newline": "raw"});
+                    let fp_resp_p = crate::tools::text::text_fingerprint_tool(&fp_args_p);
+                    fp_resp_p
+                        .result
+                        .as_ref()
+                        .and_then(|r| r.get("newline_style"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string()
+                }),
+            _ => None,
+        };
+        // Determine composite style: mixed if original and replacement differ, or if original is mixed
+        let composite_style = if orig_style == "mixed" {
+            "mixed".to_string()
+        } else if let Some(ref rs) = repl_style {
+            if rs == "mixed" || (orig_style != "none" && *rs != "none" && orig_style != *rs) {
+                "mixed".to_string()
+            } else {
+                orig_style.clone()
             }
+        } else {
+            orig_style.clone()
+        };
+        let mixed = composite_style == "mixed";
+        let recommended_normalization = match newline_policy {
+            "normalize_lf" => Some("lf".to_string()),
+            "normalize_crlf" => Some("crlf".to_string()),
+            _ => None,
+        };
+        let nc = serde_json::json!({
+            "style": composite_style,
+            "original_style": orig_style,
+            "replacement_style": repl_style,
+            "mixed": mixed,
+            "policy": newline_policy,
+            "recommended_normalization": recommended_normalization,
+        });
+        newline_check_result = Some(nc.clone());
+        subresults.insert("newline_check".to_string(), nc);
+        if mixed {
+            findings.push(finding(
+                "NEWLINE_INCONSISTENCY",
+                severity::MEDIUM,
+                "File has mixed newline styles (CRLF and LF)",
+                Some(disposition::CAUTION),
+                None,
+            ));
         }
     }
 
     // --- Unicode security check (when policy is not "skip") ---
     let mut unicode_check_result: Option<Value> = None;
     if unicode_policy != "skip" {
-        // Determine text to inspect: prefer `new` (literal mode), otherwise original
-        let inspect_text = args.get("new").and_then(|v| v.as_str()).unwrap_or(original);
+        // Determine text to inspect based on mode:
+        // - literal: inspect `new` (the replacement text)
+        // - patch: inspect the raw patch content (added lines are within it)
+        // - line_range: inspect original (replacement text not provided separately)
+        let inspect_text = match replacement_mode {
+            "literal" => args.get("new").and_then(|v| v.as_str()).unwrap_or(original),
+            "patch" => args
+                .get("patch")
+                .and_then(|v| v.as_str())
+                .unwrap_or(original),
+            _ => original,
+        };
         let us_args = serde_json::json!({
             "text": inspect_text,
             "policy": unicode_policy,
-            "detail": "summary",
+            "detail": "full",
         });
         let us_resp = crate::tools::text::text_security_inspect(&us_args);
         if let Some(ref r) = us_resp.result {
@@ -605,15 +863,17 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 .and_then(|v| v.as_str())
                 .unwrap_or("TEXT_SECURITY_OK")
                 .to_string();
-            let us_findings_count = r
+            let us_findings = r
                 .get("findings")
                 .and_then(|v| v.as_array())
-                .map(|a| a.len())
-                .unwrap_or(0);
+                .cloned()
+                .unwrap_or_default();
+            let finding_count = us_findings.len();
             let uc = serde_json::json!({
                 "verdict": us_verdict,
                 "machine_code": us_machine_code,
-                "finding_count": us_findings_count,
+                "finding_count": finding_count,
+                "findings": us_findings,
             });
             unicode_check_result = Some(uc.clone());
             subresults.insert("text_security_inspect".to_string(), r.clone());
@@ -637,124 +897,48 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
         }
     }
 
-    let has_error = findings
-        .iter()
-        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::HIGH));
-    let has_warning = findings
-        .iter()
-        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::MEDIUM));
-    let ok_to_apply = !has_error;
+    // --- Derive primary machine code, verdict, and summary from findings ---
+    let (primary_code, next_tool_hint) = derive_primary_machine_code(&findings);
+    let (response_verdict, ok_to_apply, summary) =
+        derive_verdict(&findings, primary_code, replacement_mode);
 
-    // Determine verdict
-    let response_verdict = if has_error {
-        verdict::BLOCK
-    } else if has_warning {
-        verdict::REVIEW
-    } else {
-        verdict::ALLOW
-    };
+    let recommended_next =
+        next_tool_hint.map(|(name, reason)| ToolResponse::next_tool(name, reason, None));
 
-    // Determine machine_code and recommended_next_tool (matching Python's first-inserted-wins)
-    let mut code_list: Vec<String> = Vec::new();
-    let mut recommended_next: Option<serde_json::Value> = None;
-
-    let has_no_match = findings
-        .iter()
-        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("NO_MATCH"));
-    let has_multiple = findings
-        .iter()
-        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("MULTIPLE_MATCHES"));
-    let has_patch_fail = findings
-        .iter()
-        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("PATCH_FAILED"));
-    let has_patch_error = findings
-        .iter()
-        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("PATCH_ERROR"));
-    let has_fingerprint = findings
-        .iter()
-        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("FINGERPRINT_MISMATCH"));
-    let has_invalid_range = findings
-        .iter()
-        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("INVALID_RANGE"));
-
-    if has_no_match || has_multiple {
-        code_list.push(machine_codes::AMBIGUOUS_REPLACEMENT.to_string());
-        recommended_next = Some(ToolResponse::next_tool(
-            "text_diff_explain",
-            "literal replacement was ambiguous",
-            None,
-        ));
-    }
-    if (has_patch_fail || has_patch_error)
-        && !code_list.contains(&machine_codes::PATCH_FAILED.to_string())
-    {
-        code_list.push(machine_codes::PATCH_FAILED.to_string());
-    }
-    if has_invalid_range && !code_list.contains(&machine_codes::LINE_RANGE_INVALID.to_string()) {
-        code_list.push(machine_codes::LINE_RANGE_INVALID.to_string());
-    }
-    if has_fingerprint {
-        if !code_list.contains(&machine_codes::FINGERPRINT_MISMATCH.to_string()) {
-            code_list.push(machine_codes::FINGERPRINT_MISMATCH.to_string());
-        }
-        if recommended_next.is_none() {
-            recommended_next = Some(ToolResponse::next_tool(
-                "text_diff_explain",
-                "content fingerprint mismatch",
-                None,
-            ));
+    // Collect secondary machine codes (all non-primary codes from findings)
+    let mut secondary_codes: Vec<String> = Vec::new();
+    for f in &findings {
+        let code = match f.get("code").and_then(|v| v.as_str()) {
+            Some(c) => c,
+            None => continue,
+        };
+        let mapped = match code {
+            "PATH_SCOPE_ESCAPE" => machine_codes::PATH_SCOPE_ESCAPE,
+            "INVALID_RANGE" => machine_codes::LINE_RANGE_INVALID,
+            "PATCH_FAILED" | "PATCH_ERROR" => machine_codes::PATCH_FAILED,
+            "NO_MATCH" | "MULTIPLE_MATCHES" => machine_codes::AMBIGUOUS_REPLACEMENT,
+            "FINGERPRINT_MISMATCH" => machine_codes::FINGERPRINT_MISMATCH,
+            "UNICODE_RISK" => machine_codes::UNICODE_RISK,
+            "NEWLINE_INCONSISTENCY" => machine_codes::NEWLINE_INCONSISTENCY,
+            _ => continue,
+        };
+        if mapped != primary_code && !secondary_codes.contains(&mapped.to_string()) {
+            secondary_codes.push(mapped.to_string());
         }
     }
-    // Path scope escape is always BLOCK-level
-    let has_path_escape = findings
-        .iter()
-        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("PATH_SCOPE_ESCAPE"));
-    if has_path_escape && !code_list.contains(&machine_codes::PATH_SCOPE_ESCAPE.to_string()) {
-        code_list.push(machine_codes::PATH_SCOPE_ESCAPE.to_string());
-    }
-    // Unicode risk
-    let has_unicode_risk = findings
-        .iter()
-        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("UNICODE_RISK"));
-    if has_unicode_risk && !code_list.contains(&machine_codes::UNICODE_RISK.to_string()) {
-        code_list.push(machine_codes::UNICODE_RISK.to_string());
-    }
-    // Newline inconsistency
-    let has_newline_inc = findings
-        .iter()
-        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("NEWLINE_INCONSISTENCY"));
-    if has_newline_inc && !code_list.contains(&machine_codes::NEWLINE_INCONSISTENCY.to_string()) {
-        code_list.push(machine_codes::NEWLINE_INCONSISTENCY.to_string());
-    }
-    if has_error && code_list.is_empty() {
-        code_list.push(machine_codes::EDIT_FAILED.to_string());
-    }
-    if code_list.is_empty() {
-        code_list.push(machine_codes::EDIT_OK.to_string());
-    }
-    let machine_code_str = code_list[0].clone();
-
-    // Build summary
-    let summary = if ok_to_apply {
-        format!("Edit OK ({} mode)", replacement_mode)
-    } else {
-        format!("Edit blocked ({} mode)", replacement_mode)
-    };
-    let summary = if findings.is_empty() {
-        summary
-    } else {
-        format!("{}; {} finding(s)", summary, findings.len())
-    };
 
     let mut result = serde_json::json!({
         "ok_to_apply": ok_to_apply,
         "verdict": response_verdict,
         "mode": replacement_mode,
         "findings": findings,
-        "machine_code": machine_code_str,
+        "machine_code": primary_code,
         "recommended_next_tool": recommended_next,
         "summary": summary,
     });
+    if !secondary_codes.is_empty() {
+        result["secondary_machine_codes"] = serde_json::json!(secondary_codes);
+    }
     if !subresults.is_empty() {
         result["subresults"] = serde_json::Value::Object(subresults);
     }
@@ -774,7 +958,7 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     let mut resp =
         ToolResponse::success(result, Some("edit_preflight")).with_tool("edit_preflight");
     resp = resp
-        .with_machine_code(&machine_code_str)
+        .with_machine_code(primary_code)
         .with_verdict(response_verdict);
     if !findings.is_empty() {
         resp = resp.with_findings(findings.clone());

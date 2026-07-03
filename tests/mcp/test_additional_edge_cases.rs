@@ -1040,6 +1040,20 @@ fn test_edit_preflight_line_range_mode() {
         "edit_preflight",
         serde_json::json!({
             "original": "line1\nline2\nline3",
+            "replacement_mode": "line_range",
+            "start_line": 2,
+            "end_line": 2
+        }),
+    );
+    assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
+}
+
+#[test]
+fn test_edit_preflight_line_range_conflicts_with_old_new() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "line1\nline2\nline3",
             "old": "line2",
             "new": "modified",
             "replacement_mode": "line_range",
@@ -1047,7 +1061,13 @@ fn test_edit_preflight_line_range_mode() {
             "end_line": 2
         }),
     );
-    assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
+    assert_eq!(r.get("ok"), Some(&Value::Bool(false)));
+    let err = r.get("error").and_then(|e| e.as_str()).unwrap_or("");
+    assert!(
+        err.contains("does not accept"),
+        "Expected conflict error, got: {}",
+        err
+    );
 }
 
 #[test]

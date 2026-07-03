@@ -429,3 +429,400 @@ fn test_edit_preflight_patch_fingerprint_mismatch() {
     let has_fp_mismatch = findings.iter().any(|f| f["code"] == "FINGERPRINT_MISMATCH");
     assert!(has_fp_mismatch, "Expected FINGERPRINT_MISMATCH finding");
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// PATH SCOPE — extended edge cases
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_edit_preflight_path_scope_redundant_segments() {
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "rust",
+            "replacement_mode": "literal",
+            "file_path": "src/../src/main.rs",
+            "workspace_root": cwd
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    assert_eq!(r["result"]["ok_to_apply"], true);
+    let ps = r["result"]["path_scope"].as_object().unwrap();
+    assert_eq!(ps["inside_root"], true);
+    assert_eq!(ps["escapes_via_dotdot"], true);
+}
+
+#[test]
+fn test_edit_preflight_path_scope_absolute_safe() {
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let abs_path = format!("{}/src/main.rs", cwd);
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "rust",
+            "replacement_mode": "literal",
+            "file_path": abs_path,
+            "workspace_root": cwd
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    assert_eq!(r["result"]["ok_to_apply"], true);
+    let ps = r["result"]["path_scope"].as_object().unwrap();
+    assert_eq!(ps["inside_root"], true);
+}
+
+#[test]
+fn test_edit_preflight_path_scope_absolute_outside_blocks() {
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "rust",
+            "replacement_mode": "literal",
+            "file_path": "/etc/passwd",
+            "workspace_root": cwd
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    assert_eq!(r["result"]["ok_to_apply"], false);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// NEWLINE CHECK — extended variations
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_edit_preflight_newline_lf_only() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "line1\nline2\nline3",
+            "old": "line2",
+            "new": "modified",
+            "replacement_mode": "literal",
+            "newline_policy": "check"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    assert_eq!(r["result"]["ok_to_apply"], true);
+    let nc = r["result"]["newline_check"].as_object().unwrap();
+    assert_eq!(nc["mixed"], false);
+    assert_eq!(nc["policy"], "check");
+}
+
+#[test]
+fn test_edit_preflight_newline_crlf_only() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "line1\r\nline2\r\nline3",
+            "old": "line2",
+            "new": "modified",
+            "replacement_mode": "literal",
+            "newline_policy": "check"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    assert_eq!(r["result"]["ok_to_apply"], true);
+    let nc = r["result"]["newline_check"].as_object().unwrap();
+    assert_eq!(nc["mixed"], false);
+}
+
+#[test]
+fn test_edit_preflight_newline_empty_input() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "",
+            "old": "",
+            "new": "something",
+            "replacement_mode": "literal",
+            "newline_policy": "check"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    let nc = r["result"]["newline_check"].as_object().unwrap();
+    assert_eq!(nc["mixed"], false);
+}
+
+#[test]
+fn test_edit_preflight_newline_no_newlines() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "rust",
+            "replacement_mode": "literal",
+            "newline_policy": "check"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    let nc = r["result"]["newline_check"].as_object().unwrap();
+    assert_eq!(nc["mixed"], false);
+    assert_eq!(nc["policy"], "check");
+}
+
+#[test]
+fn test_edit_preflight_newline_normalize_lf() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "line1\r\nline2\r\nline3",
+            "old": "line2",
+            "new": "modified",
+            "replacement_mode": "literal",
+            "newline_policy": "normalize_lf"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    let nc = r["result"]["newline_check"].as_object().unwrap();
+    assert_eq!(nc["policy"], "normalize_lf");
+    assert_eq!(nc["recommended_normalization"], "lf");
+}
+
+#[test]
+fn test_edit_preflight_newline_normalize_crlf() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "line1\nline2\nline3",
+            "old": "line2",
+            "new": "modified",
+            "replacement_mode": "literal",
+            "newline_policy": "normalize_crlf"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    let nc = r["result"]["newline_check"].as_object().unwrap();
+    assert_eq!(nc["policy"], "normalize_crlf");
+    assert_eq!(nc["recommended_normalization"], "crlf");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// UNICODE CHECK — structured findings
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_edit_preflight_unicode_ascii_clean() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "safe_text",
+            "replacement_mode": "literal",
+            "unicode_policy": "default"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    let uc = r["result"]["unicode_check"].as_object().unwrap();
+    assert_eq!(uc["verdict"], "allow");
+    assert_eq!(uc["machine_code"], "TEXT_SECURITY_OK");
+    assert_eq!(uc["finding_count"], 0);
+}
+
+#[test]
+fn test_edit_preflight_unicode_findings_preserved() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "hello\u{200B}world",
+            "replacement_mode": "literal",
+            "unicode_policy": "default"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    let uc = r["result"]["unicode_check"].as_object().unwrap();
+    let findings = uc["findings"].as_array().unwrap();
+    assert!(
+        !findings.is_empty(),
+        "Expected structured findings for zero-width space"
+    );
+}
+
+#[test]
+fn test_edit_preflight_unicode_source_code_policy() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "safe_identifier",
+            "replacement_mode": "literal",
+            "unicode_policy": "source_code"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    let uc = r["result"]["unicode_check"].as_object().unwrap();
+    assert_eq!(uc["verdict"], "allow");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// METADATA — bounds and presence
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_edit_preflight_metadata_oversized_rejected() {
+    let large_desc = "x".repeat(1500);
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "rust",
+            "replacement_mode": "literal",
+            "edit_metadata": {
+                "description": large_desc
+            }
+        }),
+    );
+    assert_eq!(r["ok"], false);
+}
+
+#[test]
+fn test_edit_preflight_metadata_session_id() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "rust",
+            "replacement_mode": "literal",
+            "edit_metadata": {
+                "description": "test edit",
+                "author": "test-agent",
+                "session_id": "sess_123",
+                "request_id": "req_456"
+            }
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    assert_eq!(r["result"]["ok_to_apply"], true);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PATH SCOPE — structured fields
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_edit_preflight_path_scope_has_normalized_target() {
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello world",
+            "old": "world",
+            "new": "rust",
+            "replacement_mode": "literal",
+            "file_path": "src/main.rs",
+            "workspace_root": cwd
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    let ps = r["result"]["path_scope"].as_object().unwrap();
+    assert!(
+        ps.get("normalized_target").is_some(),
+        "path_scope should include normalized_target"
+    );
+    assert!(
+        ps.get("reason").is_some(),
+        "path_scope should include reason field"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// NEWLINE — original_style and replacement_style fields
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_edit_preflight_newline_has_original_and_replacement_style() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "line1\nline2\nline3",
+            "old": "line2",
+            "new": "modified",
+            "replacement_mode": "literal",
+            "newline_policy": "check"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    let nc = r["result"]["newline_check"].as_object().unwrap();
+    assert!(
+        nc.get("original_style").is_some(),
+        "newline_check should include original_style"
+    );
+    assert!(
+        nc.get("replacement_style").is_some(),
+        "newline_check should include replacement_style"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MACHINE CODES — mode-specific validation
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_edit_preflight_mode_invalid() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello",
+            "replacement_mode": "regex"
+        }),
+    );
+    assert!(
+        r.get("ok").is_none() || r["ok"] == Value::Bool(false),
+        "Invalid mode should be rejected"
+    );
+}
+
+#[test]
+fn test_edit_preflight_literal_missing_new() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "hello",
+            "old": "hello",
+            "replacement_mode": "literal"
+        }),
+    );
+    assert_eq!(r["ok"], false);
+}
+
+#[test]
+fn test_edit_preflight_line_range_conflicts_with_patch() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "line1\nline2\nline3",
+            "patch": "--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n line1\n-line2\n+modified\n line3\n",
+            "replacement_mode": "line_range",
+            "start_line": 2,
+            "end_line": 2
+        }),
+    );
+    assert_eq!(r["ok"], false);
+}

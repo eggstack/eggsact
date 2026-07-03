@@ -374,6 +374,12 @@ pub struct EditMetadata {
     /// Tool that originated this edit (e.g. "apply_patch", "edit_file").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_tool: Option<String>,
+    /// Session identifier for traceability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Request identifier for traceability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 }
 
 /// Path scope check result from composing `path_scope_check`.
@@ -385,15 +391,33 @@ pub struct PathScopeResult {
     pub escapes_via_dotdot: bool,
     /// Normalized relative path from root.
     pub relative_path: String,
+    /// Normalized absolute target path (lexical resolution only, no symlink follow).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub normalized_target: Option<String>,
+    /// Human-readable reason for the path scope decision.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// Newline check result from detecting newline style inconsistencies.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewlineCheckResult {
-    /// Detected newline style: "LF", "CRLF", "CR", "mixed", or "none".
+    /// Composite detected newline style: "LF", "CRLF", "CR", "mixed", or "none".
     pub style: String,
     /// Whether mixed newlines were detected.
     pub mixed: bool,
+    /// Newline policy that was applied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<String>,
+    /// Recommended normalization target ("lf" or "crlf"), if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended_normalization: Option<String>,
+    /// Newline style detected in the original text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_style: Option<String>,
+    /// Newline style detected in the replacement text, if applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replacement_style: Option<String>,
 }
 
 /// Unicode security check result from composing `text_security_inspect`.
@@ -405,6 +429,9 @@ pub struct UnicodeCheckResult {
     pub machine_code: String,
     /// Number of findings.
     pub finding_count: usize,
+    /// Structured findings from text_security_inspect (when available).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub findings: Vec<Value>,
 }
 
 /// Fingerprint result from composing `text_fingerprint`.
@@ -893,8 +920,10 @@ pub struct EditPreflightOutput {
     pub mode: String,
     /// Typed verdict for programmatic routing.
     pub verdict: EditVerdict,
-    /// Machine-readable status code.
+    /// Primary machine-readable status code (highest-priority finding).
     pub machine_code: String,
+    /// Additional machine codes when multiple findings exist.
+    pub secondary_machine_codes: Vec<String>,
     /// Human-readable summary.
     pub summary: String,
     /// Structured findings.
@@ -1019,11 +1048,23 @@ impl EditPreflight {
 
         let raw = response.result.unwrap_or(Value::Null);
 
+        // Parse secondary_machine_codes from result
+        let secondary_machine_codes = raw
+            .get("secondary_machine_codes")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Ok(EditPreflightOutput {
             ok_to_apply,
             mode,
             verdict,
             machine_code,
+            secondary_machine_codes,
             summary,
             findings,
             recommended_next_tool,
@@ -2517,5 +2558,134 @@ mod tests {
         assert_eq!(output.findings[0].code, "A");
         assert_eq!(output.findings[1].code, "B");
         assert_eq!(output.findings[1].disposition.as_deref(), Some("blocking"));
+    }
+
+    #[test]
+    fn edit_preflight_parse_response_path_scope_with_normalized_target() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow",
+                "path_scope": {
+                    "inside_root": true,
+                    "escapes_via_dotdot": false,
+                    "relative_path": "src/main.rs",
+                    "normalized_target": "/workspace/src/main.rs",
+                    "reason": null
+                }
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK");
+        let output = EditPreflight::parse_response(response).unwrap();
+        let ps = output.path_scope.unwrap();
+        assert!(ps.inside_root);
+        assert_eq!(
+            ps.normalized_target.as_deref(),
+            Some("/workspace/src/main.rs")
+        );
+        assert!(ps.reason.is_none());
+    }
+
+    #[test]
+    fn edit_preflight_parse_response_path_scope_without_new_fields() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow",
+                "path_scope": {
+                    "inside_root": true,
+                    "escapes_via_dotdot": false,
+                    "relative_path": "src/main.rs"
+                }
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK");
+        let output = EditPreflight::parse_response(response).unwrap();
+        let ps = output.path_scope.unwrap();
+        assert!(ps.inside_root);
+        assert!(ps.normalized_target.is_none());
+        assert!(ps.reason.is_none());
+    }
+
+    #[test]
+    fn edit_preflight_parse_response_newline_check_with_styles() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "review",
+                "newline_check": {
+                    "style": "mixed",
+                    "mixed": true,
+                    "policy": "check",
+                    "original_style": "LF",
+                    "replacement_style": "CRLF"
+                }
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("NEWLINE_INCONSISTENCY");
+        let output = EditPreflight::parse_response(response).unwrap();
+        let nc = output.newline_check.unwrap();
+        assert_eq!(nc.style, "mixed");
+        assert!(nc.mixed);
+        assert_eq!(nc.original_style.as_deref(), Some("LF"));
+        assert_eq!(nc.replacement_style.as_deref(), Some("CRLF"));
+    }
+
+    #[test]
+    fn edit_preflight_parse_response_unicode_check_with_findings() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "review",
+                "unicode_check": {
+                    "verdict": "review",
+                    "machine_code": "UNICODE_RISK",
+                    "finding_count": 1,
+                    "findings": [
+                        {"code": "ZERO_WIDTH_SPACE", "severity": "medium", "message": "Zero-width space found"}
+                    ]
+                }
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("UNICODE_RISK");
+        let output = EditPreflight::parse_response(response).unwrap();
+        let uc = output.unicode_check.unwrap();
+        assert_eq!(uc.verdict, "review");
+        assert_eq!(uc.finding_count, 1);
+        assert_eq!(uc.findings.len(), 1);
+    }
+
+    #[test]
+    fn edit_preflight_parse_response_unicode_check_without_findings() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "ok_to_apply": true,
+                "mode": "literal",
+                "summary": "ok",
+                "verdict": "allow",
+                "unicode_check": {
+                    "verdict": "allow",
+                    "machine_code": "TEXT_SECURITY_OK",
+                    "finding_count": 0
+                }
+            }),
+            Some("edit_preflight"),
+        )
+        .with_machine_code("EDIT_OK");
+        let output = EditPreflight::parse_response(response).unwrap();
+        let uc = output.unicode_check.unwrap();
+        assert_eq!(uc.findings.len(), 0);
     }
 }

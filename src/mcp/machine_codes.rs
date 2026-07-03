@@ -99,6 +99,12 @@ pub const PATH_SCOPE_ESCAPE: &str = "PATH_HAS_TRAVERSAL";
 pub const EDIT_OK: &str = "EDIT_OK";
 /// Edit failed to apply (patch parse error, internal failure, etc.).
 pub const EDIT_FAILED: &str = "EDIT_FAILED";
+/// Replacement mode is unknown or invalid.
+pub const EDIT_MODE_INVALID: &str = "EDIT_MODE_INVALID";
+/// Mode-specific required arguments are missing.
+pub const EDIT_ARGUMENTS_MISSING: &str = "EDIT_ARGUMENTS_MISSING";
+/// Conflicting arguments provided for the current mode.
+pub const EDIT_ARGUMENTS_CONFLICT: &str = "EDIT_ARGUMENTS_CONFLICT";
 /// old_text matched multiple locations — needs disambiguation.
 pub const AMBIGUOUS_REPLACEMENT: &str = "AMBIGUOUS_REPLACEMENT";
 /// Patch failed to parse or apply.
@@ -327,6 +333,9 @@ pub const ALL: &[&str] = &[
     INVALID_ARGUMENTS,
     EDIT_OK,
     EDIT_FAILED,
+    EDIT_MODE_INVALID,
+    EDIT_ARGUMENTS_MISSING,
+    EDIT_ARGUMENTS_CONFLICT,
     AMBIGUOUS_REPLACEMENT,
     PATCH_FAILED,
     LINE_RANGE_INVALID,

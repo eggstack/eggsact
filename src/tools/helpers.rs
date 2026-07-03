@@ -22,6 +22,7 @@ pub(crate) const MAX_MATCHES_HARD_CAP: usize = 1000;
 pub(crate) const MAX_PATTERN_LENGTH: usize = 1000;
 pub(crate) const MAX_SCHEMA_DEPTH: usize = 32;
 pub(crate) const MAX_SCHEMA_ELEMENTS: usize = 10_000;
+pub(crate) const MAX_METADATA_FIELD_LENGTH: usize = 1_000;
 pub(crate) const REGEX_TIMEOUT_SECONDS: u64 = 5;
 pub(crate) const MAX_CONCURRENT_SPAWNED: usize = 16;
 pub(crate) const SPAWN_ACQUIRE_TIMEOUT: u64 = 10;
