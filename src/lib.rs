@@ -74,5 +74,8 @@ pub mod tools;
 
 // Re-export commonly used functions
 pub use calc::evaluate;
+pub use calc::evaluate_with_context;
 pub use calc::run;
+pub use calc::run_with_context;
 pub use calc::split_at_operators;
+pub use calc::EvalContext;

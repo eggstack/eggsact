@@ -207,6 +207,69 @@ API** (`src/agent/`) rather than the MCP stdio server. The agent API
 (`ToolRegistry::call_json()`) is synchronous and avoids the serialization and
 IPC overhead of the stdio transport.
 
+## ExecutionContext (`src/agent/mod.rs`)
+
+`ExecutionContext` bundles per-request mutable state into a single struct:
+
+```rust
+pub struct ExecutionContext {
+    pub eval_ctx: EvalContext,
+    pub compatibility_mode: CompatibilityMode,
+    pub profile: Profile,
+    pub audience: ToolAudience,
+    pub budget: ToolBudget,
+    pub cancellation: Option<Arc<AtomicBool>>,
+    pub request_id: Option<String>,
+    pub source: ExecutionSource,
+}
+```
+
+`ExecutionSource` distinguishes callers: `Cli`, `Library`, `Mcp`, `Agent`, `Test`.
+
+### Constructors
+
+| Method | Compatibility | Description |
+|--------|---------------|-------------|
+| `ExecutionContext::cli_default()` | `StrictNative` | CLI invocations |
+| `ExecutionContext::library_default()` | `StrictNative` | Library consumers |
+| `ExecutionContext::mcp_default()` | `EggcalcPython` | MCP server (Python-parity errors) |
+| `ExecutionContext::agent_default()` | `StrictNative` | In-process agent calls |
+| `ExecutionContext::test_default()` | `StrictNative` | Test harness |
+
+Builder methods: `with_budget()`, `with_cancellation()`, `with_request_id()`.
+
+### Context-aware dispatch
+
+`ToolRegistry::call_json_with_execution_context()` accepts an `ExecutionContext` and threads its fields through validation, handler dispatch, and response construction. Legacy APIs remain as backward-compatible wrappers:
+
+| Method | What it wraps |
+|--------|---------------|
+| `call_json(name, args)` | Creates a default context internally |
+| `call_json_with_budget(name, args, budget)` | Context with custom budget |
+| `call_json_with_context(name, args, compat, profile)` | Context with explicit compat/profile |
+| `call_json_with_execution_context(name, args, ctx)` | Full context — **recommended for new code** |
+
+### MCP startup env vars → runtime context
+
+The MCP server reads `EGGCALC_MCP_PROFILE` and `EGGCALC_MCP_SCHEMA_DETAIL` at startup. These become the `profile` and `compatibility_mode` fields in `ExecutionContext::mcp_default()`. Once set, they apply to all subsequent tool calls — there is no per-call profile override in `tools/call`.
+
+### Handler signatures unchanged
+
+Tool handler functions retain the signature `fn(&Value) -> ToolResponse` for compatibility. This means handlers cannot receive an `ExecutionContext` directly — state isolation is achieved by the caller passing context into `call_json_with_execution_context()`, which applies it at the orchestration layer. High-risk handlers (`edit_preflight`, `command_preflight`, etc.) create a `BudgetContext` internally for cooperative budget checks.
+
+### What remains global / thread-local
+
+| State | Why global |
+|-------|------------|
+| `MCP_MODE`, `ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS` AtomicBool | One-shot startup flags, race-safe |
+| `ACTIVE_PROFILE`, `ACTIVE_SCHEMA_DETAIL` RwLock | Set once at startup, read-only after init |
+| `SPAWN_SEMAPHORE` | Intentional global concurrency limiter |
+| `CURRENT_CANCEL_FLAG` thread-local | Properly scoped per-dispatch |
+| 36+ LazyLock immutable caches | Regex, tables, tool definitions — immutable after init |
+| Request-scoped Arc objects | Cloned per-request, not shared |
+
+These are intentionally global because they represent immutable configuration or startup-time state, not per-request mutable state.
+
 ## Rate Limiting
 
 Defined in `src/mcp/runtime.rs`:

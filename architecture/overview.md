@@ -89,6 +89,17 @@ eggsact/
 └── build.sh                # Simple build script
 ```
 
+## Context Isolation Model
+
+Mutable per-request state is isolated via two context structs:
+
+- **`EvalContext`** (`src/calc/context.rs`) — per-evaluation calculator state (PRNG, memory registers, user variables, random/side-effect gates).
+- **`ExecutionContext`** (`src/agent/mod.rs`) — per-request dispatch state (eval context, compatibility mode, profile, audience, budget, cancellation, request ID, source).
+
+Context-aware APIs (`evaluate_with_context`, `run_with_context`, `call_json_with_execution_context`) thread these through the call chain. Legacy wrappers (`evaluate`, `run`, `call_json`) remain for backward compatibility but do not isolate per-call state.
+
+Global statics (AtomicBool flags, RwLock profiles, LazyLock caches, thread-local cancel flags) represent startup-time immutable configuration and are intentionally shared across all requests.
+
 ## Concurrency Model
 
 The MCP stdio server is serial at the read-loop level (one request at a time).

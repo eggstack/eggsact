@@ -105,6 +105,18 @@ Update fixtures when tool output intentionally changes:
 UPDATE_GOLDEN=1 cargo test test_golden
 ```
 
+## Context Isolation Testing
+
+When testing tools that depend on per-evaluation state (PRNG, memory registers, user variables), use the context-aware APIs:
+
+- `evaluate_with_context(expr, ctx)` / `run_with_context(expr, ctx)` for calculator operations
+- `call_json_with_execution_context(name, args, ctx)` for full tool dispatch
+
+Verify that:
+- Two `EvalContext` instances with the same PRNG seed produce identical results
+- `EvalContext::mcp_mode()` disables random/side-effect functions
+- Legacy wrappers (`evaluate`, `run`, `call_json`) remain backward-compatible (default context)
+
 ## Determinism & Concurrency Tests
 
 `tests/mcp/test_determinism_concurrency.rs` verifies:

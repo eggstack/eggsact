@@ -44,7 +44,10 @@ use crate::mcp::response::{truncate_response, ToolResponse};
 use crate::mcp::schema_validation;
 use serde_json::Value;
 use std::fmt;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
+use crate::calc::context::EvalContext;
 pub use crate::mcp::compat::CompatibilityMode;
 
 /// Typed profile selection for tool filtering.
@@ -585,6 +588,42 @@ impl ToolRegistry {
         Ok(response)
     }
 
+    /// Call a tool with a full execution context, applying all dispatch-scoped state.
+    ///
+    /// This is the context-aware entry point that uses the provided [`ExecutionContext`]
+    /// for budget resolution, cancellation, and compatibility mode. The registry's
+    /// stored profile and audience are used for tool filtering.
+    pub fn call_json_with_execution_context(
+        &self,
+        name: &str,
+        args: Value,
+        ctx: &ExecutionContext,
+    ) -> Result<ToolResponse, ToolCallError> {
+        let spec =
+            registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
+        let effective_budget = match ctx.budget {
+            Some(b) => b,
+            None => budget_for_tool_resolved(name, spec),
+        };
+        let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
+        if serialized_len > effective_budget.max_input_bytes {
+            return Ok(ToolResponse::error_with_code(
+                "input_too_large",
+                crate::mcp::machine_codes::INPUT_TOO_LARGE,
+                &format!(
+                    "Serialized arguments ({} bytes) exceed budget max_input_bytes ({} bytes)",
+                    serialized_len, effective_budget.max_input_bytes
+                ),
+                None,
+                Some(name),
+            ));
+        }
+        let mut response =
+            budget::with_cancel_flag(ctx.cancellation.clone(), || self.call_json(name, args))?;
+        truncate_response(&mut response, &effective_budget);
+        Ok(response)
+    }
+
     /// Call a tool and return only the result `Value`, or `null` on error.
     ///
     /// Convenience wrapper around [`call_json`](Self::call_json) that
@@ -622,6 +661,146 @@ fn budget_for_tool_resolved(name: &str, spec: &ToolSpec) -> ToolBudget {
 
 /// Re-export budget types for convenience.
 pub use crate::mcp::budget::{BudgetContext, BudgetTier, ToolBudget as ToolBudgetType};
+
+/// Source of a tool call, for logging and auditing.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ExecutionSource {
+    /// Direct CLI invocation.
+    Cli,
+    /// Library/API call.
+    Library,
+    /// MCP server dispatch.
+    Mcp,
+    /// In-process agent call.
+    Agent,
+    /// Test invocation.
+    #[default]
+    Test,
+}
+
+/// Per-call execution context that carries all dispatch-scoped state.
+///
+/// `ExecutionContext` unifies profile, audience, budget, cancellation,
+/// and compatibility mode into a single explicit parameter. This replaces
+/// implicit reliance on global statics (ACTIVE_PROFILE, thread-local
+/// cancel flags) for new code paths.
+///
+/// Legacy APIs (`call_json`, `call_json_with_budget`, `call_json_with_context`)
+/// remain as wrappers for backward compatibility.
+pub struct ExecutionContext {
+    /// Calculator evaluation context with per-call mutable state.
+    pub eval_ctx: EvalContext,
+    /// Compatibility mode for validation and error messages.
+    pub compatibility_mode: CompatibilityMode,
+    /// Active profile for tool filtering.
+    pub profile: Option<Profile>,
+    /// Audience for tool exposure filtering.
+    pub audience: Option<ToolAudience>,
+    /// Resource budget for this call.
+    pub budget: Option<ToolBudget>,
+    /// Cancellation flag for cooperative cancellation.
+    pub cancellation: Option<Arc<AtomicBool>>,
+    /// Optional request ID for tracing.
+    pub request_id: Option<String>,
+    /// Source of the call.
+    pub source: ExecutionSource,
+}
+
+impl ExecutionContext {
+    /// Create a default context for CLI invocation.
+    pub fn cli_default() -> Self {
+        Self {
+            eval_ctx: EvalContext::new(),
+            compatibility_mode: CompatibilityMode::default(),
+            profile: None,
+            audience: None,
+            budget: None,
+            cancellation: None,
+            request_id: None,
+            source: ExecutionSource::Cli,
+        }
+    }
+
+    /// Create a default context for library/API calls.
+    pub fn library_default() -> Self {
+        Self {
+            eval_ctx: EvalContext::new(),
+            compatibility_mode: CompatibilityMode::StrictNative,
+            profile: None,
+            audience: None,
+            budget: None,
+            cancellation: None,
+            request_id: None,
+            source: ExecutionSource::Library,
+        }
+    }
+
+    /// Create a default context for MCP server dispatch.
+    pub fn mcp_default(profile: Profile, audience: ToolAudience) -> Self {
+        Self {
+            eval_ctx: EvalContext::mcp_mode(),
+            compatibility_mode: CompatibilityMode::EggcalcPython,
+            profile: Some(profile),
+            audience: Some(audience),
+            budget: None,
+            cancellation: None,
+            request_id: None,
+            source: ExecutionSource::Mcp,
+        }
+    }
+
+    /// Create a default context for in-process agent calls.
+    pub fn agent_default(profile: Profile, audience: ToolAudience) -> Self {
+        Self {
+            eval_ctx: EvalContext::new(),
+            compatibility_mode: CompatibilityMode::StrictNative,
+            profile: Some(profile),
+            audience: Some(audience),
+            budget: None,
+            cancellation: None,
+            request_id: None,
+            source: ExecutionSource::Agent,
+        }
+    }
+
+    /// Create a default context for test invocations.
+    pub fn test_default() -> Self {
+        Self {
+            eval_ctx: EvalContext::new(),
+            compatibility_mode: CompatibilityMode::default(),
+            profile: None,
+            audience: None,
+            budget: None,
+            cancellation: None,
+            request_id: None,
+            source: ExecutionSource::Test,
+        }
+    }
+
+    /// Set the resource budget for this call.
+    pub fn with_budget(mut self, budget: ToolBudget) -> Self {
+        self.budget = Some(budget);
+        self
+    }
+
+    /// Set the cancellation flag for cooperative cancellation.
+    pub fn with_cancellation(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.cancellation = Some(flag);
+        self
+    }
+
+    /// Set the request ID for tracing.
+    pub fn with_request_id(mut self, id: impl Into<String>) -> Self {
+        self.request_id = Some(id.into());
+        self
+    }
+}
+
+impl Default for ExecutionContext {
+    fn default() -> Self {
+        Self::test_default()
+    }
+}
 
 #[cfg(test)]
 mod tests {

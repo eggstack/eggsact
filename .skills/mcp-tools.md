@@ -92,6 +92,12 @@ See `architecture/machine-codes.md` for the full code table and design rationale
 
 Tool listing and filtering lives in `src/mcp/registry/listing.rs`, including `list_tool_definitions()` (used by the MCP `tools/list` handler), audience-aware listing, and schema compaction.
 
+### Context-Aware APIs
+
+For new tool integrations, prefer `call_json_with_execution_context()` over legacy `call_json()`. The `ExecutionContext` bundles eval context, compatibility mode, profile, audience, budget, and cancellation into a single per-request struct. Tool handler signatures remain `fn(&Value) -> ToolResponse` for compatibility — context is applied at the orchestration layer, not passed into handlers.
+
+For calculator operations, use `evaluate_with_context()` / `run_with_context()` when you need per-evaluation state (PRNG, memory registers, user variables).
+
 ## Composite Tools
 
 Tools marked `composite: true` orchestrate calls to other tools internally.

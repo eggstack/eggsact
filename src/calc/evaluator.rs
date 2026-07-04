@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
+
+use crate::calc::context::EvalContext;
 
 #[derive(Debug)]
 pub enum EvaluationError {
@@ -194,18 +196,20 @@ static ALLOW_SIDE_EFFECTS: AtomicBool = AtomicBool::new(true);
 const MAX_USER_VARIABLES: usize = 1000;
 
 /// Memory registers for store/recall/mplus/mminus/mc/mr.
-static MEMORY_REGISTERS: LazyLock<Mutex<HashMap<String, f64>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static MEMORY_REGISTERS: LazyLock<std::sync::Mutex<HashMap<String, f64>>> =
+    LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 /// User variables for setvar/getvar/delvar/listvars/clearvars.
-static USER_VARIABLES: LazyLock<Mutex<HashMap<String, f64>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static USER_VARIABLES: LazyLock<std::sync::Mutex<HashMap<String, f64>>> =
+    LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 /// PRNG state (xorshift64) for random functions.
-static PRNG_STATE: LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(123456789));
+static PRNG_STATE: LazyLock<std::sync::Mutex<u64>> =
+    LazyLock::new(|| std::sync::Mutex::new(123456789));
 
 /// Box-Muller spare value for randn/gauss.
-static GAUSS_SPARE: LazyLock<Mutex<Option<f64>>> = LazyLock::new(|| Mutex::new(None));
+static GAUSS_SPARE: LazyLock<std::sync::Mutex<Option<f64>>> =
+    LazyLock::new(|| std::sync::Mutex::new(None));
 
 /// Enter MCP-safe mode. Idempotent: safe to call multiple times.
 /// Sets `_mcp_mode = true` and disables random/side-effect functions.
@@ -242,7 +246,79 @@ fn check_function_allowed(name: &str) -> Result<(), EvaluationError> {
     Ok(())
 }
 
+/// Context-aware version of check_function_allowed.
+fn check_function_allowed_with(name: &str, ctx: &EvalContext) -> Result<(), EvaluationError> {
+    let lower = name.to_lowercase();
+    if !ctx.allow_random && RANDOM_FUNCTIONS.contains(lower.as_str()) {
+        return Err(EvaluationError::InvalidOperation(format!(
+            "Function '{}' is non-deterministic and is disabled in MCP mode (allow_random=false)",
+            name
+        )));
+    }
+    if !ctx.allow_side_effects && SIDE_EFFECT_FUNCTIONS.contains(lower.as_str()) {
+        return Err(EvaluationError::InvalidOperation(format!(
+            "Function '{}' mutates evaluator state and is disabled in MCP mode (allow_side_effects=false)",
+            name
+        )));
+    }
+    Ok(())
+}
+
+/// Context-aware PRNG random using xorshift64.
+fn prng_random_with(ctx: &mut EvalContext) -> f64 {
+    xorshift64(&mut ctx.prng_state) as f64 / u64::MAX as f64
+}
+
+/// Context-aware PRNG seed.
+fn prng_seed_with(ctx: &mut EvalContext, s: u64) {
+    ctx.prng_state = if s == 0 { 123456789 } else { s };
+    ctx.gauss_spare = None;
+}
+
+/// Context-aware PRNG randn (Box-Muller transform).
+fn prng_randn_with(ctx: &mut EvalContext) -> f64 {
+    if let Some(val) = ctx.gauss_spare.take() {
+        return val;
+    }
+    let u1 = (xorshift64(&mut ctx.prng_state) as f64 / u64::MAX as f64).max(1e-300);
+    let u2 = xorshift64(&mut ctx.prng_state) as f64 / u64::MAX as f64;
+    let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+    let z1 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).sin();
+    ctx.gauss_spare = Some(z1);
+    z0
+}
+
+/// Maximum number of user variables (cap to prevent unbounded growth).
+const MAX_USER_VARIABLES_CTX: usize = 1000;
+
+/// Evaluate a mathematical expression with explicit per-evaluation context.
+///
+/// This is the context-aware entry point that uses the provided `EvalContext`
+/// instead of global statics for PRNG state, memory registers, user variables,
+/// and function permission checks.
+pub fn evaluate_with_context(expr: &str, ctx: &mut EvalContext) -> Result<EvaluateResult, String> {
+    let expr = expr.trim();
+    if expr.len() > MAX_INPUT_LENGTH {
+        return Err(format!("Input exceeds {} characters", MAX_INPUT_LENGTH));
+    }
+    match parse_expression_with(expr, &mut 0, ctx) {
+        Ok(result) => format_result(result),
+        Err(EvaluationError::InvalidOperation(ref s)) if s.starts_with("__string_result__") => {
+            let value = s.trim_start_matches("__string_result__").to_string();
+            Ok((value, "str".to_string()))
+        }
+        Err(EvaluationError::InvalidOperation(ref s)) if s.starts_with("__int_result__") => {
+            let value = s.trim_start_matches("__int_result__").to_string();
+            Ok((value, "int".to_string()))
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// Evaluate a mathematical expression and return the result as a string with type info.
+///
+/// Uses global statics for PRNG state, memory registers, and user variables.
+/// For per-evaluation isolated state, use [`evaluate_with_context`].
 pub fn evaluate(expr: &str) -> Result<EvaluateResult, String> {
     let expr = expr.trim();
     if expr.len() > MAX_INPUT_LENGTH {
@@ -255,8 +331,6 @@ pub fn evaluate(expr: &str) -> Result<EvaluateResult, String> {
             Ok((value, "str".to_string()))
         }
         Err(EvaluationError::InvalidOperation(ref s)) if s.starts_with("__int_result__") => {
-            // BUG-002 / parity B2: big-integer results (factorial, perm)
-            // surface as Python's "int" type via a sentinel error.
             let value = s.trim_start_matches("__int_result__").to_string();
             Ok((value, "int".to_string()))
         }
@@ -546,6 +620,26 @@ fn parse_expression(expr: &str, depth: &mut usize) -> Result<f64, EvaluationErro
     Ok(result)
 }
 
+fn parse_expression_with(
+    expr: &str,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    if *depth > MAX_NESTING_DEPTH {
+        return Err(EvaluationError::StackOverflow);
+    }
+    let tokens = tokenize(expr)?;
+    let mut pos = 0;
+    let result = parse_bit_or_with(&tokens, &mut pos, depth, ctx)?;
+    if pos < tokens.len() {
+        return Err(EvaluationError::ParseError(format!(
+            "Unexpected token after expression: {:?}",
+            tokens[pos]
+        )));
+    }
+    Ok(result)
+}
+
 // precedence 0 (lowest): |
 fn parse_bit_or(
     tokens: &[Token],
@@ -557,6 +651,32 @@ fn parse_bit_or(
         if let Token::BitOr = &tokens[*pos] {
             *pos += 1;
             let right = parse_bit_xor(tokens, pos, depth)?;
+            if left.fract() != 0.0 || right.fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "Bitwise operations require integer arguments".to_string(),
+                ));
+            }
+            let l = left as i64;
+            let r = right as i64;
+            left = (l | r) as f64;
+        } else {
+            break;
+        }
+    }
+    Ok(left)
+}
+
+fn parse_bit_or_with(
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    let mut left = parse_bit_xor_with(tokens, pos, depth, ctx)?;
+    while *pos < tokens.len() {
+        if let Token::BitOr = &tokens[*pos] {
+            *pos += 1;
+            let right = parse_bit_xor_with(tokens, pos, depth, ctx)?;
             if left.fract() != 0.0 || right.fract() != 0.0 {
                 return Err(EvaluationError::InvalidOperation(
                     "Bitwise operations require integer arguments".to_string(),
@@ -598,6 +718,32 @@ fn parse_bit_xor(
     Ok(left)
 }
 
+fn parse_bit_xor_with(
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    let mut left = parse_bit_and_with(tokens, pos, depth, ctx)?;
+    while *pos < tokens.len() {
+        if let Token::BitXor = &tokens[*pos] {
+            *pos += 1;
+            let right = parse_bit_and_with(tokens, pos, depth, ctx)?;
+            if left.fract() != 0.0 || right.fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "Bitwise operations require integer arguments".to_string(),
+                ));
+            }
+            let l = left as i64;
+            let r = right as i64;
+            left = (l ^ r) as f64;
+        } else {
+            break;
+        }
+    }
+    Ok(left)
+}
+
 // precedence 2: &
 fn parse_bit_and(
     tokens: &[Token],
@@ -609,6 +755,32 @@ fn parse_bit_and(
         if let Token::BitAnd = &tokens[*pos] {
             *pos += 1;
             let right = parse_shift(tokens, pos, depth)?;
+            if left.fract() != 0.0 || right.fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "Bitwise operations require integer arguments".to_string(),
+                ));
+            }
+            let l = left as i64;
+            let r = right as i64;
+            left = (l & r) as f64;
+        } else {
+            break;
+        }
+    }
+    Ok(left)
+}
+
+fn parse_bit_and_with(
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    let mut left = parse_shift_with(tokens, pos, depth, ctx)?;
+    while *pos < tokens.len() {
+        if let Token::BitAnd = &tokens[*pos] {
+            *pos += 1;
+            let right = parse_shift_with(tokens, pos, depth, ctx)?;
             if left.fract() != 0.0 || right.fract() != 0.0 {
                 return Err(EvaluationError::InvalidOperation(
                     "Bitwise operations require integer arguments".to_string(),
@@ -669,6 +841,51 @@ fn parse_shift(
     Ok(left)
 }
 
+fn parse_shift_with(
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    let mut left = parse_additive_with(tokens, pos, depth, ctx)?;
+    while *pos < tokens.len() {
+        match &tokens[*pos] {
+            Token::LShift => {
+                *pos += 1;
+                let right = parse_additive_with(tokens, pos, depth, ctx)?;
+                let shift = right as i64;
+                if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
+                    return Err(EvaluationError::InvalidOperation(format!(
+                        "Shift count {} out of range",
+                        shift
+                    )));
+                }
+                let l = left as i64;
+                left = l.checked_shl(shift as u32).ok_or_else(|| {
+                    EvaluationError::InvalidOperation(format!("Shift left by {} overflows", shift))
+                })? as f64;
+            }
+            Token::RShift => {
+                *pos += 1;
+                let right = parse_additive_with(tokens, pos, depth, ctx)?;
+                let shift = right as i64;
+                if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
+                    return Err(EvaluationError::InvalidOperation(format!(
+                        "Shift count {} out of range",
+                        shift
+                    )));
+                }
+                let l = left as i64;
+                left = l.checked_shr(shift as u32).ok_or_else(|| {
+                    EvaluationError::InvalidOperation(format!("Shift right by {} overflows", shift))
+                })? as f64;
+            }
+            _ => break,
+        }
+    }
+    Ok(left)
+}
+
 // precedence 4: + -
 fn parse_additive(
     tokens: &[Token],
@@ -686,6 +903,31 @@ fn parse_additive(
             Token::Minus => {
                 *pos += 1;
                 let right = parse_multiplicative(tokens, pos, depth)?;
+                left = check_result_value(left - right)?;
+            }
+            _ => break,
+        }
+    }
+    Ok(left)
+}
+
+fn parse_additive_with(
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    let mut left = parse_multiplicative_with(tokens, pos, depth, ctx)?;
+    while *pos < tokens.len() {
+        match &tokens[*pos] {
+            Token::Plus => {
+                *pos += 1;
+                let right = parse_multiplicative_with(tokens, pos, depth, ctx)?;
+                left = check_result_value(left + right)?;
+            }
+            Token::Minus => {
+                *pos += 1;
+                let right = parse_multiplicative_with(tokens, pos, depth, ctx)?;
                 left = check_result_value(left - right)?;
             }
             _ => break,
@@ -730,6 +972,54 @@ fn parse_multiplicative(
                 if right == 0.0 {
                     return Err(EvaluationError::DivisionByZero);
                 }
+                let mut result = left % right;
+                if result != 0.0 && (result < 0.0) != (right < 0.0) {
+                    result += right;
+                }
+                left = check_result_value(result)?;
+            }
+            _ => break,
+        }
+    }
+    Ok(left)
+}
+
+fn parse_multiplicative_with(
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    let mut left = parse_unary_with(tokens, pos, depth, ctx)?;
+    while *pos < tokens.len() {
+        match &tokens[*pos] {
+            Token::Multiply => {
+                *pos += 1;
+                let right = parse_unary_with(tokens, pos, depth, ctx)?;
+                left = check_result_value(left * right)?;
+            }
+            Token::Divide => {
+                *pos += 1;
+                let right = parse_unary_with(tokens, pos, depth, ctx)?;
+                if right == 0.0 {
+                    return Err(EvaluationError::DivisionByZero);
+                }
+                left = check_result_value(left / right)?;
+            }
+            Token::FloorDiv => {
+                *pos += 1;
+                let right = parse_unary_with(tokens, pos, depth, ctx)?;
+                if right == 0.0 {
+                    return Err(EvaluationError::DivisionByZero);
+                }
+                left = check_result_value((left / right).floor())?;
+            }
+            Token::Modulo => {
+                *pos += 1;
+                let right = parse_unary_with(tokens, pos, depth, ctx)?;
+                if right == 0.0 {
+                    return Err(EvaluationError::DivisionByZero);
+                }
                 // Python-style floored modulo: result has same sign as divisor
                 let mut result = left % right;
                 if result != 0.0 && (result < 0.0) != (right < 0.0) {
@@ -754,10 +1044,59 @@ fn parse_power(
     if *pos < tokens.len() {
         if let Token::Power = &tokens[*pos] {
             *pos += 1;
+            let exp = parse_unary(tokens, pos, depth)?;
+            if exp.abs() > MAX_EXPONENT {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "Exponent {} out of range (max {})",
+                    exp, MAX_EXPONENT
+                )));
+            }
+            let exp = if (exp - exp.round()).abs() < 1e-9 {
+                exp.round()
+            } else {
+                exp
+            };
+            if base < 0.0 && exp.fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "Cannot raise negative number to non-integer power".to_string(),
+                ));
+            }
+            if base == 0.0 && exp < 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "Cannot raise zero to a negative power".to_string(),
+                ));
+            }
+            if exp.fract() == 0.0 && base.fract() == 0.0 && exp.abs() < 1e15 && base.abs() < 1e15 {
+                let base_i = base as i64;
+                let exp_i = exp as i64;
+                if exp_i >= 0 {
+                    if let Some(result) = base_i.checked_pow(exp_i as u32) {
+                        return Ok(result as f64);
+                    }
+                }
+            }
+            return check_result_value(base.powf(exp));
+        }
+    }
+
+    Ok(base)
+}
+
+fn parse_power_with(
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    let base = parse_primary_with(tokens, pos, depth, ctx)?;
+
+    if *pos < tokens.len() {
+        if let Token::Power = &tokens[*pos] {
+            *pos += 1;
             // Exponent: parse_unary allows -100 in 10 ** -100
             // parse_unary → parse_power → parse_primary, so exponent
             // can itself be a power expression (right-associative)
-            let exp = parse_unary(tokens, pos, depth)?;
+            let exp = parse_unary_with(tokens, pos, depth, ctx)?;
             if exp.abs() > MAX_EXPONENT {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "Exponent {} out of range (max {})",
@@ -833,6 +1172,40 @@ fn parse_unary(
     }
 }
 
+fn parse_unary_with(
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    if *pos >= tokens.len() {
+        return parse_power_with(tokens, pos, depth, ctx);
+    }
+    match &tokens[*pos] {
+        Token::Minus => {
+            *pos += 1;
+            let value = parse_power_with(tokens, pos, depth, ctx)?;
+            Ok(-value)
+        }
+        Token::Plus => {
+            *pos += 1;
+            parse_power_with(tokens, pos, depth, ctx)
+        }
+        Token::BitNot => {
+            *pos += 1;
+            let value = parse_unary_with(tokens, pos, depth, ctx)?;
+            if value.fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "Bitwise NOT requires integer argument".to_string(),
+                ));
+            }
+            let i = value as i64;
+            Ok((!i) as f64)
+        }
+        _ => parse_power_with(tokens, pos, depth, ctx),
+    }
+}
+
 fn parse_primary(
     tokens: &[Token],
     pos: &mut usize,
@@ -877,6 +1250,51 @@ fn parse_primary(
     }
 }
 
+fn parse_primary_with(
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    if *pos >= tokens.len() {
+        return Err(EvaluationError::ParseError(
+            "Unexpected end of expression".to_string(),
+        ));
+    }
+
+    match &tokens[*pos] {
+        Token::Number(n) => {
+            *pos += 1;
+            Ok(*n)
+        }
+        Token::Identifier(name) => {
+            *pos += 1;
+            parse_identifier_with(name, tokens, pos, depth, ctx)
+        }
+        Token::LeftParen => {
+            *pos += 1;
+            *depth += 1;
+            if *depth > MAX_NESTING_DEPTH {
+                return Err(EvaluationError::StackOverflow);
+            }
+            let value = parse_bit_or_with(tokens, pos, depth, ctx)?;
+            *depth -= 1;
+            match tokens.get(*pos) {
+                Some(Token::RightParen) => {
+                    *pos += 1;
+                }
+                _ => {
+                    return Err(EvaluationError::ParseError(
+                        "Missing closing parenthesis".into(),
+                    ))
+                }
+            }
+            Ok(value)
+        }
+        _ => Err(EvaluationError::ParseError("Unexpected token".to_string())),
+    }
+}
+
 fn parse_identifier(
     name: &str,
     tokens: &[Token],
@@ -887,6 +1305,36 @@ fn parse_identifier(
         if let Token::LeftParen = &tokens[*pos] {
             *pos += 1;
             return evaluate_function(name, tokens, pos, depth);
+        }
+    }
+
+    if crate::calc::units::UNIT_ALIASES.get(name).is_some() {
+        return Ok(1.0);
+    }
+
+    if let Some(&value) = CONSTANTS.get(name) {
+        return Ok(value);
+    }
+
+    let lower = name.to_lowercase();
+    if let Some(&value) = CONSTANTS.get(lower.as_str()) {
+        return Ok(value);
+    }
+
+    Err(EvaluationError::UnknownConstant(name.to_string()))
+}
+
+fn parse_identifier_with(
+    name: &str,
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    if *pos < tokens.len() {
+        if let Token::LeftParen = &tokens[*pos] {
+            *pos += 1;
+            return evaluate_function_with(name, tokens, pos, depth, ctx);
         }
     }
 
@@ -945,6 +1393,37 @@ fn parse_args(
     Ok(args)
 }
 
+fn parse_args_with(
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<Vec<f64>, EvaluationError> {
+    let mut args = Vec::new();
+    let mut closed = false;
+    while *pos < tokens.len() {
+        match &tokens[*pos] {
+            Token::RightParen => {
+                *pos += 1;
+                closed = true;
+                break;
+            }
+            Token::Comma => {
+                *pos += 1;
+            }
+            _ => {
+                args.push(parse_bit_or_with(tokens, pos, depth, ctx)?);
+            }
+        }
+    }
+    if !closed {
+        return Err(EvaluationError::InvalidOperation(
+            "Missing closing parenthesis".to_string(),
+        ));
+    }
+    Ok(args)
+}
+
 /// Banker's rounding (round half to even), matching Python's round().
 fn banker_round(x: f64) -> f64 {
     let floor = x.floor();
@@ -972,6 +1451,773 @@ fn evaluate_function(
 
     // MCP-safe mode: reject random and side-effect functions
     check_function_allowed(name)?;
+
+    match n.as_str() {
+        // ── Trigonometric ──
+        "sin" if args.len() == 1 => Ok(args[0].sin()),
+        "cos" if args.len() == 1 => Ok(args[0].cos()),
+        "tan" if args.len() == 1 => Ok(args[0].tan()),
+        "asin" if args.len() == 1 => Ok(args[0].asin()),
+        "acos" if args.len() == 1 => Ok(args[0].acos()),
+        "atan" if args.len() == 1 => Ok(args[0].atan()),
+        "atan2" if args.len() == 2 => Ok(args[0].atan2(args[1])),
+
+        // ── Hyperbolic ──
+        "sinh" if args.len() == 1 => Ok(args[0].sinh()),
+        "cosh" if args.len() == 1 => Ok(args[0].cosh()),
+        "tanh" if args.len() == 1 => Ok(args[0].tanh()),
+        "asinh" if args.len() == 1 => Ok(args[0].asinh()),
+        "acosh" if args.len() == 1 => Ok(args[0].acosh()),
+        "atanh" if args.len() == 1 => Ok(args[0].atanh()),
+
+        // ── Logarithmic / Exponential ──
+        "log" | "ln" if args.len() == 1 => {
+            if args[0] <= 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "logarithm of non-positive number".to_string(),
+                ));
+            }
+            Ok(args[0].ln())
+        }
+        "log" | "ln" if args.len() == 2 => {
+            if args[0] <= 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "logarithm of non-positive number".to_string(),
+                ));
+            }
+            if args[1] <= 0.0 || args[1] == 1.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "log base must be positive and not 1".to_string(),
+                ));
+            }
+            Ok(args[0].ln() / args[1].ln())
+        }
+        "log10" if args.len() == 1 => {
+            if args[0] <= 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "logarithm of non-positive number".to_string(),
+                ));
+            }
+            Ok(args[0].log10())
+        }
+        "log2" if args.len() == 1 => {
+            if args[0] <= 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "logarithm of non-positive number".to_string(),
+                ));
+            }
+            Ok(args[0].log2())
+        }
+        "log1p" if args.len() == 1 => Ok(args[0].ln_1p()),
+        "exp" if args.len() == 1 => {
+            let result = args[0].exp();
+            if result.is_infinite() || result.abs() > 1e308 {
+                return Err(EvaluationError::InvalidOperation(
+                    "Result too large".to_string(),
+                ));
+            }
+            Ok(result)
+        }
+        "expm1" if args.len() == 1 => Ok(args[0].exp_m1()),
+
+        // ── Power / Root ──
+        "sqrt" if args.len() == 1 => {
+            if args[0] < 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "square root of negative number".to_string(),
+                ));
+            }
+            Ok(args[0].sqrt())
+        }
+        "cbrt" if args.len() == 1 => Ok(args[0].cbrt()),
+        "pow" | "power" if args.len() == 2 => {
+            if args[1].abs() > MAX_EXPONENT {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "Exponent {} out of range",
+                    args[1]
+                )));
+            }
+            if args[0] < 0.0 && args[1].fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "Cannot raise negative number to non-integer power".to_string(),
+                ));
+            }
+            if args[0] == 0.0 && args[1] < 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "Cannot raise zero to a negative power".to_string(),
+                ));
+            }
+            check_result_value(args[0].powf(args[1]))
+        }
+
+        // ── Rounding / Absolute ──
+        "abs" if args.len() == 1 => Ok(args[0].abs()),
+        "floor" if args.len() == 1 => Ok(args[0].floor()),
+        "ceil" if args.len() == 1 => Ok(args[0].ceil()),
+        "round" if args.len() == 1 => Ok(banker_round(args[0])),
+        "round" if args.len() == 2 => {
+            let ndigits = args[1] as i32;
+            let factor = 10.0_f64.powi(ndigits);
+            Ok(banker_round(args[0] * factor) / factor)
+        }
+        "trunc" if args.len() == 1 => Ok(args[0].trunc()),
+        "sign" if args.len() == 1 => Ok(args[0].signum()),
+
+        // ── Angle conversion ──
+        "degrees" if args.len() == 1 => Ok(args[0].to_degrees()),
+        "radians" if args.len() == 1 => Ok(args[0].to_radians()),
+
+        // ── Hypotenuse ──
+        "hypot" if !args.is_empty() => {
+            let max_val = args.iter().map(|x| x.abs()).fold(0.0, f64::max);
+            if max_val == 0.0 {
+                return Ok(0.0);
+            }
+            let sum_sq: f64 = args.iter().map(|x| (x / max_val).powi(2)).sum();
+            Ok(max_val * sum_sq.sqrt())
+        }
+
+        // ── Factorial / Combinatorics ──
+        "factorial" | "fact" if args.len() == 1 => {
+            let n = args[0] as i64;
+            if args[0] != n as f64 || !(0..=MAX_FACTORIAL).contains(&n) {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "factorial({}) out of range (0..={})",
+                    args[0], MAX_FACTORIAL
+                )));
+            }
+            let s = factorial_bigint(n as u64);
+            Err(EvaluationError::InvalidOperation(format!(
+                "__int_result__{}",
+                s
+            )))
+        }
+        "perm" if args.len() == 1 => {
+            let n = args[0] as i64;
+            if args[0] != n as f64 || !(0..=MAX_FACTORIAL).contains(&n) {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "perm({}) out of range (0..={})",
+                    args[0], MAX_FACTORIAL
+                )));
+            }
+            let s = factorial_bigint(n as u64);
+            Err(EvaluationError::InvalidOperation(format!(
+                "__int_result__{}",
+                s
+            )))
+        }
+        "perm" | "npr" if args.len() == 2 => {
+            let n = args[0] as i64;
+            let r = args[1] as i64;
+            if args[0] != n as f64 || args[1] != r as f64 {
+                return Err(EvaluationError::InvalidOperation(
+                    "perm requires integer arguments".to_string(),
+                ));
+            }
+            if n < 0 || r < 0 || n > MAX_PERM_COMB || r > MAX_PERM_COMB {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "perm({}, {}) out of range",
+                    n, r
+                )));
+            }
+            if r > n {
+                return Ok(0.0);
+            }
+            let mut limbs: Vec<u64> = vec![1];
+            for i in 0..r as u64 {
+                multiply_in_place(&mut limbs, n as u64 - i);
+            }
+            bigint_or_float(limbs)
+        }
+        "comb" | "ncr" if args.len() == 2 => {
+            let n = args[0] as i64;
+            let r = args[1] as i64;
+            if args[0] != n as f64 || args[1] != r as f64 {
+                return Err(EvaluationError::InvalidOperation(
+                    "comb requires integer arguments".to_string(),
+                ));
+            }
+            if n < 0 || r < 0 || n > MAX_PERM_COMB || r > MAX_PERM_COMB {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "comb({}, {}) out of range",
+                    n, r
+                )));
+            }
+            if r > n {
+                return Ok(0.0);
+            }
+            let r_small = r.min(n - r);
+            let mut limbs: Vec<u64> = vec![1];
+            for i in 0..r_small as u64 {
+                multiply_in_place(&mut limbs, n as u64 - i);
+                divide_in_place(&mut limbs, i + 1);
+            }
+            bigint_or_float(limbs)
+        }
+
+        // ── GCD / LCM (variadic) ──
+        "gcd" if !args.is_empty() => {
+            for a in &args {
+                if *a != a.floor() || !a.is_finite() {
+                    return Err(EvaluationError::InvalidOperation(
+                        "gcd() requires integer arguments".to_string(),
+                    ));
+                }
+            }
+            let ints: Vec<i64> = args.iter().map(|a| *a as i64).collect();
+            let mut result = ints[0].abs();
+            for &v in &ints[1..] {
+                result = gcd(result, v.abs());
+            }
+            Ok(result as f64)
+        }
+        "lcm" if !args.is_empty() => {
+            for a in &args {
+                if *a != a.floor() || !a.is_finite() {
+                    return Err(EvaluationError::InvalidOperation(
+                        "lcm() requires integer arguments".to_string(),
+                    ));
+                }
+            }
+            let ints: Vec<i64> = args.iter().map(|a| *a as i64).collect();
+            let mut result = ints[0].abs();
+            for &v in &ints[1..] {
+                let g = gcd(result, v.abs());
+                if g == 0 {
+                    result = 0;
+                } else {
+                    result = (result / g)
+                        .abs()
+                        .checked_mul(v.abs())
+                        .ok_or(EvaluationError::ValueOverflow)?;
+                }
+            }
+            Ok(result as f64)
+        }
+
+        // ── Aggregate (variadic) ──
+        "max" if !args.is_empty() => Ok(args.iter().cloned().fold(f64::NEG_INFINITY, f64::max)),
+        "min" if !args.is_empty() => Ok(args.iter().cloned().fold(f64::INFINITY, f64::min)),
+        "sum" if args.is_empty() => Ok(0.0),
+        "sum" => {
+            let s: f64 = args.iter().sum();
+            check_result_value(s)
+        }
+        "mean" | "average" if !args.is_empty() => {
+            let s: f64 = args.iter().sum();
+            check_result_value(s / args.len() as f64)
+        }
+        "median" if !args.is_empty() => {
+            if args.iter().any(|a| a.is_nan()) {
+                return Err(EvaluationError::InvalidOperation(
+                    "median does not support NaN values".to_string(),
+                ));
+            }
+            let mut sorted = args.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let mid = sorted.len() / 2;
+            if sorted.len() % 2 == 0 {
+                Ok((sorted[mid - 1] + sorted[mid]) / 2.0)
+            } else {
+                Ok(sorted[mid])
+            }
+        }
+        "mode" if !args.is_empty() => {
+            fn normalize_zero_bits(v: f64) -> u64 {
+                if v == 0.0 {
+                    0.0_f64.to_bits()
+                } else {
+                    v.to_bits()
+                }
+            }
+            let mut counts: HashMap<u64, usize> = HashMap::new();
+            for &a in &args {
+                let key = normalize_zero_bits(a);
+                *counts.entry(key).or_insert(0) += 1;
+            }
+            let max_count = counts.values().max().unwrap_or(&0);
+            for &a in &args {
+                if counts.get(&normalize_zero_bits(a)).unwrap_or(&0) == max_count {
+                    return Ok(a);
+                }
+            }
+            Ok(args[0])
+        }
+        "product" if !args.is_empty() => {
+            let p: f64 = args.iter().fold(1.0, |acc, x| acc * x);
+            check_result_value(p)
+        }
+        "std" | "stddev" if args.len() >= 2 => {
+            let mean: f64 = args.iter().sum::<f64>() / args.len() as f64;
+            let variance: f64 =
+                args.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / args.len() as f64;
+            Ok(variance.sqrt())
+        }
+        "std" | "stddev" if args.len() == 1 => Err(EvaluationError::InvalidOperation(
+            "std requires at least two arguments".to_string(),
+        )),
+        "std_sample" | "stds" if args.len() >= 2 => {
+            let mean: f64 = args.iter().sum::<f64>() / args.len() as f64;
+            let variance: f64 =
+                args.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (args.len() - 1) as f64;
+            Ok(variance.sqrt())
+        }
+        "variance" | "var" if args.len() >= 2 => {
+            let mean: f64 = args.iter().sum::<f64>() / args.len() as f64;
+            let variance: f64 =
+                args.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / args.len() as f64;
+            Ok(variance)
+        }
+        "variance" | "var" if args.len() == 1 => Err(EvaluationError::InvalidOperation(
+            "variance requires at least two arguments".to_string(),
+        )),
+        "variance_sample" | "vars" | "var_sample" if args.len() >= 2 => {
+            let mean: f64 = args.iter().sum::<f64>() / args.len() as f64;
+            let variance: f64 =
+                args.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (args.len() - 1) as f64;
+            Ok(variance)
+        }
+
+        // ── Percentage ──
+        "percentof" | "percent_of" if args.len() == 2 => Ok(args[0] / 100.0 * args[1]),
+        "aspercent" | "as_percent" if args.len() == 2 => {
+            if args[1] == 0.0 {
+                return Err(EvaluationError::DivisionByZero);
+            }
+            if args[1].abs() < 1e-100 {
+                return Err(EvaluationError::InvalidOperation(
+                    "aspercent: near-zero divisor could cause overflow".to_string(),
+                ));
+            }
+            Ok(args[0] / args[1] * 100.0)
+        }
+
+        // ── Clamp ──
+        "clamp" if args.len() == 3 => {
+            if args[1] > args[2] {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "clamp: lo ({}) > hi ({})",
+                    args[1], args[2]
+                )));
+            }
+            Ok(args[0].max(args[1]).min(args[2]))
+        }
+
+        // ── Bitwise functions ──
+        "bitand" if args.len() == 2 => {
+            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "bitand requires integer arguments".to_string(),
+                ));
+            }
+            Ok(((args[0] as i64) & (args[1] as i64)) as f64)
+        }
+        "bitor" if args.len() == 2 => {
+            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "bitor requires integer arguments".to_string(),
+                ));
+            }
+            Ok(((args[0] as i64) | (args[1] as i64)) as f64)
+        }
+        "bitxor" if args.len() == 2 => {
+            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "bitxor requires integer arguments".to_string(),
+                ));
+            }
+            Ok(((args[0] as i64) ^ (args[1] as i64)) as f64)
+        }
+        "bitnot" if args.len() == 1 => {
+            if args[0].fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "bitnot requires integer argument".to_string(),
+                ));
+            }
+            Ok((!(args[0] as i64)) as f64)
+        }
+        "bitlshift" if args.len() == 2 => {
+            let shift = args[1] as i64;
+            if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "Shift count {} out of range",
+                    shift
+                )));
+            }
+            Ok(((args[0] as i64).checked_shl(shift as u32).ok_or_else(|| {
+                EvaluationError::InvalidOperation(format!("Shift left by {} overflows", shift))
+            })?) as f64)
+        }
+        "bitrshift" if args.len() == 2 => {
+            let shift = args[1] as i64;
+            if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "Shift count {} out of range",
+                    shift
+                )));
+            }
+            Ok(((args[0] as i64).checked_shr(shift as u32).ok_or_else(|| {
+                EvaluationError::InvalidOperation(format!("Shift right by {} overflows", shift))
+            })?) as f64)
+        }
+
+        // ── Base conversion ──
+        "bin" if args.len() == 1 => {
+            let n = args[0] as i64;
+            if args[0] != n as f64 {
+                return Err(EvaluationError::InvalidOperation(
+                    "bin requires integer argument".to_string(),
+                ));
+            }
+            let s = if n < 0 {
+                format!("-0b{:b}", n.wrapping_neg())
+            } else {
+                format!("0b{:b}", n)
+            };
+            Err(EvaluationError::InvalidOperation(format!(
+                "__string_result__{}",
+                s
+            )))
+        }
+        "hex" if args.len() == 1 => {
+            let n = args[0] as i64;
+            if args[0] != n as f64 {
+                return Err(EvaluationError::InvalidOperation(
+                    "hex requires integer argument".to_string(),
+                ));
+            }
+            let s = if n < 0 {
+                format!("-0x{:x}", n.wrapping_neg())
+            } else {
+                format!("0x{:x}", n)
+            };
+            Err(EvaluationError::InvalidOperation(format!(
+                "__string_result__{}",
+                s
+            )))
+        }
+        "oct" if args.len() == 1 => {
+            let n = args[0] as i64;
+            if args[0] != n as f64 {
+                return Err(EvaluationError::InvalidOperation(
+                    "oct requires integer argument".to_string(),
+                ));
+            }
+            let s = if n < 0 {
+                format!("-0o{:o}", n.wrapping_neg())
+            } else {
+                format!("0o{:o}", n)
+            };
+            Err(EvaluationError::InvalidOperation(format!(
+                "__string_result__{}",
+                s
+            )))
+        }
+
+        // ── Prime number functions ──
+        "isprime" | "is_prime" if args.len() == 1 => {
+            let n = args[0] as i64;
+            if args[0] != n as f64 || n > MAX_PRIME {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "isprime({}) out of range",
+                    args[0]
+                )));
+            }
+            Ok(if n < 2 {
+                0.0
+            } else if is_prime(n) {
+                1.0
+            } else {
+                0.0
+            })
+        }
+        "nextprime" | "next_prime" if args.len() == 1 => {
+            let n = args[0] as i64;
+            if args[0] != n as f64 || !(0..=MAX_PRIME).contains(&n) {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "nextprime({}) out of range",
+                    args[0]
+                )));
+            }
+            Ok(next_prime(n)? as f64)
+        }
+        "prevprime" | "prev_prime" if args.len() == 1 => {
+            let n = args[0] as i64;
+            if args[0] != n as f64 || n <= 2 || n > MAX_PRIME {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "prevprime({}) out of range",
+                    args[0]
+                )));
+            }
+            Ok(prev_prime(n)? as f64)
+        }
+        "primefactors" | "prime_factors" if args.len() == 1 => {
+            let n = args[0] as i64;
+            if args[0] != n as f64 || n < 0 {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "primefactors({}) out of range",
+                    args[0]
+                )));
+            }
+            if n > 1_000_000_000_000 {
+                return Err(EvaluationError::InvalidOperation(
+                    "factorization not available for numbers > 10^12".to_string(),
+                ));
+            }
+            let s = prime_factors_string(n);
+            Err(EvaluationError::InvalidOperation(format!(
+                "__string_result__{}",
+                s
+            )))
+        }
+
+        // ── Complex number functions (f64 simplification) ──
+        "real" if args.len() == 1 => Ok(args[0]),
+        "imag" | "imaginary" if args.len() == 1 => Ok(0.0),
+        "conj" | "conjugate" if args.len() == 1 => Ok(args[0]),
+        "phase" | "arg" | "argument" if args.len() == 1 => Ok(if args[0] >= 0.0 {
+            0.0
+        } else {
+            std::f64::consts::PI
+        }),
+        "polar" if args.len() == 1 => {
+            let r = args[0].abs();
+            let phi = if args[0] >= 0.0 {
+                0.0
+            } else {
+                std::f64::consts::PI
+            };
+            let s = format!("({}, {})", r, phi);
+            Err(EvaluationError::InvalidOperation(format!(
+                "__string_result__{}",
+                s
+            )))
+        }
+        "polar" if args.len() == 2 => {
+            let s = format!("({}, {})", args[0], args[1]);
+            Err(EvaluationError::InvalidOperation(format!(
+                "__string_result__{}",
+                s
+            )))
+        }
+        "rect" if args.len() == 2 => {
+            let r = args[0];
+            let phi = args[1];
+            let real = r * phi.cos();
+            let imag = r * phi.sin();
+            let s = format!("({}, {})", real, imag);
+            Err(EvaluationError::InvalidOperation(format!(
+                "__string_result__{}",
+                s
+            )))
+        }
+
+        // ── Random functions ──
+        "random" | "rand" if args.is_empty() => Ok(prng_random()),
+        "randint" if args.len() == 2 => {
+            let a = args[0] as i64;
+            let b = args[1] as i64;
+            if args[0] != a as f64 || args[1] != b as f64 {
+                return Err(EvaluationError::InvalidOperation(
+                    "randint requires integer arguments".to_string(),
+                ));
+            }
+            if a > b {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "randint: lower bound ({}) > upper bound ({})",
+                    a, b
+                )));
+            }
+            let range = (b - a + 1) as u64;
+            let r = prng_random() * range as f64;
+            Ok((a + r.floor() as i64) as f64)
+        }
+        "randrange" if args.len() == 1 => {
+            let a = args[0] as i64;
+            if args[0] != a as f64 {
+                return Err(EvaluationError::InvalidOperation(
+                    "randrange requires integer argument".to_string(),
+                ));
+            }
+            if a <= 0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "randrange: argument must be positive".to_string(),
+                ));
+            }
+            let r = prng_random() * a as f64;
+            Ok((r.floor() as i64) as f64)
+        }
+        "randrange" if args.len() == 2 => {
+            let a = args[0] as i64;
+            let b = args[1] as i64;
+            if args[0] != a as f64 || args[1] != b as f64 {
+                return Err(EvaluationError::InvalidOperation(
+                    "randrange requires integer arguments".to_string(),
+                ));
+            }
+            if a >= b {
+                return Err(EvaluationError::InvalidOperation(
+                    "randrange: start must be less than stop".to_string(),
+                ));
+            }
+            let range = (b - a) as u64;
+            let r = prng_random() * range as f64;
+            Ok((a + r.floor() as i64) as f64)
+        }
+        "uniform" if args.len() == 2 => {
+            let a = args[0];
+            let b = args[1];
+            if a > b {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "uniform: lower bound ({}) > upper bound ({})",
+                    a, b
+                )));
+            }
+            Ok(a + prng_random() * (b - a))
+        }
+        "randn" if args.is_empty() => Ok(prng_randn()),
+        "gauss" | "normal" if args.len() == 2 => {
+            let mu = args[0];
+            let sigma = args[1];
+            Ok(mu + sigma * prng_randn())
+        }
+        "seed" if args.is_empty() => {
+            let mut state = PRNG_STATE.lock().unwrap();
+            *state = 123456789;
+            let mut spare = GAUSS_SPARE.lock().unwrap();
+            *spare = None;
+            Ok(0.0)
+        }
+        "seed" if args.len() == 1 => {
+            let s = args[0] as u64;
+            prng_seed(s);
+            Ok(0.0)
+        }
+
+        // ── Memory / variable functions ──
+        "store" if args.len() == 1 => {
+            let mut regs = MEMORY_REGISTERS.lock().unwrap();
+            regs.insert("M".to_string(), args[0]);
+            Ok(args[0])
+        }
+        "store" if args.len() == 2 => {
+            let name = format!("R{}", args[1] as i64);
+            let mut regs = MEMORY_REGISTERS.lock().unwrap();
+            regs.insert(name, args[0]);
+            Ok(args[0])
+        }
+        "recall" if args.is_empty() => {
+            let regs = MEMORY_REGISTERS.lock().unwrap();
+            Ok(*regs.get("M").unwrap_or(&0.0))
+        }
+        "recall" if args.len() == 1 => {
+            let name = format!("R{}", args[0] as i64);
+            let regs = MEMORY_REGISTERS.lock().unwrap();
+            Ok(*regs.get(&name).unwrap_or(&0.0))
+        }
+        "mplus" | "m+" | "madd" if args.len() == 1 => {
+            let mut regs = MEMORY_REGISTERS.lock().unwrap();
+            let current = *regs.get("M").unwrap_or(&0.0);
+            let new_val = current + args[0];
+            regs.insert("M".to_string(), new_val);
+            Ok(new_val)
+        }
+        "mminus" | "m-" | "msub" if args.len() == 1 => {
+            let mut regs = MEMORY_REGISTERS.lock().unwrap();
+            let current = *regs.get("M").unwrap_or(&0.0);
+            let new_val = current - args[0];
+            regs.insert("M".to_string(), new_val);
+            Ok(new_val)
+        }
+        "mc" | "mclear" if args.is_empty() => {
+            let mut regs = MEMORY_REGISTERS.lock().unwrap();
+            regs.clear();
+            Ok(0.0)
+        }
+        "mr" | "mrecall" if args.is_empty() => {
+            let regs = MEMORY_REGISTERS.lock().unwrap();
+            Ok(*regs.get("M").unwrap_or(&0.0))
+        }
+        "setvar" if args.len() == 2 => {
+            let var_id = args[1] as i64;
+            let key = format!("v{}", var_id);
+            let mut vars = USER_VARIABLES.lock().unwrap();
+            if !vars.contains_key(&key) && vars.len() >= MAX_USER_VARIABLES {
+                if let Some(oldest) = vars.keys().next().cloned() {
+                    vars.remove(&oldest);
+                }
+            }
+            vars.insert(key, args[0]);
+            Ok(args[0])
+        }
+        "getvar" if args.len() == 1 => {
+            let var_id = args[0] as i64;
+            let key = format!("v{}", var_id);
+            let vars = USER_VARIABLES.lock().unwrap();
+            Ok(*vars.get(&key).unwrap_or(&0.0))
+        }
+        "getvar" if args.len() == 2 => {
+            let var_id = args[0] as i64;
+            let key = format!("v{}", var_id);
+            let vars = USER_VARIABLES.lock().unwrap();
+            Ok(*vars.get(&key).unwrap_or(&args[1]))
+        }
+        "delvar" if args.len() == 1 => {
+            let var_id = args[0] as i64;
+            let key = format!("v{}", var_id);
+            let mut vars = USER_VARIABLES.lock().unwrap();
+            vars.remove(&key);
+            Ok(0.0)
+        }
+        "listvars" if args.is_empty() => {
+            let vars = USER_VARIABLES.lock().unwrap();
+            let s = if vars.is_empty() {
+                "{}".to_string()
+            } else {
+                let entries: Vec<String> =
+                    vars.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
+                format!("{{{}}}", entries.join(", "))
+            };
+            Err(EvaluationError::InvalidOperation(format!(
+                "__string_result__{}",
+                s
+            )))
+        }
+        "clearvars" if args.is_empty() => {
+            let mut vars = USER_VARIABLES.lock().unwrap();
+            vars.clear();
+            Ok(0.0)
+        }
+
+        // ── Convert / Temp: handled in normalize.rs run(), error stub here ──
+        "convert" => Err(EvaluationError::InvalidOperation(
+            "convert() must be called through the run() pipeline, not evaluate() directly"
+                .to_string(),
+        )),
+        "temp" => Err(EvaluationError::InvalidOperation(
+            "temp() must be called through the run() pipeline, not evaluate() directly".to_string(),
+        )),
+
+        _ => Err(EvaluationError::UnknownFunction(format!(
+            "{}({} args)",
+            name,
+            args.len()
+        ))),
+    }
+}
+
+fn evaluate_function_with(
+    name: &str,
+    tokens: &[Token],
+    pos: &mut usize,
+    depth: &mut usize,
+    ctx: &mut EvalContext,
+) -> Result<f64, EvaluationError> {
+    let args = parse_args_with(tokens, pos, depth, ctx)?;
+    let n = name.to_lowercase();
+
+    // MCP-safe mode: reject random and side-effect functions
+    check_function_allowed_with(name, ctx)?;
 
     match n.as_str() {
         // ── Trigonometric ──
@@ -1557,7 +2803,7 @@ fn evaluate_function(
         }
 
         // ── Random functions ──
-        "random" | "rand" if args.is_empty() => Ok(prng_random()),
+        "random" | "rand" if args.is_empty() => Ok(prng_random_with(ctx)),
         "randint" if args.len() == 2 => {
             let a = args[0] as i64;
             let b = args[1] as i64;
@@ -1573,7 +2819,7 @@ fn evaluate_function(
                 )));
             }
             let range = (b - a + 1) as u64;
-            let r = prng_random() * range as f64;
+            let r = prng_random_with(ctx) * range as f64;
             Ok((a + r.floor() as i64) as f64)
         }
         "randrange" if args.len() == 1 => {
@@ -1588,7 +2834,7 @@ fn evaluate_function(
                     "randrange: argument must be positive".to_string(),
                 ));
             }
-            let r = prng_random() * a as f64;
+            let r = prng_random_with(ctx) * a as f64;
             Ok((r.floor() as i64) as f64)
         }
         "randrange" if args.len() == 2 => {
@@ -1605,7 +2851,7 @@ fn evaluate_function(
                 ));
             }
             let range = (b - a) as u64;
-            let r = prng_random() * range as f64;
+            let r = prng_random_with(ctx) * range as f64;
             Ok((a + r.floor() as i64) as f64)
         }
         "uniform" if args.len() == 2 => {
@@ -1617,115 +2863,95 @@ fn evaluate_function(
                     a, b
                 )));
             }
-            Ok(a + prng_random() * (b - a))
+            Ok(a + prng_random_with(ctx) * (b - a))
         }
-        "randn" if args.is_empty() => Ok(prng_randn()),
+        "randn" if args.is_empty() => Ok(prng_randn_with(ctx)),
         "gauss" | "normal" if args.len() == 2 => {
             let mu = args[0];
             let sigma = args[1];
-            Ok(mu + sigma * prng_randn())
+            Ok(mu + sigma * prng_randn_with(ctx))
         }
         "seed" if args.is_empty() => {
-            let mut state = PRNG_STATE.lock().unwrap();
-            *state = 123456789;
-            let mut spare = GAUSS_SPARE.lock().unwrap();
-            *spare = None;
+            ctx.prng_state = 123456789;
+            ctx.gauss_spare = None;
             Ok(0.0)
         }
         "seed" if args.len() == 1 => {
             let s = args[0] as u64;
-            prng_seed(s);
+            prng_seed_with(ctx, s);
             Ok(0.0)
         }
 
         // ── Memory / variable functions ──
         "store" if args.len() == 1 => {
-            let mut regs = MEMORY_REGISTERS.lock().unwrap();
-            regs.insert("M".to_string(), args[0]);
+            ctx.memory_registers.insert("M".to_string(), args[0]);
             Ok(args[0])
         }
         "store" if args.len() == 2 => {
             let name = format!("R{}", args[1] as i64);
-            let mut regs = MEMORY_REGISTERS.lock().unwrap();
-            regs.insert(name, args[0]);
+            ctx.memory_registers.insert(name, args[0]);
             Ok(args[0])
         }
-        "recall" if args.is_empty() => {
-            let regs = MEMORY_REGISTERS.lock().unwrap();
-            Ok(*regs.get("M").unwrap_or(&0.0))
-        }
+        "recall" if args.is_empty() => Ok(*ctx.memory_registers.get("M").unwrap_or(&0.0)),
         "recall" if args.len() == 1 => {
             let name = format!("R{}", args[0] as i64);
-            let regs = MEMORY_REGISTERS.lock().unwrap();
-            Ok(*regs.get(&name).unwrap_or(&0.0))
+            Ok(*ctx.memory_registers.get(&name).unwrap_or(&0.0))
         }
         "mplus" | "m+" | "madd" if args.len() == 1 => {
-            let mut regs = MEMORY_REGISTERS.lock().unwrap();
-            let current = *regs.get("M").unwrap_or(&0.0);
+            let current = *ctx.memory_registers.get("M").unwrap_or(&0.0);
             let new_val = current + args[0];
-            regs.insert("M".to_string(), new_val);
+            ctx.memory_registers.insert("M".to_string(), new_val);
             Ok(new_val)
         }
         "mminus" | "m-" | "msub" if args.len() == 1 => {
-            let mut regs = MEMORY_REGISTERS.lock().unwrap();
-            let current = *regs.get("M").unwrap_or(&0.0);
+            let current = *ctx.memory_registers.get("M").unwrap_or(&0.0);
             let new_val = current - args[0];
-            regs.insert("M".to_string(), new_val);
+            ctx.memory_registers.insert("M".to_string(), new_val);
             Ok(new_val)
         }
         "mc" | "mclear" if args.is_empty() => {
-            let mut regs = MEMORY_REGISTERS.lock().unwrap();
-            regs.clear();
+            ctx.memory_registers.clear();
             Ok(0.0)
         }
-        "mr" | "mrecall" if args.is_empty() => {
-            let regs = MEMORY_REGISTERS.lock().unwrap();
-            Ok(*regs.get("M").unwrap_or(&0.0))
-        }
+        "mr" | "mrecall" if args.is_empty() => Ok(*ctx.memory_registers.get("M").unwrap_or(&0.0)),
         "setvar" if args.len() == 2 => {
-            // args[0] is the value, args[1] is the variable name encoded as a number
-            // Since we can't pass strings through f64, we use a numeric encoding
-            // Actually, setvar in the evaluator receives (value, name_as_number)
-            // The name is encoded by having the caller pass a numeric variable ID
-            // For now, we store using a numeric key
             let var_id = args[1] as i64;
             let key = format!("v{}", var_id);
-            let mut vars = USER_VARIABLES.lock().unwrap();
-            if !vars.contains_key(&key) && vars.len() >= MAX_USER_VARIABLES {
-                // Evict oldest entry
-                if let Some(oldest) = vars.keys().next().cloned() {
-                    vars.remove(&oldest);
+            if !ctx.user_variables.contains_key(&key)
+                && ctx.user_variables.len() >= MAX_USER_VARIABLES_CTX
+            {
+                if let Some(oldest) = ctx.user_variables.keys().next().cloned() {
+                    ctx.user_variables.remove(&oldest);
                 }
             }
-            vars.insert(key, args[0]);
+            ctx.user_variables.insert(key, args[0]);
             Ok(args[0])
         }
         "getvar" if args.len() == 1 => {
             let var_id = args[0] as i64;
             let key = format!("v{}", var_id);
-            let vars = USER_VARIABLES.lock().unwrap();
-            Ok(*vars.get(&key).unwrap_or(&0.0))
+            Ok(*ctx.user_variables.get(&key).unwrap_or(&0.0))
         }
         "getvar" if args.len() == 2 => {
             let var_id = args[0] as i64;
             let key = format!("v{}", var_id);
-            let vars = USER_VARIABLES.lock().unwrap();
-            Ok(*vars.get(&key).unwrap_or(&args[1]))
+            Ok(*ctx.user_variables.get(&key).unwrap_or(&args[1]))
         }
         "delvar" if args.len() == 1 => {
             let var_id = args[0] as i64;
             let key = format!("v{}", var_id);
-            let mut vars = USER_VARIABLES.lock().unwrap();
-            vars.remove(&key);
+            ctx.user_variables.remove(&key);
             Ok(0.0)
         }
         "listvars" if args.is_empty() => {
-            let vars = USER_VARIABLES.lock().unwrap();
-            let s = if vars.is_empty() {
+            let s = if ctx.user_variables.is_empty() {
                 "{}".to_string()
             } else {
-                let entries: Vec<String> =
-                    vars.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
+                let entries: Vec<String> = ctx
+                    .user_variables
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .collect();
                 format!("{{{}}}", entries.join(", "))
             };
             Err(EvaluationError::InvalidOperation(format!(
@@ -1734,8 +2960,7 @@ fn evaluate_function(
             )))
         }
         "clearvars" if args.is_empty() => {
-            let mut vars = USER_VARIABLES.lock().unwrap();
-            vars.clear();
+            ctx.user_variables.clear();
             Ok(0.0)
         }
 
@@ -1974,7 +3199,6 @@ fn prng_seed(s: u64) {
 }
 
 fn prng_randn() -> f64 {
-    // Box-Muller transform
     let mut spare = GAUSS_SPARE.lock().unwrap();
     if let Some(val) = spare.take() {
         return val;

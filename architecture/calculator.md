@@ -16,7 +16,36 @@ The `src/calc/` module handles math expression parsing and evaluation.
 pub fn run(expr: &str) -> Result<(String, String), RunError>        // NL + math + units
 pub fn evaluate(expr: &str) -> Result<(String, String), String>      // direct math only
 pub fn split_at_operators(expr: &str) -> Vec<String>                 // tokenizer
+pub fn run_with_context(expr: &str, ctx: &mut EvalContext) -> Result<(String, String), RunError>
+pub fn evaluate_with_context(expr: &str, ctx: &mut EvalContext) -> Result<(String, String), String>
 ```
+
+## EvalContext (`src/calc/context.rs`)
+
+`EvalContext` holds per-evaluation mutable state, replacing global statics for state that varies between calls:
+
+- **`allow_random`** / **`allow_side_effects`** — gate `rand()`, `randint()`, `shuffle()` and other non-deterministic functions
+- **`prng_state`** / **`gauss_spare`** — reproducible PRNG state for deterministic random sequences
+- **`memory_registers`** — persistent memory slots (`m0`–`m9`) across evaluations
+- **`user_variables`** — user-defined variables accessible in expressions
+
+### Constructors
+
+| Method | Description |
+|--------|-------------|
+| `EvalContext::new()` | Default context, all functions allowed |
+| `EvalContext::mcp_mode()` | MCP-safe: random/side-effects disabled |
+
+Builder methods: `with_prng_state()`, `with_memory_registers()`, `with_user_variables()`.
+
+### Context-aware vs legacy APIs
+
+- **`evaluate_with_context(expr, ctx)`** / **`run_with_context(expr, ctx)`** — accept a mutable `EvalContext`, enabling per-evaluation state isolation. Preferred for in-process and agent calls.
+- **`evaluate(expr)`** / **`run(expr)`** — backward-compatible wrappers that create a default `EvalContext` internally. Simpler but use shared global flags for random/side-effect gating.
+
+### What remains global
+
+`MCP_MODE`, `ALLOW_RANDOM`, and `ALLOW_SIDE_EFFECTS` AtomicBool flags remain global (one-shot, race-safe) and are read by `EvalContext` constructors. They are set once at startup and not mutated per-call.
 
 ## Natural Language Pipeline (`run()`)
 

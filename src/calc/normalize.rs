@@ -1935,12 +1935,45 @@ pub fn run(expr: &str) -> Result<RunResult, RunError> {
     let (tokens, detected_unit) = preprocess_units(&tokens);
     let processed = tokens.join("");
 
-    // NZ-3: Wrap denominator in parens for unit-on-division-right patterns
-    // "5*m/3*s" → "5*m/(3*s)" so trailing units bind to the right operand
     let processed = add_same_unit_division_parens(&processed);
 
     let (value, value_type) =
         crate::calc::evaluator::evaluate(&processed).map_err(RunError::Evaluation)?;
+    if let Some(unit) = detected_unit {
+        Ok((format!("{} {}", value, unit), value_type))
+    } else {
+        Ok((value, value_type))
+    }
+}
+
+/// Run natural language expression through the full pipeline with explicit context.
+///
+/// This is the context-aware version of [`run`] that uses the provided
+/// [`EvalContext`] for evaluation instead of global statics.
+pub fn run_with_context(
+    expr: &str,
+    ctx: &mut crate::calc::context::EvalContext,
+) -> Result<RunResult, RunError> {
+    let normalized = normalize(expr).map_err(RunError::Internal)?;
+
+    // Handle convert() and temp() patterns before evaluation
+    if let Some(result) = handle_convert_pattern(&normalized) {
+        return result.map_err(RunError::Evaluation);
+    }
+    if let Some(result) = handle_temp_pattern(&normalized) {
+        return result.map_err(RunError::Evaluation);
+    }
+
+    let tokens = split_at_operators(&normalized);
+    let (tokens, detected_unit) = preprocess_units(&tokens);
+    let processed = tokens.join("");
+
+    // NZ-3: Wrap denominator in parens for unit-on-division-right patterns
+    // "5*m/3*s" → "5*m/(3*s)" so trailing units bind to the right operand
+    let processed = add_same_unit_division_parens(&processed);
+
+    let (value, value_type) = crate::calc::evaluator::evaluate_with_context(&processed, ctx)
+        .map_err(RunError::Evaluation)?;
     if let Some(unit) = detected_unit {
         Ok((format!("{} {}", value, unit), value_type))
     } else {

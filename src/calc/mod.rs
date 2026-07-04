@@ -17,15 +17,19 @@
 //! assert_eq!(evaluate("5 + 3").unwrap(), ("8".to_string(), "int".to_string()));
 //! ```
 
+pub mod context;
 pub mod evaluator;
 pub mod normalize;
 pub mod units;
 
+pub use context::EvalContext;
 pub use evaluator::evaluate;
+pub use evaluator::evaluate_with_context;
 pub use evaluator::is_mcp_mode;
 pub use evaluator::set_mcp_mode;
 pub use evaluator::EvaluateResult;
 pub use normalize::run;
+pub use normalize::run_with_context;
 pub use normalize::split_at_operators;
 pub use normalize::RunError;
 pub use normalize::RunResult;

@@ -102,16 +102,16 @@ generated/
 
 Detailed architecture documentation is in `architecture/`:
 
-- `architecture/overview.md` — directory layout, dependency flow, constants
-- `architecture/calculator.md` — calculator core, NL pipeline, units, constants
-- `architecture/mcp-server.md` — MCP protocol, tool registration, categories, error handling
+- `architecture/overview.md` — directory layout, dependency flow, constants, context isolation model
+- `architecture/calculator.md` — calculator core, NL pipeline, units, constants, EvalContext
+- `architecture/mcp-server.md` — MCP protocol, tool registration, categories, error handling, ExecutionContext
 - `architecture/machine-codes.md` — machine-readable response codes, finding helpers, severity/disposition/verdict constants, composite tool verdicts
 - `architecture/text-library.md` — all 24 text modules, public API, code patterns
 - `architecture/compatibility.md` — compatibility mode (EggcalcPython vs StrictNative), behavior differences
 
 ## Agent API
 
-`src/agent/` provides an in-process API for calling tools without MCP. `ToolRegistry` wraps the tool registry with profile filtering and `call_json()` dispatch. `call_json_with_budget()` accepts a custom `ToolBudget` to override default per-tool limits. `src/preflight/` adds typed wrappers (`ConfigPreflight`, `CommandPreflight`, `EditPreflight`) that parse tool responses into structured Rust types with fail-closed contract enforcement.
+`src/agent/` provides an in-process API for calling tools without MCP. `ToolRegistry` wraps the tool registry with profile filtering and `call_json()` dispatch. `call_json_with_budget()` accepts a custom `ToolBudget` to override default per-tool limits. `call_json_with_execution_context()` accepts an `ExecutionContext` for full per-request state isolation — recommended for new code. `src/preflight/` adds typed wrappers (`ConfigPreflight`, `CommandPreflight`, `EditPreflight`) that parse tool responses into structured Rust types with fail-closed contract enforcement.
 
 - **`PreflightError`** has three variants: `ToolCall` (registry rejected), `ToolRejected` (tool returned `ok: false`), `ContractViolation` (missing mandatory field in `ok: true` response). Missing fields are hard failures, not silent defaults.
 - **Typed verdict enums**: `EditVerdict`, `CommandVerdict`, `ConfigVerdict` with `Other(String)` variant for forward compatibility. `FindingSeverity` and `FindingDisposition` follow the same pattern.
@@ -159,6 +159,10 @@ Agent task skills in `.skills/`:
 - **Tool timeouts are budget-derived**: `tools/call` uses `budget.max_elapsed_ms` from `ToolBudget` (resolved via `budget_for_tool()` from `ToolSpec.cost`), not a fixed 30s constant. Composite tools get sub-budgets via `SubBudget`/`CompositeBudgetAllocator`.
 
 - **Cooperative budget checks in high-risk handlers**: `edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, and `dependency_edit_preflight` create a `BudgetContext` internally (since `ToolHandler` is `fn(&Value) -> ToolResponse` and cannot receive context). They call `should_stop()` at key pipeline stages. The MCP server creates an `Arc<AtomicBool>` cancel flag and attaches it via `with_cancellation()` before dispatch; on timeout, the flag is set but blocking work may continue (cooperative, not forceful).
+
+- **Handler signatures remain `fn(&Value) -> ToolResponse`**: Tool functions do not accept an `ExecutionContext`. Context isolation is applied at the orchestration layer (`call_json_with_execution_context`), not passed into handlers. This preserves compatibility with existing handler code while enabling per-request state isolation.
+
+- **Context-aware APIs vs legacy**: Use `call_json_with_execution_context()` (agent) or `evaluate_with_context()`/`run_with_context()` (calculator) when you need per-call state isolation (e.g., reproducible PRNG, user variables, memory registers). Legacy wrappers (`call_json`, `evaluate`, `run`) are fine for simple cases where default state is acceptable.
 
 - **Response truncation is automatic**: `truncate_response()` caps findings/output when a tool exceeds its budget limits. Check `limits_applied` in the response envelope to detect truncation. Findings cap reserves one slot for a synthetic `OUTPUT_TOO_LARGE` notice (so total ≤ `max_findings`); result over-cap is replaced with a summary object preserving `machine_code`/`verdict`/`ok`/caller-`summary`, plus `truncated: true`, `original_size_bytes`, `max_output_bytes`.
 - **Input pre-check**: `call_json_with_budget()` (in-process) and `tools/call` (MCP) check serialized input against `budget.max_input_bytes` *before* dispatch. Oversized input fails with `INPUT_TOO_LARGE` (high, blocking) instead of wasting compute.
