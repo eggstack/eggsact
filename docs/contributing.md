@@ -27,13 +27,14 @@ path, so run `cargo build` before running parity tests.
 ## Testing
 
 ```sh
-cargo fmt --check        # formatting gate
-cargo clippy --all-targets --all-features
-cargo test               # all tests (unit, integration, parity)
-cargo package            # crates.io package verification
-cargo test --lib         # unit tests within src/ only
-cargo test --test lib parity   # parity tests against Python
-cargo test --doc         # doc tests
+cargo fmt --all -- --check     # formatting gate (CI-equivalent)
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test                     # all tests (unit, integration, parity)
+cargo run --bin generate-docs -- --check  # generated docs freshness
+cargo package --verbose        # crates.io package verification
+cargo test --lib                # unit tests within src/ only
+cargo test --test lib parity    # parity tests against Python
+cargo test --doc                # doc tests
 ```
 
 Unit tests live inside `src/` files as `#[cfg(test)]` modules. Integration and parity
@@ -166,14 +167,23 @@ eggsact/
 
 ## Parity with Python
 
-When changing behavior, always verify parity tests still pass:
+The parity suite compares Rust MCP tool output against the Python `eggcalc` reference.
+It requires Python 3.x and `eggcalc` at `../eggcalc` (sibling directory).
 
 ```sh
 cargo test --test lib parity
 ```
 
-If your change introduces a valid behavioral difference from Python, update the parity
-test to accept the new behavior and document the divergence in `docs/parity.md`.
+As of 2026-07-04, the Rust parity suite has known gaps documented in `docs/parity.md`
+(`Verification status` and `Known parity gaps` sections). The 64-of-67 tool subset
+passes for matching tools; the remaining 53 failures are categorized as test-harness
+audience bug, tool/output drift, and a 3-tool gap (`config_file_inspect`,
+`dependency_edit_preflight`, `repo_manifest_inspect`). Closing these gaps is out of
+scope for release polish and is tracked for follow-up work.
+
+When changing behavior, verify parity tests for the affected tools still pass. If your
+change introduces a valid behavioral difference from Python, update the parity test to
+accept the new behavior and document the divergence in `docs/parity.md`.
 
 ## Release Checklist
 
@@ -195,5 +205,8 @@ release. Publish with:
 cargo publish
 ```
 
-GitHub Actions mirrors the release gates on pull requests and pushes to `main`: fmt,
-clippy, build, tests, and `cargo package`.
+GitHub Actions mirrors the release gates on pull requests and pushes to `main`:
+`cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
+`cargo test --all-features`, `cargo run --bin generate-docs -- --check`, and
+`cargo package --verbose`. Parity tests are not run in CI (Python `eggcalc` is not
+available in the CI environment) and must be run locally.

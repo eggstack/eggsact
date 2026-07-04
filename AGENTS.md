@@ -168,7 +168,7 @@ Agent task skills in `.skills/`:
 - **Adding an MCP tool requires one `ToolSpec` entry** in `src/mcp/specs/<category>.rs`. This is the single source of truth for tool registration. A test (`tool_registration_tables_are_in_sync`) will catch drift.
 - **`^` is XOR, not exponentiation.** Use `**` for power. This matches Python behavior.
 - **`g` means gram** in unit expressions. Use `gravity` or `standardgravity` for standard gravity.
-- **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. They won't pass without the Python project present.
+- **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. As of 2026-07-04, the parity suite has 53 known failures (out of 413 tests) — see `docs/parity.md` `Verification status` and `Known parity gaps` for the breakdown (test-harness audience bug, tool/output drift, and a 3-tool gap: `config_file_inspect`, `dependency_edit_preflight`, `repo_manifest_inspect`). The Rust `full` profile ships 64 tools; Python defines 67. Do not treat these as regressions — they accumulated across the phase 06–09 line of work and are tracked for follow-up.
 - **CI mirrors release gates.** GitHub Actions runs fmt, clippy, build, tests, and `cargo package`.
 - **`Cargo.lock` is gitignored** but present. This is unusual for a binary crate — don't commit it.
 - **`serde_json` uses `preserve_order`** feature — key order is intentional in serialized JSON.

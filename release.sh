@@ -9,7 +9,7 @@ echo "=== Regenerating docs from ToolSpec registry ==="
 cargo run --bin generate-docs
 
 echo "=== Checking formatting ==="
-cargo fmt --check
+cargo fmt --all -- --check
 
 echo "=== Running clippy ==="
 cargo clippy --all-targets --all-features -- -D warnings

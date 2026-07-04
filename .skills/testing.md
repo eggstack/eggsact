@@ -19,7 +19,7 @@ cargo package                        # release/package verification
 
 Always run in this order (CI mirrors this exactly):
 ```bash
-cargo fmt --check                    # format gate
+cargo fmt --all -- --check           # format gate
 cargo clippy --all-targets --all-features -- -D warnings  # lint (warnings denied)
 cargo test --verbose                 # all tests
 cargo run --bin generate-docs -- --check  # generated docs freshness

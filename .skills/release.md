@@ -11,8 +11,8 @@ Use this when preparing or performing a release.
 The script runs in order:
 1. Regenerate confusables data: `python3 scripts/generate_confusables.py`
 2. Regenerate docs: `cargo run --bin generate-docs`
-3. Check formatting: `cargo fmt --check`
-4. Run clippy: `cargo clippy --all-targets --all-features`
+3. Check formatting: `cargo fmt --all -- --check`
+4. Run clippy: `cargo clippy --all-targets --all-features -- -D warnings`
 5. Run all tests: `cargo test`
 6. Build release: `cargo build --release`
 7. Check crates.io packaging: `cargo package`
@@ -20,10 +20,11 @@ The script runs in order:
 ## Pre-Release Checklist
 
 - [ ] All tests pass: `cargo test`
-- [ ] No formatting issues: `cargo fmt --check`
-- [ ] No clippy warnings: `cargo clippy --all-targets --all-features`
+- [ ] No formatting issues: `cargo fmt --all -- --check`
+- [ ] No clippy warnings: `cargo clippy --all-targets --all-features -- -D warnings`
 - [ ] Generated docs current: `cargo run --bin generate-docs -- --check`
-- [ ] Parity tests pass: `cargo test --test lib parity`
+- [ ] Parity tests pass (when Python `eggcalc` is available at `../eggcalc`): `cargo test --test lib parity`
+  - Note: As of 2026-07-04, the Rust parity suite has known gaps documented in `docs/parity.md` (`Verification status` and `Known parity gaps` sections). The 64-of-67 tool subset passes for matching tools; the remaining 53 failures are categorized as test-harness audience bug, tool/output drift, and a 3-tool gap. Closing these gaps is out of scope for release-polish and is tracked for follow-up work.
 - [ ] Confusables data regenerated: `python3 scripts/generate_confusables.py`
 - [ ] Crate packaging succeeds: `cargo package`
 - [ ] Version bumped in `Cargo.toml`

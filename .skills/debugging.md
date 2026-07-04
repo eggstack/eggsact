@@ -10,7 +10,11 @@ If `tool_registration_tables_are_in_sync` fails, you've modified the ToolSpec re
 
 ### Parity Test Failures
 
-Parity tests compare Rust vs Python output. If one fails:
+Parity tests compare Rust vs Python output. The parity suite has known gaps as of
+2026-07-04 — see `docs/parity.md` `Verification status` and `Known parity gaps`
+for the current 53-failure breakdown (categorized as test-harness audience bug,
+tool/output drift, and a 3-tool gap). When investigating a new parity failure:
+
 1. Check if the Python server is running at `../eggcalc`
 2. Compare the specific tool call and arguments
 3. Check `docs/parity.md` for known differences
@@ -19,8 +23,8 @@ Parity tests compare Rust vs Python output. If one fails:
 ### Build Failures
 
 ```bash
-cargo fmt --check                    # check formatting first
-cargo clippy --all-targets --all-features  # check lint
+cargo fmt --all -- --check           # check formatting first (CI-equivalent)
+cargo clippy --all-targets --all-features -- -D warnings  # check lint
 ```
 
 ### Confusables Data Stale

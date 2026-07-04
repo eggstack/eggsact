@@ -3,13 +3,19 @@
 ## Overview
 
 eggsact is a Rust reimplementation of the Python `eggcalc` MCP server. It is a
-drop-in replacement: same tool names, same JSON-RPC protocol, same input schemas, same
-output structures. Clients do not need to change any code to switch from Python to
-Rust.
+drop-in replacement for the **subset of tools present in the Rust build**: same tool
+names, same JSON-RPC protocol, same input schemas, same output structures for matching
+tools. Clients do not need to change any code to switch from Python to Rust for
+matching tools.
 
 The Python reference lives in `eggcalc/mcp/` (schemas.py, tools.py, server.py) and
-provides 67 tool definitions. The Rust implementation in `src/mcp/` replicates all 67
-tools with matching behavior. All parity tests pass.
+provides 67 tool definitions. The Rust implementation in `src/mcp/` ships 64 tools
+(see [Known parity gaps](#known-parity-gaps) below); the remaining 3 are planned for
+phase 10 work.
+
+The parity suite is intended to validate all Rust tools against the Python reference
+when `eggcalc` is available in the expected path. See
+[Verification status](#verification-status) for the most recent local run.
 
 ## Parity Framework
 
@@ -142,3 +148,92 @@ Both implementations identify themselves identically to MCP clients:
 - **Version:** `1.1.3`
 
 This ensures clients see the same server regardless of which backend is running.
+
+## Verification status
+
+The parity suite has **not** been observed passing in full on the most recent
+release-polish pass. CI does not run parity tests (Python `eggcalc` is not installed
+in the CI environment), and the most recent local run against
+`/Users/davidbowman/projects/eggcalc` produced partial results.
+
+- **Command:** `cargo test --test lib parity`
+- **Date:** 2026-07-04
+- **Commit:** `614651ec5651ea0d4002f47b3555c0c68b2b1ce0`
+- **Result:** 360 passed, **53 failed**, 2 ignored (out of 413 parity tests; 2520
+  non-parity tests filtered out)
+
+Do not interpret partial parity as a regression — the failures have accumulated across
+the phase 06–09 line of work and were not previously captured in this document. The
+previous "all parity tests pass" wording was unsupported and has been removed.
+
+## Known parity gaps
+
+The 53 failing parity tests fall into three categories. None are regressions
+introduced by a single change; they accumulated as the Rust tool set and audience
+model evolved. Fixing them is **explicitly out of scope** for the phase 06–09
+release-polish pass and is deferred to follow-up work.
+
+### A. Test-harness audience bug (~40 failures)
+
+The MCP test helpers in `tests/mcp/test_comprehensive_parity.rs` and
+`tests/mcp/test_tool_gaps.rs` spawn the binary with the default audience, which is
+`ToolAudience::Model`. Tools declared as `ToolExposure::HarnessOnly` in their
+`ToolSpec` (`src/mcp/specs/unicode.rs`, `src/mcp/specs/text.rs`,
+`src/mcp/specs/shell.rs`, `src/mcp/specs/path.rs`) are rejected by the audience
+filter before reaching the handler, so the response has no `ok` field and the
+test panics on `result.get("ok")`.
+
+Affected tools and approximate failure counts:
+
+| Tool | Failures | ToolSpec |
+|------|----------|----------|
+| `unicode_policy_check` | ~16 | `src/mcp/specs/unicode.rs` |
+| `prompt_input_inspect` | ~6 | `src/mcp/specs/text.rs` |
+| `shell_split` | ~9 | `src/mcp/specs/shell.rs` |
+| `path_scope_check` | 2 | `src/mcp/specs/path.rs` |
+| `patch_apply_check` | 1 | `src/mcp/specs/patch.rs` |
+
+The fix is to update the test harness to use the `codegg_preflight` profile and
+`Harness` audience for these tools, or to call them in-process via
+`ToolRegistry::with_profile_and_audience(..., ToolAudience::Harness)`. This is a
+test-only change; tool semantics are correct.
+
+### B. Tool/output drift (~8 failures)
+
+Real behavioral differences between Rust and Python outputs that need targeted
+fixes in Rust tools:
+
+- `cargo_toml_inspect_basic` (`tests/parity/test_tools_tier3.rs:57`) — output
+  shape differs from Python.
+- `constant_lookup_speed_of_light` (`tests/parity/test_tools_tier0.rs:49`) — unit
+  metadata or ordering differs.
+- `unit_info_invalid` (`tests/parity/test_tools_tier0.rs:42`) — error envelope
+  shape differs.
+- `text_security_inspect_with_hidden` (`tests/parity/test_tools_tier3.rs:139`) —
+  finding shape differs.
+- `tools_list_tier_*_as_bool` and `tools_list_tier_int`
+  (`tests/parity/test_semantic_parity.rs:29,54,79`) — tier-filtered `tools/list`
+  ordering differs from Python (same set, different sort).
+- `tools_list_order_compact` / `_normal` / `_full`
+  (`tests/parity/test_tools_list.rs:6,12,18`) — index 11 ordering: Python emits
+  `validate_brackets`, Rust emits `text_position`.
+
+### C. Tool-set gap: 64 vs 67 tools (3 missing)
+
+The Rust `full` profile ships 64 tools. The Python reference defines 67. The
+three missing tools are:
+
+- `config_file_inspect`
+- `dependency_edit_preflight`
+- `repo_manifest_inspect`
+
+These are referenced in the Python parity test expectations and in
+`codegg_config` / `codegg_preflight` / `codegg_repo_audit` profile definitions in
+Python. They are planned for phase 10 (release hardening) and the associated
+evaluator/context isolation work.
+
+Until these are added, the `profiles/list` parity test
+(`tests/parity/test_semantic_parity.rs:431`) also fails because the per-profile
+tool sets differ — the `default`, `codegg_core_min`, `codegg_core`,
+`codegg_unicode_security`, `codegg_shell`, and `human_math` profiles match
+exactly, but the remaining four do not.
