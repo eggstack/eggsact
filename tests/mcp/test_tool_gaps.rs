@@ -3226,6 +3226,14 @@ fn test_config_file_inspect_json_nested_secret() {
         .as_str()
         .unwrap()
         .contains("password"));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_secret = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "CONFIG_RISK_SECRET_KEY")
+            .unwrap_or(false)
+    });
+    assert!(has_secret, "Expected CONFIG_RISK_SECRET_KEY finding");
 }
 
 #[test]
@@ -3248,6 +3256,14 @@ fn test_config_file_inspect_package_json_scripts() {
             .contains("postinstall")
     });
     assert!(has_postinstall);
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_hook = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "CONFIG_RISK_COMMAND_HOOK")
+            .unwrap_or(false)
+    });
+    assert!(has_hook, "Expected CONFIG_RISK_COMMAND_HOOK finding");
 }
 
 #[test]
@@ -3461,6 +3477,48 @@ fn test_config_file_inspect_toml_nested_secret_key() {
             .unwrap_or(false)
     });
     assert!(has_secret, "Expected CONFIG_RISK_SECRET_KEY finding");
+}
+
+#[test]
+fn test_config_file_inspect_toml_nested_tls_disabled() {
+    let toml = "[service]\nname = \"auth\"\n\n[service.auth]\nverify_tls = false\ntoken = \"abc123-def-ghi\"\n";
+    let result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "service.toml", "text": toml}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("parse_ok"), Some(&Value::Bool(true)));
+    let findings = result.get("findings").unwrap().as_array().unwrap();
+    let has_tls = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "CONFIG_RISK_TLS_DISABLED")
+            .unwrap_or(false)
+    });
+    assert!(has_tls, "Expected CONFIG_RISK_TLS_DISABLED finding");
+    let has_secret = findings.iter().any(|f| {
+        f.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "CONFIG_RISK_SECRET_KEY")
+            .unwrap_or(false)
+    });
+    assert!(has_secret, "Expected CONFIG_RISK_SECRET_KEY finding");
+    let secrets = inner.get("secret_risks").unwrap().as_array().unwrap();
+    assert!(!secrets.is_empty());
+    let preview = secrets[0]
+        .get("value_preview")
+        .and_then(|v| v.as_str())
+        .unwrap();
+    assert!(
+        preview.contains("***"),
+        "value_preview must mask secret, got: {}",
+        preview
+    );
+    assert!(
+        !preview.contains("abc123-def-ghi"),
+        "value_preview must not leak raw secret"
+    );
 }
 
 // ---------------------------------------------------------------------------

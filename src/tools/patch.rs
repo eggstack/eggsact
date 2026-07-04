@@ -320,7 +320,7 @@ fn derive_verdict(
 }
 
 pub fn edit_preflight(args: &Value) -> ToolResponse {
-    let budget_ctx = crate::mcp::budget::BudgetContext::new(crate::mcp::budget::ToolBudget::HEAVY);
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::HEAVY);
 
     let original = match args.get("original").and_then(|v| v.as_str()) {
         Some(s) => s,

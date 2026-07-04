@@ -1262,3 +1262,6 @@ Compare two structured data strings (JSON or TOML) with configurable comparison 
 | 62 | `command_preflight` | Shell | `command` |
 | 63 | `config_preflight` | Config | `file_path`, `text` |
 | 64 | `structured_data_compare` | JSON | `left`, `right` |
+| 65 | `dependency_edit_preflight` | Dependency | `file_path`, `old_text`, `new_text` |
+| 66 | `repo_manifest_inspect` | Repo | `paths` |
+| 67 | `config_file_inspect` | Repo | `file_path`, `text` |

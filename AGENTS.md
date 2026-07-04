@@ -13,7 +13,7 @@ cargo test --test lib mcp            # MCP tests only
 cargo test --test lib parity         # parity tests only
 cargo test --test lib text           # text tests only
 cargo test --doc                     # doc tests
-cargo fmt --check                    # format check
+cargo fmt --all -- --check            # format check
 cargo clippy --all-targets --all-features  # lint
 cargo package                        # crates.io packaging dry run
 cargo run --bin generate-docs        # regenerate docs from ToolSpec registry
@@ -32,7 +32,7 @@ GitHub Actions CI runs on push/PR to `main`:
 
 ## Verification order
 
-`cargo fmt --check` → `cargo clippy --all-targets --all-features -- -D warnings` → `cargo test --verbose` → `cargo package --verbose`
+`cargo fmt --all -- --check` → `cargo clippy --all-targets --all-features -- -D warnings` → `cargo test --verbose` → `cargo package --verbose`
 
 ## Structure
 
@@ -56,7 +56,7 @@ src/
       math.rs       # MATH_TOOLS
       text.rs       # TEXT_TOOLS
       json.rs       # JSON_TOOLS
-      ...           # one file per category (16 total)
+      ...           # one file per category (18 total)
     protocol.rs     # JSON-RPC types (Request, Response, Error, InitializeResult)
     response.rs     # ToolResponse, error sanitization, finding() helpers, with_verdict, preflight builders
     machine_codes.rs # machine-readable response codes, severity/disposition/verdict constants
@@ -89,7 +89,7 @@ src/
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text
   calc/             # calculator tests (4 files)
-  mcp/              # MCP protocol + tool tests (18 files)
+  mcp/              # MCP protocol + tool tests (22 files)
   parity/           # Python/Rust parity tests (12 files)
   text/             # text processing tests (24 files)
 scripts/

@@ -53,7 +53,7 @@ Tool implementations live in `src/tools/` (category modules):
 |--------|-------------|
 | `initialize` | Returns server info and capabilities |
 | `notifications/initialized` | Client acknowledgment (no response) |
-| `tools/list` | Returns all 64 tool definitions |
+| `tools/list` | Returns all 67 tool definitions |
 | `tools/call` | Executes a tool by name |
 
 ## Tool Registration (Single Registry)

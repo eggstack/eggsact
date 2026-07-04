@@ -99,15 +99,14 @@ fn call_json_with_context_handler_sees_cancel_flag() {
         )
         .expect("registry call should succeed");
 
-    // The handler creates BudgetContext via for_handler() which picks up
-    // the flag. Depending on whether check_not_cancelled is called early,
-    // the response may be an error or a successful result. The key point
-    // is that the flag is visible — if the handler calls should_stop(),
-    // it will see cancelled=true.
-    //
-    // For math_eval, cancellation is not checked eagerly, so the response
-    // is still ok. But the BudgetContext inside the handler has the flag.
-    assert!(resp.ok || resp.error.is_some());
+    // Smoke test: the cancel flag is threaded through to the handler's
+    // BudgetContext. math_eval does NOT check cancellation eagerly, so it
+    // still returns ok — this verifies the plumbing, not the cancellation
+    // effect itself.
+    assert!(
+        resp.ok,
+        "math_eval should still succeed with pre-cancelled flag (no eager check)"
+    );
 }
 
 #[test]
@@ -144,10 +143,23 @@ fn command_preflight_respects_cancel_flag() {
         )
         .expect("registry call should succeed");
 
-    // The handler should either return an error (cancelled) or complete
-    // successfully. The important thing is that the cancellation flag
-    // was threaded through.
-    assert!(resp.ok || resp.error.is_some());
+    // command_preflight checks cancellation eagerly via budget_ctx.should_stop().
+    // With a pre-cancelled flag, it MUST fail deterministically.
+    assert!(
+        !resp.ok,
+        "command_preflight must return ok=false when cancelled"
+    );
+    let err = resp.error.as_deref().expect("error must be present");
+    assert!(
+        err.contains("cancelled"),
+        "error must mention cancellation, got: {}",
+        err
+    );
+    assert_eq!(
+        resp.machine_code.as_deref(),
+        Some("CANCELLED"),
+        "machine_code must be CANCELLED"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════

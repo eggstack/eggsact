@@ -8,7 +8,7 @@ output structures. Clients do not need to change any code to switch from Python 
 Rust.
 
 The Python reference lives in `eggcalc/mcp/` (schemas.py, tools.py, server.py) and
-provides 64 tool definitions. The Rust implementation in `src/mcp/` replicates all 64
+provides 67 tool definitions. The Rust implementation in `src/mcp/` replicates all 67
 tools with matching behavior. All parity tests pass.
 
 ## Parity Framework
@@ -83,14 +83,14 @@ cargo test --lib
 
 The following areas have been brought to full parity:
 
-- **Tool set**: All 64 tool names, descriptions, and input schemas match
+- **Tool set**: All 67 tool names, descriptions, and input schemas match
 - **Tool metadata**: Tier, category, profiles, tags, cost, stability, composite flags are identical
 - **Output schemas**: Per-property descriptions match Python's `TOOL_SCHEMAS`
 - **`tools/list` response**: Serialized fields match Python (`category`, `cost`, `deprecated`, `description`, `inputSchema`, `llm_exposure`, `name`, `outputSchema`, `tags`, `tier`)
 - **Error codes**: Same JSON-RPC error codes (-32600, -32601, -32602, -32603, -32700, -32000)
 - **Error sanitization**: Same regex-based PII/path redaction
 - **Rate limiting**: 10 req/s sliding window
-- **Timeout handling**: 30s tool timeout
+- **Timeout handling**: Tool timeouts are budget-derived from `ToolSpec.cost` (`Cheap`/`Moderate`/`Heavy`), not a fixed 30s.
 - **JSON parser error messages**: serde_json errors are mapped to Python `json` module equivalents
 - **TOML parser error messages**: toml_edit errors are mapped to Python `tomllib` equivalents
 - **Math semantics**: `^` is XOR (matching Python AST BitXor), `/` is true division (matching Python AST Div)

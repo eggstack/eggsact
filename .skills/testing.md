@@ -45,7 +45,7 @@ tests/
     test_response_structure.rs
     test_golden_fixtures.rs
     test_determinism_concurrency.rs
-    ... (14 test files)
+    ... (22 test files)
   parity/
     test_tools_core.rs        # core tool parity with Python
     test_tools_tier0..3.rs    # tier-specific parity

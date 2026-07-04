@@ -6,7 +6,7 @@ Use this when diagnosing issues in the codebase.
 
 ### Tool Registration Drift
 
-If `tool_registration_tables_are_in_sync` fails, you've modified one of the 4 tool registration tables in `server.rs` without updating all 4. See `.skills/mcp-tools.md` for the complete list.
+If `tool_registration_tables_are_in_sync` fails, you've modified the ToolSpec registry (`src/mcp/specs/<category>.rs`) without running `cargo run --bin generate-docs`. See `.skills/mcp-tools.md` for the complete list.
 
 ### Parity Test Failures
 
