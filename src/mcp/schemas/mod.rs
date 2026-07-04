@@ -1,6 +1,7 @@
 pub mod cargo;
 pub mod config;
 pub mod dependency;
+pub mod diagnostics;
 pub mod identifier;
 pub mod json;
 pub mod list;
@@ -20,6 +21,7 @@ pub mod version;
 pub use cargo::*;
 pub use config::*;
 pub use dependency::*;
+pub use diagnostics::*;
 pub use identifier::*;
 pub use json::*;
 pub use list::*;

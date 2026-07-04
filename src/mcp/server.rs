@@ -235,8 +235,10 @@ async fn handle_request_async(
                     return Some(wrap_tool_response(&ToolResponse::error_with_code(
                         "cancelled",
                         machine_codes::CANCELLED,
-                        &format!("Tool '{}' request was cancelled", name),
-                        None,
+                        &format!("Tool '{}' request was cancelled by the client", name),
+                        Some(vec![
+                            "The request was cancelled before execution started".to_string()
+                        ]),
                         Some(name),
                     )));
                 }
@@ -265,7 +267,7 @@ async fn handle_request_async(
                             Some(json_rpc_error(
                                 -32602,
                                 format!(
-                                    "Tool '{}' is not available in profile '{}'. Use tools/list to see available tools, or switch profile.",
+                                    "Tool '{}' is not available in profile '{}'. Check the tool's declared profiles, or switch to a profile that includes it.",
                                     tool, profile
                                 ),
                                 request.id.clone(),
@@ -391,11 +393,15 @@ async fn handle_request_async(
                         "timeout",
                         machine_codes::TIMEOUT,
                         &format!(
-                            "Tool '{}' execution timed out after {}s",
+                            "Tool '{}' execution timed out after {}s (budget: {}ms max). The cancel flag was set cooperatively; the handler may continue briefly.",
                             name_owned,
-                            timeout_ms / 1000
+                            timeout_ms / 1000,
+                            timeout_ms
                         ),
-                        Some(vec!["Try a simpler input or shorter text".to_string()]),
+                        Some(vec![
+                            "Try a simpler input or shorter text".to_string(),
+                            "The tool handler checks cancellation cooperatively and may not stop immediately".to_string(),
+                        ]),
                         Some(&name_owned),
                     )))
                 }
@@ -511,7 +517,8 @@ pub async fn main() -> ! {
             write_json_line(&json_rpc_error(
                 -32700,
                 format!(
-                    "Request exceeds maximum size of {} bytes",
+                    "Request exceeds maximum size: {} bytes received, {} bytes maximum",
+                    trimmed.len(),
                     MAX_REQUEST_BYTES
                 ),
                 None,

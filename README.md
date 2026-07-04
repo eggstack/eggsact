@@ -92,7 +92,7 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 ## MCP Tools
 
 <!-- BEGIN GENERATED: eggsact tools -->
-67 tools across 18 categories. See `architecture/mcp-server.md` for the full reference.
+68 tools across 19 categories. See `architecture/mcp-server.md` for the full reference.
 
 ### Math (4)
 
@@ -250,6 +250,12 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 |------|------|----------|-----------|------|----------|
 | `repo_manifest_inspect` | 2 | contextual | stable | cheap | codegg_repo_audit, full |
 | `config_file_inspect` | 2 | contextual | stable | mod | codegg_config, codegg_repo_audit, full |
+
+### Diagnostics (1)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `runtime_diagnostics` | 3 | harness | stable | cheap | full |
 
 
 <!-- END GENERATED: eggsact tools -->

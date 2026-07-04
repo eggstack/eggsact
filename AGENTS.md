@@ -179,3 +179,5 @@ Agent task skills in `.skills/`:
 - **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_SCHEMA_DETAIL`.
 - **Platform support**: `command_preflight` recognizes `platform` values `posix`, `windows`, and `auto`. Only `posix` is implemented; `windows` returns `UNSUPPORTED_FEATURE` and `auto` resolves to `posix`.
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
+- **`--diagnostics` CLI flag** prints version, tool count, profile summary, budget tiers, and env var names (no values). Supports `--format json`. `runtime_diagnostics` MCP tool exposes similar info to harness-only audiences.
+- **`cargo run --bin verify-eggsact`** runs a 5-step verification pipeline (fmt, clippy, test, build, package) with optional parity check, and reports results as markdown.
