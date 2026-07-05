@@ -96,7 +96,11 @@ Tool listing and filtering lives in `src/mcp/registry/listing.rs`, including `li
 
 For new tool integrations, prefer `call_json_with_execution_context()` over legacy `call_json()`. The `ExecutionContext` bundles eval context, compatibility mode, profile, audience, budget, and cancellation into a single per-request struct. Tool handler signatures remain `fn(&Value) -> ToolResponse` for compatibility — context is applied at the orchestration layer, not passed into handlers. Calculator-backed handlers retrieve `EvalContext` from a thread-local set by `budget::with_eval_context()`.
 
-For calculator operations, use `evaluate_with_context()` / `run_with_context()` when you need per-evaluation state (PRNG, memory registers, user variables).
+**Key invariant**: `ctx.eval_ctx` is **cloned** at dispatch; PRNG draws, memory mutations, and variable assignments inside the handler operate on the clone and **do not persist back** to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value.
+
+For calculator operations, use `evaluate_with_context()` / `run_with_context()` when you need persistent mutable `EvalContext` behavior across multiple calls (PRNG draws accumulate, memory registers persist, user variables accumulate). These operate directly on the caller's `ctx`.
+
+Do not mix `call_json_with_execution_context` with `evaluate_with_context`/`run_with_context` for the same `EvalContext` — the former clones the context so handler mutations are invisible to the caller's `ctx`.
 
 ## Composite Tools
 

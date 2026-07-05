@@ -746,3 +746,74 @@ fn test_eval_context_prng_through_math_eval() {
         "Different seeds should produce different random() results"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// 16. eval_ctx is per-call seed for immutable dispatch: calling
+//     math_eval(random()) twice through call_json_with_execution_context
+//     produces the same first random value because the eval_ctx is cloned
+//     at dispatch and mutations do not propagate back.
+//
+//     To get persistent PRNG advancement across multiple calls, use
+//     evaluate_with_context() / run_with_context() directly, or a future
+//     mutable tool-dispatch API.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn execution_context_eval_ctx_is_per_call_seed_for_immutable_dispatch() {
+    let registry = ToolRegistry::default();
+
+    let mut eval_ctx = EvalContext::new().with_prng_state(42);
+    let ctx = ExecutionContext::test_default().with_eval_context(&mut eval_ctx);
+
+    let r1 = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "random()"}),
+        &ctx,
+    );
+    let r2 = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "random()"}),
+        &ctx,
+    );
+
+    assert!(r1.is_ok(), "first random() call failed: {:?}", r1);
+    assert!(r2.is_ok(), "second random() call failed: {:?}", r2);
+
+    let v1 = r1.unwrap().result.unwrap()["value"]
+        .as_str()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+    let v2 = r2.unwrap().result.unwrap()["value"]
+        .as_str()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+
+    assert!((0.0..1.0).contains(&v1), "random() out of range: {}", v1);
+    assert!((0.0..1.0).contains(&v2), "random() out of range: {}", v2);
+
+    // Both calls get the same first random value because eval_ctx is cloned
+    // at dispatch — the PRNG state resets to the seed for each call.
+    assert_eq!(
+        v1, v2,
+        "eval_ctx is cloned at dispatch, so both calls see the same seed \
+         and produce the same first random value"
+    );
+
+    // By contrast, evaluate_with_context advances the PRNG persistently:
+    let mut persistent_ctx = EvalContext::new().with_prng_state(42);
+    let a1 = evaluate_with_context("random()", &mut persistent_ctx)
+        .unwrap()
+        .0
+        .parse::<f64>()
+        .unwrap();
+    let a2 = evaluate_with_context("random()", &mut persistent_ctx)
+        .unwrap()
+        .0
+        .parse::<f64>()
+        .unwrap();
+    assert_ne!(
+        a1, a2,
+        "evaluate_with_context advances PRNG state, so consecutive calls differ"
+    );
+}

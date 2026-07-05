@@ -142,6 +142,8 @@ Verify that:
 - Legacy wrappers (`evaluate`, `run`, `call_json`) remain backward-compatible (default context)
 - `call_json_with_execution_context` honors profile/audience/compatibility from context
 - `EvalContext` is propagated through `math_eval` via thread-local (PRNG seeds, MCP mode restrictions)
+- `call_json_with_execution_context` clones `eval_ctx` — handler mutations do **not** persist back to the caller's `ExecutionContext`
+- `call_json_with_execution_context` is an in-process API and does **not** affect the MCP JSON-RPC wire protocol
 
 ## Determinism & Concurrency Tests
 

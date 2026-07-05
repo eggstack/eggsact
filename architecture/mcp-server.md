@@ -245,8 +245,10 @@ Builder methods: `with_eval_context()`, `with_budget()`, `with_cancellation()`, 
 
 - **Profile/Audience**: Falls back to registry defaults when `None`. When `Some`, uses the context's values for tool filtering and exposure checks.
 - **Compatibility mode**: Used for argument schema validation.
-- **EvalContext**: Cloned and set as thread-local via `budget::with_eval_context()`, making it available to calculator-backed tools (e.g., `math_eval` uses `run_with_context()` when a thread-local context is present).
-- **Budget/Cancellation**: Resource limits and cooperative cancellation flag.
+- **EvalContext**: **Cloned** and set as thread-local via `budget::with_eval_context()`, making it available to calculator-backed tools (e.g., `math_eval` uses `run_with_context()` when a thread-local context is present). Mutations inside the handler do not persist back to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value.
+- **Budget/Cancellation**: Resource limits and cooperative cancellation flag. The cancellation flag is set as a thread-local during dispatch so that high-risk handlers that create their own `BudgetContext` inherit cancellation.
+
+**MCP wire protocol boundary**: `call_json_with_execution_context` is an **in-process** API. It does not change the MCP JSON-RPC wire protocol. The MCP server still resolves its active profile from `EGGCALC_MCP_PROFILE` at init time. Per-request context overrides over the wire would require a future MCP request-level context API.
 
 Legacy APIs remain as backward-compatible wrappers:
 
@@ -254,7 +256,7 @@ Legacy APIs remain as backward-compatible wrappers:
 |--------|---------------|
 | `call_json(name, args)` | Creates a default context internally |
 | `call_json_with_budget(name, args, budget)` | Context with custom budget |
-| `call_json_with_context(name, args, compat, profile)` | Context with explicit compat/profile |
+| `call_json_with_context(name, args, budget, cancel_flag)` | Context with budget and cancellation |
 | `call_json_with_execution_context(name, args, ctx)` | Full context — **recommended for new code** |
 
 ### MCP startup env vars → runtime context

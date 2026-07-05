@@ -168,6 +168,13 @@ Agent task skills in `.skills/`:
 
 - **Context-aware APIs vs legacy**: Use `call_json_with_execution_context()` (agent) or `evaluate_with_context()`/`run_with_context()` (calculator) when you need per-call state isolation (e.g., reproducible PRNG, user variables, memory registers). Legacy wrappers (`call_json`, `evaluate`, `run`) are fine for simple cases where default state is acceptable.
 
+- **Agent guidance on which context API to use**:
+  - **`call_json_with_execution_context(&ctx)`** — for per-call profile/audience/compat/budget/cancellation overrides. `ctx.eval_ctx` is **cloned** at dispatch; mutations inside the handler do **not** persist back. Do not assume `ctx.eval_ctx` is mutated persistently.
+  - **`evaluate_with_context(expr, ctx)` / `run_with_context(expr, ctx)`** — for persistent mutable `EvalContext` behavior across multiple calculator calls (PRNG draws accumulate, memory registers persist, user variables accumulate). These operate directly on the caller's `ctx`.
+  - Do not mix the two for the same `EvalContext`: `call_json_with_execution_context` clones `ctx.eval_ctx` so handler mutations are invisible to the caller's `ctx`. Use `evaluate_with_context`/`run_with_context` when you need state to accumulate across calls.
+
+- **MCP wire vs in-process**: `call_json_with_execution_context` is an in-process API. It does not change the MCP JSON-RPC wire protocol. The MCP server resolves its active profile from `EGGCALC_MCP_PROFILE` at startup. Per-request context over the wire would require a future MCP request-level context API.
+
 - **Response truncation is automatic**: `truncate_response()` caps findings/output when a tool exceeds its budget limits. Check `limits_applied` in the response envelope to detect truncation. Findings cap reserves one slot for a synthetic `OUTPUT_TOO_LARGE` notice (so total ≤ `max_findings`); result over-cap is replaced with a summary object preserving `machine_code`/`verdict`/`ok`/caller-`summary`, plus `truncated: true`, `original_size_bytes`, `max_output_bytes`.
 - **Input pre-check**: `call_json_with_budget()` (in-process) and `tools/call` (MCP) check serialized input against `budget.max_input_bytes` *before* dispatch. Oversized input fails with `INPUT_TOO_LARGE` (high, blocking) instead of wasting compute.
 

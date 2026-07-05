@@ -96,7 +96,29 @@ Mutable per-request state is isolated via two context structs:
 - **`EvalContext`** (`src/calc/context.rs`) — per-evaluation calculator state (PRNG, memory registers, user variables, random/side-effect gates).
 - **`ExecutionContext`** (`src/agent/mod.rs`) — per-request dispatch state (eval context, compatibility mode, profile, audience, budget, cancellation, request ID, source).
 
-Context-aware APIs (`evaluate_with_context`, `run_with_context`, `call_json_with_execution_context`) thread these through the call chain. `call_json_with_execution_context` additionally sets the `EvalContext` as a thread-local, making it available to calculator-backed tool handlers without changing their `fn(&Value) -> ToolResponse` signature. Legacy wrappers (`evaluate`, `run`, `call_json`) remain for backward compatibility but do not isolate per-call state.
+### Legacy vs context-aware paths
+
+| Path | API | State |
+|------|-----|-------|
+| Legacy calculator | `evaluate()`, `run()` | Uses process-global compatibility state (`MEMORY_REGISTERS`, `USER_VARIABLES`, `PRNG_STATE`, `GAUSS_SPARE` mutable globals, `ALLOW_RANDOM`/`ALLOW_SIDE_EFFECTS` AtomicBool flags). |
+| Context-aware calculator | `evaluate_with_context(expr, ctx)`, `run_with_context(expr, ctx)` | Accepts a mutable `EvalContext`. State mutations persist in the caller's `ctx` across calls. Preferred for persistent mutable state across multiple calculator calls. |
+| Context-aware tool dispatch | `call_json_with_execution_context(name, args, ctx)` | Accepts an `ExecutionContext`. Clones `ctx.eval_ctx` into a thread-local before dispatch (via `budget::with_eval_context`). Calculator-backed handlers read from the clone; mutations **do not persist** back to the caller's `ExecutionContext`. Also honors profile, audience, compatibility mode, budget, and cancellation from the context. |
+
+### Per-call seed/template semantics
+
+When `call_json_with_execution_context` dispatches a tool, `ctx.eval_ctx` is **cloned** before the handler runs. PRNG draws, memory mutations, and variable assignments inside the handler operate on the clone and never propagate back to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value.
+
+This immutable-context design means the caller retains full control over the seed/registers between calls. For persistent mutable `EvalContext` behavior across multiple calculator calls, use `evaluate_with_context()`/`run_with_context()` directly instead of dispatching through `call_json_with_execution_context`.
+
+### Cooperative cancellation
+
+Cancellation is cooperative, not forceful. The MCP server and in-process API create an `Arc<AtomicBool>` flag and attach it via `with_cancellation()`. On timeout, the flag is set, but blocking work may continue. Tool handlers check the flag at key pipeline stages via `BudgetContext::should_stop()` or `check_not_cancelled()`. High-risk handlers (`edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`) create a `BudgetContext` internally and call `should_stop()` at pipeline stage boundaries.
+
+### In-process vs MCP wire
+
+`call_json_with_execution_context` is an **in-process** API. It does not change the MCP JSON-RPC wire protocol. The MCP server still resolves its active profile from startup environment variables (`EGGCALC_MCP_PROFILE`) at init time. A future MCP request-level context API would be required to expose per-request context over the wire.
+
+### What remains global / thread-local
 
 Global statics (AtomicBool flags, RwLock profiles, LazyLock caches, thread-local cancel flags) represent startup-time immutable configuration and are intentionally shared across all requests. Legacy mutable globals (`MEMORY_REGISTERS`, `USER_VARIABLES`, `PRNG_STATE`, `GAUSS_SPARE`) remain for backward compatibility but are bypassed by context-aware APIs.
 

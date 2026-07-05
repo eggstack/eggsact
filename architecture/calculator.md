@@ -40,8 +40,16 @@ Builder methods: `with_prng_state()`, `with_memory_registers()`, `with_user_vari
 
 ### Context-aware vs legacy APIs
 
-- **`evaluate_with_context(expr, ctx)`** / **`run_with_context(expr, ctx)`** — accept a mutable `EvalContext`, enabling per-evaluation state isolation. Use `EvalContext::mcp_mode()` to disable random/side-effects. Preferred for in-process and agent calls.
-- **`evaluate(expr)`** / **`run(expr)`** — backward-compatible wrappers that create a default `EvalContext` internally. Simpler but use shared global flags for random/side-effect gating and shared mutable state for PRNG/registers/variables.
+| API | Behavior |
+|-----|----------|
+| `evaluate_with_context(expr, ctx)` / `run_with_context(expr, ctx)` | Accept a mutable `EvalContext`. State mutations persist in the caller's `ctx` across calls. Use `EvalContext::mcp_mode()` to disable random/side-effects. Preferred when persistent mutable state (PRNG, memory registers, user variables) is needed across multiple calculator calls. |
+| `evaluate(expr)` / `run(expr)` | Backward-compatible wrappers that create a default `EvalContext` internally. Use shared global flags for random/side-effect gating and shared mutable state for PRNG/registers/variables. Simpler but does not isolate per-call state. |
+
+### In-process tool dispatch and the thread-local bridge
+
+When `ToolRegistry::call_json_with_execution_context()` dispatches a tool, `ctx.eval_ctx` is **cloned** before the handler runs. The clone is set as a thread-local via `budget::with_eval_context()`, making it available to calculator-backed handlers (e.g., `math_eval` uses `run_with_context()` when a thread-local context is present). Handler signature remains `fn(&Value) -> ToolResponse` — state isolation is achieved at the orchestration layer, not by passing `EvalContext` into handlers.
+
+**Key invariant**: PRNG draws, memory mutations, and variable assignments inside the handler operate on the per-call clone and **do not propagate back** to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value. For persistent mutable `EvalContext` behavior across multiple calculator calls, use `evaluate_with_context()`/`run_with_context()` directly.
 
 ### What remains global
 

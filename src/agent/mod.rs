@@ -595,6 +595,16 @@ impl ToolRegistry {
     /// When `ctx.profile` or `ctx.audience` is `Some`, those values take precedence
     /// over the registry's stored values; when `None`, the registry's defaults are
     /// used as fallback.
+    ///
+    /// # Eval-context handling
+    ///
+    /// `ctx.eval_ctx` is **cloned** before dispatch (line `let mut eval_ctx = ctx.eval_ctx.clone()`).
+    /// The handler receives a thread-local reference to the clone via
+    /// [`budget::with_eval_context`]. Only tools that opt into the eval-context bridge
+    /// (currently **`math_eval`**) read from it. Any PRNG draws, memory mutations, or
+    /// variable assignments inside the handler are confined to the clone and do not
+    /// modify the caller's `ExecutionContext`. Two calls with identical seeds produce
+    /// the same first random value.
     pub fn call_json_with_execution_context(
         &self,
         name: &str,
@@ -722,6 +732,38 @@ pub enum ExecutionSource {
 /// implicit reliance on global statics (ACTIVE_PROFILE, thread-local
 /// cancel flags) for new code paths.
 ///
+/// # Active dispatch controls
+///
+/// - **`profile`** — selects which tools are available (e.g. `full`, `codegg_core_min`).
+/// - **`audience`** — filters tools by exposure level (Model / Harness / Debug).
+/// - **`compatibility_mode`** — selects validation behavior (`EggcalcPython` vs `StrictNative`).
+/// - **`budget`** — per-tool resource limits (max input/output bytes, elapsed time).
+/// - **`cancellation`** — cooperative cancellation flag checked at pipeline stages.
+///
+/// # Eval-context bridge (`eval_ctx`)
+///
+/// The `eval_ctx` field holds calculator state (PRNG seed, memory registers,
+/// user-defined variables). Only calculator-backed tools that opt into the
+/// eval-context bridge read from it; the sole current consumer is **`math_eval`**.
+///
+/// `eval_ctx` is **cloned at dispatch** (`call_json_with_execution_context`
+/// copies the context before entering the handler). All PRNG draws, memory
+/// mutations, and variable assignments inside `math_eval` operate on the
+/// clone and **do not persist back** to the caller's `ExecutionContext`. Two
+/// calls with the same seed produce the same first random value.
+///
+/// This immutable-context design means the caller retains full control over
+/// the seed/registers between calls. Future persistent state would require
+/// a mutable-context API or a different handler signature.
+///
+/// # MCP compatibility
+///
+/// The MCP server still resolves its active profile from the startup
+/// environment (`EGGCALC_MCP_PROFILE`) at init time. An in-process
+/// `ExecutionContext` does not change the MCP JSON-RPC wire protocol;
+/// it only affects `ToolRegistry::call_json_with_execution_context` and
+/// the typed preflight wrappers.
+///
 /// Legacy APIs (`call_json`, `call_json_with_budget`, `call_json_with_context`)
 /// remain as wrappers for backward compatibility.
 pub struct ExecutionContext {
@@ -833,6 +875,16 @@ impl ExecutionContext {
     }
 
     /// Set the calculator evaluation context for this call.
+    ///
+    /// The provided `eval_ctx` is **cloned** into the `ExecutionContext`, so the
+    /// caller's original is unaffected. At dispatch time (`call_json_with_execution_context`),
+    /// the context is cloned again before the handler runs. PRNG draws, memory
+    /// mutations, and variable assignments inside `math_eval` operate on the
+    /// per-call clone and never propagate back.
+    ///
+    /// This lets callers seed repeated calls with identical state and get
+    /// reproducible first random values, while retaining full control over the
+    /// seed/registers between calls.
     pub fn with_eval_context(mut self, eval_ctx: &mut EvalContext) -> Self {
         self.eval_ctx = eval_ctx.clone();
         self

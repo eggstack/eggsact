@@ -1,10 +1,15 @@
 use std::collections::HashMap;
 
-/// Per-evaluation mutable state for the calculator evaluator.
+/// Per-evaluation mutable state for context-aware calculator evaluation.
 ///
-/// Replaces the global statics (PRNG_STATE, GAUSS_SPARE, MEMORY_REGISTERS,
-/// USER_VARIABLES) with explicit per-evaluation state, enabling deterministic
-/// and isolated calculator calls.
+/// `EvalContext` provides explicit PRNG, Gaussian spare, memory-register,
+/// user-variable, and function-permission state for `evaluate_with_context()`
+/// and `run_with_context()`. Legacy `evaluate()` and `run()` remain
+/// backward-compatible and use the legacy process-global compatibility state.
+///
+/// When used through `ToolRegistry::call_json_with_execution_context()`, the
+/// context is currently cloned as a per-call seed/template for `math_eval`; state
+/// mutations do not persist back into the caller's `ExecutionContext`.
 #[derive(Clone)]
 pub struct EvalContext {
     /// Whether random functions are allowed (rejects random/side-effect functions when false).
