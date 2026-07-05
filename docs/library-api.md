@@ -396,6 +396,63 @@ Use the MCP server only when integrating with an AI agent framework that speaks 
 
 ---
 
+## Agent Module
+
+The `eggsact::agent` module provides an in-process API for calling tools without starting the MCP server. Use this when integrating eggsact as a Rust library dependency.
+
+### ToolRegistry
+
+```rust
+use eggsact::agent::{ToolRegistry, Profile, ToolAudience};
+
+// Default: StrictNative compat, full profile, Model audience
+let registry = ToolRegistry::default();
+
+// Custom profile and audience
+let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+```
+
+### Calling Tools
+
+```rust
+use eggsact::agent::{ToolRegistry, ExecutionContext};
+
+let registry = ToolRegistry::default();
+
+// Simple call
+let response = registry.call_json("math_eval", serde_json::json!({"expression": "2 + 3"}))?;
+assert!(response.ok);
+
+// Context-aware call (recommended for new code)
+let ctx = ExecutionContext::builder()
+    .profile(Profile::Full)
+    .audience(ToolAudience::Model)
+    .compatibility_mode(eggsact::agent::CompatibilityMode::StrictNative)
+    .build();
+let response = registry.call_json_with_execution_context(
+    "math_eval",
+    serde_json::json!({"expression": "2 + 3"}),
+    &ctx,
+)?;
+```
+
+### ExecutionContext
+
+`ExecutionContext` carries per-request state for context-aware dispatch:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `profile` | `Option<Profile>` | Override tool availability (falls back to registry default) |
+| `audience` | `Option<ToolAudience>` | Override exposure checks (falls back to registry default) |
+| `compatibility_mode` | `CompatibilityMode` | Controls validation error type names |
+| `eval_ctx` | `EvalContext` | Calculator state (PRNG seed, memory registers, variables) |
+| `budget` | `Option<ToolBudget>` | Per-call resource limits |
+| `cancellation` | `Option<Arc<AtomicBool>>` | Cooperative cancellation flag |
+
+Builder methods: `with_eval_context()`, `with_budget()`, `with_cancellation()`, `with_request_id()`.
+
+---
+
 ## Error Handling
 
 `evaluate()` returns `Err(String)`. `run()` returns `Err(RunError)`, which displays as the underlying message. The common error patterns are:

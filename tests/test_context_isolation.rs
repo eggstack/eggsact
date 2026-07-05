@@ -126,36 +126,37 @@ fn test_compatibility_mode_isolation() {
 
 // ─────────────────────────────────────────────────────────────────────────
 // 4. Cancellation isolation: a cancelled context does not poison later
-//    uncancelled calls.
+//    uncancelled calls. Uses command_preflight which checks cancellation
+//    early via BudgetContext::should_stop().
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
 fn test_cancellation_isolation() {
-    let registry = ToolRegistry::default();
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
 
     // First: make a successful call
     let r1 = registry.call_json("math_eval", serde_json::json!({"expression": "2 + 3"}));
     assert!(r1.is_ok());
     assert!(r1.unwrap().ok);
 
-    // Create a pre-cancelled flag and use it with a budget call
+    // Create a pre-cancelled flag and use it with command_preflight
+    // (which checks cancellation via budget_ctx.should_stop())
     let cancel_flag = Arc::new(AtomicBool::new(true)); // already cancelled
     let ctx_cancelled = ExecutionContext::test_default().with_cancellation(cancel_flag);
 
     let r2 = registry.call_json_with_execution_context(
-        "math_eval",
-        serde_json::json!({"expression": "2 + 3"}),
+        "command_preflight",
+        serde_json::json!({"command": "echo hello"}),
         &ctx_cancelled,
     );
-    // Cancelled call should either return an error or an ok:false response
-    match r2 {
-        Err(_) => {} // pre-execution error from cancellation — acceptable
-        Ok(resp) => {
-            // If it returns a ToolResponse, it should indicate cancellation
-            if !resp.ok {
-                // ok:false — acceptable for cancelled call
-            }
-        }
-    }
+    // Cancelled call should return an ok:false response with CANCELLED machine_code
+    let resp = r2.expect("cancelled call should return ToolResponse, not Err");
+    assert!(!resp.ok, "cancelled call should have ok:false");
+    assert_eq!(
+        resp.machine_code.as_deref(),
+        Some("CANCELLED"),
+        "cancelled call should have machine_code=CANCELLED, got {:?}",
+        resp.machine_code
+    );
 
     // Create a fresh (not cancelled) context and call again
     let ctx_fresh = ExecutionContext::test_default();
@@ -191,16 +192,22 @@ fn test_budget_isolation() {
         serde_json::json!({"expression": "2 + 3"}),
         &ctx_tiny,
     );
-    // Should return an ok:false response with INPUT_TOO_LARGE error
+    // Should return an ok:false response with INPUT_TOO_LARGE machine_code
     assert!(r1.is_ok());
     let resp = r1.unwrap();
     assert!(!resp.ok);
     assert!(resp.error.is_some());
     let err_msg = resp.error.unwrap();
     assert!(
-        err_msg.contains("INPUT_TOO_LARGE") || err_msg.contains("exceed budget"),
-        "Expected INPUT_TOO_LARGE error, got: {}",
+        err_msg.contains("exceed budget") || err_msg.contains("exceeds"),
+        "Expected budget exceeded error, got: {}",
         err_msg
+    );
+    assert_eq!(
+        resp.machine_code.as_deref(),
+        Some("INPUT_TOO_LARGE"),
+        "Expected machine_code=INPUT_TOO_LARGE, got {:?}",
+        resp.machine_code
     );
 
     // Now call with normal budget — should succeed
@@ -593,6 +600,9 @@ fn test_context_audience_override() {
 // ─────────────────────────────────────────────────────────────────────────
 // 13. Context compatibility mode override: the context's compat mode
 //     is used for schema validation instead of the registry's.
+//     Error type names differ: EggcalcPython uses Python names (str, int,
+//     float, bool, list, dict, NoneType), StrictNative uses JSON Schema
+//     names (string, integer, number, boolean, array, object, null).
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
 fn test_context_compatibility_mode_override() {
@@ -610,6 +620,46 @@ fn test_context_compatibility_mode_override() {
     );
     assert!(r1.is_ok());
     assert!(r1.unwrap().ok);
+
+    // Pass a string where a number is expected — EggcalcPython says "str"
+    let r2 = registry.call_json_with_execution_context(
+        "unit_convert",
+        serde_json::json!({"value": "not_a_number", "from_unit": "m", "to_unit": "ft"}),
+        &ctx_python,
+    );
+    let err2 = match r2 {
+        Err(ToolCallError::InvalidArguments(msg)) => msg,
+        other => panic!("expected InvalidArguments, got {:?}", other),
+    };
+    assert!(
+        err2.contains("str"),
+        "EggcalcPython error should contain Python type name 'str', got: {}",
+        err2
+    );
+
+    // Now use StrictNative context — error should say "string" instead
+    let ctx_native = ExecutionContext::builder()
+        .compatibility_mode(CompatibilityMode::StrictNative)
+        .build();
+    let r3 = registry.call_json_with_execution_context(
+        "unit_convert",
+        serde_json::json!({"value": "not_a_number", "from_unit": "m", "to_unit": "ft"}),
+        &ctx_native,
+    );
+    let err3 = match r3 {
+        Err(ToolCallError::InvalidArguments(msg)) => msg,
+        other => panic!("expected InvalidArguments, got {:?}", other),
+    };
+    assert!(
+        err3.contains("string"),
+        "StrictNative error should contain JSON Schema type name 'string', got: {}",
+        err3
+    );
+    // The errors should differ (Python type names vs JSON Schema type names)
+    assert_ne!(
+        err2, err3,
+        "Error messages should differ between compat modes"
+    );
 
     // Verify the registry's default compat mode is different
     assert_eq!(registry.compat_mode(), CompatibilityMode::StrictNative);
