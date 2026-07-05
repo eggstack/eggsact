@@ -306,7 +306,7 @@ impl ToolSpecView {
 /// assert!(response.ok);
 /// ```
 ///
-/// For model-facing codegg integrations, use [`available_tools_model_safe`]
+/// For model-facing codegg integrations, use [`ToolRegistry::available_tools_model_safe`]
 /// to exclude harness-only tools from the listing:
 ///
 /// ```
@@ -390,8 +390,8 @@ impl ToolRegistry {
     /// List all tools available in the current profile (legacy, not model-safe).
     ///
     /// This method only filters out `Hidden` tools. For model-facing codegg
-    /// integrations, prefer [`available_tools_model_safe`] or
-    /// [`available_tools_for_audience`] to also exclude `HarnessOnly` tools.
+    /// integrations, prefer [`ToolRegistry::available_tools_model_safe`] or
+    /// [`ToolRegistry::available_tools_for_audience`] to also exclude `HarnessOnly` tools.
     pub fn available_tools(&self) -> Vec<ToolView> {
         registry::tools_for_profile(self.profile.as_str())
             .into_iter()

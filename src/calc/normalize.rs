@@ -1949,7 +1949,7 @@ pub fn run(expr: &str) -> Result<RunResult, RunError> {
 /// Run natural language expression through the full pipeline with explicit context.
 ///
 /// This is the context-aware version of [`run`] that uses the provided
-/// [`EvalContext`] for evaluation instead of global statics.
+/// [`EvalContext`](crate::calc::EvalContext) for evaluation instead of global statics.
 pub fn run_with_context(
     expr: &str,
     ctx: &mut crate::calc::context::EvalContext,

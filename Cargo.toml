@@ -11,6 +11,13 @@ documentation = "https://docs.rs/eggsact"
 keywords = ["math", "calculator", "natural-language", "mcp", "nlp"]
 categories = ["command-line-utilities", "mathematics", "science"]
 authors = ["David Bowman"]
+exclude = [
+    "plans/",
+    "data/",
+    "scripts/",
+    "build.sh",
+    ".github/",
+]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

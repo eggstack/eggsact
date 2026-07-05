@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Rust reimplementation of Python `eggcalc`. Natural language math calculator + MCP server (67 tools). Single crate, no workspace.
+Rust reimplementation of Python `eggcalc`. Natural language math calculator + MCP server (68 tools). Single crate, no workspace.
 
 ## Commands
 
@@ -18,7 +18,7 @@ cargo clippy --all-targets --all-features  # lint
 cargo package                        # crates.io packaging dry run
 cargo run --bin generate-docs        # regenerate docs from ToolSpec registry
 cargo run --bin generate-docs -- --check  # verify generated docs are current (CI)
-./release.sh                         # full pipeline: regenerate data, fmt, clippy, test, release build, package
+./release.sh                         # full pipeline: regenerate data, fmt, clippy, test, generate-docs check, package
 ```
 
 ## CI
@@ -32,7 +32,7 @@ GitHub Actions CI runs on push/PR to `main`:
 
 ## Verification order
 
-`cargo fmt --all -- --check` → `cargo clippy --all-targets --all-features -- -D warnings` → `cargo test --verbose` → `cargo package --verbose`
+`cargo fmt --all -- --check` → `cargo clippy --all-targets --all-features -- -D warnings` → `cargo test --all-features` → `cargo run --bin generate-docs -- --check` → `cargo package --verbose`
 
 ## Structure
 
@@ -109,6 +109,10 @@ Detailed architecture documentation is in `architecture/`:
 - `architecture/text-library.md` — all 24 text modules, public API, code patterns
 - `architecture/compatibility.md` — compatibility mode (EggcalcPython vs StrictNative), behavior differences
 
+Additional policy docs in `docs/`:
+
+- `docs/compatibility-policy.md` — semantic versioning, breaking changes, tool/schema/machine-code stability, deprecation timelines
+
 ## Agent API
 
 `src/agent/` provides an in-process API for calling tools without MCP. `ToolRegistry` wraps the tool registry with profile filtering and `call_json()` dispatch. `call_json_with_budget()` accepts a custom `ToolBudget` to override default per-tool limits. `call_json_with_execution_context()` accepts an `ExecutionContext` for full per-request state isolation — recommended for new code. `src/preflight/` adds typed wrappers (`ConfigPreflight`, `CommandPreflight`, `EditPreflight`) that parse tool responses into structured Rust types with fail-closed contract enforcement.
@@ -172,8 +176,9 @@ Agent task skills in `.skills/`:
 - **Adding an MCP tool requires one `ToolSpec` entry** in `src/mcp/specs/<category>.rs`. This is the single source of truth for tool registration. A test (`tool_registration_tables_are_in_sync`) will catch drift.
 - **`^` is XOR, not exponentiation.** Use `**` for power. This matches Python behavior.
 - **`g` means gram** in unit expressions. Use `gravity` or `standardgravity` for standard gravity.
-- **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. As of 2026-07-04, the parity suite has 53 known failures (out of 413 tests) — see `docs/parity.md` `Verification status` and `Known parity gaps` for the breakdown (test-harness audience bug, tool/output drift, and a 3-tool gap: `config_file_inspect`, `dependency_edit_preflight`, `repo_manifest_inspect`). The Rust `full` profile ships 64 tools; Python defines 67. Do not treat these as regressions — they accumulated across the phase 06–09 line of work and are tracked for follow-up.
-- **CI mirrors release gates.** GitHub Actions runs fmt, clippy, build, tests, and `cargo package`.
+- **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. As of 2026-07-04, the parity suite has 53 known failures (out of 413 tests) — see `docs/parity.md` `Verification status` and `Known parity gaps` for the breakdown (test-harness audience bug, tool/output drift, and a 3-tool gap: `config_file_inspect`, `dependency_edit_preflight`, `repo_manifest_inspect`). The Rust `full` profile ships 68 tools; Python defines 67. Do not treat these as regressions — they accumulated across the phase 06–09 line of work and are tracked for follow-up.
+- **`deny.toml` configures `cargo-deny`** for license/advisory/ban/source checks. Run `cargo deny check` locally. Allowed licenses: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, Unlicense, Unicode-DFS-2016, Unicode-3.0, Zlib.
+- **CI mirrors release gates.** GitHub Actions runs fmt, clippy, tests, generated-docs check, and `cargo package`.
 - **`Cargo.lock` is gitignored** but present. This is unusual for a binary crate — don't commit it.
 - **`serde_json` uses `preserve_order`** feature — key order is intentional in serialized JSON.
 - **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_SCHEMA_DETAIL`.

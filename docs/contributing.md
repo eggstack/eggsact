@@ -29,7 +29,7 @@ path, so run `cargo build` before running parity tests.
 ```sh
 cargo fmt --all -- --check     # formatting gate (CI-equivalent)
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test                     # all tests (unit, integration, parity)
+cargo test --all-features      # all tests (unit, integration, parity)
 cargo run --bin generate-docs -- --check  # generated docs freshness
 cargo package --verbose        # crates.io package verification
 cargo test --lib                # unit tests within src/ only
@@ -185,6 +185,27 @@ When changing behavior, verify parity tests for the affected tools still pass. I
 change introduces a valid behavioral difference from Python, update the parity test to
 accept the new behavior and document the divergence in `docs/parity.md`.
 
+## Compatibility Policy
+
+Before making breaking changes, review `docs/compatibility-policy.md` for
+stability guarantees, deprecation timelines, and what constitutes a breaking
+change across the Rust API, MCP tools, input/output schemas, machine codes,
+and profiles.
+
+## Supply-Chain Auditing
+
+The project uses `cargo-deny` (configured in `deny.toml`) and `cargo-audit` for
+dependency hygiene:
+
+```sh
+cargo audit              # check for known vulnerabilities
+cargo deny check         # license, advisory, ban, and source checks
+```
+
+Allowed licenses: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, Unlicense,
+Unicode-DFS-2016, Unicode-3.0, Zlib. All are permissive and compatible with
+the project's MIT license.
+
 ## Release Checklist
 
 Run the release script from the repository root before tagging or publishing:
@@ -194,8 +215,8 @@ Run the release script from the repository root before tagging or publishing:
 ```
 
 The script regenerates confusable-character data, verifies formatting, runs clippy,
-runs the full test suite, builds the optimized binary, and verifies the crates.io
-package with `cargo package`.
+runs the full test suite, and verifies the crates.io
+package with `cargo package --verbose`.
 
 Before publishing, make sure the worktree is clean after `./release.sh`, the version
 in `Cargo.toml` matches the release tag, and `CHANGELOG.md` has an entry for the

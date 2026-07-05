@@ -15,10 +15,10 @@ echo "=== Running clippy ==="
 cargo clippy --all-targets --all-features -- -D warnings
 
 echo "=== Running tests ==="
-cargo test
+cargo test --all-features
 
-echo "=== Building release ==="
-cargo build --release
+echo "=== Checking generated docs freshness ==="
+cargo run --bin generate-docs -- --check
 
 echo "=== Checking crates.io package ==="
-cargo package
+cargo package --verbose

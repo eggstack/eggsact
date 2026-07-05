@@ -5,14 +5,14 @@ Use this when writing, running, or debugging tests.
 ## Test Commands
 
 ```bash
-cargo test                           # all tests (unit + integration + parity)
-cargo test --lib                     # unit tests in src/ (including agent module)
-cargo test --lib agent               # agent module tests only
-cargo test --test lib mcp            # MCP tests only
-cargo test --test lib parity         # parity tests only
-cargo test --test lib text           # text tests only
-cargo test --doc                     # doc tests
-cargo package                        # release/package verification
+cargo test --all-features                # all tests (unit + integration + parity)
+cargo test --all-features --lib          # unit tests in src/ (including agent module)
+cargo test --all-features --lib agent    # agent module tests only
+cargo test --all-features --test lib mcp # MCP tests only
+cargo test --all-features --test lib parity  # parity tests only
+cargo test --all-features --test lib text    # text tests only
+cargo test --doc                         # doc tests
+cargo package --verbose                  # release/package verification
 ```
 
 ## Verification Order
@@ -21,7 +21,7 @@ Always run in this order (CI mirrors this exactly):
 ```bash
 cargo fmt --all -- --check           # format gate
 cargo clippy --all-targets --all-features -- -D warnings  # lint (warnings denied)
-cargo test --verbose                 # all tests
+cargo test --all-features            # all tests
 cargo run --bin generate-docs -- --check  # generated docs freshness
 cargo package --verbose              # crates.io package verification
 ```
@@ -32,27 +32,51 @@ CI runs these checks on push/PR to `main` via `.github/workflows/ci.yml`.
 
 ```
 tests/
-  lib.rs                     # declares test modules
+  lib.rs                     # declares test modules: calc, mcp, parity, text
+  test_context_isolation.rs  # standalone: EvalContext PRNG seed, mcp_mode, variable isolation
   calc/
-    test_evaluator.rs         # calculator evaluator tests
-    test_normalize.rs         # NL normalization tests
-    test_units.rs             # unit conversion tests
-    test_bug_regression.rs    # regression tests for bugs
+    mod.rs                   # re-exports 4 modules
+    test_evaluator.rs        # calculator evaluator tests
+    test_normalize.rs        # NL normalization tests
+    test_units.rs            # unit conversion tests
+    test_bug_regression.rs   # regression tests for bugs
   mcp/
-    test_protocol.rs          # JSON-RPC protocol tests
-    test_mcp_tools.rs         # tool behavior tests
-    test_edge_cases.rs        # edge case coverage
+    mod.rs                   # re-exports 22 modules
+    test_protocol.rs         # JSON-RPC protocol tests
+    test_mcp_tools.rs        # tool behavior tests
+    test_edge_cases.rs       # edge case coverage (168 tests)
     test_response_structure.rs
     test_golden_fixtures.rs
     test_determinism_concurrency.rs
-    ... (22 test files)
+    test_machine_codes.rs
+    test_route_contracts.rs
+    test_hardening_and_gaps.rs
+    test_edit_preflight_enhanced.rs
+    test_cancellation.rs
+    test_composite_tools.rs
+    test_diagnostics.rs
+    test_error_structure.rs
+    test_real_tool_use.rs
+    test_lifecycle_and_gaps.rs
+    test_tool_coverage.rs
+    test_tool_gaps.rs
+    test_boundary_conditions.rs
+    test_additional_edge_cases.rs
+    test_deterministic_real_use.rs
+    test_comprehensive_parity.rs
   parity/
-    test_tools_core.rs        # core tool parity with Python
-    test_tools_tier0..3.rs    # tier-specific parity
-    test_bug_fixes.rs         # regression parity
-    test_semantic_parity.rs   # semantic equivalence
+    mod.rs                   # ParityTestResult, run_python_request, run_rust_tool helpers
+    test_tools_core.rs       # core tool parity with Python
+    test_tools_list.rs       # tools/list parity
+    test_tools_tier0..3.rs   # tier-specific parity
+    test_tools_phase4.rs     # phase 4 parity
+    test_tools_phase5.rs     # phase 5 parity
+    test_bug_fixes.rs        # regression parity
+    test_semantic_parity.rs  # semantic equivalence
+    test_error_handling.rs   # error handling parity
   text/
-    test_<module>.rs          # one file per text module
+    mod.rs                   # re-exports 24 modules
+    test_<module>.rs         # one file per text module (24 files)
 ```
 
 Agent module unit tests (`src/agent/mod.rs` inline `#[cfg(test)]`) cover `ToolRegistry` profile filtering, unknown tool errors, argument validation, and `call_json` success paths.

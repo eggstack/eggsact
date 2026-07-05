@@ -124,7 +124,7 @@ pub struct ToolListOptions<'a> {
 /// Filter tool definitions by profile, names, tier, tags, and schema detail.
 ///
 /// This is the core listing logic that was previously in server.rs.
-/// It returns a Vec<ToolDefinition> ready for MCP serialization.
+/// It returns a `Vec<ToolDefinition>` ready for MCP serialization.
 pub fn list_tool_definitions(options: ToolListOptions<'_>) -> Vec<super::types::ToolDefinition> {
     let profile_tools = tools_for_profile(options.profile);
     let mut tools: Vec<super::types::ToolDefinition> = profile_tools
