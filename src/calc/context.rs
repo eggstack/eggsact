@@ -5,6 +5,7 @@ use std::collections::HashMap;
 /// Replaces the global statics (PRNG_STATE, GAUSS_SPARE, MEMORY_REGISTERS,
 /// USER_VARIABLES) with explicit per-evaluation state, enabling deterministic
 /// and isolated calculator calls.
+#[derive(Clone)]
 pub struct EvalContext {
     /// Whether random functions are allowed (rejects random/side-effect functions when false).
     pub(crate) allow_random: bool,

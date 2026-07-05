@@ -33,7 +33,7 @@ CI runs these checks on push/PR to `main` via `.github/workflows/ci.yml`.
 ```
 tests/
   lib.rs                     # declares test modules: calc, mcp, parity, text
-  test_context_isolation.rs  # standalone: EvalContext PRNG seed, mcp_mode, variable isolation
+  test_context_isolation.rs  # standalone: EvalContext PRNG seed, mcp_mode, variable isolation, profile/audience/compat overrides, eval-through-dispatch
   calc/
     mod.rs                   # re-exports 4 modules
     test_evaluator.rs        # calculator evaluator tests
@@ -140,6 +140,8 @@ Verify that:
 - Two `EvalContext` instances with the same PRNG seed produce identical results
 - `EvalContext::mcp_mode()` disables random/side-effect functions
 - Legacy wrappers (`evaluate`, `run`, `call_json`) remain backward-compatible (default context)
+- `call_json_with_execution_context` honors profile/audience/compatibility from context
+- `EvalContext` is propagated through `math_eval` via thread-local (PRNG seeds, MCP mode restrictions)
 
 ## Determinism & Concurrency Tests
 

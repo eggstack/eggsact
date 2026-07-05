@@ -1,7 +1,8 @@
 use crate::calc::units::{
     convert_temperature, get_conversion_factor, get_unit_info, is_unit, PHYSICAL_CONSTANTS,
 };
-use crate::calc::{run, RunError};
+use crate::calc::{run, run_with_context, RunError};
+use crate::mcp::budget::current_eval_context;
 use crate::mcp::machine_codes;
 use crate::mcp::response::ToolResponse;
 use crate::tools::helpers::{
@@ -49,7 +50,14 @@ pub fn math_eval(args: &Value) -> ToolResponse {
         }
     };
     let expr_owned = expression.to_string();
-    let eval_result = match run_with_timeout(Duration::from_secs(30), move || run(&expr_owned)) {
+    let current_ctx = current_eval_context().map(|ctx| ctx.clone());
+    let eval_result = match run_with_timeout(Duration::from_secs(30), move || {
+        if let Some(mut ctx) = current_ctx {
+            run_with_context(&expr_owned, &mut ctx)
+        } else {
+            run(&expr_owned)
+        }
+    }) {
         Ok(r) => r,
         Err(_timeout) => {
             return ToolResponse::error_with_code(

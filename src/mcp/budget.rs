@@ -1,3 +1,4 @@
+use crate::calc::EvalContext;
 use crate::mcp::registry::ToolCost;
 use crate::mcp::response::ToolResponse;
 use std::cell::RefCell;
@@ -7,6 +8,7 @@ use std::time::{Duration, Instant};
 
 thread_local! {
     static CURRENT_CANCEL_FLAG: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
+    static CURRENT_EVAL_CONTEXT: RefCell<Option<*mut EvalContext>> = const { RefCell::new(None) };
 }
 
 /// Set the current thread's cancellation flag for the duration of `f`.
@@ -27,6 +29,35 @@ where
 /// Retrieve the current thread's cancellation flag, if any.
 pub fn current_cancel_flag() -> Option<Arc<AtomicBool>> {
     CURRENT_CANCEL_FLAG.with(|cell| cell.borrow().clone())
+}
+
+/// Set the current thread's [`EvalContext`] for the duration of `f`.
+///
+/// The `EvalContext` is passed as a raw pointer to avoid lifetime issues
+/// with the thread-local. The caller must ensure `ctx` outlives `f`.
+///
+/// Nested calls properly restore the previous context when `f` returns.
+pub fn with_eval_context<F, R>(ctx: &mut EvalContext, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    CURRENT_EVAL_CONTEXT.with(|cell| {
+        let prev = cell.borrow_mut().replace(ctx as *mut EvalContext);
+        let result = f();
+        *cell.borrow_mut() = prev;
+        result
+    })
+}
+
+/// Retrieve a mutable reference to the current thread's [`EvalContext`], if one is set.
+///
+/// # Safety
+///
+/// The returned reference is derived from a raw pointer stored in thread-local storage.
+/// The pointer is guaranteed to be valid for the lifetime of the enclosing
+/// `with_eval_context` call. This function must only be called from within that scope.
+pub fn current_eval_context() -> Option<&'static mut EvalContext> {
+    CURRENT_EVAL_CONTEXT.with(|cell| cell.borrow_mut().as_mut().map(|ptr| unsafe { &mut **ptr }))
 }
 
 /// Create a `BudgetContext` suitable for a tool handler, automatically

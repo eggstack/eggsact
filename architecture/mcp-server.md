@@ -216,9 +216,9 @@ IPC overhead of the stdio transport.
 pub struct ExecutionContext {
     pub eval_ctx: EvalContext,
     pub compatibility_mode: CompatibilityMode,
-    pub profile: Profile,
-    pub audience: ToolAudience,
-    pub budget: ToolBudget,
+    pub profile: Option<Profile>,
+    pub audience: Option<ToolAudience>,
+    pub budget: Option<ToolBudget>,
     pub cancellation: Option<Arc<AtomicBool>>,
     pub request_id: Option<String>,
     pub source: ExecutionSource,
@@ -229,19 +229,26 @@ pub struct ExecutionContext {
 
 ### Constructors
 
-| Method | Compatibility | Description |
-|--------|---------------|-------------|
-| `ExecutionContext::cli_default()` | `StrictNative` | CLI invocations |
-| `ExecutionContext::library_default()` | `StrictNative` | Library consumers |
-| `ExecutionContext::mcp_default()` | `EggcalcPython` | MCP server (Python-parity errors) |
-| `ExecutionContext::agent_default()` | `StrictNative` | In-process agent calls |
-| `ExecutionContext::test_default()` | `StrictNative` | Test harness |
+| Method | Profile | Audience | Compatibility | Description |
+|--------|---------|----------|---------------|-------------|
+| `ExecutionContext::cli_default()` | `None` | `None` | `StrictNative` | CLI invocations |
+| `ExecutionContext::library_default()` | `None` | `None` | `StrictNative` | Library consumers |
+| `ExecutionContext::mcp_default(profile, audience)` | `Some(profile)` | `Some(audience)` | `EggcalcPython` | MCP server (Python-parity errors) |
+| `ExecutionContext::agent_default(profile, audience)` | `Some(profile)` | `Some(audience)` | `StrictNative` | In-process agent calls |
+| `ExecutionContext::test_default()` | `None` | `None` | `StrictNative` | Test harness |
 
-Builder methods: `with_budget()`, `with_cancellation()`, `with_request_id()`.
+Builder methods: `with_eval_context()`, `with_budget()`, `with_cancellation()`, `with_request_id()`. Named-field builder: `ExecutionContext::builder()`.
 
 ### Context-aware dispatch
 
-`ToolRegistry::call_json_with_execution_context()` accepts an `ExecutionContext` and threads its fields through validation, handler dispatch, and response construction. Legacy APIs remain as backward-compatible wrappers:
+`ToolRegistry::call_json_with_execution_context()` accepts an `ExecutionContext` and honors all its fields:
+
+- **Profile/Audience**: Falls back to registry defaults when `None`. When `Some`, uses the context's values for tool filtering and exposure checks.
+- **Compatibility mode**: Used for argument schema validation.
+- **EvalContext**: Cloned and set as thread-local via `budget::with_eval_context()`, making it available to calculator-backed tools (e.g., `math_eval` uses `run_with_context()` when a thread-local context is present).
+- **Budget/Cancellation**: Resource limits and cooperative cancellation flag.
+
+Legacy APIs remain as backward-compatible wrappers:
 
 | Method | What it wraps |
 |--------|---------------|
@@ -256,20 +263,22 @@ The MCP server reads `EGGCALC_MCP_PROFILE` and `EGGCALC_MCP_SCHEMA_DETAIL` at st
 
 ### Handler signatures unchanged
 
-Tool handler functions retain the signature `fn(&Value) -> ToolResponse` for compatibility. This means handlers cannot receive an `ExecutionContext` directly — state isolation is achieved by the caller passing context into `call_json_with_execution_context()`, which applies it at the orchestration layer. High-risk handlers (`edit_preflight`, `command_preflight`, etc.) create a `BudgetContext` internally for cooperative budget checks.
+Tool handler functions retain the signature `fn(&Value) -> ToolResponse` for compatibility. This means handlers cannot receive an `ExecutionContext` directly — state isolation is achieved by the caller passing context into `call_json_with_execution_context()`, which applies it at the orchestration layer. Calculator-backed handlers (e.g., `math_eval`) retrieve the `EvalContext` from a thread-local set by `budget::with_eval_context()`. High-risk handlers (`edit_preflight`, `command_preflight`, etc.) create a `BudgetContext` internally for cooperative budget checks.
 
 ### What remains global / thread-local
 
 | State | Why global |
 |-------|------------|
-| `MCP_MODE`, `ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS` AtomicBool | One-shot startup flags, race-safe |
+| `MCP_MODE`, `ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS` AtomicBool | One-shot startup flags, race-safe. Context-aware APIs bypass these via `EvalContext` fields. |
 | `ACTIVE_PROFILE`, `ACTIVE_SCHEMA_DETAIL` RwLock | Set once at startup, read-only after init |
 | `SPAWN_SEMAPHORE` | Intentional global concurrency limiter |
 | `CURRENT_CANCEL_FLAG` thread-local | Properly scoped per-dispatch |
+| `CURRENT_EVAL_CONTEXT` thread-local | Set by `with_eval_context()` during calculator-backed tool dispatch; bypasses legacy globals |
 | 36+ LazyLock immutable caches | Regex, tables, tool definitions — immutable after init |
 | Request-scoped Arc objects | Cloned per-request, not shared |
+| `MEMORY_REGISTERS`, `USER_VARIABLES`, `PRNG_STATE`, `GAUSS_SPARE` LazyLock | Legacy mutable state. Context-aware APIs use `EvalContext` fields instead; globals remain for legacy `evaluate()` path. |
 
-These are intentionally global because they represent immutable configuration or startup-time state, not per-request mutable state.
+These are intentionally global because they represent immutable configuration or startup-time state, not per-request mutable state. The legacy mutable globals (`MEMORY_REGISTERS`, `USER_VARIABLES`, `PRNG_STATE`, `GAUSS_SPARE`) are retained for backward compatibility but are bypassed by context-aware APIs.
 
 ## Rate Limiting
 

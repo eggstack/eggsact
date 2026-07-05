@@ -591,8 +591,10 @@ impl ToolRegistry {
     /// Call a tool with a full execution context, applying all dispatch-scoped state.
     ///
     /// This is the context-aware entry point that uses the provided [`ExecutionContext`]
-    /// for budget resolution, cancellation, and compatibility mode. The registry's
-    /// stored profile and audience are used for tool filtering.
+    /// for budget resolution, cancellation, profile, audience, and compatibility mode.
+    /// When `ctx.profile` or `ctx.audience` is `Some`, those values take precedence
+    /// over the registry's stored values; when `None`, the registry's defaults are
+    /// used as fallback.
     pub fn call_json_with_execution_context(
         &self,
         name: &str,
@@ -618,8 +620,43 @@ impl ToolRegistry {
                 Some(name),
             ));
         }
-        let mut response =
-            budget::with_cancel_flag(ctx.cancellation.clone(), || self.call_json(name, args))?;
+        let effective_profile = ctx.profile.clone().unwrap_or_else(|| self.profile.clone());
+        let effective_audience = ctx.audience.unwrap_or(self.audience);
+        let effective_compat = ctx.compatibility_mode;
+        let mut eval_ctx = ctx.eval_ctx.clone();
+        let mut response = budget::with_cancel_flag(ctx.cancellation.clone(), || {
+            budget::with_eval_context(&mut eval_ctx, || {
+                let handler = match registry::tool_handler_for(name) {
+                    Some(h) => h,
+                    None => {
+                        return Err(ToolCallError::UnknownTool(name.to_string()));
+                    }
+                };
+                let profile_tools = registry::tools_for_profile(effective_profile.as_str());
+                if !profile_tools.iter().any(|s| s.name == name) {
+                    return Err(ToolCallError::ToolUnavailable {
+                        tool: name.to_string(),
+                        profile: effective_profile.to_string(),
+                    });
+                }
+                if let Some(tool_spec) = registry::get_tool(name) {
+                    if !effective_audience.can_execute_exposure(tool_spec.exposure) {
+                        return Err(ToolCallError::ToolNotAllowedForAudience {
+                            tool: name.to_string(),
+                            profile: effective_profile.to_string(),
+                            audience: format!("{:?}", effective_audience),
+                            exposure: tool_spec.exposure.as_str().to_string(),
+                        });
+                    }
+                }
+                if let Some(msg) =
+                    schema_validation::validate_arguments(name, &args, effective_compat)
+                {
+                    return Err(ToolCallError::InvalidArguments(msg));
+                }
+                Ok(handler(&args))
+            })
+        })?;
         truncate_response(&mut response, &effective_budget);
         Ok(response)
     }
@@ -793,6 +830,85 @@ impl ExecutionContext {
     pub fn with_request_id(mut self, id: impl Into<String>) -> Self {
         self.request_id = Some(id.into());
         self
+    }
+
+    /// Set the calculator evaluation context for this call.
+    pub fn with_eval_context(mut self, eval_ctx: &mut EvalContext) -> Self {
+        self.eval_ctx = eval_ctx.clone();
+        self
+    }
+
+    /// Create a builder for constructing an `ExecutionContext` with named fields.
+    pub fn builder() -> ExecutionContextBuilder {
+        ExecutionContextBuilder::default()
+    }
+}
+
+/// Builder for `ExecutionContext` with named field initialization.
+#[derive(Default)]
+pub struct ExecutionContextBuilder {
+    eval_ctx: Option<EvalContext>,
+    compatibility_mode: Option<CompatibilityMode>,
+    profile: Option<Profile>,
+    audience: Option<ToolAudience>,
+    budget: Option<ToolBudget>,
+    cancellation: Option<Arc<AtomicBool>>,
+    request_id: Option<String>,
+    source: Option<ExecutionSource>,
+}
+
+impl ExecutionContextBuilder {
+    pub fn eval_ctx(mut self, eval_ctx: EvalContext) -> Self {
+        self.eval_ctx = Some(eval_ctx);
+        self
+    }
+
+    pub fn compatibility_mode(mut self, mode: CompatibilityMode) -> Self {
+        self.compatibility_mode = Some(mode);
+        self
+    }
+
+    pub fn profile(mut self, profile: Profile) -> Self {
+        self.profile = Some(profile);
+        self
+    }
+
+    pub fn audience(mut self, audience: ToolAudience) -> Self {
+        self.audience = Some(audience);
+        self
+    }
+
+    pub fn budget(mut self, budget: ToolBudget) -> Self {
+        self.budget = Some(budget);
+        self
+    }
+
+    pub fn cancellation(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.cancellation = Some(flag);
+        self
+    }
+
+    pub fn request_id(mut self, id: impl Into<String>) -> Self {
+        self.request_id = Some(id.into());
+        self
+    }
+
+    pub fn source(mut self, source: ExecutionSource) -> Self {
+        self.source = Some(source);
+        self
+    }
+
+    pub fn build(self) -> ExecutionContext {
+        ExecutionContext {
+            eval_ctx: self.eval_ctx.unwrap_or_default(),
+            compatibility_mode: self.compatibility_mode.unwrap_or_default(),
+            profile: self.profile,
+            audience: self.audience,
+            budget: self.budget,
+            cancellation: self.cancellation,
+            request_id: self.request_id,
+            source: self.source.unwrap_or_default(),
+        }
     }
 }
 

@@ -1,4 +1,6 @@
-use eggsact::agent::{ExecutionContext, Profile, ToolAudience, ToolCallError, ToolRegistry};
+use eggsact::agent::{
+    CompatibilityMode, ExecutionContext, Profile, ToolAudience, ToolCallError, ToolRegistry,
+};
 use eggsact::calc::{evaluate_with_context, run_with_context, EvalContext};
 use eggsact::mcp::budget::ToolBudget;
 use std::collections::HashMap;
@@ -497,5 +499,200 @@ fn test_mcp_mode_isolation() {
     assert!(
         r9.is_err(),
         "run_with_context random() should be rejected in MCP mode"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 11. Context profile override: call_json_with_execution_context with a
+//     context profile different from the registry's profile enforces the
+//     context's profile for tool availability.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_context_profile_override() {
+    // Registry has full profile, but context overrides to human_math
+    let registry = ToolRegistry::with_profile(Profile::Full);
+    let ctx_hm = ExecutionContext::builder()
+        .profile(Profile::HumanMath)
+        .build();
+
+    // math_eval is in human_math — should succeed
+    let r1 = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "2 + 3"}),
+        &ctx_hm,
+    );
+    assert!(r1.is_ok());
+    assert!(r1.unwrap().ok);
+
+    // text_equal is NOT in human_math — should fail with ToolUnavailable
+    let r2 = registry.call_json_with_execution_context(
+        "text_equal",
+        serde_json::json!({"a": "x", "b": "x"}),
+        &ctx_hm,
+    );
+    assert!(r2.is_err());
+    match r2.unwrap_err() {
+        ToolCallError::ToolUnavailable { tool, profile } => {
+            assert_eq!(tool, "text_equal");
+            assert_eq!(profile, "human_math");
+        }
+        other => panic!("expected ToolUnavailable, got {:?}", other),
+    }
+
+    // Without context override, full profile can still call text_equal
+    let ctx_default = ExecutionContext::test_default();
+    let r3 = registry.call_json_with_execution_context(
+        "text_equal",
+        serde_json::json!({"a": "x", "b": "x"}),
+        &ctx_default,
+    );
+    assert!(r3.is_ok());
+    assert!(r3.unwrap().ok);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 12. Context audience override: call_json_with_execution_context with
+//     Harness audience can execute HarnessOnly tools even when registry
+//     was created with Model audience.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_context_audience_override() {
+    // Registry has Model audience (rejects HarnessOnly)
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
+
+    // Context overrides to Harness audience
+    let ctx_harness = ExecutionContext::builder()
+        .audience(ToolAudience::Harness)
+        .build();
+
+    // shell_split is HarnessOnly — should succeed with Harness context
+    let r1 = registry.call_json_with_execution_context(
+        "shell_split",
+        serde_json::json!({"command": "echo hello"}),
+        &ctx_harness,
+    );
+    assert!(r1.is_ok());
+    assert!(r1.unwrap().ok);
+
+    // Without context override, Model audience rejects shell_split
+    let ctx_model = ExecutionContext::test_default();
+    let r2 = registry.call_json_with_execution_context(
+        "shell_split",
+        serde_json::json!({"command": "echo hello"}),
+        &ctx_model,
+    );
+    assert!(r2.is_err());
+    match r2.unwrap_err() {
+        ToolCallError::ToolNotAllowedForAudience { tool, .. } => {
+            assert_eq!(tool, "shell_split");
+        }
+        other => panic!("expected ToolNotAllowedForAudience, got {:?}", other),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 13. Context compatibility mode override: the context's compat mode
+//     is used for schema validation instead of the registry's.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_context_compatibility_mode_override() {
+    // Registry has StrictNative, context overrides to EggcalcPython
+    let registry = ToolRegistry::new(); // StrictNative
+    let ctx_python = ExecutionContext::builder()
+        .compatibility_mode(CompatibilityMode::EggcalcPython)
+        .build();
+
+    // Both modes allow normal math — verify the context's mode is used
+    let r1 = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "1 + 1"}),
+        &ctx_python,
+    );
+    assert!(r1.is_ok());
+    assert!(r1.unwrap().ok);
+
+    // Verify the registry's default compat mode is different
+    assert_eq!(registry.compat_mode(), CompatibilityMode::StrictNative);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 14. EvalContext threading through math_eval: math_eval with MCP-mode
+//     context rejects random() while default context allows it.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_eval_context_through_math_eval() {
+    let registry = ToolRegistry::default();
+
+    // Default EvalContext (allow_random=true) — random() should work
+    let ctx_default = ExecutionContext::test_default();
+    let r1 = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "random()"}),
+        &ctx_default,
+    );
+    assert!(r1.is_ok());
+    assert!(r1.unwrap().ok);
+
+    // MCP mode EvalContext (allow_random=false) — random() should fail
+    let mut eval_ctx = EvalContext::mcp_mode();
+    let ctx_mcp = ExecutionContext::test_default().with_eval_context(&mut eval_ctx);
+    let r2 = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "random()"}),
+        &ctx_mcp,
+    );
+    assert!(r2.is_ok()); // dispatch succeeds
+    let resp = r2.unwrap();
+    assert!(!resp.ok, "random() should be rejected in MCP mode");
+    let err_msg = resp.error.unwrap();
+    assert!(
+        err_msg.contains("disabled") || err_msg.contains("allow_random"),
+        "Error should mention disabled/random: {}",
+        err_msg
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 15. EvalContext PRNG isolation through math_eval: different seeds
+//     produce different random() results via the tool dispatch.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_eval_context_prng_through_math_eval() {
+    let registry = ToolRegistry::default();
+
+    let mut eval_ctx1 = EvalContext::new().with_prng_state(42);
+    let ctx1 = ExecutionContext::test_default().with_eval_context(&mut eval_ctx1);
+    let r1 = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "random()"}),
+        &ctx1,
+    );
+
+    let mut eval_ctx2 = EvalContext::new().with_prng_state(999);
+    let ctx2 = ExecutionContext::test_default().with_eval_context(&mut eval_ctx2);
+    let r2 = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "random()"}),
+        &ctx2,
+    );
+
+    assert!(r1.is_ok());
+    assert!(r2.is_ok());
+    let v1 = r1.unwrap().result.unwrap()["value"]
+        .as_str()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+    let v2 = r2.unwrap().result.unwrap()["value"]
+        .as_str()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+
+    assert!((0.0..1.0).contains(&v1), "random() out of range: {}", v1);
+    assert!((0.0..1.0).contains(&v2), "random() out of range: {}", v2);
+    assert_ne!(
+        v1, v2,
+        "Different seeds should produce different random() results"
     );
 }

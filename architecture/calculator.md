@@ -40,12 +40,14 @@ Builder methods: `with_prng_state()`, `with_memory_registers()`, `with_user_vari
 
 ### Context-aware vs legacy APIs
 
-- **`evaluate_with_context(expr, ctx)`** / **`run_with_context(expr, ctx)`** — accept a mutable `EvalContext`, enabling per-evaluation state isolation. Preferred for in-process and agent calls.
-- **`evaluate(expr)`** / **`run(expr)`** — backward-compatible wrappers that create a default `EvalContext` internally. Simpler but use shared global flags for random/side-effect gating.
+- **`evaluate_with_context(expr, ctx)`** / **`run_with_context(expr, ctx)`** — accept a mutable `EvalContext`, enabling per-evaluation state isolation. Use `EvalContext::mcp_mode()` to disable random/side-effects. Preferred for in-process and agent calls.
+- **`evaluate(expr)`** / **`run(expr)`** — backward-compatible wrappers that create a default `EvalContext` internally. Simpler but use shared global flags for random/side-effect gating and shared mutable state for PRNG/registers/variables.
 
 ### What remains global
 
 `MCP_MODE`, `ALLOW_RANDOM`, and `ALLOW_SIDE_EFFECTS` AtomicBool flags remain global (one-shot, race-safe) and are read by `EvalContext` constructors. They are set once at startup and not mutated per-call.
+
+Legacy mutable globals `MEMORY_REGISTERS`, `USER_VARIABLES`, `PRNG_STATE`, and `GAUSS_SPARE` (all `LazyLock<Mutex<...>>`) remain for the legacy `evaluate()` / `run()` path. Context-aware APIs (`evaluate_with_context` / `run_with_context`) use `EvalContext` fields instead, avoiding shared mutable state.
 
 ## Natural Language Pipeline (`run()`)
 

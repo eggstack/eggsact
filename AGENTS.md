@@ -164,7 +164,7 @@ Agent task skills in `.skills/`:
 
 - **Cooperative budget checks in high-risk handlers**: `edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, and `dependency_edit_preflight` create a `BudgetContext` internally (since `ToolHandler` is `fn(&Value) -> ToolResponse` and cannot receive context). They call `should_stop()` at key pipeline stages. The MCP server creates an `Arc<AtomicBool>` cancel flag and attaches it via `with_cancellation()` before dispatch; on timeout, the flag is set but blocking work may continue (cooperative, not forceful).
 
-- **Handler signatures remain `fn(&Value) -> ToolResponse`**: Tool functions do not accept an `ExecutionContext`. Context isolation is applied at the orchestration layer (`call_json_with_execution_context`), not passed into handlers. This preserves compatibility with existing handler code while enabling per-request state isolation.
+- **Handler signatures remain `fn(&Value) -> ToolResponse`**: Tool functions do not accept an `ExecutionContext`. Context isolation is applied at the orchestration layer (`call_json_with_execution_context`), not passed into handlers. Calculator-backed handlers (e.g., `math_eval`) retrieve `EvalContext` from a thread-local set by `budget::with_eval_context()`. This preserves compatibility with existing handler code while enabling per-request state isolation.
 
 - **Context-aware APIs vs legacy**: Use `call_json_with_execution_context()` (agent) or `evaluate_with_context()`/`run_with_context()` (calculator) when you need per-call state isolation (e.g., reproducible PRNG, user variables, memory registers). Legacy wrappers (`call_json`, `evaluate`, `run`) are fine for simple cases where default state is acceptable.
 

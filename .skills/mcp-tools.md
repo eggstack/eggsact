@@ -94,7 +94,7 @@ Tool listing and filtering lives in `src/mcp/registry/listing.rs`, including `li
 
 ### Context-Aware APIs
 
-For new tool integrations, prefer `call_json_with_execution_context()` over legacy `call_json()`. The `ExecutionContext` bundles eval context, compatibility mode, profile, audience, budget, and cancellation into a single per-request struct. Tool handler signatures remain `fn(&Value) -> ToolResponse` for compatibility — context is applied at the orchestration layer, not passed into handlers.
+For new tool integrations, prefer `call_json_with_execution_context()` over legacy `call_json()`. The `ExecutionContext` bundles eval context, compatibility mode, profile, audience, budget, and cancellation into a single per-request struct. Tool handler signatures remain `fn(&Value) -> ToolResponse` for compatibility — context is applied at the orchestration layer, not passed into handlers. Calculator-backed handlers retrieve `EvalContext` from a thread-local set by `budget::with_eval_context()`.
 
 For calculator operations, use `evaluate_with_context()` / `run_with_context()` when you need per-evaluation state (PRNG, memory registers, user variables).
 
