@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Rust reimplementation of Python `eggcalc`. Natural language math calculator + MCP server (68 tools). Single crate, no workspace.
+Rust reimplementation of Python `eggcalc`. Natural language math calculator + MCP server with registered tools. Single crate, no workspace.
 
 ## Commands
 
@@ -56,7 +56,7 @@ src/
       math.rs       # MATH_TOOLS
       text.rs       # TEXT_TOOLS
       json.rs       # JSON_TOOLS
-      ...           # one file per category (18 total)
+      ...           # one file per category (19 total)
     protocol.rs     # JSON-RPC types (Request, Response, Error, InitializeResult)
     response.rs     # ToolResponse, error sanitization, finding() helpers, with_verdict, preflight builders
     machine_codes.rs # machine-readable response codes, severity/disposition/verdict constants

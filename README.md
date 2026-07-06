@@ -3,14 +3,14 @@
 [![Crates.io](https://img.shields.io/crates/v/eggsact)](https://crates.io/crates/eggsact)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A natural language math calculator with an MCP (Model Context Protocol) server for AI coding agents. Parses expressions like "thirty plus five" or "30m + 100ft" and evaluates them to results. Ships with 68 MCP tools covering math, text processing, JSON, regex, paths, Unicode safety, and more.
+Deterministic MCP and in-process utility tools for coding agents, including math, text processing, JSON, regex, paths, Unicode safety, shell, config, patch, dependency, and repository preflight helpers. Also serves as a natural language math calculator — parses expressions like "thirty plus five" or "30m + 100ft" and evaluates them to results.
 
 ## Key Features
 
 - Natural language math: "two to the power of ten" evaluates to 1024
 - Unit conversions: "30m to ft", "100C in F"
 - Physical and mathematical constants: `pi`, `c`, `planck`, `avogadro`, `gravity`
-- MCP server with 68 tools for AI agents to reduce hallucinations
+- MCP server with registered tools for AI agents to reduce hallucinations
 - High-performance Rust implementation with zero required external services
 - Rust reimplementation of the Python `eggcalc` project
 
@@ -54,6 +54,12 @@ eggsact "2 ** 10"
 # Help and version
 eggsact --help
 eggsact --version
+
+# Diagnostics (text output)
+eggsact --diagnostics
+
+# Diagnostics (JSON output)
+eggsact --diagnostics --format json
 
 # MCP server mode (stdio JSON-RPC)
 eggsact --mcp

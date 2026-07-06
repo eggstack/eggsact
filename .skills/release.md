@@ -42,7 +42,7 @@ cargo test --test lib parity    # requires Python eggcalc at ../eggcalc
 - [ ] No clippy warnings: `cargo clippy --all-targets --all-features -- -D warnings`
 - [ ] Generated docs current: `cargo run --bin generate-docs -- --check`
 - [ ] Parity tests pass (when Python `eggcalc` is available at `../eggcalc`): `cargo test --test lib parity`
-  - Note: As of 2026-07-04, the Rust parity suite has known gaps documented in `docs/parity.md` (`Verification status` and `Known parity gaps` sections). The 68-of-67 tool superset passes for matching tools; the remaining 53 failures are categorized as test-harness audience bug, tool/output drift, and a 3-tool gap. Closing these gaps is out of scope for release-polish and is tracked for follow-up work.
+  - Note: As of 2026-07-04, the Rust parity suite has known gaps documented in `docs/parity.md` (`Verification status` and `Known parity gaps` sections). The registered-tools superset passes for matching tools; the remaining failures are categorized as test-harness audience bug, tool/output drift, and a multi-tool gap. Closing these gaps is out of scope for release-polish and is tracked for follow-up work.
 - [ ] Confusables data regenerated: `python3 scripts/generate_confusables.py`
 - [ ] Crate packaging succeeds: `cargo package --verbose`
 - [ ] Version bumped in `Cargo.toml`

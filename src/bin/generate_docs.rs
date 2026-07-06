@@ -785,3 +785,46 @@ mod tests {
         assert!(!cleaned.contains("one"));
     }
 }
+
+#[cfg(test)]
+mod generated_marker_integrity {
+    use super::*;
+
+    fn assert_marker_pair(content: &str, begin: &str, end: &str, file: &str) {
+        let begin_count = content.matches(begin).count();
+        let end_count = content.matches(end).count();
+        assert_eq!(
+            begin_count, 1,
+            "{file}: expected exactly one `{begin}`, found {begin_count}"
+        );
+        assert_eq!(
+            end_count, 1,
+            "{file}: expected exactly one `{end}`, found {end_count}"
+        );
+        let begin_pos = content.find(begin).unwrap();
+        let end_pos = content.find(end).unwrap();
+        assert!(
+            begin_pos < end_pos,
+            "{file}: `{begin}` must appear before `{end}`"
+        );
+    }
+
+    #[test]
+    fn readme_markers_are_well_formed() {
+        let content =
+            std::fs::read_to_string("README.md").expect("failed to read README.md from repo root");
+        assert_marker_pair(&content, BEGIN_TOOLS, END_TOOLS, "README.md");
+    }
+
+    #[test]
+    fn mcp_server_doc_markers_are_well_formed() {
+        let content = std::fs::read_to_string("architecture/mcp-server.md")
+            .expect("failed to read architecture/mcp-server.md from repo root");
+        assert_marker_pair(
+            &content,
+            BEGIN_PROFILES,
+            END_PROFILES,
+            "architecture/mcp-server.md",
+        );
+    }
+}

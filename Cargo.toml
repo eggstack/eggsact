@@ -2,13 +2,13 @@
 name = "eggsact"
 version = "1.1.3"
 edition = "2021"
-description = "Natural language math calculator with MCP server for AI coding agents"
+description = "Deterministic MCP and in-process utility tools for coding agents"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/eggstack/eggsact"
 homepage = "https://github.com/eggstack/eggsact"
 documentation = "https://docs.rs/eggsact"
-keywords = ["math", "calculator", "natural-language", "mcp", "nlp"]
+keywords = ["mcp", "coding-agent", "preflight", "math", "calculator"]
 categories = ["command-line-utilities", "mathematics", "science"]
 authors = ["David Bowman"]
 exclude = [

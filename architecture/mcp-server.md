@@ -53,8 +53,11 @@ Tool implementations live in `src/tools/` (category modules):
 |--------|-------------|
 | `initialize` | Returns server info and capabilities |
 | `notifications/initialized` | Client acknowledgment (no response) |
-| `tools/list` | Returns all 68 tool definitions |
+| `notifications/cancelled` | Adds request ID to the cancellation set |
+| `tools/list` | Returns registered tool definitions (filtered by profile) |
 | `tools/call` | Executes a tool by name |
+| `profiles/list` | Lists all profiles and their tool counts |
+| `ping` | Returns empty response (health check) |
 
 ## Tool Registration (Single Registry)
 
@@ -137,7 +140,7 @@ profile at construction time via `with_profile_and_audience`.
 - `tools/list`: Validates MCP parameters in `server.rs`, builds a `ToolListOptions`, and delegates to `registry::list_tool_definitions()` in `registry/listing.rs`. The registry handles profile filtering, name/tier/tag filtering, schema compaction, and deprecated-field normalization. MCP retains parameter validation and profile resolution.
 - `tools/call`: Resolves the active profile from `get_active_profile()` and creates a `ToolRegistry` with `Model` audience and `EggcalcPython` compatibility mode (Python-parity error messages). Delegates tool lookup, profile checking, audience/exposure checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API. The in-process agent API defaults to `StrictNative` mode (standard JSON Schema error messages).
 
-## Tool Categories (68 tools)
+## Tool Categories
 
 | Category | Count | Tools |
 |----------|-------|-------|
@@ -450,3 +453,7 @@ Three files are generated from the ToolSpec registry by `cargo run --bin generat
 - **generated/tool-cards.md** — per-profile tool cards with required arguments
 
 The generator reads `ToolSpec` entries directly from `src/mcp/specs/` (the single source of truth) and filters out tools with `ToolExposure::Hidden`. Run `cargo run --bin generate-docs -- --check` to verify generated docs are current. The CI pipeline enforces this check.
+
+## CLI Diagnostics
+
+The `--diagnostics` flag prints version, tool count, per-profile tool counts, budget tiers, known environment variable names (no values), and parity-reference availability. Supports `--format json` for structured output. The `runtime_diagnostics` MCP tool provides similar information to harness-only audiences.

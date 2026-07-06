@@ -1,6 +1,6 @@
 # eggsact MCP Tool Reference
 
-Complete reference for all 68 tools exposed by the `eggsact` MCP server.
+Complete reference for all registered tools exposed by the `eggsact` MCP server.
 
 ## Overview
 
@@ -10,7 +10,7 @@ Complete reference for all 68 tools exposed by the `eggsact` MCP server.
 | Server name | `eggsact` |
 | Server version | 1.1.3 |
 | Transport | stdio JSON-RPC 2.0 |
-| Total tools | 68 |
+| Total tools | registered (see generated README table for current count) |
 
 The server communicates over stdin/stdout using newline-delimited JSON-RPC 2.0 messages. `tools/call` responses follow MCP shape: JSON-RPC `result.content[0].text` contains a JSON-encoded `ToolResponse` envelope with an `ok` boolean field.
 
