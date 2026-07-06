@@ -485,7 +485,7 @@ eggsact/
 │   │   │   └── listing.rs     # Filtering, audience, schema compaction, suggestions
 │   │   ├── protocol.rs      # JSON-RPC types (Request, Response, Error, InitializeResult)
 │   │   ├── response.rs      # ToolResponse, error sanitization, finding() helpers, with_verdict, preflight builders
-│   │   ├── runtime.rs       # Rate limiter, cancelled requests, constants, profile management
+│   │   ├── runtime.rs       # Rate limiter, active request tracking, constants, profile management
 │   │   ├── schema_validation.rs # MCP argument validation against tool schemas
 │   │   └── schemas/         # JSON-schema builders per tool category
 │   │       ├── mod.rs       # Module declarations + re-exports

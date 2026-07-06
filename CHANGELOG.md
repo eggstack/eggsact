@@ -173,6 +173,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `json_compare` treats `1.0` and `1` as different JSON values, matching
   JSON type-sensitive comparison.
 
+## [Unreleased — corrective verification pass] - 2026-07-06
+
+### Added
+- `run_with_registry(&ToolRegistry, &Input)` variants on all five typed
+  preflight wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`,
+  `PatchApplyCheck`, `TextSecurityInspect`). Lets callers override the
+  default profile/audience per call. Existing `run()` API is unchanged.
+- `apply_cancellation(&ActiveRequests, &Value)` testable helper extracted
+  from the MCP server's `notifications/cancelled` handler.
+  `#[doc(hidden)] pub` for tests.
+- `mcp::runtime::test_support::make_active_request(cancel_flag)` helper
+  for tests. `#[doc(hidden)] pub`.
+- `platform` property on `path_batch_scope_check` input schema
+  (`posix` / `windows` / `auto`).
+- 16 new integration tests for `repo_tree_summarize`,
+  `diff_risk_classify`, and `path_batch_scope_check` covering bounds,
+  verdicts, and audience routing (`tests/mcp/test_repo_diff_path_tools.rs`).
+- 15 new tests for typed wrapper correctness including regression test
+  for canonical argument names (`tests/mcp/test_preflight_wrappers.rs`).
+- 14 new tests for `mcp::runtime` cancellation and active-request helpers
+  (`tests/mcp/test_runtime_helpers.rs`).
+
+### Changed
+- **PatchApplyCheckInput**: renamed fields `patch` → `patch_text`,
+  `original` → `original_text` to match the canonical MCP tool schema
+  in `src/mcp/schemas/patch.rs`. The old names were wrong (didn't match
+  the wire schema) — this is a bug fix, not a breaking change.
+- `PatchApplyCheck::run()` now uses
+  `ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness)`
+  (previously `ToolRegistry::default()` = Model audience). This was a
+  silent failure: `patch_apply_check` is `HarnessOnly` exposure and
+  could never execute under Model audience. New default actually works.
+- `diff_risk_classify`: `max_patch_chars` default lowered from 200,000
+  to 100,000 to match `ToolBudget::MODERATE.max_text_bytes`. Aligns
+  advertised budget bound with the actual enforced one.
+
+### Fixed
+- **MCP server panic path**: `server.rs` no longer panics on
+  `expect("tool semaphore unexpectedly closed")`. Replaced with a
+  graceful `INTERNAL_ERROR` tool response when the semaphore is dropped
+  (server shutting down).
+- **Documentation drift**:
+  - `architecture/mcp-server.md`: removed nonexistent `MAX_CANCELLED_REQUESTS`
+    constant; replaced "cancellation set" with the actual `ActiveRequests`
+    map model.
+  - `architecture/overview.md`: corrected "serial at the read-loop level"
+    claim — the read loop is concurrent via `JoinSet` + `mpsc` writer.
+  - `README.md`: corrected `runtime.rs` description from "cancelled
+    requests" to "active request tracking".
+  - `tests/mcp/test_hardening_and_gaps.rs`: updated stale comment header
+    referencing `TestCancelledRequests`.
+  - `docs/parity.md`: removed nonexistent `MAX_TOOL_TIMEOUT_SECONDS`
+    constant; updated verification status (357 passed, 56 failed as of
+    2026-07-06); documented 3 new concurrent-ordering parity failures.
+  - `AGENTS.md`: parity known-failures count updated 53 → 56.
+
 ## [0.1.0] - 2026-05-30
 
 ### Added

@@ -53,7 +53,7 @@ Tool implementations live in `src/tools/` (category modules):
 |--------|-------------|
 | `initialize` | Returns server info and capabilities |
 | `notifications/initialized` | Client acknowledgment (no response) |
-| `notifications/cancelled` | Adds request ID to the cancellation set |
+| `notifications/cancelled` | Looks up the request ID in the active-requests map and sets its cancel flag |
 | `tools/list` | Returns registered tool definitions (filtered by profile) |
 | `tools/call` | Executes a tool by name |
 | `profiles/list` | Lists all profiles and their tool counts |
@@ -302,9 +302,11 @@ These are intentionally global because they represent immutable configuration or
 
 Defined in `src/mcp/runtime.rs`:
 - `MAX_REQUESTS_PER_SECOND`: 10
-- `MAX_CANCELLED_REQUESTS`: 10,000
 - `MAX_IN_FLIGHT_REQUESTS`: 32
 - `MAX_TOOL_WORKERS`: 16
+- `MAX_REQUEST_ID_LENGTH`: 1024
+- `MAX_REQUEST_BYTES`: 1,000,000
+- `MAX_OUTPUT_BYTES`: 1,000,000
 
 Tool timeouts are now **budget-derived** rather than using a fixed `MAX_TOOL_TIMEOUT_SECONDS`. Each `ToolSpec` declares a `cost` field (`ToolCost::Cheap`, `Moderate`, `Heavy`), which maps to a `ToolBudget` with per-tool limits including `max_elapsed_ms`. The `budget_for_tool()` function in `src/mcp/budget.rs` resolves the effective budget, and `tools/call` uses `budget.max_elapsed_ms` as the timeout instead of the previous fixed 30s constant.
 

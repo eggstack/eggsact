@@ -124,10 +124,14 @@ Global statics (AtomicBool flags, RwLock profiles, LazyLock caches, thread-local
 
 ## Concurrency Model
 
-The MCP stdio server is serial at the read-loop level (one request at a time).
-`MAX_TOOL_WORKERS` limits concurrent tool executions within a single dispatch
-but does not imply concurrent request reads. The in-process agent API
-(`src/agent/`) is synchronous and avoids IPC overhead.
+The MCP stdio server reads requests serially but dispatches each one as a
+spawned tokio task via `JoinSet` (see `architecture/mcp-server.md`). Responses
+are serialized through an `mpsc` channel and written by a dedicated writer task,
+so request reads never block on tool execution. `MAX_IN_FLIGHT_REQUESTS`
+(32) caps total concurrent dispatches, and `MAX_TOOL_WORKERS` (16) caps
+concurrent tool executions within a single dispatch. Cancellation uses
+per-request `Arc<AtomicBool>` flags stored in the `ActiveRequests` map.
+The in-process agent API (`src/agent/`) is synchronous and avoids IPC overhead.
 
 ## Module Dependency Flow
 
@@ -159,6 +163,10 @@ legacy test code — all new code must use `error_with_code()`.
 |----------|-------|----------|
 | MCP_PROTOCOL_VERSION | `"2024-11-05"` | `src/mcp/runtime.rs` |
 | MCP_SERVER_NAME | `"eggsact"` | `src/mcp/runtime.rs` |
+| MAX_REQUESTS_PER_SECOND | 10 | `src/mcp/runtime.rs` |
+| MAX_IN_FLIGHT_REQUESTS | 32 | `src/mcp/runtime.rs` |
+| MAX_TOOL_WORKERS | 16 | `src/mcp/runtime.rs` |
+| MAX_REQUEST_ID_LENGTH | 1024 | `src/mcp/runtime.rs` |
 | MAX_REQUEST_BYTES | 1,000,000 | `src/mcp/runtime.rs` |
 | MAX_OUTPUT_BYTES | 1,000,000 | `src/mcp/runtime.rs` |
 | MAX_TEXT_LENGTH | 100,000 | `src/tools/helpers.rs` |

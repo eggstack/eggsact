@@ -1,10 +1,10 @@
-//! Security hardening, profile invariants, sanitize_error, cancelled requests,
-//! schema detail, find_close_match, and production review tests.
+//! Security hardening, profile invariants, sanitize_error, active-request
+//! cancellation, schema detail, find_close_match, and production review tests.
 //!
 //! Mirrors Python test classes:
 //! - TestHardeningGroupA, TestHardeningGroupBM1/BM2, TestHardeningGroupBF, TestHardeningGroupBL6, TestHardeningGroupDL14
 //! - TestProfileInvariants, TestProfileHardening, TestProfileSnapshots, TestProfileFiltering
-//! - TestSanitizeError, TestFindCloseMatch, TestCancelledRequests
+//! - TestSanitizeError, TestFindCloseMatch, TestActiveRequests
 //! - TestCompactSchemaMode, TestSchemaDetail, TestSchemaDetailProtocol
 //! - TestProductionReview2026_06, TestProductionReview2026_07
 //! - TestMCPSecurityFixes, TestMCPSecurityGuards

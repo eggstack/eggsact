@@ -123,9 +123,10 @@ They do not affect client-facing behavior or interchangeability.
   `regex_finditer`, and `dotenv_validate`. Each runs in a separate OS process with
   `RLIMIT_AS` (256MB memory limit) and RAII `_SpawnPermit` semaphore (max 4 concurrent).
 - **Rust**: Uses `std::thread::spawn` for `math_eval`, `validate_regex`, `regex_finditer`,
-  and `dotenv_validate` isolation. Threads share the same address space. A timeout
-  (`MAX_TOOL_TIMEOUT_SECONDS = 30`) prevents hung tools. Rust's memory safety makes
-  process isolation less critical than in C-backed Python extensions.
+  and `dotenv_validate` isolation. Threads share the same address space. Timeouts are
+  budget-derived (per-tool `max_elapsed_ms` via `ToolCost` → `ToolBudget`) rather than
+  a fixed global constant. Rust's memory safety makes process isolation less critical
+  than in C-backed Python extensions.
 
 ### Orphan Cleanup
 
@@ -157,9 +158,9 @@ in the CI environment), and the most recent local run against
 `/Users/davidbowman/projects/eggcalc` produced partial results.
 
 - **Command:** `cargo test --test lib parity`
-- **Date:** 2026-07-04
-- **Commit:** `614651ec5651ea0d4002f47b3555c0c68b2b1ce0`
-- **Result:** 360 passed, **53 failed**, 2 ignored (out of 413 parity tests; 2520
+- **Date:** 2026-07-06
+- **Commit:** (corrective-verification-pass, post phase-04 concurrent runtime)
+- **Result:** 357 passed, **56 failed**, 2 ignored (out of 413 parity tests; 2520
   non-parity tests filtered out)
 
 Do not interpret partial parity as a regression — the failures have accumulated across
@@ -168,12 +169,12 @@ previous "all parity tests pass" wording was unsupported and has been removed.
 
 ## Known parity gaps
 
-The 53 failing parity tests fall into three categories. None are regressions
+The 56 failing parity tests fall into four categories. None are regressions
 introduced by a single change; they accumulated as the Rust tool set and audience
 model evolved. Fixing them is **explicitly out of scope** for the phase 06–09
 release-polish pass and is deferred to follow-up work.
 
-### A. Test-harness audience bug (~40 failures)
+### A. Test-harness audience bug (~41 failures)
 
 The MCP test helpers in `tests/mcp/test_comprehensive_parity.rs` and
 `tests/mcp/test_tool_gaps.rs` spawn the binary with the default audience, which is
@@ -198,7 +199,7 @@ The fix is to update the test harness to use the `codegg_preflight` profile and
 `ToolRegistry::with_profile_and_audience(..., ToolAudience::Harness)`. This is a
 test-only change; tool semantics are correct.
 
-### B. Tool/output drift (~8 failures)
+### B. Tool/output drift (~10 failures)
 
 Real behavioral differences between Rust and Python outputs that need targeted
 fixes in Rust tools:
@@ -236,3 +237,23 @@ Until these are added, the `profiles/list` parity test
 tool sets differ — the `default`, `codegg_core_min`, `codegg_core`,
 `codegg_unicode_security`, `codegg_shell`, and `human_math` profiles match
 exactly, but the remaining four do not.
+
+### D. Concurrent ordering in multi-request sessions (3 failures)
+
+Phase-04 introduced concurrent MCP request dispatch via `tokio::task::JoinSet`
+(see `architecture/mcp-server.md` § Concurrency Model). The `mcp_request_multi()`
+helper in `tests/mcp/test_comprehensive_parity.rs` writes all requests to the
+spawned MCP server's stdin before reading any responses, then parses responses
+positionally by index. With concurrent dispatch, tool calls complete at
+different speeds and responses arrive out of request order, breaking the
+positional assertions.
+
+Affected tests (all in `tests/mcp/test_comprehensive_parity.rs`):
+
+- `test_sequential_session_multiple_tools`
+- `test_sequential_session_same_tool_repeatedly`
+- `test_sequential_session_tool_then_error_then_tool`
+
+The fix is to correlate responses by JSON-RPC `id` field instead of relying on
+positional order. This is a test-harness issue; the concurrent server behavior
+is correct.
