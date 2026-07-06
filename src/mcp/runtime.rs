@@ -1,14 +1,15 @@
 use crate::calc::set_mcp_mode;
 use crate::mcp::registry;
 use serde_json::Value;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{LazyLock, RwLock};
+use std::sync::{Arc, LazyLock, RwLock};
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 pub(crate) const MAX_REQUESTS_PER_SECOND: u32 = 10;
-pub(crate) const MAX_CANCELLED_REQUESTS: usize = 10_000;
+pub(crate) const MAX_IN_FLIGHT_REQUESTS: usize = 32;
 
 pub(crate) const MAX_TOOL_WORKERS: usize = 16;
 pub(crate) const MAX_REQUEST_ID_LENGTH: usize = 1024;
@@ -125,48 +126,22 @@ impl RateLimiter {
     }
 }
 
-pub struct CancelledRequests {
-    set: HashSet<Value>,
-    order: VecDeque<Value>,
+// ═══════════════════════════════════════════════════════════════════════════════
+// Active request tracking
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// State for an in-flight MCP request, used for concurrent request handling.
+pub(crate) struct ActiveRequest {
+    pub cancel_flag: Arc<AtomicBool>,
+    #[allow(dead_code)]
+    pub started_at: Instant,
+    #[allow(dead_code)]
+    pub method: String,
 }
 
-impl Default for CancelledRequests {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+pub(crate) type ActiveRequests = Arc<Mutex<HashMap<Value, ActiveRequest>>>;
 
-impl CancelledRequests {
-    pub fn new() -> Self {
-        Self {
-            set: HashSet::new(),
-            order: VecDeque::new(),
-        }
-    }
-
-    pub fn insert(&mut self, id: Value) {
-        if !self.set.contains(&id) {
-            self.set.insert(id.clone());
-            self.order.push_back(id);
-        }
-        while self.set.len() > MAX_CANCELLED_REQUESTS {
-            if let Some(oldest) = self.order.pop_front() {
-                self.set.remove(&oldest);
-            } else {
-                break;
-            }
-        }
-    }
-
-    pub fn remove(&mut self, id: &Value) {
-        if self.set.remove(id) {
-            if let Some(pos) = self.order.iter().position(|x| x == id) {
-                self.order.remove(pos);
-            }
-        }
-    }
-
-    pub fn contains(&self, id: &Value) -> bool {
-        self.set.contains(id)
-    }
+/// Create a new shared active requests map.
+pub(crate) fn new_active_requests() -> ActiveRequests {
+    Arc::new(Mutex::new(HashMap::new()))
 }

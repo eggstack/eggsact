@@ -191,20 +191,33 @@ Route-critical tools must always emit a `machine_code` and `verdict` in their re
 
 ## Concurrency Model
 
-The MCP stdio server is effectively **serial at the read-loop level**. The read
-loop in `server.rs` reads one request from stdin, dispatches it synchronously,
-then reads the next request. There is no concurrent read of multiple requests.
+The MCP stdio server now supports **concurrent request handling**. The read loop
+in `server.rs` reads requests from stdin as lines arrive and spawns each request
+as an independent tokio task via a `JoinSet`. Responses are sent through an
+`mpsc` channel to a dedicated writer task that serializes stdout writes,
+preventing interleaved output from concurrent handlers.
 
-`MAX_TOOL_WORKERS` (16) limits the number of concurrent blocking tool
-executions *within* a single dispatch. This matters for composite tools that
-call other tools internally, but it does **not** imply fully concurrent MCP
-request reads. The semaphore is a back-pressure mechanism, not a concurrency
-driver.
+**Concurrency limits:**
 
-**If true concurrent request handling is needed** (e.g. out-of-order JSON-RPC
-responses), the read loop would need to be restructured to spawn a task per
-request. A TODO/note for this is tracked under the assumption that the
-serial model is sufficient for codegg's use cases.
+- `MAX_IN_FLIGHT_REQUESTS` (32): maximum simultaneously active request tasks.
+  Exceeding this limit returns a JSON-RPC error (-32600 "Too many in-flight
+  requests").
+- `MAX_TOOL_WORKERS` (16): semaphore permits for concurrent blocking tool
+  executions *within* tasks. This is a back-pressure mechanism for CPU-bound
+  tools, not a concurrency driver.
+- `MAX_REQUESTS_PER_SECOND` (10): rate limiter on incoming requests.
+
+**Cancellation model:** Each request gets an `Arc<AtomicBool>` cancel flag at
+dispatch time. When a `notifications/cancelled` notification arrives for an
+active request ID, the flag is set to `true` cooperatively. The flag is shared
+between the timeout path (`tokio::time::timeout` in `handle_request_async`) and
+the handler (via `budget::with_cancel_flag()` thread-local), so external
+cancellation and timeout share the same signal. The handler can check
+`BudgetContext::should_stop()` at any pipeline stage to detect cancellation.
+
+**Graceful shutdown:** When stdin reaches EOF, the read loop breaks and the
+server drains in-flight requests via `JoinSet::join_next()` before dropping the
+channel sender and waiting for the writer task to flush remaining responses.
 
 For high-throughput preflight calls, codegg should use the **in-process agent
 API** (`src/agent/`) rather than the MCP stdio server. The agent API
@@ -290,6 +303,7 @@ These are intentionally global because they represent immutable configuration or
 Defined in `src/mcp/runtime.rs`:
 - `MAX_REQUESTS_PER_SECOND`: 10
 - `MAX_CANCELLED_REQUESTS`: 10,000
+- `MAX_IN_FLIGHT_REQUESTS`: 32
 - `MAX_TOOL_WORKERS`: 16
 
 Tool timeouts are now **budget-derived** rather than using a fixed `MAX_TOOL_TIMEOUT_SECONDS`. Each `ToolSpec` declares a `cost` field (`ToolCost::Cheap`, `Moderate`, `Heavy`), which maps to a `ToolBudget` with per-tool limits including `max_elapsed_ms`. The `budget_for_tool()` function in `src/mcp/budget.rs` resolves the effective budget, and `tools/call` uses `budget.max_elapsed_ms` as the timeout instead of the previous fixed 30s constant.

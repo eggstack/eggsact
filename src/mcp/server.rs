@@ -10,11 +10,12 @@ use crate::mcp::response::{
     python_json_dumps, sanitize_error, truncate_response, wrap_tool_response, ToolResponse,
 };
 use crate::mcp::runtime::{
-    self, get_active_profile, get_schema_detail, CancelledRequests, RateLimiter, MAX_OUTPUT_BYTES,
-    MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS,
-    MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
+    self, get_active_profile, get_schema_detail, new_active_requests, RateLimiter,
+    MAX_IN_FLIGHT_REQUESTS, MAX_OUTPUT_BYTES, MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES,
+    MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
 };
 use serde_json::Value;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -32,7 +33,7 @@ fn write_json_line(value: &Value) {
 
 async fn handle_request_async(
     request: &JsonRpcRequest,
-    cancelled: &Arc<tokio::sync::Mutex<CancelledRequests>>,
+    cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
     tool_semaphore: &Arc<tokio::sync::Semaphore>,
 ) -> Option<serde_json::Value> {
     // Ensure MCP-safe evaluator defaults are in effect. Idempotent: a one-time
@@ -227,21 +228,16 @@ async fn handle_request_async(
             };
 
             // Check if request was cancelled before execution
-            if let Some(ref id) = request.id {
-                let mut cancelled_set = cancelled.lock().await;
-                if cancelled_set.contains(id) {
-                    // Remove from cancelled set so reuse of same id won't re-trigger
-                    cancelled_set.remove(id);
-                    return Some(wrap_tool_response(&ToolResponse::error_with_code(
-                        "cancelled",
-                        machine_codes::CANCELLED,
-                        &format!("Tool '{}' request was cancelled by the client", name),
-                        Some(vec![
-                            "The request was cancelled before execution started".to_string()
-                        ]),
-                        Some(name),
-                    )));
-                }
+            if cancel_flag.load(Ordering::Relaxed) {
+                return Some(wrap_tool_response(&ToolResponse::error_with_code(
+                    "cancelled",
+                    machine_codes::CANCELLED,
+                    &format!("Tool '{}' request was cancelled by the client", name),
+                    Some(vec![
+                        "The request was cancelled before execution started".to_string()
+                    ]),
+                    Some(name),
+                )));
             }
 
             // Delegate lookup, profile check, and validation to ToolRegistry
@@ -311,7 +307,6 @@ async fn handle_request_async(
             let tool_budget = registry::get_tool(name)
                 .map(|spec| budget_for_tool(name, spec.cost))
                 .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
-            let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let cancel_flag_for_handler = cancel_flag.clone();
             let budget_context =
                 BudgetContext::new(tool_budget).with_cancellation(cancel_flag.clone());
@@ -410,32 +405,6 @@ async fn handle_request_async(
 
         "notifications/initialized" => None,
 
-        "notifications/cancelled" => {
-            if let Some(params) = &request.params {
-                if let Some(request_id) = params.get("requestId") {
-                    // Validate type: must be str or int, not bool
-                    match request_id {
-                        Value::Bool(_) => {}
-                        Value::String(s) => {
-                            if s.len() <= MAX_REQUEST_ID_LENGTH {
-                                let mut cancelled_set = cancelled.lock().await;
-                                cancelled_set.insert(request_id.clone());
-                            }
-                        }
-                        Value::Number(n)
-                            if (n.is_i64() || n.is_u64())
-                                && request_id.to_string().len() <= MAX_REQUEST_ID_LENGTH =>
-                        {
-                            let mut cancelled_set = cancelled.lock().await;
-                            cancelled_set.insert(request_id.clone());
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            None
-        }
-
         "ping" => Some(serde_json::json!({})),
 
         "profiles/list" => {
@@ -498,8 +467,20 @@ pub async fn main() -> ! {
     let mut lines = reader.lines();
 
     let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
-    let cancelled = Arc::new(tokio::sync::Mutex::new(CancelledRequests::new()));
     let tool_semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_TOOL_WORKERS));
+    let active_requests = new_active_requests();
+
+    // Dedicated writer task: all stdout writes go through this channel
+    // to prevent interleaved output from concurrent request handlers.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Value>(64);
+    let writer_handle = tokio::spawn(async move {
+        while let Some(response) = rx.recv().await {
+            write_json_line(&response);
+        }
+    });
+
+    // Track spawned request tasks so we can wait for them on shutdown.
+    let mut join_set = tokio::task::JoinSet::new();
 
     loop {
         let line = match lines.next_line().await {
@@ -514,21 +495,25 @@ pub async fn main() -> ! {
 
         // Request size limit
         if trimmed.len() > MAX_REQUEST_BYTES {
-            write_json_line(&json_rpc_error(
-                -32700,
-                format!(
-                    "Request exceeds maximum size: {} bytes received, {} bytes maximum",
-                    trimmed.len(),
-                    MAX_REQUEST_BYTES
-                ),
-                None,
-            ));
+            let _ = tx
+                .send(json_rpc_error(
+                    -32700,
+                    format!(
+                        "Request exceeds maximum size: {} bytes received, {} bytes maximum",
+                        trimmed.len(),
+                        MAX_REQUEST_BYTES
+                    ),
+                    None,
+                ))
+                .await;
             continue;
         }
 
         // Reject batch requests (check before JSON parse, matching Python)
         if trimmed.starts_with('[') {
-            write_json_line(&invalid_request("Batch requests are not supported", None));
+            let _ = tx
+                .send(invalid_request("Batch requests are not supported", None))
+                .await;
             continue;
         }
 
@@ -536,17 +521,21 @@ pub async fn main() -> ! {
         let request_value: serde_json::Value = match serde_json::from_str(trimmed) {
             Ok(v) => v,
             Err(_) => {
-                write_json_line(&json_rpc_error(-32700, "Parse error: invalid JSON", None));
+                let _ = tx
+                    .send(json_rpc_error(-32700, "Parse error: invalid JSON", None))
+                    .await;
                 continue;
             }
         };
 
         // Validate top-level is object
         if !request_value.is_object() {
-            write_json_line(&invalid_request(
-                "Invalid Request: expected JSON object",
-                None,
-            ));
+            let _ = tx
+                .send(invalid_request(
+                    "Invalid Request: expected JSON object",
+                    None,
+                ))
+                .await;
             continue;
         }
 
@@ -556,13 +545,15 @@ pub async fn main() -> ! {
             .and_then(|v| v.as_str())
             .unwrap_or("null");
         if actual_version != "2.0" {
-            write_json_line(&invalid_request(
-                format!(
-                    "Invalid Request: jsonrpc must be '2.0', got '{}'",
-                    actual_version
-                ),
-                request_value.get("id").cloned(),
-            ));
+            let _ = tx
+                .send(invalid_request(
+                    format!(
+                        "Invalid Request: jsonrpc must be '2.0', got '{}'",
+                        actual_version
+                    ),
+                    request_value.get("id").cloned(),
+                ))
+                .await;
             continue;
         }
 
@@ -570,17 +561,21 @@ pub async fn main() -> ! {
         let method = match request_value.get("method") {
             Some(Value::String(method)) => method.clone(),
             Some(_) => {
-                write_json_line(&invalid_request(
-                    "Invalid Request: 'method' must be a string",
-                    request_value.get("id").cloned(),
-                ));
+                let _ = tx
+                    .send(invalid_request(
+                        "Invalid Request: 'method' must be a string",
+                        request_value.get("id").cloned(),
+                    ))
+                    .await;
                 continue;
             }
             None => {
-                write_json_line(&invalid_request(
-                    "Invalid Request: missing 'method'",
-                    request_value.get("id").cloned(),
-                ));
+                let _ = tx
+                    .send(invalid_request(
+                        "Invalid Request: missing 'method'",
+                        request_value.get("id").cloned(),
+                    ))
+                    .await;
                 continue;
             }
         };
@@ -589,13 +584,15 @@ pub async fn main() -> ! {
         {
             let mut limiter = rate_limiter.lock().await;
             if !limiter.check() {
-                write_json_line(&invalid_request(
-                    format!(
-                        "Rate limit exceeded: max {} requests per second",
-                        MAX_REQUESTS_PER_SECOND
-                    ),
-                    request_value.get("id").cloned(),
-                ));
+                let _ = tx
+                    .send(invalid_request(
+                        format!(
+                            "Rate limit exceeded: max {} requests per second",
+                            MAX_REQUESTS_PER_SECOND
+                        ),
+                        request_value.get("id").cloned(),
+                    ))
+                    .await;
                 continue;
             }
         }
@@ -605,31 +602,37 @@ pub async fn main() -> ! {
         if let Some(id_val) = id {
             // Reject boolean, array, object, and float ids per JSON-RPC 2.0 spec
             if id_val.is_boolean() || id_val.is_array() || id_val.is_object() {
-                write_json_line(&invalid_request(
-                    "Invalid Request: 'id' must be a string, integer, or null",
-                    None,
-                ));
+                let _ = tx
+                    .send(invalid_request(
+                        "Invalid Request: 'id' must be a string, integer, or null",
+                        None,
+                    ))
+                    .await;
                 continue;
             }
             // Reject float IDs (JSON numbers that aren't integers)
             // Use as_i64()/as_u64() for exact integer detection — as_f64() loses
             // precision for integers >2^53 and would silently accept them.
             if id_val.is_number() && id_val.as_i64().is_none() && id_val.as_u64().is_none() {
-                write_json_line(&invalid_request(
-                    "Invalid Request: 'id' must be a string, integer, or null",
-                    None,
-                ));
+                let _ = tx
+                    .send(invalid_request(
+                        "Invalid Request: 'id' must be a string, integer, or null",
+                        None,
+                    ))
+                    .await;
                 continue;
             }
             let id_str = id_val.to_string();
             if id_str.len() > MAX_REQUEST_ID_LENGTH {
-                write_json_line(&invalid_request(
-                    format!(
-                        "Invalid Request: 'id' exceeds maximum length of {}",
-                        MAX_REQUEST_ID_LENGTH
-                    ),
-                    None,
-                ));
+                let _ = tx
+                    .send(invalid_request(
+                        format!(
+                            "Invalid Request: 'id' exceeds maximum length of {}",
+                            MAX_REQUEST_ID_LENGTH
+                        ),
+                        None,
+                    ))
+                    .await;
                 continue;
             }
         }
@@ -642,64 +645,123 @@ pub async fn main() -> ! {
             id: id.cloned(),
         };
 
-        // Handle notifications (no id) and requests (with id)
-        let maybe_result = {
-            let request_clone = JsonRpcRequest {
-                jsonrpc: request.jsonrpc.clone(),
-                method: request.method.clone(),
-                params: request.params.clone(),
-                id: request.id.clone(),
-            };
-            let cancelled_clone = cancelled.clone();
-            let semaphore_clone = tool_semaphore.clone();
-            let handle = tokio::spawn(async move {
-                handle_request_async(&request_clone, &cancelled_clone, &semaphore_clone).await
-            });
-            match handle.await {
-                Ok(result) => result,
-                Err(join_err) => {
-                    let msg = if join_err.is_cancelled() {
-                        "task cancelled".to_string()
-                    } else {
-                        let panic_msg = join_err.into_panic();
-                        match panic_msg.downcast_ref::<&str>() {
-                            Some(s) => s.to_string(),
-                            None => match panic_msg.downcast_ref::<String>() {
-                                Some(s) => s.clone(),
-                                None => "unknown error".to_string(),
-                            },
+        // Notifications (no id) are handled inline; requests (with id) are
+        // spawned as concurrent tasks that send responses through the channel.
+        if request.id.is_none() {
+            // Handle notifications inline — no response expected.
+            match request.method.as_str() {
+                "notifications/initialized" => {}
+                "notifications/cancelled" => {
+                    // Set the cancel flag on the active request, if any.
+                    if let Some(params) = &request.params {
+                        if let Some(request_id) = params.get("requestId") {
+                            match request_id {
+                                Value::Bool(_) => {}
+                                Value::String(s) if s.len() <= MAX_REQUEST_ID_LENGTH => {
+                                    let active = active_requests.lock().await;
+                                    if let Some(active_req) = active.get(request_id) {
+                                        active_req.cancel_flag.store(true, Ordering::Relaxed);
+                                    }
+                                }
+                                Value::Number(n)
+                                    if (n.is_i64() || n.is_u64())
+                                        && request_id.to_string().len()
+                                            <= MAX_REQUEST_ID_LENGTH =>
+                                {
+                                    let active = active_requests.lock().await;
+                                    if let Some(active_req) = active.get(request_id) {
+                                        active_req.cancel_flag.store(true, Ordering::Relaxed);
+                                    }
+                                }
+                                _ => {}
+                            }
                         }
-                    };
-                    Some(json_rpc_error(
-                        -32603,
-                        runtime::truncate_2000(&sanitize_error(&format!(
-                            "Internal error: {}",
-                            msg
-                        ))),
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
+
+        // It's a request (has id) — check in-flight limit
+        {
+            let active = active_requests.lock().await;
+            if active.len() >= MAX_IN_FLIGHT_REQUESTS {
+                let _ = tx
+                    .send(json_rpc_error(
+                        -32600,
+                        "Too many in-flight requests",
                         request.id.clone(),
                     ))
-                }
-            }
-        };
-        if let Some(result) = maybe_result {
-            // Check if this is already a JSON-RPC error (has "error" key at top level)
-            if result.get("error").is_some() && result.get("result").is_none() {
-                // Already a JSON-RPC error response, output directly
-                write_json_line(&result);
-            } else {
-                let response = JsonRpcResponse {
-                    jsonrpc: "2.0".to_string(),
-                    result,
-                    id: request.id,
-                };
-
-                if let Ok(value) = serde_json::to_value(response) {
-                    write_json_line(&value);
-                }
+                    .await;
+                continue;
             }
         }
+
+        // Create a per-request cancel flag shared between the read loop
+        // (via notifications/cancelled) and the task (via timeout + handler).
+        let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // Register the active request so notifications/cancelled can find it.
+        {
+            let mut active = active_requests.lock().await;
+            active.insert(
+                request.id.clone().unwrap(),
+                runtime::ActiveRequest {
+                    cancel_flag: cancel_flag.clone(),
+                    started_at: tokio::time::Instant::now(),
+                    method: request.method.clone(),
+                },
+            );
+        }
+
+        // Spawn the request handler without awaiting — the read loop
+        // continues to process the next line immediately.
+        let tx = tx.clone();
+        let active_requests = active_requests.clone();
+        let semaphore_clone = tool_semaphore.clone();
+        let cancel_flag_clone = cancel_flag.clone();
+        let request_clone = JsonRpcRequest {
+            jsonrpc: request.jsonrpc.clone(),
+            method: request.method.clone(),
+            params: request.params.clone(),
+            id: request.id.clone(),
+        };
+        let request_id = request.id.clone();
+
+        join_set.spawn(async move {
+            let maybe_result =
+                handle_request_async(&request_clone, &cancel_flag_clone, &semaphore_clone).await;
+
+            // Clean up active request entry.
+            if let Some(id) = &request_id {
+                let mut active = active_requests.lock().await;
+                active.remove(id);
+            }
+
+            // Send response through the channel.
+            if let Some(result) = maybe_result {
+                if result.get("error").is_some() && result.get("result").is_none() {
+                    let _ = tx.send(result).await;
+                } else {
+                    let response = JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result,
+                        id: request_id,
+                    };
+                    if let Ok(value) = serde_json::to_value(response) {
+                        let _ = tx.send(value).await;
+                    }
+                }
+            }
+        });
     }
 
+    // Graceful shutdown: wait for all in-flight tasks to complete,
+    // then drop the sender so the writer task drains and finishes.
+    while join_set.join_next().await.is_some() {}
+    drop(tx);
+    let _ = writer_handle.await;
     std::process::exit(0);
 }
 

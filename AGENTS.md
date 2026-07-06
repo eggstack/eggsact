@@ -159,7 +159,7 @@ Agent task skills in `.skills/`:
 
 ## Key gotchas
 
-- **`server.rs` was cleaned up**: schema compaction, response wrapping, and profile resolution moved to their respective modules (`registry/listing.rs`, `response.rs`, `runtime.rs`). The stdio read loop remains in `server.rs` but delegates most work.
+- **`server.rs` was cleaned up**: schema compaction, response wrapping, and profile resolution moved to their respective modules (`registry/listing.rs`, `response.rs`, `runtime.rs`). The stdio read loop remains in `server.rs` but delegates most work. The read loop now spawns each request as a tokio task (via `JoinSet`) for concurrent handling, with responses serialized through an `mpsc` channel and writer task.
 
 - **Tool timeouts are budget-derived**: `tools/call` uses `budget.max_elapsed_ms` from `ToolBudget` (resolved via `budget_for_tool()` from `ToolSpec.cost`), not a fixed 30s constant. Composite tools get sub-budgets via `SubBudget`/`CompositeBudgetAllocator`.
 
