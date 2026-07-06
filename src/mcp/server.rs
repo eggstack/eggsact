@@ -10,9 +10,10 @@ use crate::mcp::response::{
     python_json_dumps, sanitize_error, truncate_response, wrap_tool_response, ToolResponse,
 };
 use crate::mcp::runtime::{
-    self, get_active_profile, get_schema_detail, new_active_requests, RateLimiter,
-    MAX_IN_FLIGHT_REQUESTS, MAX_OUTPUT_BYTES, MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES,
-    MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
+    self, apply_cancellation, get_active_profile, get_schema_detail, new_active_requests,
+    RateLimiter, MAX_IN_FLIGHT_REQUESTS, MAX_OUTPUT_BYTES, MAX_REQUESTS_PER_SECOND,
+    MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS, MCP_PROTOCOL_VERSION,
+    MCP_SERVER_NAME,
 };
 use serde_json::Value;
 use std::sync::atomic::Ordering;
@@ -316,10 +317,25 @@ async fn handle_request_async(
             // continue after the timeout fires (Rust cannot kill threads).
             let timeout_ms = tool_budget.max_elapsed_ms;
             let result = tokio::time::timeout(Duration::from_millis(timeout_ms), async move {
-                let _permit = sem
-                    .acquire()
-                    .await
-                    .expect("tool semaphore unexpectedly closed");
+                let permit_result = sem.acquire().await;
+                let _permit = match permit_result {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        // Semaphore was dropped — server is shutting down.
+                        // Return a synthetic tool response so the dispatch
+                        // path can produce a structured error instead of
+                        // panicking inside the spawned task.
+                        return Ok::<_, tokio::task::JoinError>(
+                            crate::mcp::response::ToolResponse::error_with_code(
+                                "internal_error",
+                                "INTERNAL_ERROR",
+                                "Tool execution semaphore unavailable (server shutting down)",
+                                None,
+                                None,
+                            ),
+                        );
+                    }
+                };
                 tokio::task::spawn_blocking(move || {
                     crate::mcp::budget::with_cancel_flag(
                         Some(cancel_flag_for_handler.clone()),
@@ -655,26 +671,7 @@ pub async fn main() -> ! {
                     // Set the cancel flag on the active request, if any.
                     if let Some(params) = &request.params {
                         if let Some(request_id) = params.get("requestId") {
-                            match request_id {
-                                Value::Bool(_) => {}
-                                Value::String(s) if s.len() <= MAX_REQUEST_ID_LENGTH => {
-                                    let active = active_requests.lock().await;
-                                    if let Some(active_req) = active.get(request_id) {
-                                        active_req.cancel_flag.store(true, Ordering::Relaxed);
-                                    }
-                                }
-                                Value::Number(n)
-                                    if (n.is_i64() || n.is_u64())
-                                        && request_id.to_string().len()
-                                            <= MAX_REQUEST_ID_LENGTH =>
-                                {
-                                    let active = active_requests.lock().await;
-                                    if let Some(active_req) = active.get(request_id) {
-                                        active_req.cancel_flag.store(true, Ordering::Relaxed);
-                                    }
-                                }
-                                _ => {}
-                            }
+                            apply_cancellation(&active_requests, request_id);
                         }
                     }
                 }

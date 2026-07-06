@@ -8,13 +8,24 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
-pub(crate) const MAX_REQUESTS_PER_SECOND: u32 = 10;
-pub(crate) const MAX_IN_FLIGHT_REQUESTS: usize = 32;
+#[doc(hidden)]
+pub const MAX_REQUESTS_PER_SECOND: u32 = 10;
+#[doc(hidden)]
+pub const MAX_IN_FLIGHT_REQUESTS: usize = 32;
 
-pub(crate) const MAX_TOOL_WORKERS: usize = 16;
-pub(crate) const MAX_REQUEST_ID_LENGTH: usize = 1024;
-pub(crate) const MAX_REQUEST_BYTES: usize = 1_000_000;
-pub(crate) const MAX_OUTPUT_BYTES: usize = 1_000_000;
+#[doc(hidden)]
+pub const MAX_TOOL_WORKERS: usize = 16;
+#[doc(hidden)]
+pub const MAX_REQUEST_ID_LENGTH: usize = 1024;
+
+// Items below are exposed for tests in `tests/`. They are not part of the
+// stable API surface; downstream crates should not depend on them. They
+// are `pub` (rather than `pub(crate)`) so integration tests can reach them
+// through `eggsact::mcp::runtime::*` and `eggsact::mcp::runtime::test_support::*`.
+#[doc(hidden)]
+pub const MAX_REQUEST_BYTES: usize = 1_000_000;
+#[doc(hidden)]
+pub const MAX_OUTPUT_BYTES: usize = 1_000_000;
 
 pub(crate) const SCHEMA_DETAIL_FULL: &str = "full";
 
@@ -131,7 +142,8 @@ impl RateLimiter {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// State for an in-flight MCP request, used for concurrent request handling.
-pub(crate) struct ActiveRequest {
+#[doc(hidden)]
+pub struct ActiveRequest {
     pub cancel_flag: Arc<AtomicBool>,
     #[allow(dead_code)]
     pub started_at: Instant,
@@ -139,9 +151,69 @@ pub(crate) struct ActiveRequest {
     pub method: String,
 }
 
-pub(crate) type ActiveRequests = Arc<Mutex<HashMap<Value, ActiveRequest>>>;
+#[doc(hidden)]
+pub type ActiveRequests = Arc<Mutex<HashMap<Value, ActiveRequest>>>;
 
 /// Create a new shared active requests map.
-pub(crate) fn new_active_requests() -> ActiveRequests {
+#[doc(hidden)]
+pub fn new_active_requests() -> ActiveRequests {
     Arc::new(Mutex::new(HashMap::new()))
+}
+
+/// Test-only helpers for constructing runtime state from integration tests.
+///
+/// This module is `#[doc(hidden)]` and not part of the public API; it is
+/// exposed only so `tests/` integration tests can construct runtime
+/// primitives without relying on `pub(crate)` items.
+#[doc(hidden)]
+pub mod test_support {
+    use super::{ActiveRequest, Instant};
+    use std::sync::{atomic::AtomicBool, Arc};
+
+    pub fn make_active_request(cancel_flag: Arc<AtomicBool>) -> ActiveRequest {
+        ActiveRequest {
+            cancel_flag,
+            started_at: Instant::now(),
+            method: "test".to_string(),
+        }
+    }
+}
+
+/// Apply a cancellation notification to a single active request ID.
+///
+/// Validates the request ID type (string or integer within size limits),
+/// looks up the corresponding active request, and sets its cancel flag.
+/// Returns `true` if a cancel flag was actually set.
+///
+/// This function is extracted from the server's notification handler so
+/// it can be unit-tested in isolation without spawning the stdio loop.
+#[doc(hidden)]
+pub fn apply_cancellation(active: &ActiveRequests, request_id: &Value) -> bool {
+    let map = match active.try_lock() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+    match request_id {
+        Value::Bool(_) => false,
+        Value::String(s) if s.len() <= MAX_REQUEST_ID_LENGTH => {
+            if let Some(req) = map.get(request_id) {
+                req.cancel_flag.store(true, Ordering::Relaxed);
+                true
+            } else {
+                false
+            }
+        }
+        Value::Number(n)
+            if (n.is_i64() || n.is_u64())
+                && request_id.to_string().len() <= MAX_REQUEST_ID_LENGTH =>
+        {
+            if let Some(req) = map.get(request_id) {
+                req.cancel_flag.store(true, Ordering::Relaxed);
+                true
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
 }
