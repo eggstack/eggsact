@@ -59,7 +59,7 @@ pub fn diff_risk_classify_input() -> Value {
         "properties": {
             "patch_text": {"type": "string", "description": "Unified diff text to classify"},
             "workspace_root": {"type": "string", "description": "Optional workspace root for path-scope context"},
-            "max_patch_chars": {"type": "integer", "default": 200000, "description": "Maximum patch text length to process"},
+            "max_patch_chars": {"type": "integer", "default": 100000, "description": "Maximum patch text length to process (bounded by ToolBudget::MODERATE.max_text_bytes)"},
             "detail": {
                 "type": "string",
                 "enum": ["summary", "normal", "full"],

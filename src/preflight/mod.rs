@@ -33,7 +33,7 @@
 //! assert!(output.valid);
 //! ```
 
-use crate::agent::{ToolCallError, ToolRegistry};
+use crate::agent::{Profile, ToolAudience, ToolCallError, ToolRegistry};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
@@ -951,6 +951,14 @@ impl EditPreflight {
     /// Run edit preflight analysis.
     pub fn run(input: &EditPreflightInput) -> Result<EditPreflightOutput, PreflightError> {
         let registry = ToolRegistry::default();
+        Self::run_with_registry(&registry, input)
+    }
+
+    /// Run edit preflight analysis using a caller-provided ToolRegistry.
+    pub fn run_with_registry(
+        registry: &ToolRegistry,
+        input: &EditPreflightInput,
+    ) -> Result<EditPreflightOutput, PreflightError> {
         let mut args = serde_json::json!({
             "original": input.original,
             "replacement_mode": input.mode.as_str(),
@@ -1144,6 +1152,14 @@ impl CommandPreflight {
     /// Run command preflight analysis.
     pub fn run(input: &CommandPreflightInput) -> Result<CommandPreflightOutput, PreflightError> {
         let registry = ToolRegistry::default();
+        Self::run_with_registry(&registry, input)
+    }
+
+    /// Run command preflight analysis using a caller-provided ToolRegistry.
+    pub fn run_with_registry(
+        registry: &ToolRegistry,
+        input: &CommandPreflightInput,
+    ) -> Result<CommandPreflightOutput, PreflightError> {
         let mut args = serde_json::json!({
             "command": input.command,
             "platform": input.platform,
@@ -1289,6 +1305,14 @@ impl ConfigPreflight {
     /// Run config preflight analysis.
     pub fn run(input: &ConfigPreflightInput) -> Result<ConfigPreflightOutput, PreflightError> {
         let registry = ToolRegistry::default();
+        Self::run_with_registry(&registry, input)
+    }
+
+    /// Run config preflight analysis using a caller-provided ToolRegistry.
+    pub fn run_with_registry(
+        registry: &ToolRegistry,
+        input: &ConfigPreflightInput,
+    ) -> Result<ConfigPreflightOutput, PreflightError> {
         let mut args = serde_json::json!({
             "text": input.text,
             "format": input.format.as_str(),
@@ -1354,8 +1378,8 @@ impl ConfigPreflight {
 /// Input for patch apply check analysis.
 #[derive(Clone, Debug, Default)]
 pub struct PatchApplyCheckInput {
-    pub patch: String,
-    pub original: String,
+    pub patch_text: String,
+    pub original_text: String,
     pub return_result_text: bool,
     pub strict: bool,
 }
@@ -1386,10 +1410,26 @@ impl PatchApplyCheck {
     const TOOL: &'static str = "patch_apply_check";
 
     pub fn run(input: &PatchApplyCheckInput) -> Result<PatchApplyCheckOutput, PreflightError> {
-        let registry = ToolRegistry::default();
+        let registry =
+            ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
         let args = serde_json::json!({
-            "patch": input.patch,
-            "original": input.original,
+            "patch_text": input.patch_text,
+            "original_text": input.original_text,
+            "return_result_text": input.return_result_text,
+            "strict": input.strict,
+        });
+
+        let response = registry.call_json(Self::TOOL, args)?;
+        Self::parse_response(response)
+    }
+
+    pub fn run_with_registry(
+        registry: &ToolRegistry,
+        input: &PatchApplyCheckInput,
+    ) -> Result<PatchApplyCheckOutput, PreflightError> {
+        let args = serde_json::json!({
+            "patch_text": input.patch_text,
+            "original_text": input.original_text,
             "return_result_text": input.return_result_text,
             "strict": input.strict,
         });
@@ -1515,6 +1555,22 @@ impl TextSecurityInspect {
         input: &TextSecurityInspectInput,
     ) -> Result<TextSecurityInspectOutput, PreflightError> {
         let registry = ToolRegistry::default();
+        let mut args = serde_json::json!({
+            "text": input.text,
+            "policy": input.policy,
+        });
+        if let Some(ref detail) = input.detail {
+            args["detail"] = Value::String(detail.clone());
+        }
+
+        let response = registry.call_json(Self::TOOL, args)?;
+        Self::parse_response(response)
+    }
+
+    pub fn run_with_registry(
+        registry: &ToolRegistry,
+        input: &TextSecurityInspectInput,
+    ) -> Result<TextSecurityInspectOutput, PreflightError> {
         let mut args = serde_json::json!({
             "text": input.text,
             "policy": input.policy,

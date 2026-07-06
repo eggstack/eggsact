@@ -1111,7 +1111,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
     let max_patch_chars = args
         .get("max_patch_chars")
         .and_then(|v| v.as_i64())
-        .unwrap_or(200_000) as usize;
+        .unwrap_or(100_000) as usize;
 
     if patch_text.chars().count() > max_patch_chars {
         return ToolResponse::error_with_code(

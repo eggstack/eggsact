@@ -94,7 +94,8 @@ pub fn path_batch_scope_check_input() -> Value {
             "targets": {"type": "array", "items": {"type": "string"}, "description": "Target paths to check against root"},
             "max_targets": {"type": "integer", "default": 1000, "description": "Maximum number of targets to process"},
             "allow_absolute": {"type": "boolean", "default": false, "description": "If true, absolute targets are not flagged as errors"},
-            "case_sensitive": {"type": "boolean", "default": true, "description": "Case-sensitive path comparison"}
+            "case_sensitive": {"type": "boolean", "default": true, "description": "Case-sensitive path comparison"},
+            "platform": {"type": "string", "default": "posix", "enum": ["posix", "windows", "auto"], "description": "Path comparison platform (windows and auto return UNSUPPORTED_FEATURE)"}
         },
         "required": ["root", "targets"]
     })
