@@ -196,6 +196,74 @@ fn test_patch_apply_check_success_has_machine_code_and_verdict() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// ROUTE-CRITICAL NON-EMPTY STRING CONTRACTS
+//
+// Per AGENTS.md: route-critical tools must ALWAYS emit machine_code
+// and verdict. These tests verify both are present AND non-empty strings.
+// ═══════════════════════════════════════════════════════════════════════
+
+fn assert_non_empty_string(val: Option<&str>, field: &str, tool: &str) {
+    let s = val.unwrap_or_else(|| panic!("{tool}: {field} must be present"));
+    assert!(
+        !s.is_empty(),
+        "{tool}: {field} must be non-empty, got empty string"
+    );
+}
+
+fn assert_verdict_non_empty(result: &Value, tool: &str) {
+    let verdict = result
+        .get("verdict")
+        .and_then(|v| v.as_str())
+        .unwrap_or_else(|| panic!("{tool}: verdict must be present in result"));
+    assert!(
+        !verdict.is_empty(),
+        "{tool}: verdict must be non-empty, got empty string"
+    );
+}
+
+#[test]
+fn test_all_route_critical_tools_have_non_empty_machine_code_and_verdict() {
+    let cases: Vec<(&str, Value, &str)> = vec![
+        (
+            "edit_preflight",
+            json!({"original": "hello world", "old": "hello", "new": "world"}),
+            "literal edit",
+        ),
+        (
+            "command_preflight",
+            json!({"command": "echo hello"}),
+            "echo command",
+        ),
+        (
+            "config_preflight",
+            json!({"text": "key = \"value\"", "format": "toml"}),
+            "valid toml",
+        ),
+        (
+            "patch_apply_check",
+            json!({
+                "original_text": "hello\n",
+                "patch_text": "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-hello\n+world\n"
+            }),
+            "valid patch",
+        ),
+        (
+            "text_security_inspect",
+            json!({"text": "Hello world"}),
+            "plain text",
+        ),
+    ];
+
+    for (tool, args, label) in cases {
+        let resp = call_tool_response(tool, args);
+        assert!(resp.ok, "{tool} ({label}) should succeed");
+        assert_non_empty_string(resp.machine_code.as_deref(), "machine_code", tool);
+        let result = resp.result.as_ref().expect("result should be present");
+        assert_verdict_non_empty(result, tool);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // ROUTE-CRITICAL TOOL FAILURE/ERROR PATHS
 //
 // Tests verify that error responses (both handler-level and
@@ -530,6 +598,11 @@ fn test_route_critical_tools_use_known_machine_codes() {
     // Test that route-critical tools produce machine codes from the known set
     let test_cases: Vec<(&str, Value, &str)> = vec![
         (
+            "edit_preflight",
+            json!({"original": "hello world", "old": "hello", "new": "world"}),
+            "EDIT_OK",
+        ),
+        (
             "command_preflight",
             json!({"command": "echo test"}),
             "COMMAND_OK",
@@ -538,6 +611,14 @@ fn test_route_critical_tools_use_known_machine_codes() {
             "config_preflight",
             json!({"text": "x = 1", "format": "toml"}),
             "CONFIG_OK",
+        ),
+        (
+            "patch_apply_check",
+            json!({
+                "original_text": "hello\n",
+                "patch_text": "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-hello\n+world\n"
+            }),
+            "EDIT_OK",
         ),
         (
             "text_security_inspect",
