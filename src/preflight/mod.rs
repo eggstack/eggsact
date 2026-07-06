@@ -1348,6 +1348,238 @@ impl ConfigPreflight {
 }
 
 // ---------------------------------------------------------------------------
+// Patch Apply Check
+// ---------------------------------------------------------------------------
+
+/// Input for patch apply check analysis.
+#[derive(Clone, Debug, Default)]
+pub struct PatchApplyCheckInput {
+    pub patch: String,
+    pub original: String,
+    pub return_result_text: bool,
+    pub strict: bool,
+}
+
+/// Output from patch apply check analysis.
+#[derive(Clone, Debug)]
+pub struct PatchApplyCheckOutput {
+    pub patch_parse_ok: bool,
+    pub applies: bool,
+    pub hunks_total: u64,
+    pub hunks_applied: u64,
+    pub hunks_failed: u64,
+    pub failed_hunks: Value,
+    pub affected_line_ranges: Value,
+    pub newline_style_before: Option<String>,
+    pub newline_style_after: Option<String>,
+    pub result_fingerprint: Option<String>,
+    pub result_text: Option<String>,
+    pub verdict: EditVerdict,
+    pub machine_code: String,
+    pub findings: Vec<Finding>,
+    pub raw: Value,
+}
+
+pub struct PatchApplyCheck;
+
+impl PatchApplyCheck {
+    const TOOL: &'static str = "patch_apply_check";
+
+    pub fn run(input: &PatchApplyCheckInput) -> Result<PatchApplyCheckOutput, PreflightError> {
+        let registry = ToolRegistry::default();
+        let args = serde_json::json!({
+            "patch": input.patch,
+            "original": input.original,
+            "return_result_text": input.return_result_text,
+            "strict": input.strict,
+        });
+
+        let response = registry.call_json(Self::TOOL, args)?;
+        Self::parse_response(response)
+    }
+
+    pub fn parse_response(
+        response: crate::mcp::response::ToolResponse,
+    ) -> Result<PatchApplyCheckOutput, PreflightError> {
+        if !response.ok {
+            return Err(PreflightError::ToolRejected {
+                machine_code: response.machine_code,
+                error_type: response.error_type,
+                message: response.error.unwrap_or_default(),
+            });
+        }
+
+        let result = require_result_object(&response, Self::TOOL)?;
+        let machine_code = require_machine_code(&response, Self::TOOL)?;
+
+        let patch_parse_ok = require_bool(result, Self::TOOL, "patch_parse_ok")?;
+        let applies = require_bool(result, Self::TOOL, "applies")?;
+        let hunks_total = result
+            .get("hunks_total")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let hunks_applied = result
+            .get("hunks_applied")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let hunks_failed = result
+            .get("hunks_failed")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let failed_hunks = result.get("failed_hunks").cloned().unwrap_or(Value::Null);
+        let affected_line_ranges = result
+            .get("affected_line_ranges")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let newline_style_before = result
+            .get("newline_style_before")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let newline_style_after = result
+            .get("newline_style_after")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let result_fingerprint = result
+            .get("result_fingerprint")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let result_text = result
+            .get("result_text")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        let verdict_str = require_str(result, Self::TOOL, "verdict")?;
+        let verdict = EditVerdict::parse(verdict_str);
+
+        let findings = response
+            .findings
+            .as_ref()
+            .map(|f| Finding::from_array_strict(f, Self::TOOL))
+            .transpose()?
+            .unwrap_or_default();
+
+        let raw = response.result.unwrap_or(Value::Null);
+
+        Ok(PatchApplyCheckOutput {
+            patch_parse_ok,
+            applies,
+            hunks_total,
+            hunks_applied,
+            hunks_failed,
+            failed_hunks,
+            affected_line_ranges,
+            newline_style_before,
+            newline_style_after,
+            result_fingerprint,
+            result_text,
+            verdict,
+            machine_code,
+            findings,
+            raw,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Text Security Inspect
+// ---------------------------------------------------------------------------
+
+/// Input for text security inspection.
+#[derive(Clone, Debug, Default)]
+pub struct TextSecurityInspectInput {
+    pub text: String,
+    pub policy: String,
+    pub detail: Option<String>,
+}
+
+/// Output from text security inspection.
+#[derive(Clone, Debug)]
+pub struct TextSecurityInspectOutput {
+    pub verdict: String,
+    pub policy: String,
+    pub machine_code: String,
+    pub normalized_changed: bool,
+    pub recommended_action: String,
+    pub summary: String,
+    pub findings: Vec<Finding>,
+    pub subresults: Option<Value>,
+    pub raw: Value,
+}
+
+pub struct TextSecurityInspect;
+
+impl TextSecurityInspect {
+    const TOOL: &'static str = "text_security_inspect";
+
+    pub fn run(
+        input: &TextSecurityInspectInput,
+    ) -> Result<TextSecurityInspectOutput, PreflightError> {
+        let registry = ToolRegistry::default();
+        let mut args = serde_json::json!({
+            "text": input.text,
+            "policy": input.policy,
+        });
+        if let Some(ref detail) = input.detail {
+            args["detail"] = Value::String(detail.clone());
+        }
+
+        let response = registry.call_json(Self::TOOL, args)?;
+        Self::parse_response(response)
+    }
+
+    pub fn parse_response(
+        response: crate::mcp::response::ToolResponse,
+    ) -> Result<TextSecurityInspectOutput, PreflightError> {
+        if !response.ok {
+            return Err(PreflightError::ToolRejected {
+                machine_code: response.machine_code,
+                error_type: response.error_type,
+                message: response.error.unwrap_or_default(),
+            });
+        }
+
+        let result = require_result_object(&response, Self::TOOL)?;
+        let machine_code = require_machine_code(&response, Self::TOOL)?;
+
+        let verdict = require_str(result, Self::TOOL, "verdict")?.to_string();
+        let policy = require_str(result, Self::TOOL, "policy")?.to_string();
+        let normalized_changed = result
+            .get("normalized_changed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let recommended_action = result
+            .get("recommended_action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let summary = require_str(result, Self::TOOL, "summary")?.to_string();
+
+        let findings = response
+            .findings
+            .as_ref()
+            .map(|f| Finding::from_array_strict(f, Self::TOOL))
+            .transpose()?
+            .unwrap_or_default();
+
+        let subresults = result.get("subresults").cloned();
+
+        let raw = response.result.unwrap_or(Value::Null);
+
+        Ok(TextSecurityInspectOutput {
+            verdict,
+            policy,
+            machine_code,
+            normalized_changed,
+            recommended_action,
+            summary,
+            findings,
+            subresults,
+            raw,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -2687,5 +2919,178 @@ mod tests {
         let output = EditPreflight::parse_response(response).unwrap();
         let uc = output.unicode_check.unwrap();
         assert_eq!(uc.findings.len(), 0);
+    }
+
+    // ── PatchApplyCheck ────────────────────────────────────────────────
+
+    #[test]
+    fn patch_apply_check_success_has_verdict_and_machine_code() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "patch_parse_ok": true,
+                "applies": true,
+                "hunks_total": 1,
+                "hunks_applied": 1,
+                "hunks_failed": 0,
+                "failed_hunks": [],
+                "affected_line_ranges": [],
+                "verdict": "allow"
+            }),
+            Some("patch_apply_check"),
+        )
+        .with_machine_code("PATCH_APPLIES_CLEANLY")
+        .with_verdict("allow");
+        let output = PatchApplyCheck::parse_response(response).expect("parse should succeed");
+        assert!(output.patch_parse_ok);
+        assert!(output.machine_code.starts_with("PATCH_"));
+        assert!(!output.findings.is_empty() || output.verdict == EditVerdict::Allow);
+    }
+
+    #[test]
+    fn patch_apply_check_missing_patch_fails_closed() {
+        let response = ToolResponse::success(Value::Null, Some("patch_apply_check"))
+            .with_machine_code("PATCH_PARSE_OK");
+        let result = PatchApplyCheck::parse_response(response);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, PreflightError::ContractViolation { .. }),
+            "missing result should be ContractViolation, got: {err}"
+        );
+    }
+
+    #[test]
+    fn patch_apply_check_tool_rejection_maps_to_tool_rejected() {
+        let response = ToolResponse::error_with_code(
+            "PATCH_FAILED",
+            "PATCH_PARSE_ERROR",
+            "patch did not apply",
+            None,
+            Some("patch_apply_check"),
+        );
+        let result = PatchApplyCheck::parse_response(response);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            PreflightError::ToolRejected { .. }
+        ));
+    }
+
+    #[test]
+    fn patch_apply_check_machine_code_extraction() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "patch_parse_ok": true,
+                "applies": true,
+                "hunks_total": 1,
+                "hunks_applied": 1,
+                "hunks_failed": 0,
+                "failed_hunks": [],
+                "affected_line_ranges": [],
+                "verdict": "allow"
+            }),
+            Some("patch_apply_check"),
+        )
+        .with_machine_code("PATCH_APPLIES_CLEANLY")
+        .with_verdict("allow");
+        let output = PatchApplyCheck::parse_response(response).unwrap();
+        assert_eq!(output.machine_code, "PATCH_APPLIES_CLEANLY");
+        assert_eq!(output.verdict, EditVerdict::Allow);
+        assert!(output.applies);
+        assert_eq!(output.hunks_total, 1);
+    }
+
+    // ── TextSecurityInspect ────────────────────────────────────────────
+
+    #[test]
+    fn text_security_inspect_success_has_verdict_and_machine_code() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "verdict": "allow",
+                "policy": "default",
+                "normalized_changed": false,
+                "recommended_action": "none",
+                "summary": "no issues found"
+            }),
+            Some("text_security_inspect"),
+        )
+        .with_machine_code("SECURITY_CLEAN")
+        .with_verdict("allow");
+        let output = TextSecurityInspect::parse_response(response).expect("parse should succeed");
+        assert!(!output.verdict.is_empty());
+        assert!(!output.machine_code.is_empty());
+        assert_eq!(output.policy, "default");
+    }
+
+    #[test]
+    fn text_security_inspect_missing_verdict_fails_closed() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "policy": "default",
+                "summary": "ok"
+            }),
+            Some("text_security_inspect"),
+        )
+        .with_machine_code("SECURITY_OK");
+        let result = TextSecurityInspect::parse_response(response);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, PreflightError::ContractViolation { field, .. } if field == "verdict"),
+            "missing verdict should be ContractViolation, got: {err}"
+        );
+    }
+
+    #[test]
+    fn text_security_inspect_tool_rejection_maps_to_tool_rejected() {
+        let response = ToolResponse::error_with_code(
+            "SECURITY_VIOLATION",
+            "SECURITY_ERROR",
+            "forbidden content detected",
+            None,
+            Some("text_security_inspect"),
+        );
+        let result = TextSecurityInspect::parse_response(response);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            PreflightError::ToolRejected { .. }
+        ));
+    }
+
+    #[test]
+    fn text_security_inspect_machine_code_extraction() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "verdict": "allow",
+                "policy": "default",
+                "normalized_changed": false,
+                "recommended_action": "none",
+                "summary": "no issues found"
+            }),
+            Some("text_security_inspect"),
+        )
+        .with_machine_code("SECURITY_CLEAN")
+        .with_verdict("allow");
+        let output = TextSecurityInspect::parse_response(response).unwrap();
+        assert_eq!(output.machine_code, "SECURITY_CLEAN");
+        assert_eq!(output.verdict, "allow");
+        assert!(!output.normalized_changed);
+        assert_eq!(output.recommended_action, "none");
+    }
+
+    #[test]
+    fn text_security_inspect_null_result_fails_closed() {
+        let response = ToolResponse::success(Value::Null, Some("text_security_inspect"))
+            .with_machine_code("SECURITY_OK");
+        let result = TextSecurityInspect::parse_response(response);
+        assert!(result.is_err());
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                PreflightError::ContractViolation { .. }
+            ),
+            "null result should be ContractViolation"
+        );
     }
 }

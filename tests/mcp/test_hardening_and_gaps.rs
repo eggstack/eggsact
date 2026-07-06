@@ -502,6 +502,7 @@ fn test_profile_hardening_unknown_profile_returns_error() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_profile_enforcement_tool_outside_profile_rejected() {
     let min_registry =
         ToolRegistry::with_profile_and_audience(Profile::CodeggCoreMin, ToolAudience::Model);

@@ -392,6 +392,10 @@ impl ToolRegistry {
     /// This method only filters out `Hidden` tools. For model-facing codegg
     /// integrations, prefer [`ToolRegistry::available_tools_model_safe`] or
     /// [`ToolRegistry::available_tools_for_audience`] to also exclude `HarnessOnly` tools.
+    #[deprecated(
+        since = "0.3.0",
+        note = "use available_tools_model_safe, available_tools_for_audience, or available_tools_for_current_audience"
+    )]
     pub fn available_tools(&self) -> Vec<ToolView> {
         registry::tools_for_profile(self.profile.as_str())
             .into_iter()
@@ -975,6 +979,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(deprecated)]
     fn tool_registry_default_lists_tools() {
         let registry = ToolRegistry::default();
         let tools = registry.available_tools();
@@ -984,6 +989,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn tool_registry_profile_filters_tools() {
         let registry = ToolRegistry::with_profile(Profile::CodeggCoreMin);
         let tools = registry.available_tools();
@@ -1127,6 +1133,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn model_safe_is_subset_of_available_tools() {
         let registry = ToolRegistry::default();
         let all_tools = registry.available_tools();

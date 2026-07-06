@@ -69,6 +69,7 @@ fn test_is_route_critical_matches_list() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_all_route_critical_tools_exist_in_registry() {
     let registry = full_harness_registry();
     for name in ROUTE_CRITICAL_TOOLS {

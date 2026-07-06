@@ -454,6 +454,22 @@ Three files are generated from the ToolSpec registry by `cargo run --bin generat
 
 The generator reads `ToolSpec` entries directly from `src/mcp/specs/` (the single source of truth) and filters out tools with `ToolExposure::Hidden`. Run `cargo run --bin generate-docs -- --check` to verify generated docs are current. The CI pipeline enforces this check.
 
+### Typed Preflight Wrappers
+
+`src/preflight/mod.rs` provides typed Rust wrappers over the raw JSON tool interface for common codegg workflows. Each wrapper has typed `Input`/`Output` structs, a `run()` method, and a `parse_response()` method for testing contract parsing without a full registry call.
+
+Available wrappers:
+
+| Wrapper | Tool | Verdict Enum |
+|---------|------|-------------|
+| `EditPreflight` | `edit_preflight` | `EditVerdict` |
+| `CommandPreflight` | `command_preflight` | `CommandVerdict` |
+| `ConfigPreflight` | `config_preflight` | `ConfigVerdict` |
+| `PatchApplyCheck` | `patch_apply_check` | `EditVerdict` |
+| `TextSecurityInspect` | `text_security_inspect` | (string verdict) |
+
+All wrappers return `Result<Output, PreflightError>`. `PreflightError` distinguishes `ToolCall` (registry rejected), `ToolRejected` (tool returned `ok: false`), and `ContractViolation` (missing mandatory field — hard failure, no silent defaults).
+
 ## CLI Diagnostics
 
 The `--diagnostics` flag prints version, tool count, per-profile tool counts, budget tiers, known environment variable names (no values), and parity-reference availability. Supports `--format json` for structured output. The `runtime_diagnostics` MCP tool provides similar information to harness-only audiences.

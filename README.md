@@ -411,14 +411,14 @@ custom profiles.
 ```rust
 use eggsact::agent::{ToolRegistry, Profile, ToolAudience};
 
-let registry = ToolRegistry::with_profile(Profile::CodeggCoreMin);
-let tools = registry.available_tools();
-assert!(tools.iter().any(|t| t.name == "math_eval"));
+// Model-facing codegg session
+let registry = ToolRegistry::with_profile_and_audience(
+    Profile::CodeggCoreMin, ToolAudience::Model,
+);
+let tools = registry.available_tools_model_safe();
+assert!(tools.iter().any(|t| t.name == "text_equal"));
 
-// Model-safe tool listing
-let model_tools = registry.available_tools_model_safe();
-
-// Harness audience for preflight checks
+// Harness preflight checks
 let harness_registry = ToolRegistry::with_profile_and_audience(
     Profile::CodeggPreflight,
     ToolAudience::Harness,
@@ -446,7 +446,8 @@ assert!(output.valid);
 assert!(!output.machine_code.is_empty());
 ```
 
-Available preflight wrappers: `ConfigPreflight`, `CommandPreflight`, `EditPreflight`.
+Available preflight wrappers: `EditPreflight`, `CommandPreflight`, `ConfigPreflight`,
+`PatchApplyCheck`, `TextSecurityInspect`.
 
 All wrappers return `Result<Output, PreflightError>` where `PreflightError`
 distinguishes three failure modes:

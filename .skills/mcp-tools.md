@@ -102,6 +102,16 @@ For calculator operations, use `evaluate_with_context()` / `run_with_context()` 
 
 Do not mix `call_json_with_execution_context` with `evaluate_with_context`/`run_with_context` for the same `EvalContext` — the former clones the context so handler mutations are invisible to the caller's `ctx`.
 
+## Typed Preflight Wrappers
+
+`src/preflight/mod.rs` provides typed Rust wrappers over the raw JSON tool interface for common codegg workflows. Each wrapper has typed `Input`/`Output` structs, a `run()` method, and a `parse_response()` method for testing contract parsing without a full registry call.
+
+Available wrappers: `EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`.
+
+All wrappers return `Result<Output, PreflightError>`. `PreflightError` distinguishes `ToolCall` (registry rejected), `ToolRejected` (tool returned `ok: false`), and `ContractViolation` (missing mandatory field — hard failure, no silent defaults).
+
+Add `#[allow(deprecated)]` to test code that calls `ToolRegistry::available_tools()`.
+
 ## Composite Tools
 
 Tools marked `composite: true` orchestrate calls to other tools internally.

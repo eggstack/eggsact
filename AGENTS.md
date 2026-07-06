@@ -85,7 +85,7 @@ src/
     cargo.rs        # cargo_toml_inspect
   text/             # text processing library (24 modules)
   agent/            # in-process agent API (ToolRegistry, Profile, call_json)
-  preflight/        # typed preflight wrappers (ConfigPreflight, CommandPreflight, EditPreflight), strict finding parsing, structured RecommendedNextTool
+  preflight/        # typed preflight wrappers (EditPreflight, CommandPreflight, ConfigPreflight, PatchApplyCheck, TextSecurityInspect), strict finding parsing, structured RecommendedNextTool
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text
   calc/             # calculator tests (4 files)
@@ -115,7 +115,7 @@ Additional policy docs in `docs/`:
 
 ## Agent API
 
-`src/agent/` provides an in-process API for calling tools without MCP. `ToolRegistry` wraps the tool registry with profile filtering and `call_json()` dispatch. `call_json_with_budget()` accepts a custom `ToolBudget` to override default per-tool limits. `call_json_with_execution_context()` accepts an `ExecutionContext` for full per-request state isolation — recommended for new code. `src/preflight/` adds typed wrappers (`ConfigPreflight`, `CommandPreflight`, `EditPreflight`) that parse tool responses into structured Rust types with fail-closed contract enforcement.
+`src/agent/` provides an in-process API for calling tools without MCP. `ToolRegistry` wraps the tool registry with profile filtering and `call_json()` dispatch. `call_json_with_budget()` accepts a custom `ToolBudget` to override default per-tool limits. `call_json_with_execution_context()` accepts an `ExecutionContext` for full per-request state isolation — recommended for new code. `src/preflight/` adds typed wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`) that parse tool responses into structured Rust types with fail-closed contract enforcement.
 
 - **`PreflightError`** has three variants: `ToolCall` (registry rejected), `ToolRejected` (tool returned `ok: false`), `ContractViolation` (missing mandatory field in `ok: true` response). Missing fields are hard failures, not silent defaults.
 - **Typed verdict enums**: `EditVerdict`, `CommandVerdict`, `ConfigVerdict` with `Other(String)` variant for forward compatibility. `FindingSeverity` and `FindingDisposition` follow the same pattern.
@@ -123,6 +123,7 @@ Additional policy docs in `docs/`:
 - **Strict finding parsing**: `Finding::try_from_value_strict()` and `Finding::from_array_strict()` require `code`, `severity`, and `message` strings. Used by all typed preflight wrappers. Permissive `Finding::from_value()` / `Finding::from_array()` preserved for backward compatibility.
 - **`parse_response()`** is public on each wrapper for testing contract parsing without a full registry call.
 - **`EditPreflightInput`** accepts optional `file_path`/`workspace_root` (triggers `path_scope_check`), `newline_policy` (triggers `text_fingerprint` newline detection), `unicode_policy` (triggers `text_security_inspect`), `expected_fingerprint` (triggers `text_fingerprint` SHA-256 comparison), and `edit_metadata` (passthrough). All sub-tool results appear in `subresults` and structured output fields.
+- **`available_tools()` is deprecated** since 0.3.0 — it only filters `Hidden` and is not model-safe. Use `available_tools_model_safe()`, `available_tools_for_audience(audience)`, or `available_tools_for_current_audience()` instead.
 
 - **`ToolDefinition`** lives in `src/mcp/registry/types.rs` (not `server.rs`).
 - **`ToolAudience`** enum (`Model`, `Harness`, `Debug`) controls which exposure levels appear in tool listings and which tools may be executed. Use `available_tools_model_safe()` for model-facing integrations. `ToolAudience::can_execute_exposure()` enforces audience at dispatch time.

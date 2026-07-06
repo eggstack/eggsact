@@ -408,9 +408,21 @@ use eggsact::agent::{ToolRegistry, Profile, ToolAudience};
 // Default: StrictNative compat, full profile, Model audience
 let registry = ToolRegistry::default();
 
-// Custom profile and audience
-let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+// Model-facing codegg session
+let registry = ToolRegistry::with_profile_and_audience(
+    Profile::CodeggCoreMin, ToolAudience::Model,
+);
+let tools = registry.available_tools_model_safe();
+
+// Harness preflight checks
+let harness_registry = ToolRegistry::with_profile_and_audience(
+    Profile::CodeggPreflight, ToolAudience::Harness,
+);
 ```
+
+> **Note**: `available_tools()` is deprecated since 0.3.0. Use
+> `available_tools_model_safe()`, `available_tools_for_audience()`, or
+> `available_tools_for_current_audience()` instead.
 
 ### Calling Tools
 
@@ -450,6 +462,26 @@ let response = registry.call_json_with_execution_context(
 | `cancellation` | `Option<Arc<AtomicBool>>` | Cooperative cancellation flag |
 
 Builder methods: `with_eval_context()`, `with_budget()`, `with_cancellation()`, `with_request_id()`.
+
+### Typed Preflight Wrappers
+
+```rust
+use eggsact::preflight::{EditPreflight, EditPreflightInput, ReplacementMode};
+
+let input = EditPreflightInput {
+    original: "hello world".to_string(),
+    mode: ReplacementMode::Literal,
+    old: Some("world".to_string()),
+    new: Some("rust".to_string()),
+    ..Default::default()
+};
+let output = EditPreflight::run(&input).unwrap();
+assert!(output.ok_to_apply);
+```
+
+Available wrappers: `EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`.
+
+All return `Result<Output, PreflightError>` where `PreflightError` distinguishes `ToolCall`, `ToolRejected`, and `ContractViolation` (missing mandatory fields are hard failures).
 
 ---
 
