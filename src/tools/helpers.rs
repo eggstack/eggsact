@@ -1324,6 +1324,394 @@ pub(crate) fn escape_ascii(s: &str) -> String {
     result
 }
 
+// ---------------------------------------------------------------------------
+// Path classification helpers (shared by repo_tree_summarize, diff_risk_classify)
+// ---------------------------------------------------------------------------
+
+/// Result of `classify_paths`: (buckets, entrypoint_candidates, high_leverage_paths, tool_hints, findings).
+pub(crate) type ClassifyPathsResult = (
+    std::collections::HashMap<String, Vec<String>>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+);
+
+/// Classify a single repo-relative path into a bucket.
+///
+/// Bucket priority: manifests > lockfiles > ci > configs > tests > generated > vendor > assets > scripts > docs > source.
+/// Returns `(bucket, is_hidden, is_dotfile)`.
+pub(crate) fn classify_path(path: &str) -> (String, bool, bool) {
+    let normalized = path.replace('\\', "/");
+    let parts: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
+
+    // Check hidden/dot components
+    let is_hidden = parts.iter().any(|p| p.starts_with('.'));
+    let is_dotfile = parts
+        .last()
+        .is_some_and(|p| p.starts_with('.') && p.contains('.'));
+
+    // Get filename and extension
+    let filename = *parts.last().unwrap_or(&"");
+    let ext = filename.rsplit('.').next().unwrap_or("");
+
+    // Check directory-level buckets
+    let dir_path = normalized.to_lowercase();
+
+    // Manifests
+    if matches!(
+        filename,
+        "Cargo.toml"
+            | "package.json"
+            | "pyproject.toml"
+            | "setup.py"
+            | "setup.cfg"
+            | "go.mod"
+            | "Gemfile"
+            | "pom.xml"
+            | "build.gradle"
+            | "build.gradle.kts"
+            | "CMakeLists.txt"
+            | "Makefile"
+            | "makefile"
+            | "Cargo.lock"
+            | "yarn.lock"
+            | "pnpm-lock.yaml"
+            | "package-lock.json"
+            | "poetry.lock"
+            | "Pipfile.lock"
+            | "go.sum"
+            | "Gemfile.lock"
+    ) {
+        if filename.ends_with("lock") || filename == "go.sum" || filename.contains("-lock.") {
+            return ("lockfiles".to_string(), is_hidden, is_dotfile);
+        }
+        return ("manifests".to_string(), is_hidden, is_dotfile);
+    }
+
+    // CI
+    if dir_path.contains(".github/workflows")
+        || dir_path.contains(".gitlab-ci")
+        || dir_path.contains(".circleci")
+        || dir_path.contains(".travis")
+        || filename == "Dockerfile"
+        || filename == "docker-compose.yml"
+        || filename == "docker-compose.yaml"
+        || filename == ".dockerignore"
+        || filename == "Jenkinsfile"
+        || filename == ".travis.yml"
+        || filename == "appveyor.yml"
+    {
+        return ("ci".to_string(), is_hidden, is_dotfile);
+    }
+
+    // Configs
+    if matches!(
+        filename,
+        ".editorconfig"
+            | ".gitignore"
+            | ".gitattributes"
+            | ".cargo/config.toml"
+            | "rustfmt.toml"
+            | "clippy.toml"
+            | ".rustfmt.toml"
+            | ".clippy.toml"
+            | "tsconfig.json"
+            | ".eslintrc"
+            | ".eslintrc.json"
+            | ".eslintrc.js"
+            | ".prettierrc"
+            | ".prettierrc.json"
+            | "babel.config.js"
+            | "webpack.config.js"
+            | ".env"
+            | ".env.example"
+            | "tox.ini"
+            | "mypy.ini"
+            | ".flake8"
+            | "pytest.ini"
+            | "conftest.py"
+    ) || ext == "toml"
+        && !filename.starts_with('.')
+        && (filename.contains("config") || filename.contains("Cargo"))
+    {
+        return ("configs".to_string(), is_hidden, is_dotfile);
+    }
+
+    // Tests (files)
+    let is_test_file = filename.starts_with("test_")
+        || filename.starts_with("test.")
+        || filename.ends_with("_test.rs")
+        || filename.ends_with("_test.py")
+        || filename.ends_with(".test.js")
+        || filename.ends_with(".test.ts")
+        || filename.ends_with(".spec.js")
+        || filename.ends_with(".spec.ts")
+        || (filename.contains("test") && ext == "rs")
+        || filename == "tests.rs";
+
+    // Tests (directories)
+    let is_test_dir = dir_path.contains("/test/")
+        || dir_path.contains("/tests/")
+        || dir_path.contains("/__tests__/")
+        || dir_path.contains("/test_data/")
+        || dir_path.contains("/testdata/")
+        || dir_path.contains("/fixtures/")
+        || dir_path.contains("/snapshots/");
+
+    if is_test_file || is_test_dir {
+        return ("tests".to_string(), is_hidden, is_dotfile);
+    }
+
+    // Generated
+    let is_generated = dir_path.contains("/generated/")
+        || dir_path.contains("/gen/")
+        || dir_path.contains("/dist/")
+        || dir_path.contains("/build/")
+        || dir_path.contains("/target/")
+        || dir_path.contains("/out/")
+        || dir_path.contains("/.next/")
+        || dir_path.contains("/__pycache__/")
+        || filename.ends_with(".min.js")
+        || filename.ends_with(".min.css")
+        || filename.ends_with(".bundle.js")
+        || ext == "lock"
+        || filename == "package-lock.json"
+        || filename == "yarn.lock";
+
+    if is_generated {
+        return ("generated".to_string(), is_hidden, is_dotfile);
+    }
+
+    // Vendor
+    let is_vendor = dir_path.contains("/vendor/")
+        || dir_path.contains("/node_modules/")
+        || dir_path.contains("/.vendor/")
+        || dir_path.contains("/third_party/")
+        || dir_path.contains("/third-party/")
+        || dir_path.contains("/extern/")
+        || dir_path.contains("/external/")
+        || dir_path.contains("/deps/");
+
+    if is_vendor {
+        return ("vendor".to_string(), is_hidden, is_dotfile);
+    }
+
+    // Assets
+    if matches!(
+        ext,
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "svg"
+            | "ico"
+            | "webp"
+            | "bmp"
+            | "tiff"
+            | "woff"
+            | "woff2"
+            | "ttf"
+            | "eot"
+            | "otf"
+            | "mp3"
+            | "mp4"
+            | "wav"
+            | "avi"
+            | "mov"
+            | "pdf"
+            | "zip"
+            | "tar"
+            | "gz"
+    ) {
+        return ("assets".to_string(), is_hidden, is_dotfile);
+    }
+
+    // Scripts
+    if matches!(
+        filename,
+        "release.sh"
+            | "deploy.sh"
+            | "build.sh"
+            | "test.sh"
+            | "ci.sh"
+            | "setup.sh"
+            | "install.sh"
+            | "bootstrap.sh"
+    ) || (ext == "sh" && (dir_path.contains("script") || dir_path.contains("bin")))
+    {
+        return ("scripts".to_string(), is_hidden, is_dotfile);
+    }
+
+    // Docs
+    if matches!(ext, "md" | "mdx" | "rst" | "txt" | "adoc" | "asciidoc")
+        || matches!(
+            filename,
+            "README"
+                | "LICENSE"
+                | "LICENSE-MIT"
+                | "LICENSE-APACHE"
+                | "CONTRIBUTING"
+                | "CHANGELOG"
+                | "CHANGES"
+                | "AUTHORS"
+                | "SECURITY"
+                | "CODE_OF_CONDUCT"
+                | ".mailmap"
+        )
+        || dir_path.contains("/docs/")
+        || dir_path.contains("/doc/")
+        || dir_path.contains("/documentation/")
+    {
+        return ("docs".to_string(), is_hidden, is_dotfile);
+    }
+
+    // Default: source
+    ("source".to_string(), is_hidden, is_dotfile)
+}
+
+/// Classify a set of paths into buckets. Returns `(buckets, entrypoint_candidates, high_leverage_paths, tool_hints, findings)`.
+///
+/// - `buckets`: HashMap of bucket name -> list of paths.
+/// - `entrypoint_candidates`: likely entry files.
+/// - `high_leverage_paths`: paths that may need special attention (CI, security, build).
+/// - `tool_hints`: recommended eggsact tools.
+/// - `findings`: list of finding strings.
+pub(crate) fn classify_paths(paths: &[String]) -> ClassifyPathsResult {
+    use std::collections::HashMap;
+
+    let mut buckets: HashMap<String, Vec<String>> = HashMap::new();
+    let mut entrypoint_candidates = Vec::new();
+    let mut high_leverage_paths = Vec::new();
+    let mut tool_hints = Vec::new();
+    let mut findings = Vec::new();
+    let mut has_manifest = false;
+    let mut has_lockfile = false;
+    let mut has_ci = false;
+    let mut generated_count = 0;
+    let mut vendor_count = 0;
+
+    for path in paths {
+        let (bucket, _is_hidden, _is_dotfile) = classify_path(path);
+        buckets
+            .entry(bucket.clone())
+            .or_default()
+            .push(path.clone());
+
+        if bucket == "manifests" {
+            has_manifest = true;
+        }
+        if bucket == "lockfiles" {
+            has_lockfile = true;
+        }
+        if bucket == "ci" {
+            has_ci = true;
+        }
+        if bucket == "generated" {
+            generated_count += 1;
+        }
+        if bucket == "vendor" {
+            vendor_count += 1;
+        }
+
+        // Entrypoint candidates
+        let normalized = path.replace('\\', "/");
+        let filename = normalized.rsplit('/').next().unwrap_or("");
+        if matches!(
+            filename,
+            "src/main.rs"
+                | "src/lib.rs"
+                | "main.py"
+                | "app.py"
+                | "index.js"
+                | "index.ts"
+                | "src/index.ts"
+                | "src/index.js"
+                | "cmd/main.go"
+                | "main.go"
+        ) || filename == "package.json"
+            || filename == "pyproject.toml"
+            || filename == "Cargo.toml"
+            || filename == "go.mod"
+        {
+            entrypoint_candidates.push(path.clone());
+        }
+
+        // High leverage paths
+        if bucket == "ci"
+            || bucket == "manifests"
+            || bucket == "lockfiles"
+            || filename.contains("security")
+            || filename.contains("auth")
+            || filename.contains("Dockerfile")
+            || filename.contains("release")
+        {
+            high_leverage_paths.push(path.clone());
+        }
+
+        // Tool hints
+        if filename == "Cargo.toml" {
+            tool_hints.push("cargo_toml_inspect".to_string());
+        }
+        if filename.ends_with(".toml") || filename.ends_with(".json") || filename.ends_with(".yaml")
+        {
+            tool_hints.push("config_file_inspect".to_string());
+        }
+        if bucket == "manifests" || bucket == "lockfiles" {
+            tool_hints.push("dependency_edit_preflight".to_string());
+        }
+        if bucket == "docs" && filename.ends_with(".md") {
+            tool_hints.push("markdown_structure".to_string());
+            tool_hints.push("code_fence_extract".to_string());
+        }
+    }
+
+    // Deduplicate tool hints
+    tool_hints.sort();
+    tool_hints.dedup();
+
+    // Findings
+    if has_manifest && !has_lockfile {
+        findings.push("Manifest found without lockfile".to_string());
+    }
+    if has_ci {
+        findings.push("CI configuration present — may affect build/test workflow".to_string());
+    }
+    let total = paths.len();
+    if total > 0 {
+        let gen_pct = (generated_count as f64 / total as f64) * 100.0;
+        if gen_pct > 50.0 {
+            findings.push(format!(
+                "Unusually many generated paths ({}/{} = {:.0}%)",
+                generated_count, total, gen_pct
+            ));
+        }
+        let vend_pct = (vendor_count as f64 / total as f64) * 100.0;
+        if vend_pct > 50.0 {
+            findings.push(format!(
+                "Unusually many vendor/dependency paths ({}/{} = {:.0}%)",
+                vendor_count, total, vend_pct
+            ));
+        }
+    }
+
+    (
+        buckets,
+        entrypoint_candidates,
+        high_leverage_paths,
+        tool_hints,
+        findings,
+    )
+}
+
+/// Classify a single file path from a diff into a risk category.
+///
+/// Used by `diff_risk_classify` to categorize files in unified diffs.
+pub(crate) fn classify_diff_path(path: &str) -> String {
+    let (bucket, _, _) = classify_path(path);
+    bucket
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

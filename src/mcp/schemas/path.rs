@@ -85,3 +85,35 @@ pub fn path_scope_check_output() -> Value {
 pub fn glob_match_output() -> Value {
     serde_json::json!({"type":"object","properties":{"matches":{"type":"boolean"},"normalized_pattern":{"type":"string"},"normalized_path":{"type":"string"},"matched_segment":{"type":["string","null"]},"unmatched_segment":{"type":["string","null"]},"summary":{"type":"string"}}})
 }
+
+pub fn path_batch_scope_check_input() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "root": {"type": "string", "description": "Root directory path"},
+            "targets": {"type": "array", "items": {"type": "string"}, "description": "Target paths to check against root"},
+            "max_targets": {"type": "integer", "default": 1000, "description": "Maximum number of targets to process"},
+            "allow_absolute": {"type": "boolean", "default": false, "description": "If true, absolute targets are not flagged as errors"},
+            "case_sensitive": {"type": "boolean", "default": true, "description": "Case-sensitive path comparison"}
+        },
+        "required": ["root", "targets"]
+    })
+}
+
+pub fn path_batch_scope_check_output() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "all_inside_root": {"type": "boolean", "description": "Whether all targets are lexically inside root"},
+            "targets_checked": {"type": "integer", "description": "Number of targets processed"},
+            "escaping_targets": {"type": "array", "items": {"type": "string"}, "description": "Targets that resolve outside root"},
+            "absolute_targets": {"type": "array", "items": {"type": "string"}, "description": "Targets that were absolute paths"},
+            "dotdot_targets": {"type": "array", "items": {"type": "string"}, "description": "Targets containing parent traversal segments"},
+            "normalized_targets": {"type": "array", "items": {"type": "object"}, "description": "Mapping of original to normalized paths"},
+            "duplicate_normalized_targets": {"type": "array", "items": {"type": "object"}, "description": "Normalized targets reached by multiple inputs"},
+            "findings": {"type": "array", "items": {"type": "object"}, "description": "Structured findings"},
+            "verdict": {"type": "string", "enum": ["allow", "review", "block"], "description": "Overall verdict"},
+            "machine_code": {"type": "string", "description": "Machine-readable response code"}
+        }
+    })
+}

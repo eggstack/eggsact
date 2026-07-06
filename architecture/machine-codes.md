@@ -288,6 +288,28 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | `TEXT_EQUAL` | Texts are equal | info | no | proceed | `text_equal` |
 | `TEXT_NOT_EQUAL` | Texts are not equal | low | no | review diffs | `text_equal` |
 
+### Repo Tree Summary
+
+| Code | Meaning | Severity | Blocking | Harness Action | Used by |
+|------|---------|----------|----------|----------------|---------|
+| `REPO_TREE_OK` | Repo tree summarized, no concerns | info | no | proceed | `repo_tree_summarize` |
+| `REPO_TREE_REVIEW` | Repo tree has items needing review | low | no | review | `repo_tree_summarize` |
+
+### Diff Risk Classification
+
+| Code | Meaning | Severity | Blocking | Harness Action | Used by |
+|------|---------|----------|----------|----------------|---------|
+| `DIFF_RISK_OK` | Diff is low risk | info | no | proceed | `diff_risk_classify` |
+| `DIFF_RISK_REVIEW` | Diff has medium risk items | medium | review | review changes | `diff_risk_classify` |
+| `DIFF_RISK_BLOCK` | Diff is high risk | high | yes | block or escalate | `diff_risk_classify` |
+
+### Path Batch Scope Check
+
+| Code | Meaning | Severity | Blocking | Harness Action | Used by |
+|------|---------|----------|----------|----------------|---------|
+| `PATH_BATCH_OK` | All paths inside root | info | no | proceed | `path_batch_scope_check` |
+| `PATH_BATCH_REVIEW` | One or more paths escape root | high | yes | reject paths | `path_batch_scope_check` |
+
 ## Forward-Looking: Dotted Taxonomy
 
 The UPPERCASE codes above are the current wire format, chosen for parity with the Python `eggcalc` server. A future evolution may adopt a dotted taxonomy (e.g. `edit.safe_to_apply`, `shell.risk`, `config.valid`) for finer-grained categorization. That design is not yet implemented; the current UPPERCASE constants are the active contract.

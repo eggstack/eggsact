@@ -304,6 +304,35 @@ pub const REPO_DETECTED: &str = "REPO_DETECTED";
 pub const REPO_UNKNOWN: &str = "REPO_UNKNOWN";
 
 // ---------------------------------------------------------------------------
+// Repo Tree Summary
+// ---------------------------------------------------------------------------
+
+/// Repo tree summarized successfully, no review concerns.
+pub const REPO_TREE_OK: &str = "REPO_TREE_OK";
+/// Repo tree summarized but findings suggest review.
+pub const REPO_TREE_REVIEW: &str = "REPO_TREE_REVIEW";
+
+// ---------------------------------------------------------------------------
+// Diff Risk Classification
+// ---------------------------------------------------------------------------
+
+/// Diff risk classified as low risk, no review concerns.
+pub const DIFF_RISK_OK: &str = "DIFF_RISK_OK";
+/// Diff risk classified, review recommended.
+pub const DIFF_RISK_REVIEW: &str = "DIFF_RISK_REVIEW";
+/// Diff risk classified as high risk, blocking.
+pub const DIFF_RISK_BLOCK: &str = "DIFF_RISK_BLOCK";
+
+// ---------------------------------------------------------------------------
+// Path Batch Scope Check
+// ---------------------------------------------------------------------------
+
+/// All target paths are inside root.
+pub const PATH_BATCH_OK: &str = "PATH_BATCH_OK";
+/// One or more target paths escape root or have issues.
+pub const PATH_BATCH_REVIEW: &str = "PATH_BATCH_REVIEW";
+
+// ---------------------------------------------------------------------------
 // TOML
 // ---------------------------------------------------------------------------
 
@@ -461,6 +490,13 @@ pub const ALL: &[&str] = &[
     CONFIG_RISK_WILDCARD_HOST,
     REPO_DETECTED,
     REPO_UNKNOWN,
+    REPO_TREE_OK,
+    REPO_TREE_REVIEW,
+    DIFF_RISK_OK,
+    DIFF_RISK_REVIEW,
+    DIFF_RISK_BLOCK,
+    PATH_BATCH_OK,
+    PATH_BATCH_REVIEW,
     TOML_VALID,
     TOML_INVALID,
     TEXT_EQUAL,

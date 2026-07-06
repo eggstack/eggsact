@@ -196,3 +196,88 @@ pub fn config_file_inspect_output() -> Value {
         }
     })
 }
+
+pub fn repo_tree_summarize_input() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Repository-relative paths to summarize"
+            },
+            "file_sizes": {
+                "type": "object",
+                "additionalProperties": {"type": "integer"},
+                "description": "Optional byte sizes keyed by path"
+            },
+            "statuses": {
+                "type": "object",
+                "additionalProperties": {"type": "string"},
+                "description": "Optional git-like status keyed by path"
+            },
+            "max_paths": {
+                "type": "integer",
+                "default": 1000,
+                "description": "Maximum number of paths to process"
+            },
+            "detail": {
+                "type": "string",
+                "enum": ["summary", "normal", "full"],
+                "default": "normal",
+                "description": "Detail level for output"
+            }
+        },
+        "required": ["paths"]
+    })
+}
+
+pub fn repo_tree_summarize_output() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "project_types": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Detected project types"
+            },
+            "path_count": {"type": "integer", "description": "Total number of paths processed"},
+            "directory_count": {"type": "integer", "description": "Number of directory-like paths"},
+            "file_count": {"type": "integer", "description": "Number of file-like paths"},
+            "buckets": {
+                "type": "object",
+                "description": "Paths grouped by classification bucket",
+                "additionalProperties": {"type": "array", "items": {"type": "string"}}
+            },
+            "entrypoint_candidates": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Likely entry files"
+            },
+            "high_leverage_paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "CI, dependency, security, and build paths"
+            },
+            "tool_hints": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Recommended eggsact tools for this repo"
+            },
+            "verdict": {
+                "type": "string",
+                "enum": ["allow", "review", "block"],
+                "description": "Whether repo structure is deterministically classifiable"
+            },
+            "machine_code": {
+                "type": "string",
+                "description": "Machine-readable response code"
+            },
+            "findings": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Structured findings"
+            }
+        }
+    })
+}

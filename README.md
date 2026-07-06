@@ -98,7 +98,7 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 ## MCP Tools
 
 <!-- BEGIN GENERATED: eggsact tools -->
-68 tools across 19 categories. See `architecture/mcp-server.md` for the full reference.
+71 tools across 19 categories. See `architecture/mcp-server.md` for the full reference.
 
 ### Math (4)
 
@@ -168,7 +168,7 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 | `list_dedupe` | 1 | default | stable | cheap | default, full |
 | `list_sort` | 1 | default | stable | cheap | default, full |
 
-### Path (5)
+### Path (6)
 
 | Tool | Tier | Exposure | Stability | Cost | Profiles |
 |------|------|----------|-----------|------|----------|
@@ -177,6 +177,7 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 | `path_compare` | 2 | contextual | stable | cheap | full |
 | `path_scope_check` | 2 | harness | stable | cheap | codegg_preflight, full |
 | `glob_match` | 1 | default | stable | cheap | default, full |
+| `path_batch_scope_check` | 2 | harness | stable | cheap | codegg_patch, codegg_preflight, full |
 
 ### Shell (4)
 
@@ -230,13 +231,14 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 |------|------|----------|-----------|------|----------|
 | `toml_shape` | 2 | contextual | stable | mod | codegg_config, full |
 
-### Patch (3)
+### Patch (4)
 
 | Tool | Tier | Exposure | Stability | Cost | Profiles |
 |------|------|----------|-----------|------|----------|
 | `patch_apply_check` | 2 | harness | stable | mod | codegg_patch, codegg_preflight, full |
 | `patch_summary` | 2 | contextual | stable | mod | codegg_patch, full |
 | `edit_preflight` | 1 | default | stable | heavy | codegg_core, codegg_core_min, codegg_patch, codegg_preflight, full |
+| `diff_risk_classify` | 2 | contextual | stable | mod | codegg_patch, codegg_repo_audit, full |
 
 ### Cargo (1)
 
@@ -250,12 +252,13 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 |------|------|----------|-----------|------|----------|
 | `dependency_edit_preflight` | 2 | contextual | stable | mod | codegg_config, codegg_preflight, codegg_repo_audit, full |
 
-### Repo (2)
+### Repo (3)
 
 | Tool | Tier | Exposure | Stability | Cost | Profiles |
 |------|------|----------|-----------|------|----------|
 | `repo_manifest_inspect` | 2 | contextual | stable | cheap | codegg_repo_audit, full |
 | `config_file_inspect` | 2 | contextual | stable | mod | codegg_config, codegg_repo_audit, full |
+| `repo_tree_summarize` | 2 | contextual | stable | mod | codegg_repo_audit, full |
 
 ### Diagnostics (1)
 

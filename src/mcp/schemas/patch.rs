@@ -53,6 +53,88 @@ pub fn patch_summary_output() -> Value {
     serde_json::json!({"type":"object","properties":{"files_changed":{"type":"integer","description":"Number of files changed"},"hunks_total":{"type":"integer","description":"Total number of hunks across all files"},"additions":{"type":"integer","description":"Total number of added lines"},"deletions":{"type":"integer","description":"Total number of deleted lines"},"renames_detected":{"type":"array","description":"Detected file renames","items":{"type":"object","properties":{"from":{"type":"string"},"to":{"type":"string"}}}},"binary_patch_detected":{"type":"boolean","description":"True if binary patch content detected"},"line_ranges_by_file":{"type":"object","description":"Line ranges affected per file","additionalProperties":{"type":"array","items":{"type":"object","properties":{"start":{"type":"integer"},"end":{"type":"integer"}}}}},"findings":{"type":"array","items":{"type":"string"},"description":"Analysis notes and warnings"}}})
 }
 
+pub fn diff_risk_classify_input() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "patch_text": {"type": "string", "description": "Unified diff text to classify"},
+            "workspace_root": {"type": "string", "description": "Optional workspace root for path-scope context"},
+            "max_patch_chars": {"type": "integer", "default": 200000, "description": "Maximum patch text length to process"},
+            "detail": {
+                "type": "string",
+                "enum": ["summary", "normal", "full"],
+                "default": "normal",
+                "description": "Detail level for output"
+            },
+            "policy": {
+                "type": "object",
+                "description": "Optional policy overrides for risk classification",
+                "properties": {
+                    "review_ci_changes": {"type": "boolean", "default": true, "description": "Flag CI changes for review"},
+                    "review_dependency_changes": {"type": "boolean", "default": true, "description": "Flag dependency changes for review"},
+                    "review_security_sensitive_paths": {"type": "boolean", "default": true, "description": "Flag security-sensitive path changes for review"},
+                    "allow_docs_only": {"type": "boolean", "default": true, "description": "Allow docs-only diffs without review"}
+                }
+            }
+        },
+        "required": ["patch_text"]
+    })
+}
+
+pub fn diff_risk_classify_output() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "description": "Compact human-readable summary"},
+            "patch_summary": {
+                "type": "object",
+                "description": "Selected fields from patch parsing",
+                "properties": {
+                    "files_changed": {"type": "integer"},
+                    "hunks_total": {"type": "integer"},
+                    "additions": {"type": "integer"},
+                    "deletions": {"type": "integer"},
+                    "renames_detected": {"type": "array", "items": {"type": "object"}},
+                    "binary_patch_detected": {"type": "boolean"}
+                }
+            },
+            "risk_categories": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Risk categories identified in this diff"
+            },
+            "files_by_category": {
+                "type": "object",
+                "description": "Files grouped by risk category",
+                "additionalProperties": {"type": "array", "items": {"type": "string"}}
+            },
+            "review_focus": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Priority review items with path/category reasons"
+            },
+            "recommended_next_tool": {
+                "type": ["string", "null"],
+                "description": "Recommended next tool for this diff"
+            },
+            "verdict": {
+                "type": "string",
+                "enum": ["allow", "review", "block"],
+                "description": "Overall risk verdict"
+            },
+            "machine_code": {
+                "type": "string",
+                "description": "Machine-readable response code"
+            },
+            "findings": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Structured findings with severity and disposition"
+            }
+        }
+    })
+}
+
 pub fn edit_preflight_output() -> Value {
     serde_json::json!({"type":"object","properties":{"ok_to_apply":{"type":"boolean"},"mode":{"type":"string"},"verdict":{"type":"string","enum":["allow","review","block","safe_to_apply","safe_with_warnings"],"description":"Typed verdict for programmatic routing"},"findings":{"type":"array"},"machine_code":{"type":"string","description":"Primary machine code (highest-priority finding)"},"secondary_machine_codes":{"type":"array","items":{"type":"string"},"description":"Additional machine codes when multiple findings exist"},"recommended_next_tool":{"type":["string","null"]},"summary":{"type":"string"},"subresults":{"type":"object"},"path_scope":{"type":["object","null"],"properties":{"inside_root":{"type":"boolean"},"escapes_via_dotdot":{"type":"boolean"},"relative_path":{"type":"string"},"normalized_target":{"type":["string","null"],"description":"Normalized absolute target path (lexical only, no symlink resolution)"},"reason":{"type":["string","null"],"description":"Human-readable reason for the path scope decision"}},"description":"Path scope check result (lexical only, no symlink resolution)"},"newline_check":{"type":["object","null"],"properties":{"style":{"type":"string"},"mixed":{"type":"boolean"},"policy":{"type":"string"},"recommended_normalization":{"type":["string","null"]},"original_style":{"type":["string","null"],"description":"Newline style detected in the original text"},"replacement_style":{"type":["string","null"],"description":"Newline style detected in the replacement text"}},"description":"Newline style check result"},"unicode_check":{"type":["object","null"],"properties":{"verdict":{"type":"string"},"machine_code":{"type":"string"},"finding_count":{"type":"integer"},"findings":{"type":"array","items":{"type":"object","description":"Structured findings from text_security_inspect"}}},"description":"Unicode security check result"},"fingerprint":{"type":["object","null"],"properties":{"sha256":{"type":"string"},"newline_style":{"type":"string"}},"description":"Fingerprint verification result"}}})
 }

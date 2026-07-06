@@ -9,7 +9,7 @@ tools. Clients do not need to change any code to switch from Python to Rust for
 matching tools.
 
 The Python reference lives in `eggcalc/mcp/` (schemas.py, tools.py, server.py) and
-provides 67 tool definitions. The Rust implementation in `src/mcp/` ships 68 tools
+provides 67 tool definitions. The Rust implementation in `src/mcp/` ships 71 tools
 (see [Known parity gaps](#known-parity-gaps) below); the remaining 3 are planned for
 phase 10 work.
 
@@ -218,12 +218,15 @@ fixes in Rust tools:
   (`tests/parity/test_tools_list.rs:6,12,18`) — index 11 ordering: Python emits
   `validate_brackets`, Rust emits `text_position`.
 
-### C. Tool-set gap: 68 vs 67 tools (1 extra in Rust)
+### C. Tool-set gap: 71 vs 67 tools (4 extra in Rust)
 
-The Rust `full` profile ships 68 tools. The Python reference defines 67. The
-Rust build includes one tool not present in the Python reference:
+The Rust `full` profile ships 71 tools. The Python reference defines 67. The
+Rust build includes four tools not present in the Python reference:
 
 - `runtime_diagnostics`
+- `repo_tree_summarize`
+- `diff_risk_classify`
+- `path_batch_scope_check`
 
 The three tools previously missing from Rust (`config_file_inspect`,
 `dependency_edit_preflight`, `repo_manifest_inspect`) were added in phase 09.

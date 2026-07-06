@@ -1,7 +1,9 @@
 use crate::mcp::machine_codes;
+use crate::mcp::response::{disposition, finding, severity, verdict};
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
+use std::collections::HashMap;
 
 pub fn path_normalize_tool(args: &Value) -> ToolResponse {
     let path = match args.get("path").and_then(|v| v.as_str()) {
@@ -436,4 +438,222 @@ pub fn glob_match_tool(args: &Value) -> ToolResponse {
         Some("glob_match"),
     )
     .with_tool("glob_match")
+}
+
+pub fn path_batch_scope_check(args: &Value) -> ToolResponse {
+    let root = match args.get("root").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => {
+            return ToolResponse::error_with_code(
+                "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
+                "Missing 'root' parameter",
+                None,
+                Some("path_batch_scope_check"),
+            )
+        }
+    };
+
+    let targets = match require_array_arg(args, "targets", "path_batch_scope_check") {
+        Ok(arr) => arr,
+        Err(resp) => return *resp,
+    };
+
+    let max_targets = args
+        .get("max_targets")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(1000) as usize;
+    let allow_absolute = args
+        .get("allow_absolute")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let case_sensitive = args
+        .get("case_sensitive")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+
+    if root.chars().count() > MAX_TEXT_LENGTH {
+        return ToolResponse::error_with_code(
+            "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
+            "Root path exceeds MAX_TEXT_LENGTH",
+            None,
+            Some("path_batch_scope_check"),
+        );
+    }
+
+    if targets.len() > max_targets {
+        return ToolResponse::error_with_code(
+            "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
+            &format!(
+                "Too many targets: {} exceeds max_targets {}",
+                targets.len(),
+                max_targets
+            ),
+            None,
+            Some("path_batch_scope_check"),
+        );
+    }
+
+    let valid_platforms = ["posix", "windows"];
+    let platform = args
+        .get("platform")
+        .and_then(|v| v.as_str())
+        .unwrap_or("posix");
+    if !valid_platforms.contains(&platform) {
+        return ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            &format!("Unsupported platform: {}", platform),
+            Some(vec![format!("Use one of: {}", valid_platforms.join(", "))]),
+            Some("path_batch_scope_check"),
+        );
+    }
+
+    let mut escaping_targets = Vec::new();
+    let mut absolute_targets = Vec::new();
+    let mut dotdot_targets = Vec::new();
+    let mut normalized_targets = Vec::new();
+    let mut findings = Vec::new();
+    let mut seen_normalized: HashMap<String, Vec<String>> = HashMap::new();
+    let mut all_inside = true;
+
+    for target_val in targets {
+        let target = match target_val.as_str() {
+            Some(s) => s,
+            None => {
+                findings.push(finding(
+                    machine_codes::INVALID_ARGUMENTS,
+                    severity::MEDIUM,
+                    "Non-string target path in targets array",
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
+                all_inside = false;
+                continue;
+            }
+        };
+
+        if target.chars().count() > MAX_TEXT_LENGTH {
+            findings.push(finding(
+                machine_codes::INPUT_TOO_LARGE,
+                severity::HIGH,
+                &format!("Target path '{}' exceeds MAX_TEXT_LENGTH", target),
+                Some(disposition::BLOCKING),
+                None,
+            ));
+            all_inside = false;
+            continue;
+        }
+
+        let result = crate::text::path_scope_check(root, target, platform, case_sensitive);
+
+        // Track normalized for duplicate detection
+        seen_normalized
+            .entry(result.target_normalized.clone())
+            .or_default()
+            .push(target.to_string());
+
+        normalized_targets.push(serde_json::json!({
+            "original": target,
+            "normalized": result.target_normalized,
+            "inside_root": result.inside_root,
+        }));
+
+        if !result.inside_root {
+            all_inside = false;
+            escaping_targets.push(target.to_string());
+            findings.push(finding(
+                machine_codes::PATH_SCOPE_ESCAPE,
+                severity::HIGH,
+                &format!("Target '{}' escapes root", target),
+                Some(disposition::BLOCKING),
+                None,
+            ));
+        }
+
+        if !target.is_empty() && target.starts_with('/') {
+            absolute_targets.push(target.to_string());
+            if !allow_absolute {
+                findings.push(finding(
+                    machine_codes::PATH_SCOPE_ESCAPE,
+                    severity::MEDIUM,
+                    &format!("Absolute target '{}' not allowed", target),
+                    Some(disposition::CAUTION),
+                    None,
+                ));
+            }
+        }
+
+        if target.contains("..") {
+            dotdot_targets.push(target.to_string());
+            if result.escapes_via_dotdot && result.inside_root {
+                // dotdot that normalizes inside is informational
+                findings.push(finding(
+                    machine_codes::PATH_HAS_TRAVERSAL,
+                    severity::LOW,
+                    &format!(
+                        "Target '{}' contains '..' but normalizes inside root",
+                        target
+                    ),
+                    Some(disposition::INFORMATIONAL),
+                    None,
+                ));
+            }
+        }
+    }
+
+    // Detect duplicates
+    let mut duplicate_normalized_targets = Vec::new();
+    for (norm, originals) in &seen_normalized {
+        if originals.len() > 1 {
+            duplicate_normalized_targets.push(serde_json::json!({
+                "normalized": norm,
+                "originals": originals,
+            }));
+            findings.push(finding(
+                machine_codes::PATH_BATCH_REVIEW,
+                severity::LOW,
+                &format!(
+                    "Duplicate normalized path '{}' reached by {} inputs",
+                    norm,
+                    originals.len()
+                ),
+                Some(disposition::CAUTION),
+                None,
+            ));
+        }
+    }
+
+    let machine_code = if all_inside && escaping_targets.is_empty() {
+        machine_codes::PATH_BATCH_OK
+    } else {
+        machine_codes::PATH_BATCH_REVIEW
+    };
+
+    let v = if all_inside && escaping_targets.is_empty() {
+        verdict::ALLOW
+    } else {
+        verdict::REVIEW
+    };
+
+    ToolResponse::success(
+        serde_json::json!({
+            "all_inside_root": all_inside,
+            "targets_checked": targets.len(),
+            "escaping_targets": escaping_targets,
+            "absolute_targets": absolute_targets,
+            "dotdot_targets": dotdot_targets,
+            "normalized_targets": normalized_targets,
+            "duplicate_normalized_targets": duplicate_normalized_targets,
+            "findings": findings,
+            "verdict": v,
+            "machine_code": machine_code,
+        }),
+        Some("path_batch_scope_check"),
+    )
+    .with_tool("path_batch_scope_check")
+    .with_machine_code(machine_code)
+    .with_verdict(v)
 }

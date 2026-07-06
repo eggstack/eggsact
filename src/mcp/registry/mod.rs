@@ -223,6 +223,7 @@ mod tests {
             "dependency_edit_preflight",
             "edit_preflight",
             "patch_apply_check",
+            "path_batch_scope_check",
             "path_scope_check",
             "prompt_input_inspect",
             "shell_split",
@@ -239,6 +240,7 @@ mod tests {
     fn profile_snapshot_codegg_patch_model() {
         let actual = snapshot_names("codegg_patch", ToolListAudience::Model);
         let expected = vec![
+            "diff_risk_classify",
             "edit_preflight",
             "line_range_compare",
             "line_range_extract",
@@ -256,11 +258,13 @@ mod tests {
     fn profile_snapshot_codegg_patch_harness() {
         let actual = snapshot_names("codegg_patch", ToolListAudience::Harness);
         let expected = vec![
+            "diff_risk_classify",
             "edit_preflight",
             "line_range_compare",
             "line_range_extract",
             "patch_apply_check",
             "patch_summary",
+            "path_batch_scope_check",
             "text_diff_explain",
             "text_replace_check",
         ];
@@ -395,10 +399,12 @@ mod tests {
             "code_fence_extract",
             "config_file_inspect",
             "dependency_edit_preflight",
+            "diff_risk_classify",
             "identifier_table_inspect",
             "json_shape",
             "markdown_structure",
             "repo_manifest_inspect",
+            "repo_tree_summarize",
             "text_fingerprint",
         ];
         assert_eq!(

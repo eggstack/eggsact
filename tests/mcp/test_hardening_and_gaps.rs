@@ -351,8 +351,8 @@ fn test_profile_snapshots_full_equals_all_non_hidden() {
         })
         .collect();
     assert!(
-        tool_names.len() >= 60,
-        "Full profile should have >= 60 tools, got: {}",
+        tool_names.len() >= 70,
+        "Full profile should have >= 70 tools, got: {}",
         tool_names.len()
     );
     for name in &["math_eval", "text_measure", "validate_json", "text_equal"] {

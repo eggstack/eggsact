@@ -361,7 +361,7 @@ The server reads JSON-RPC requests from stdin and writes responses to stdout. It
 
 ### Available MCP Tools
 
-The server exposes 68 tools, including:
+The server exposes 71 tools, including:
 
 - `math_eval` -- evaluate math expressions (NL or symbolic)
 - `text_measure` -- measure text properties (bytes, chars, words, lines)

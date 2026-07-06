@@ -99,7 +99,7 @@ type ClassifiedPaths = (
 );
 
 /// Collect manifest, config, and lockfile paths from a path list.
-fn classify_paths(paths: &[String]) -> ClassifiedPaths {
+fn classify_manifests(paths: &[String]) -> ClassifiedPaths {
     let mut rust_manifests = Vec::new();
     let mut python_manifests = Vec::new();
     let mut node_manifests = Vec::new();
@@ -286,7 +286,7 @@ pub fn repo_manifest_inspect(args: &Value) -> ToolResponse {
         other_manifests,
         config_paths,
         lockfile_paths,
-    ) = classify_paths(&path_strings);
+    ) = classify_manifests(&path_strings);
 
     let tool_hints = generate_tool_hints(&project_types);
 
@@ -912,6 +912,207 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
     let mut resp = ToolResponse::success(result, Some("config_file_inspect"))
         .with_machine_code(machine_code)
         .with_verdict(config_verdict);
+
+    if !findings.is_empty() {
+        resp = resp.with_findings(findings);
+    }
+
+    resp
+}
+
+// ---------------------------------------------------------------------------
+// repo_tree_summarize
+// ---------------------------------------------------------------------------
+
+pub fn repo_tree_summarize(args: &Value) -> ToolResponse {
+    let paths = match require_array_arg(args, "paths", "repo_tree_summarize") {
+        Ok(arr) => arr,
+        Err(resp) => return *resp,
+    };
+
+    let max_paths = args
+        .get("max_paths")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(1000) as usize;
+
+    if paths.len() > max_paths {
+        return ToolResponse::error_with_code(
+            "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
+            &format!(
+                "Too many paths: {} exceeds max_paths {}",
+                paths.len(),
+                max_paths
+            ),
+            None,
+            Some("repo_tree_summarize"),
+        );
+    }
+
+    // Convert to String vec
+    let path_strs: Vec<String> = paths
+        .iter()
+        .filter_map(|p| p.as_str().map(|s| s.to_string()))
+        .collect();
+
+    if path_strs.len() != paths.len() {
+        return ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            "All paths must be strings",
+            None,
+            Some("repo_tree_summarize"),
+        );
+    }
+
+    for p in &path_strs {
+        if p.chars().count() > MAX_TEXT_LENGTH {
+            return ToolResponse::error_with_code(
+                "input_too_large",
+                machine_codes::INPUT_TOO_LARGE,
+                &format!("Path '{}' exceeds MAX_TEXT_LENGTH", p),
+                None,
+                Some("repo_tree_summarize"),
+            );
+        }
+    }
+
+    let (buckets, entrypoint_candidates, high_leverage_paths, tool_hints, raw_findings) =
+        classify_paths(&path_strs);
+
+    let mut directory_count = 0usize;
+    let mut file_count = 0usize;
+    for p in &path_strs {
+        let normalized = p.replace('\\', "/");
+        if normalized.ends_with('/') || normalized.ends_with("/.") || normalized.ends_with("/..") {
+            directory_count += 1;
+        } else {
+            let filename = normalized.rsplit('/').next().unwrap_or("");
+            if filename.contains('.') {
+                file_count += 1;
+            } else {
+                directory_count += 1;
+            }
+        }
+    }
+
+    let mut project_types = Vec::new();
+    let manifest_paths = buckets.get("manifests").cloned().unwrap_or_default();
+    let has_rust = manifest_paths.iter().any(|p| p.ends_with("Cargo.toml"));
+    let has_python = manifest_paths.iter().any(|p| {
+        p.ends_with("pyproject.toml")
+            || p.ends_with("setup.py")
+            || p.ends_with("setup.cfg")
+            || p.ends_with("requirements.txt")
+    });
+    let has_node = manifest_paths
+        .iter()
+        .any(|p| p.ends_with("package.json") || p.ends_with("tsconfig.json"));
+    let has_go = manifest_paths.iter().any(|p| p.ends_with("go.mod"));
+
+    if has_rust {
+        project_types.push("rust".to_string());
+    }
+    if has_python {
+        project_types.push("python".to_string());
+    }
+    if has_node {
+        project_types.push("node".to_string());
+    }
+    if has_go {
+        project_types.push("go".to_string());
+    }
+    if project_types.len() > 1 {
+        project_types.push("mixed".to_string());
+    }
+    if project_types.is_empty() {
+        project_types.push("unknown".to_string());
+    }
+
+    let mut findings = Vec::new();
+    let has_lockfile = buckets.contains_key("lockfiles");
+    if !manifest_paths.is_empty() && !has_lockfile {
+        findings.push(finding(
+            machine_codes::REPO_TREE_REVIEW,
+            severity::MEDIUM,
+            "Manifest found without lockfile",
+            Some(disposition::CAUTION),
+            None,
+        ));
+    }
+
+    let total = path_strs.len();
+    let generated_count = buckets.get("generated").map_or(0, |v| v.len());
+    let vendor_count = buckets.get("vendor").map_or(0, |v| v.len());
+
+    if total > 0 {
+        let gen_pct = (generated_count as f64 / total as f64) * 100.0;
+        if gen_pct > 50.0 {
+            findings.push(finding(
+                machine_codes::REPO_TREE_REVIEW,
+                severity::MEDIUM,
+                &format!(
+                    "Unusually many generated paths ({}/{} = {:.0}%)",
+                    generated_count, total, gen_pct
+                ),
+                Some(disposition::CAUTION),
+                None,
+            ));
+        }
+        let vend_pct = (vendor_count as f64 / total as f64) * 100.0;
+        if vend_pct > 50.0 {
+            findings.push(finding(
+                machine_codes::REPO_TREE_REVIEW,
+                severity::MEDIUM,
+                &format!(
+                    "Unusually many vendor/dependency paths ({}/{} = {:.0}%)",
+                    vendor_count, total, vend_pct
+                ),
+                Some(disposition::CAUTION),
+                None,
+            ));
+        }
+    }
+
+    for msg in &raw_findings {
+        findings.push(finding(
+            machine_codes::REPO_TREE_REVIEW,
+            severity::LOW,
+            msg,
+            Some(disposition::INFORMATIONAL),
+            None,
+        ));
+    }
+
+    let has_review = findings.iter().any(|f| {
+        f.get("severity")
+            .and_then(|s| s.as_str())
+            .map(|s| s == "high" || s == "medium")
+            .unwrap_or(false)
+    });
+
+    let (tree_verdict, machine_code) = if has_review {
+        (verdict::REVIEW, machine_codes::REPO_TREE_REVIEW)
+    } else {
+        (verdict::ALLOW, machine_codes::REPO_TREE_OK)
+    };
+
+    let result = serde_json::json!({
+        "project_types": project_types,
+        "path_count": total,
+        "directory_count": directory_count,
+        "file_count": file_count,
+        "buckets": buckets,
+        "entrypoint_candidates": entrypoint_candidates,
+        "high_leverage_paths": high_leverage_paths,
+        "tool_hints": tool_hints,
+        "verdict": tree_verdict,
+        "machine_code": machine_code,
+    });
+
+    let mut resp = ToolResponse::success(result, Some("repo_tree_summarize"))
+        .with_machine_code(machine_code)
+        .with_verdict(tree_verdict);
 
     if !findings.is_empty() {
         resp = resp.with_findings(findings);

@@ -293,6 +293,16 @@ Composite security-oriented text hygiene pass. Runs text_inspect, unicode_policy
 
 ## `codegg_patch`
 
+### `diff_risk_classify`
+
+Classify unified diffs by review risk and routing category. Reports risk categories, review focus items, and recommended next tools for reviewer agents.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_patch`
+- **Required args**:
+  - `patch_text` (string)
+
 ### `edit_preflight`
 
 Composite: validate a proposed edit before applying it. Calls text_replace_check, patch_apply_check, line_range_extract, text_fingerprint, and text_diff_explain as needed. Optionally composes path_scope_check (when file_path + workspace_root are provided), text_fingerprint newline detection (when newline_policy is not "skip"), and text_security_inspect (when unicode_policy is not "skip"). Returns ok_to_apply verdict with findings and machine codes.
@@ -669,6 +679,16 @@ Composite: inspect proposed dependency file changes before applying. Detects add
   - `old_text` (string)
   - `new_text` (string)
 
+### `diff_risk_classify`
+
+Classify unified diffs by review risk and routing category. Reports risk categories, review focus items, and recommended next tools for reviewer agents.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_repo_audit`
+- **Required args**:
+  - `patch_text` (string)
+
 ### `identifier_table_inspect`
 
 Inspect a table of identifiers for casefold collisions, normalization collisions, confusable/near-collisions, style variants, reserved keyword hits, and mixed naming style groups. Accepts structured entries with name, kind, file, and line metadata.
@@ -704,6 +724,16 @@ Parse Markdown structure with a deterministic line scanner: headings (level, tex
 Classify project manifests from a bounded path list. Detects Rust, Python, Node, Go, mixed, or unknown projects and emits tool hints for downstream inspection and command policy.
 
 - **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_repo_audit`
+- **Required args**:
+  - `paths` (array)
+
+### `repo_tree_summarize`
+
+Summarize repository shape from a bounded path list and optional metadata. Provides path bucketing, entrypoint/config/test/source/generated/vendor classification, and recommended next tools.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
 - **Exposure**: contextual
 - **Profile**: `codegg_repo_audit`
 - **Required args**:

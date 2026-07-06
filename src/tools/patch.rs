@@ -2,6 +2,7 @@ use crate::mcp::machine_codes;
 use crate::mcp::schemas::{disposition, finding, severity, verdict, ToolResponse};
 use crate::tools::helpers::*;
 use serde_json::Value;
+use std::collections::HashMap;
 
 pub fn patch_apply_check(args: &Value) -> ToolResponse {
     let original_text_val = args.get("original_text");
@@ -1086,5 +1087,424 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     if !findings.is_empty() {
         resp = resp.with_findings(findings.clone());
     }
+    resp
+}
+
+// ---------------------------------------------------------------------------
+// diff_risk_classify
+// ---------------------------------------------------------------------------
+
+pub fn diff_risk_classify(args: &Value) -> ToolResponse {
+    let patch_text = match args.get("patch_text").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => {
+            return ToolResponse::error_with_code(
+                "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
+                "Missing 'patch_text' parameter",
+                None,
+                Some("diff_risk_classify"),
+            )
+        }
+    };
+
+    let max_patch_chars = args
+        .get("max_patch_chars")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(200_000) as usize;
+
+    if patch_text.chars().count() > max_patch_chars {
+        return ToolResponse::error_with_code(
+            "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
+            &format!(
+                "Patch text length {} exceeds max_patch_chars {}",
+                patch_text.chars().count(),
+                max_patch_chars
+            ),
+            None,
+            Some("diff_risk_classify"),
+        );
+    }
+
+    // Parse the patch
+    let parse_result = crate::text::patch::parse_unified_diff(patch_text);
+    if !parse_result.ok {
+        let findings = vec![finding(
+            machine_codes::PATCH_FAILED,
+            severity::HIGH,
+            &parse_result
+                .error
+                .unwrap_or_else(|| "Patch parse failed".to_string()),
+            Some(disposition::BLOCKING),
+            None,
+        )];
+        let result = serde_json::json!({
+            "summary": "Patch failed to parse",
+            "patch_summary": null,
+            "risk_categories": [],
+            "files_by_category": {},
+            "review_focus": [],
+            "recommended_next_tool": null,
+            "verdict": verdict::BLOCK,
+            "machine_code": machine_codes::PATCH_FAILED,
+        });
+        return ToolResponse::success(result, Some("diff_risk_classify"))
+            .with_tool("diff_risk_classify")
+            .with_machine_code(machine_codes::PATCH_FAILED)
+            .with_verdict(verdict::BLOCK)
+            .with_findings(findings);
+    }
+
+    // Get patch summary
+    let summary_result = crate::text::patch::patch_summary(patch_text);
+
+    // Read policy
+    let policy = args.get("policy").cloned().unwrap_or(serde_json::json!({}));
+    let review_ci = policy
+        .get("review_ci_changes")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let review_deps = policy
+        .get("review_dependency_changes")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let review_security = policy
+        .get("review_security_sensitive_paths")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let _allow_docs_only = policy
+        .get("allow_docs_only")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+
+    // Classify each file
+    let mut risk_categories: Vec<String> = Vec::new();
+    let mut files_by_category: HashMap<String, Vec<String>> = HashMap::new();
+    let mut review_focus: Vec<serde_json::Value> = Vec::new();
+    let mut findings = Vec::new();
+    let mut all_paths = Vec::new();
+    let mut has_source = false;
+    let mut has_config = false;
+    let mut has_dependency = false;
+    let mut has_ci = false;
+    let mut has_security = false;
+    let mut has_generated = false;
+    let mut has_vendor = false;
+    let mut has_binary = false;
+    let mut _docs_only = true;
+    let mut _tests_only = true;
+
+    for file in &parse_result.files {
+        let path = if file.new_file.is_empty() || file.new_file == "/dev/null" {
+            &file.old_file
+        } else {
+            &file.new_file
+        };
+        all_paths.push(path.to_string());
+
+        let category = classify_diff_path(path);
+
+        match category.as_str() {
+            "manifests" => {
+                has_dependency = true;
+                _docs_only = false;
+                _tests_only = false;
+                risk_categories.push("dependency_change".to_string());
+                files_by_category
+                    .entry("dependency_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+                if review_deps {
+                    review_focus.push(serde_json::json!({
+                        "path": path,
+                        "category": "dependency_change",
+                        "reason": "Dependency manifest changed"
+                    }));
+                }
+            }
+            "lockfiles" => {
+                has_dependency = true;
+                _docs_only = false;
+                _tests_only = false;
+                risk_categories.push("lockfile_change".to_string());
+                files_by_category
+                    .entry("lockfile_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+                if review_deps {
+                    review_focus.push(serde_json::json!({
+                        "path": path,
+                        "category": "lockfile_change",
+                        "reason": "Lockfile changed"
+                    }));
+                }
+            }
+            "ci" => {
+                has_ci = true;
+                _docs_only = false;
+                _tests_only = false;
+                risk_categories.push("ci_change".to_string());
+                files_by_category
+                    .entry("ci_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+                if review_ci {
+                    review_focus.push(serde_json::json!({
+                        "path": path,
+                        "category": "ci_change",
+                        "reason": "CI configuration changed"
+                    }));
+                }
+            }
+            "configs" => {
+                has_config = true;
+                _docs_only = false;
+                _tests_only = false;
+                risk_categories.push("config_change".to_string());
+                files_by_category
+                    .entry("config_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+            }
+            "tests" => {
+                risk_categories.push("tests_change".to_string());
+                files_by_category
+                    .entry("tests_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+                // tests_only stays true unless we see source/config/dependency/ci
+            }
+            "docs" => {
+                risk_categories.push("docs_change".to_string());
+                files_by_category
+                    .entry("docs_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+                // docs_only stays true unless we see source/config/dependency/ci
+            }
+            "generated" => {
+                has_generated = true;
+                _docs_only = false;
+                _tests_only = false;
+                risk_categories.push("generated_change".to_string());
+                files_by_category
+                    .entry("generated_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+            }
+            "vendor" => {
+                has_vendor = true;
+                _docs_only = false;
+                _tests_only = false;
+                risk_categories.push("vendor_change".to_string());
+                files_by_category
+                    .entry("vendor_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+            }
+            "scripts" => {
+                _docs_only = false;
+                _tests_only = false;
+                risk_categories.push("source_change".to_string());
+                files_by_category
+                    .entry("source_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+            }
+            _ => {
+                // source or unknown
+                has_source = true;
+                _docs_only = false;
+                _tests_only = false;
+                risk_categories.push("source_change".to_string());
+                files_by_category
+                    .entry("source_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+            }
+        }
+
+        // Security-sensitive path detection
+        let lower_path = path.to_lowercase();
+        if review_security
+            && (lower_path.contains("auth")
+                || lower_path.contains("token")
+                || lower_path.contains("secret")
+                || lower_path.contains("crypto")
+                || lower_path.contains("tls")
+                || lower_path.contains("ssl")
+                || lower_path.contains("permission")
+                || lower_path.contains("policy")
+                || lower_path.contains("sandbox")
+                || lower_path.contains("exec")
+                || lower_path.contains("shell"))
+        {
+            has_security = true;
+            risk_categories.push("security_sensitive".to_string());
+            files_by_category
+                .entry("security_sensitive".to_string())
+                .or_default()
+                .push(path.to_string());
+            review_focus.push(serde_json::json!({
+                "path": path,
+                "category": "security_sensitive",
+                "reason": "Path contains security-sensitive keywords"
+            }));
+        }
+    }
+
+    // Binary patch detection
+    if summary_result.binary_patch_detected {
+        has_binary = true;
+        risk_categories.push("binary_change".to_string());
+        findings.push(finding(
+            machine_codes::DIFF_RISK_REVIEW,
+            severity::MEDIUM,
+            "Binary patch content detected",
+            Some(disposition::CAUTION),
+            None,
+        ));
+        review_focus.push(serde_json::json!({
+            "path": "<binary>",
+            "category": "binary_change",
+            "reason": "Binary patch content detected"
+        }));
+    }
+
+    // Rename detection
+    if !summary_result.renames_detected.is_empty() {
+        risk_categories.push("rename".to_string());
+    }
+
+    // Large diff detection
+    let total_changes = summary_result.additions + summary_result.deletions;
+    if total_changes > 500 {
+        risk_categories.push("large_diff".to_string());
+        findings.push(finding(
+            machine_codes::DIFF_RISK_REVIEW,
+            severity::LOW,
+            &format!(
+                "Large diff: {} additions + {} deletions",
+                summary_result.additions, summary_result.deletions
+            ),
+            Some(disposition::INFORMATIONAL),
+            None,
+        ));
+    }
+
+    // Deduplicate risk categories
+    risk_categories.sort();
+    risk_categories.dedup();
+
+    // Determine overall verdict
+    let has_blocking = has_security || has_binary;
+    let has_review_reasons =
+        has_ci || has_dependency || has_config || has_source || has_generated || has_vendor;
+
+    let (diff_verdict, machine_code) = if has_blocking {
+        (verdict::BLOCK, machine_codes::DIFF_RISK_BLOCK)
+    } else if has_review_reasons || !review_focus.is_empty() {
+        (verdict::REVIEW, machine_codes::DIFF_RISK_REVIEW)
+    } else {
+        (verdict::ALLOW, machine_codes::DIFF_RISK_OK)
+    };
+
+    // Build findings for dependency changes
+    if has_dependency && review_deps {
+        findings.push(finding(
+            machine_codes::DIFF_RISK_REVIEW,
+            severity::MEDIUM,
+            "Dependency manifest or lockfile changed",
+            Some(disposition::CAUTION),
+            None,
+        ));
+    }
+    if has_ci && review_ci {
+        findings.push(finding(
+            machine_codes::DIFF_RISK_REVIEW,
+            severity::MEDIUM,
+            "CI configuration changed",
+            Some(disposition::CAUTION),
+            None,
+        ));
+    }
+    if has_security && review_security {
+        findings.push(finding(
+            machine_codes::DIFF_RISK_BLOCK,
+            severity::HIGH,
+            "Security-sensitive path changed",
+            Some(disposition::BLOCKING),
+            None,
+        ));
+    }
+    if has_generated {
+        findings.push(finding(
+            machine_codes::DIFF_RISK_REVIEW,
+            severity::LOW,
+            "Generated file changed",
+            Some(disposition::INFORMATIONAL),
+            None,
+        ));
+    }
+    if has_vendor {
+        findings.push(finding(
+            machine_codes::DIFF_RISK_REVIEW,
+            severity::LOW,
+            "Vendor/dependency file changed",
+            Some(disposition::INFORMATIONAL),
+            None,
+        ));
+    }
+
+    // Recommended next tool
+    let recommended = if has_dependency && review_deps {
+        Some("dependency_edit_preflight")
+    } else if has_config {
+        Some("config_file_inspect")
+    } else if has_source || has_security {
+        Some("patch_apply_check")
+    } else if has_ci {
+        Some("command_preflight")
+    } else {
+        None
+    };
+
+    // Build summary
+    let summary_str = format!(
+        "{} files, +{} -{}, risk categories: [{}]",
+        summary_result.files_changed,
+        summary_result.additions,
+        summary_result.deletions,
+        risk_categories.join(", ")
+    );
+
+    let result = serde_json::json!({
+        "summary": summary_str,
+        "patch_summary": {
+            "files_changed": summary_result.files_changed,
+            "hunks_total": summary_result.hunks_total,
+            "additions": summary_result.additions,
+            "deletions": summary_result.deletions,
+            "renames_detected": summary_result.renames_detected,
+            "binary_patch_detected": summary_result.binary_patch_detected,
+        },
+        "risk_categories": risk_categories,
+        "files_by_category": files_by_category,
+        "review_focus": review_focus,
+        "recommended_next_tool": recommended,
+        "verdict": diff_verdict,
+        "machine_code": machine_code,
+    });
+
+    let mut resp = ToolResponse::success(result, Some("diff_risk_classify"))
+        .with_tool("diff_risk_classify")
+        .with_machine_code(machine_code)
+        .with_verdict(diff_verdict);
+
+    if !findings.is_empty() {
+        resp = resp.with_findings(findings);
+    }
+
     resp
 }
