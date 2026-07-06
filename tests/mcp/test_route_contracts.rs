@@ -20,11 +20,18 @@ fn full_harness_registry() -> ToolRegistry {
 }
 
 /// Call a tool and return the ToolResponse (not just the result).
+/// Panics if the registry rejects the call (schema validation error).
 fn call_tool_response(name: &str, args: Value) -> ToolResponse {
     let registry = full_harness_registry();
     registry
         .call_json(name, args)
         .unwrap_or_else(|e| panic!("Tool call to '{name}' failed at registry level: {e}"))
+}
+
+/// Call a tool and return the Result (preserving registry-level errors).
+fn try_call_tool_response(name: &str, args: Value) -> Result<ToolResponse, String> {
+    let registry = full_harness_registry();
+    registry.call_json(name, args).map_err(|e| e.to_string())
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -185,6 +192,262 @@ fn test_patch_apply_check_success_has_machine_code_and_verdict() {
         result.get("verdict").is_some(),
         "patch_apply_check result must include verdict"
     );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ROUTE-CRITICAL TOOL FAILURE/ERROR PATHS
+//
+// Tests verify that error responses (both handler-level and
+// registry-level) carry machine_code and that findings have canonical
+// fields. Invalid enum values and missing required args are caught at
+// registry level (schema validation) and return Err; handler-level
+// errors return Ok(ToolResponse { ok: false, machine_code }).
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Helper: assert a ToolResponse from an error path has machine_code.
+fn assert_error_response_has_machine_code(resp: &ToolResponse, tool: &str, label: &str) {
+    assert!(
+        resp.machine_code.is_some(),
+        "{tool} ({label}): error response must have machine_code"
+    );
+    if let Some(ref result) = resp.result {
+        if let Some(findings) = result.get("findings").and_then(|f| f.as_array()) {
+            for f in findings {
+                assert!(
+                    f.get("code").is_some(),
+                    "{tool} ({label}): finding missing code: {f}"
+                );
+                assert!(
+                    f.get("severity").is_some(),
+                    "{tool} ({label}): finding missing severity: {f}"
+                );
+                assert!(
+                    f.get("message").is_some(),
+                    "{tool} ({label}): finding missing message: {f}"
+                );
+            }
+        }
+    }
+}
+
+// -- command_preflight error paths --
+
+#[test]
+fn test_command_preflight_empty_command_has_machine_code() {
+    let resp = call_tool_response("command_preflight", json!({"command": ""}));
+    assert_error_response_has_machine_code(&resp, "command_preflight", "empty command");
+}
+
+#[test]
+fn test_command_preflight_invalid_platform_returns_registry_error() {
+    let result = try_call_tool_response(
+        "command_preflight",
+        json!({"command": "echo hi", "platform": "beos"}),
+    );
+    assert!(
+        result.is_err(),
+        "command_preflight should return registry error for invalid platform"
+    );
+}
+
+#[test]
+fn test_command_preflight_invalid_policy_returns_registry_error() {
+    let result = try_call_tool_response(
+        "command_preflight",
+        json!({"command": "echo hi", "policy": "turbo"}),
+    );
+    assert!(
+        result.is_err(),
+        "command_preflight should return registry error for invalid policy"
+    );
+}
+
+// -- config_preflight error paths --
+
+#[test]
+fn test_config_preflight_invalid_json_has_machine_code() {
+    let resp = call_tool_response(
+        "config_preflight",
+        json!({"text": "{invalid json", "format": "json"}),
+    );
+    assert_error_response_has_machine_code(&resp, "config_preflight", "invalid JSON");
+}
+
+#[test]
+fn test_config_preflight_invalid_format_returns_registry_error() {
+    let result = try_call_tool_response(
+        "config_preflight",
+        json!({"text": "x = 1", "format": "xml"}),
+    );
+    assert!(
+        result.is_err(),
+        "config_preflight should return registry error for invalid format"
+    );
+}
+
+// -- text_security_inspect error paths --
+
+#[test]
+fn test_text_security_inspect_with_controls_has_machine_code() {
+    let resp = call_tool_response(
+        "text_security_inspect",
+        json!({"text": "hello\u{200b}world"}),
+    );
+    assert_error_response_has_machine_code(&resp, "text_security_inspect", "zero-width space");
+}
+
+#[test]
+fn test_text_security_inspect_invalid_policy_returns_registry_error() {
+    let result = try_call_tool_response(
+        "text_security_inspect",
+        json!({"text": "hello", "policy": "nonexistent"}),
+    );
+    assert!(
+        result.is_err(),
+        "text_security_inspect should return registry error for invalid policy"
+    );
+}
+
+// -- edit_preflight error paths --
+
+#[test]
+fn test_edit_preflight_missing_old_has_machine_code() {
+    let resp = call_tool_response(
+        "edit_preflight",
+        json!({
+            "original": "hello world",
+            "new": "goodbye world"
+        }),
+    );
+    assert!(!resp.ok, "edit_preflight should fail when 'old' is missing");
+    assert_error_response_has_machine_code(&resp, "edit_preflight", "missing old");
+}
+
+#[test]
+fn test_edit_preflight_missing_new_has_machine_code() {
+    let resp = call_tool_response(
+        "edit_preflight",
+        json!({
+            "original": "hello world",
+            "old": "hello"
+        }),
+    );
+    assert!(!resp.ok, "edit_preflight should fail when 'new' is missing");
+    assert_error_response_has_machine_code(&resp, "edit_preflight", "missing new");
+}
+
+#[test]
+fn test_edit_preflight_invalid_mode_returns_registry_error() {
+    let result = try_call_tool_response(
+        "edit_preflight",
+        json!({
+            "original": "hello world",
+            "old": "hello",
+            "new": "world",
+            "replacement_mode": "quantum"
+        }),
+    );
+    assert!(
+        result.is_err(),
+        "edit_preflight should return registry error for invalid mode"
+    );
+}
+
+#[test]
+fn test_edit_preflight_line_range_missing_start_has_machine_code() {
+    let resp = call_tool_response(
+        "edit_preflight",
+        json!({
+            "original": "hello world",
+            "replacement_mode": "line_range",
+            "new": "replaced"
+        }),
+    );
+    assert!(
+        !resp.ok,
+        "edit_preflight should fail for line_range missing start_line"
+    );
+    assert_error_response_has_machine_code(
+        &resp,
+        "edit_preflight",
+        "line_range missing start_line",
+    );
+}
+
+// -- patch_apply_check error paths --
+
+#[test]
+fn test_patch_apply_check_malformed_patch_has_machine_code() {
+    let resp = call_tool_response(
+        "patch_apply_check",
+        json!({
+            "original_text": "hello\n",
+            "patch_text": "not a valid unified diff"
+        }),
+    );
+    assert_error_response_has_machine_code(&resp, "patch_apply_check", "malformed patch");
+}
+
+#[test]
+fn test_patch_apply_check_missing_original_returns_registry_error() {
+    let result = try_call_tool_response(
+        "patch_apply_check",
+        json!({
+            "patch_text": "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-hello\n+world\n"
+        }),
+    );
+    assert!(
+        result.is_err(),
+        "patch_apply_check should return registry error for missing original_text"
+    );
+}
+
+#[test]
+fn test_patch_apply_check_missing_patch_returns_registry_error() {
+    let result = try_call_tool_response(
+        "patch_apply_check",
+        json!({
+            "original_text": "hello\n"
+        }),
+    );
+    assert!(
+        result.is_err(),
+        "patch_apply_check should return registry error for missing patch_text"
+    );
+}
+
+// -- Composite sweep: all handler-level error paths have machine_code --
+
+#[test]
+fn test_all_route_critical_handler_errors_have_machine_code_and_findings() {
+    let handler_error_cases: Vec<(&str, Value, &str)> = vec![
+        ("command_preflight", json!({"command": ""}), "empty command"),
+        (
+            "config_preflight",
+            json!({"text": "not = valid = toml", "format": "toml"}),
+            "invalid toml",
+        ),
+        (
+            "text_security_inspect",
+            json!({"text": "hello\u{200b}world"}),
+            "zero-width space",
+        ),
+        (
+            "edit_preflight",
+            json!({"original": "abc", "old": "a"}),
+            "missing new",
+        ),
+        (
+            "patch_apply_check",
+            json!({"original_text": "hello\n", "patch_text": "garbage"}),
+            "malformed patch",
+        ),
+    ];
+
+    for (tool, args, label) in handler_error_cases {
+        let resp = call_tool_response(tool, args);
+        assert_error_response_has_machine_code(&resp, tool, label);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════

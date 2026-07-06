@@ -469,8 +469,30 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 );
             }
             // Detect inverted range before sub-tool dispatch
-            let start = args.get("start_line").and_then(|v| v.as_u64()).unwrap();
-            let end = args.get("end_line").and_then(|v| v.as_u64()).unwrap();
+            let start = match args.get("start_line").and_then(|v| v.as_u64()) {
+                Some(v) => v,
+                None => {
+                    return ToolResponse::error_with_code(
+                        "invalid_arguments",
+                        machine_codes::EDIT_ARGUMENTS_INVALID,
+                        "Field 'start_line' must be a positive integer",
+                        None,
+                        Some("edit_preflight"),
+                    );
+                }
+            };
+            let end = match args.get("end_line").and_then(|v| v.as_u64()) {
+                Some(v) => v,
+                None => {
+                    return ToolResponse::error_with_code(
+                        "invalid_arguments",
+                        machine_codes::EDIT_ARGUMENTS_INVALID,
+                        "Field 'end_line' must be a positive integer",
+                        None,
+                        Some("edit_preflight"),
+                    );
+                }
+            };
             if start > end {
                 return ToolResponse::error_with_code(
                     "invalid_arguments",
@@ -540,8 +562,30 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
 
     match replacement_mode {
         "literal" => {
-            let old = args.get("old").and_then(|v| v.as_str()).unwrap();
-            let new = args.get("new").and_then(|v| v.as_str()).unwrap();
+            let old = match args.get("old").and_then(|v| v.as_str()) {
+                Some(v) => v,
+                None => {
+                    return ToolResponse::error_with_code(
+                        "invalid_arguments",
+                        machine_codes::EDIT_ARGUMENTS_INVALID,
+                        "Field 'old' must be a string",
+                        None,
+                        Some("edit_preflight"),
+                    );
+                }
+            };
+            let new = match args.get("new").and_then(|v| v.as_str()) {
+                Some(v) => v,
+                None => {
+                    return ToolResponse::error_with_code(
+                        "invalid_arguments",
+                        machine_codes::EDIT_ARGUMENTS_INVALID,
+                        "Field 'new' must be a string",
+                        None,
+                        Some("edit_preflight"),
+                    );
+                }
+            };
             let tr_args = serde_json::json!({
                 "text": original,
                 "old": old,
@@ -572,7 +616,18 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             }
         }
         "patch" => {
-            let patch_text = args.get("patch").and_then(|v| v.as_str()).unwrap();
+            let patch_text = match args.get("patch").and_then(|v| v.as_str()) {
+                Some(v) => v,
+                None => {
+                    return ToolResponse::error_with_code(
+                        "invalid_arguments",
+                        machine_codes::EDIT_ARGUMENTS_INVALID,
+                        "Field 'patch' must be a string",
+                        None,
+                        Some("edit_preflight"),
+                    );
+                }
+            };
             let pa_args = serde_json::json!({
                 "original_text": original,
                 "patch_text": patch_text,
@@ -614,8 +669,30 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             }
         }
         "line_range" => {
-            let start_line = args.get("start_line").and_then(|v| v.as_u64()).unwrap() as usize;
-            let end_line = args.get("end_line").and_then(|v| v.as_u64()).unwrap() as usize;
+            let start_line = match args.get("start_line").and_then(|v| v.as_u64()) {
+                Some(v) => v as usize,
+                None => {
+                    return ToolResponse::error_with_code(
+                        "invalid_arguments",
+                        machine_codes::EDIT_ARGUMENTS_INVALID,
+                        "Field 'start_line' must be a positive integer",
+                        None,
+                        Some("edit_preflight"),
+                    );
+                }
+            };
+            let end_line = match args.get("end_line").and_then(|v| v.as_u64()) {
+                Some(v) => v as usize,
+                None => {
+                    return ToolResponse::error_with_code(
+                        "invalid_arguments",
+                        machine_codes::EDIT_ARGUMENTS_INVALID,
+                        "Field 'end_line' must be a positive integer",
+                        None,
+                        Some("edit_preflight"),
+                    );
+                }
+            };
             let lr_args = serde_json::json!({
                 "text": original,
                 "start_line": start_line,

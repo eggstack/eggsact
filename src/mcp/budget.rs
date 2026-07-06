@@ -105,7 +105,7 @@ pub enum BudgetTier {
 pub struct ToolBudget {
     pub max_input_bytes: usize,
     pub max_output_bytes: usize,
-    pub max_text_chars: usize,
+    pub max_text_bytes: usize,
     pub max_list_items: usize,
     pub max_regex_pattern_chars: usize,
     pub max_regex_samples: usize,
@@ -119,7 +119,7 @@ impl ToolBudget {
     pub const CHEAP: Self = Self {
         max_input_bytes: 1_000_000,
         max_output_bytes: 1_000_000,
-        max_text_chars: 100_000,
+        max_text_bytes: 100_000,
         max_list_items: 10_000,
         max_regex_pattern_chars: 1_000,
         max_regex_samples: 100,
@@ -132,7 +132,7 @@ impl ToolBudget {
     pub const MODERATE: Self = Self {
         max_input_bytes: Self::CHEAP.max_input_bytes,
         max_output_bytes: Self::CHEAP.max_output_bytes,
-        max_text_chars: Self::CHEAP.max_text_chars,
+        max_text_bytes: Self::CHEAP.max_text_bytes,
         max_list_items: Self::CHEAP.max_list_items,
         max_regex_pattern_chars: Self::CHEAP.max_regex_pattern_chars,
         max_regex_samples: Self::CHEAP.max_regex_samples,
@@ -145,7 +145,7 @@ impl ToolBudget {
     pub const HEAVY: Self = Self {
         max_input_bytes: Self::MODERATE.max_input_bytes,
         max_output_bytes: 2_000_000,
-        max_text_chars: Self::MODERATE.max_text_chars,
+        max_text_bytes: Self::MODERATE.max_text_bytes,
         max_list_items: Self::MODERATE.max_list_items,
         max_regex_pattern_chars: Self::MODERATE.max_regex_pattern_chars,
         max_regex_samples: Self::MODERATE.max_regex_samples,
@@ -329,23 +329,26 @@ impl BudgetContext {
         }
     }
 
-    /// Returns `Err(TOOL_RESPONSE)` if the text exceeds `max_text_chars`.
+    /// Returns `Err(TOOL_RESPONSE)` if the text exceeds `max_text_bytes`.
+    ///
+    /// Enforcement is byte-based: `str::len()` returns the number of UTF-8
+    /// bytes, not Unicode scalar values.
     #[allow(clippy::result_large_err)]
-    pub fn check_text_len(
+    pub fn check_text_bytes(
         &self,
         field_name: &str,
         text: &str,
         tool_name: &str,
     ) -> Result<(), ToolResponse> {
-        if text.len() > self.budget.max_text_chars {
+        if text.len() > self.budget.max_text_bytes {
             Err(ToolResponse::error_with_code(
                 "input_too_large",
                 crate::mcp::machine_codes::INPUT_TOO_LARGE,
                 &format!(
-                    "Field '{}' length {} exceeds limit {}",
+                    "Field '{}' length {} bytes exceeds limit {} bytes",
                     field_name,
                     text.len(),
-                    self.budget.max_text_chars
+                    self.budget.max_text_bytes
                 ),
                 None,
                 Some(tool_name),
@@ -422,7 +425,7 @@ pub struct SubBudget {
     pub deadline: Option<Instant>,
     pub max_input_bytes: usize,
     pub max_output_bytes: usize,
-    pub max_text_chars: usize,
+    pub max_text_bytes: usize,
     pub max_list_items: usize,
     pub max_findings: usize,
 }
@@ -466,7 +469,7 @@ impl CompositeBudgetAllocator {
             deadline: self.deadline,
             max_input_bytes: (self.parent_budget.max_input_bytes / divisor).max(1),
             max_output_bytes: (self.parent_budget.max_output_bytes / divisor).max(1),
-            max_text_chars: (self.parent_budget.max_text_chars / divisor).max(1),
+            max_text_bytes: (self.parent_budget.max_text_bytes / divisor).max(1),
             max_list_items: (self.parent_budget.max_list_items / divisor).max(1),
             max_findings: (self.parent_budget.max_findings / divisor).max(1),
         }
@@ -487,7 +490,7 @@ pub fn sub_budget_context(parent: &BudgetContext, sub: &SubBudget) -> BudgetCont
         budget: ToolBudget {
             max_input_bytes: sub.max_input_bytes,
             max_output_bytes: sub.max_output_bytes,
-            max_text_chars: sub.max_text_chars,
+            max_text_bytes: sub.max_text_bytes,
             max_list_items: sub.max_list_items,
             max_regex_pattern_chars: parent.budget.max_regex_pattern_chars,
             max_regex_samples: parent.budget.max_regex_samples,
@@ -613,10 +616,10 @@ mod tests {
         assert_eq!(sub2.max_output_bytes, expected_output);
         assert_eq!(sub3.max_output_bytes, expected_output);
 
-        let expected_text = ToolBudget::HEAVY.max_text_chars / 3;
-        assert_eq!(sub1.max_text_chars, expected_text);
-        assert_eq!(sub2.max_text_chars, expected_text);
-        assert_eq!(sub3.max_text_chars, expected_text);
+        let expected_text = ToolBudget::HEAVY.max_text_bytes / 3;
+        assert_eq!(sub1.max_text_bytes, expected_text);
+        assert_eq!(sub2.max_text_bytes, expected_text);
+        assert_eq!(sub3.max_text_bytes, expected_text);
     }
 
     #[test]
@@ -648,7 +651,7 @@ mod tests {
             deadline: Some(Instant::now() - Duration::from_millis(100)),
             max_input_bytes: 1000,
             max_output_bytes: 1000,
-            max_text_chars: 1000,
+            max_text_bytes: 1000,
             max_list_items: 100,
             max_findings: 10,
         };
@@ -699,17 +702,17 @@ mod tests {
     }
 
     #[test]
-    fn check_text_len_ok_when_within_limit() {
+    fn check_text_bytes_ok_when_within_limit() {
         let ctx = BudgetContext::new(ToolBudget::CHEAP);
-        assert!(ctx.check_text_len("text", "hello", "test").is_ok());
+        assert!(ctx.check_text_bytes("text", "hello", "test").is_ok());
     }
 
     #[test]
-    fn check_text_len_err_when_exceeds_limit() {
+    fn check_text_bytes_err_when_exceeds_limit() {
         let ctx = BudgetContext::new(ToolBudget::CHEAP);
-        let long_text = "x".repeat(ToolBudget::CHEAP.max_text_chars + 1);
+        let long_text = "x".repeat(ToolBudget::CHEAP.max_text_bytes + 1);
         let err = ctx
-            .check_text_len("text", &long_text, "my_tool")
+            .check_text_bytes("text", &long_text, "my_tool")
             .unwrap_err();
         assert!(err.error.as_deref().unwrap_or("").contains("exceeds limit"));
     }

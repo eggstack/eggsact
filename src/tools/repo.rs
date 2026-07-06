@@ -761,11 +761,7 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
 
         // Secret detection
         if SECRET_PATTERNS.iter().any(|p| lower_key.contains(p)) {
-            let masked = if val.len() > 4 {
-                format!("{}***{}", &val[..2], &val[val.len() - 2..])
-            } else {
-                "***".to_string()
-            };
+            let masked = mask_secret_preview(val);
             secret_risks.push(serde_json::json!({
                 "key": key,
                 "value_preview": masked,

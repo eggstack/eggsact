@@ -12,9 +12,11 @@
 //!   json_extract, json_compare, text_diff_explain, text_equal, text_measure,
 //!   text_security_inspect, line_range_compare, patch_summary
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::io::Write;
 use std::process::{Command, Stdio};
+
+use eggsact::agent::{Profile, ToolAudience, ToolRegistry};
 
 fn mcp_request(request: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
@@ -69,6 +71,17 @@ fn call_tool_raw(request: &str) -> Value {
 
 fn is_tool_error(result: &Value) -> bool {
     result.get("ok") == Some(&Value::Bool(false))
+}
+
+fn call_tool_harness(name: &str, args: Value) -> Value {
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+    match registry.call_json(name, args) {
+        Ok(response) => serde_json::to_value(&response).unwrap_or(Value::Null),
+        Err(e) => {
+            let msg = e.to_string();
+            json!({"ok": false, "error": msg})
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -4041,4 +4054,208 @@ dependencies = [
             .unwrap_or(false)
     });
     assert!(has_serde, "Expected finding mentioning 'serde'");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Malformed input and edge-case tests for high-risk tools
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// --- config_file_inspect: Unicode secret masking ---
+
+#[test]
+fn test_config_file_inspect_unicode_secrets() {
+    let text = r#"{"password": "αβγδε"}"#;
+    let response = call_tool(
+        "config_file_inspect",
+        json!({"file_path": "config.json", "text": text}),
+    );
+    assert!(
+        response.get("ok").and_then(|v| v.as_bool()) == Some(true),
+        "should succeed with unicode secret"
+    );
+    let result = response.get("result").unwrap();
+    let secret_risks = result.get("secret_risks").and_then(|v| v.as_array());
+    assert!(
+        secret_risks.is_some() && !secret_risks.unwrap().is_empty(),
+        "should detect unicode secret"
+    );
+    let preview = secret_risks.unwrap()[0]
+        .get("value_preview")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert!(
+        preview.contains("***"),
+        "should mask unicode secret, got: {}",
+        preview
+    );
+    assert_ne!(preview, "αβγδε", "should not leak full unicode secret");
+}
+
+#[test]
+fn test_config_file_inspect_emoji_secrets() {
+    let text = r#"{"token": "🔑secret🔑"}"#;
+    let response = call_tool(
+        "config_file_inspect",
+        json!({"file_path": "config.json", "text": text}),
+    );
+    assert!(
+        response.get("ok").and_then(|v| v.as_bool()) == Some(true),
+        "should succeed with emoji secret"
+    );
+    let result = response.get("result").unwrap();
+    let secret_risks = result.get("secret_risks").and_then(|v| v.as_array());
+    assert!(
+        secret_risks.is_some() && !secret_risks.unwrap().is_empty(),
+        "should detect emoji secret"
+    );
+    let preview = secret_risks.unwrap()[0]
+        .get("value_preview")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert!(
+        preview.contains("***"),
+        "should mask emoji secret, got: {}",
+        preview
+    );
+}
+
+#[test]
+fn test_config_file_inspect_cjk_secrets() {
+    let text = r#"{"api_key": "秘密密钥"}"#;
+    let response = call_tool(
+        "config_file_inspect",
+        json!({"file_path": "config.json", "text": text}),
+    );
+    assert!(
+        response.get("ok").and_then(|v| v.as_bool()) == Some(true),
+        "should succeed with CJK secret"
+    );
+    let result = response.get("result").unwrap();
+    let secret_risks = result.get("secret_risks").and_then(|v| v.as_array());
+    assert!(
+        secret_risks.is_some() && !secret_risks.unwrap().is_empty(),
+        "should detect CJK secret"
+    );
+    let preview = secret_risks.unwrap()[0]
+        .get("value_preview")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert!(
+        preview.contains("***"),
+        "should mask CJK secret, got: {}",
+        preview
+    );
+    assert_ne!(preview, "秘密密钥", "should not leak full CJK secret");
+}
+
+#[test]
+fn test_config_file_inspect_short_secrets() {
+    for val in &["", "a", "ab", "abc", "abcd"] {
+        let text = format!(r#"{{"key": "{}"}}"#, val);
+        let response = call_tool(
+            "config_file_inspect",
+            json!({"file_path": "config.json", "text": &text}),
+        );
+        assert!(
+            response.get("ok").and_then(|v| v.as_bool()) == Some(true),
+            "short secret '{}' should not panic",
+            val
+        );
+    }
+}
+
+// --- repo_manifest_inspect: non-string path entries ---
+
+#[test]
+fn test_repo_manifest_inspect_non_string_paths() {
+    // Tool may not be in default profile; verify it doesn't crash the MCP server.
+    let response = call_tool("repo_manifest_inspect", json!({"paths": [123, true, null]}));
+    assert!(
+        response.is_null() || response.get("ok").is_some(),
+        "non-string paths must not crash, got: {}",
+        response
+    );
+}
+
+// --- patch_apply_check / patch_summary: malformed diffs ---
+
+#[test]
+fn test_patch_apply_check_malformed_diff() {
+    let response = call_tool_harness(
+        "patch_apply_check",
+        json!({"original_text": "hello\n", "patch_text": "--- not a diff +++ also not a diff"}),
+    );
+    assert!(
+        response.get("machine_code").is_some(),
+        "malformed diff must have machine_code, got: {}",
+        response
+    );
+}
+
+#[test]
+fn test_patch_summary_malformed_diff() {
+    let response = call_tool_harness(
+        "patch_summary",
+        json!({"patch_text": "garbage input that is not a patch"}),
+    );
+    assert!(
+        response.get("machine_code").is_some(),
+        "malformed diff must have machine_code, got: {}",
+        response
+    );
+}
+
+// --- edit_preflight: invalid line ranges ---
+
+#[test]
+fn test_edit_preflight_invalid_line_range() {
+    let response = call_tool_harness(
+        "edit_preflight",
+        json!({
+            "original": "line 1\nline 2\nline 3\n",
+            "replacement_mode": "line_range",
+            "start_line": 10,
+            "end_line": 5,
+            "new": "reversed range"
+        }),
+    );
+    assert!(
+        response.get("machine_code").is_some(),
+        "invalid range must have machine_code, got: {}",
+        response
+    );
+}
+
+#[test]
+fn test_edit_preflight_zero_line_numbers() {
+    let response = call_tool_harness(
+        "edit_preflight",
+        json!({
+            "original": "line 1\nline 2\nline 3\n",
+            "replacement_mode": "line_range",
+            "start_line": 0,
+            "end_line": 0,
+            "new": "zero indexed"
+        }),
+    );
+    assert!(
+        response.get("machine_code").is_some(),
+        "zero lines must have machine_code, got: {}",
+        response
+    );
+}
+
+// --- text_security_inspect: mixed Unicode controls ---
+
+#[test]
+fn test_text_security_inspect_mixed_controls() {
+    let response = call_tool_harness(
+        "text_security_inspect",
+        json!({"text": "normal\u{200b}\u{200c}\u{200d}\u{feff}text"}),
+    );
+    assert!(
+        response.get("machine_code").is_some(),
+        "mixed controls must have machine_code, got: {}",
+        response
+    );
 }

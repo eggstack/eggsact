@@ -1285,6 +1285,28 @@ pub(crate) fn sort_json_keys(v: &serde_json::Value) -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
+// mask_secret_preview
+// ---------------------------------------------------------------------------
+
+/// Mask a secret value for safe display. Never returns the full value for short strings.
+/// UTF-8 safe: operates on char boundaries, never splits multibyte sequences.
+pub fn mask_secret_preview(value: &str) -> String {
+    if value.chars().count() <= 4 {
+        return "***".to_string();
+    }
+    let prefix: String = value.chars().take(2).collect();
+    let suffix: String = value
+        .chars()
+        .rev()
+        .take(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("{}***{}", prefix, suffix)
+}
+
+// ---------------------------------------------------------------------------
 // escape_ascii
 // ---------------------------------------------------------------------------
 
@@ -1300,4 +1322,57 @@ pub(crate) fn escape_ascii(s: &str) -> String {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mask_empty_string() {
+        assert_eq!(mask_secret_preview(""), "***");
+    }
+
+    #[test]
+    fn mask_two_chars() {
+        assert_eq!(mask_secret_preview("ab"), "***");
+    }
+
+    #[test]
+    fn mask_four_chars() {
+        assert_eq!(mask_secret_preview("abcd"), "***");
+    }
+
+    #[test]
+    fn mask_six_ascii() {
+        assert_eq!(mask_secret_preview("abcdef"), "ab***ef");
+    }
+
+    #[test]
+    fn mask_greek_multibyte() {
+        assert_eq!(mask_secret_preview("αβγδεζ"), "αβ***εζ");
+    }
+
+    #[test]
+    fn mask_cjk_multibyte() {
+        assert_eq!(mask_secret_preview("你好世界再见"), "你好***再见");
+    }
+
+    #[test]
+    fn mask_emoji_four_byte() {
+        assert_eq!(mask_secret_preview("a🎉b🎉c🎉d🎉e"), "a🎉***🎉e");
+    }
+
+    #[test]
+    fn mask_combining_marks_no_panic() {
+        // "a" + combining acute + combining grave + "bcdef" — must not panic
+        let val = "a\u{0301}\u{0300}bcdef";
+        let result = mask_secret_preview(val);
+        assert!(result.contains("***"));
+    }
+
+    #[test]
+    fn mask_long_ascii_secret() {
+        assert_eq!(mask_secret_preview("sk-1234567890abcdef"), "sk***ef");
+    }
 }

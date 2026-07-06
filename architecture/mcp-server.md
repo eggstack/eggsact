@@ -15,7 +15,7 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | `schema_validation.rs` | MCP argument validation against tool input schemas |
 | `compat.rs` | `CompatibilityMode` enum (EggcalcPython vs StrictNative) |
 | `machine_codes.rs` | Machine-readable response codes, severity/disposition/verdict constants |
-| `budget.rs` | Per-tool budget limits, `BudgetTier` enum, composite sub-budgets, `BudgetContext` with cooperative helpers (`check_not_cancelled`, `check_deadline`, `check_text_len`, `check_list_len`, `remaining_time_ms`) |
+| `budget.rs` | Per-tool budget limits, `BudgetTier` enum, composite sub-budgets, `BudgetContext` with cooperative helpers (`check_not_cancelled`, `check_deadline`, `check_text_bytes`, `check_list_len`, `remaining_time_ms`) |
 | `schemas/` | JSON-schema builders per tool category (math, text, json, regex, etc.) |
 | `mod.rs` | Module declarations |
 
@@ -301,10 +301,10 @@ The MCP server applies per-tool resource budgets during `tools/call` dispatch:
 ### Budget Module (`src/mcp/budget.rs`)
 
 - **`BudgetTier`** enum: `Cheap`, `Moderate`, `Heavy` — maps from `ToolCost` in `ToolSpec`.
-- **`ToolBudget`** struct: per-tool resource limits — `max_input_bytes`, `max_output_bytes`, `max_elapsed_ms`, `max_text_chars`, `max_findings`, `max_list_items`, `max_pattern_length`, `max_regex_pattern_chars`, `max_regex_samples`, `max_spawned_workers`.
+- **`ToolBudget`** struct: per-tool resource limits — `max_input_bytes`, `max_output_bytes`, `max_elapsed_ms`, `max_text_bytes`, `max_findings`, `max_list_items`, `max_pattern_length`, `max_regex_pattern_chars`, `max_regex_samples`, `max_spawned_workers`.
 - **`budget_for_tool(tool_name)`**: resolves the effective `ToolBudget` for a tool, applying composite overrides when a tool orchestrates other tools internally.
 - **Builders**: `ToolBudget::with_max_findings(n)`, `with_max_output_bytes(n)`, `with_max_input_bytes(n)` — used by callers (especially tests) to override a single budget field without rebuilding the whole struct.
-- **`BudgetContext`**: runtime context passed into tool handlers — holds a deadline (`Instant`), a `cancelled` flag, and `should_stop()` which checks both deadline expiry and cancellation. Helper methods: `check_not_cancelled(tool_name)`, `check_deadline(tool_name)`, `check_text_len(field, text, tool_name)`, `check_list_len(field, len, tool_name)`, `remaining_time_ms()`.
+- **`BudgetContext`**: runtime context passed into tool handlers — holds a deadline (`Instant`), a `cancelled` flag, and `should_stop()` which checks both deadline expiry and cancellation. Helper methods: `check_not_cancelled(tool_name)`, `check_deadline(tool_name)`, `check_text_bytes(field, text, tool_name)`, `check_list_len(field, len, tool_name)`, `remaining_time_ms()`.
 - **Composite sub-budgets**: `SubBudget` and `CompositeBudgetAllocator` allow composite tools (e.g., `edit_preflight`, `command_preflight`) to split their parent budget across child tool calls via `sub_budget_context()`.
 
 ### Response Truncation (`src/mcp/response.rs`)
