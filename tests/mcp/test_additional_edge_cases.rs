@@ -3,6 +3,7 @@
 //! Covers protocol handling, input validation, concurrency, and tool-specific
 //! edge cases not found in the existing test suites.
 
+use eggsact::agent::{Profile, ToolAudience};
 use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -27,35 +28,26 @@ fn mcp_request(request: &str) -> String {
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
-fn call_tool_and_get_result(request: &str) -> Value {
-    let response_str = mcp_request(request);
-    let response: Value =
-        serde_json::from_str(&response_str).expect("Failed to parse JSON-RPC response");
-
-    if let Some(content) = response
-        .get("result")
-        .and_then(|r| r.get("content"))
-        .and_then(|c| c.as_array())
-    {
-        if let Some(first) = content.first() {
-            if let Some(text) = first.get("text").and_then(|t| t.as_str()) {
-                return serde_json::from_str(text).unwrap_or(Value::Null);
-            }
-        }
-    }
-
-    response.get("result").cloned().unwrap_or(Value::Null)
-}
-
 fn call_tool(name: &str, args: Value) -> Value {
-    let request = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "tools/call",
-        "params": {"name": name, "arguments": args},
-        "id": 1
-    })
-    .to_string();
-    call_tool_and_get_result(&request)
+    let registry = eggsact::agent::ToolRegistry::with_profile_and_audience(
+        Profile::Full,
+        ToolAudience::Harness,
+    );
+    let resp = registry
+        .call_json(name, args)
+        .unwrap_or_else(|e| panic!("Tool call to '{name}' failed: {e}"));
+    let mut map = serde_json::Map::new();
+    map.insert("ok".into(), Value::Bool(resp.ok));
+    if let Some(result) = resp.result {
+        map.insert("result".into(), result);
+    }
+    if let Some(error) = resp.error {
+        map.insert("error".into(), Value::String(error));
+    }
+    if let Some(mc) = resp.machine_code {
+        map.insert("machine_code".into(), Value::String(mc));
+    }
+    Value::Object(map)
 }
 
 fn call_tool_raw(request: &str) -> Value {

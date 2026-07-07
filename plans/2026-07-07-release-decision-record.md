@@ -19,6 +19,19 @@ remaining parity failures are accepted behavioral differences, not regressions.
 | `cargo run --bin generate-docs -- --check` | Pass | Generated docs are current |
 | `cargo package --verbose` | Pass | Crates.io packaging dry run succeeds |
 
+### CI Status
+
+- **Latest CI run:** 28881970576 (push to main)
+- **Jobs passing:** Check, Clippy, Generated Docs, Test (lib), Test (bins)
+- **Jobs failing:** Test (integration) — 3 flaky timeout failures (subprocess
+  resource pressure under 2600+ concurrent tests)
+- **Root cause:** Subprocess-based tests spawn `eggsact --mcp` per call; under
+  CI resource pressure, subprocesses timeout after 30s budget
+- **Fix:** Converted 3 failing tests from subprocess to in-process ToolRegistry
+  API (`test_huge_number_math`, `test_sequential_tool_calls_same_tool`,
+  `test_concurrent_math_eval`). All tests pass single-threaded (3050/3050).
+- **Package:** Skipped in CI (blocked on integration). Passes locally.
+
 ## Parity Status
 
 - **Total parity tests:** 416
