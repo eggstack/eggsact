@@ -53,22 +53,31 @@ static ACTIVE_SCHEMA_DETAIL: LazyLock<RwLock<String>> = LazyLock::new(|| {
     RwLock::new(detail)
 });
 
+/// Parse an audience string into a `ToolAudience` variant.
+///
+/// Matching is case-insensitive. Invalid values default to `Model` with a
+/// diagnostic warning on stderr. This function is exposed as `pub` (not
+/// `pub(crate)`) so integration tests can reach it.
+#[doc(hidden)]
+pub fn parse_audience(s: &str) -> ToolAudience {
+    match s.to_lowercase().as_str() {
+        "model" => ToolAudience::Model,
+        "harness" => ToolAudience::Harness,
+        "debug" => ToolAudience::Debug,
+        other => {
+            eprintln!(
+                "Warning: Invalid EGGCALC_MCP_AUDIENCE: {:?}. Defaulting to Model. Use Model, Harness, or Debug.",
+                other
+            );
+            ToolAudience::Model
+        }
+    }
+}
+
 static ACTIVE_AUDIENCE: LazyLock<RwLock<ToolAudience>> = LazyLock::new(|| {
     let audience_str =
         std::env::var("EGGCALC_MCP_AUDIENCE").unwrap_or_else(|_| "Model".to_string());
-    let audience = match audience_str.as_str() {
-        "Model" => ToolAudience::Model,
-        "Harness" => ToolAudience::Harness,
-        "Debug" => ToolAudience::Debug,
-        other => {
-            eprintln!(
-                "Error: Invalid EGGCALC_MCP_AUDIENCE: {:?}. Use Model, Harness, or Debug.",
-                other
-            );
-            std::process::exit(1);
-        }
-    };
-    RwLock::new(audience)
+    RwLock::new(parse_audience(&audience_str))
 });
 
 static MCP_DEFAULTS_CONFIGURED: AtomicBool = AtomicBool::new(false);

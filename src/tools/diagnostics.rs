@@ -22,8 +22,10 @@ pub fn runtime_diagnostics(_args: &Value) -> ToolResponse {
         }
     }
 
+    let active_audience = format!("{:?}", runtime::get_active_audience());
     let result = json!({
         "active_profile": active_profile,
+        "active_audience": active_audience,
         "tool_count": tool_count,
         "route_critical_tools": route_critical_tools,
         "profile_tool_count": profile_tool_count,

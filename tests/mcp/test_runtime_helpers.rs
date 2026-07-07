@@ -1,10 +1,11 @@
-//! Unit tests for MCP runtime helpers (Task 3).
+//! Unit tests for MCP runtime helpers (Tasks 3 & 4).
 //!
-//! Tests cancellation logic and active request tracking in isolation
-//! without spawning the stdio server loop.
+//! Tests cancellation logic, active request tracking, and audience
+//! parsing in isolation without spawning the stdio server loop.
 
+use eggsact::agent::ToolAudience;
 use eggsact::mcp::runtime::{
-    apply_cancellation, new_active_requests, RateLimiter, MAX_IN_FLIGHT_REQUESTS,
+    apply_cancellation, new_active_requests, parse_audience, RateLimiter, MAX_IN_FLIGHT_REQUESTS,
     MAX_REQUESTS_PER_SECOND,
 };
 use serde_json::json;
@@ -204,6 +205,54 @@ fn rate_limiter_resets_after_window() {
         rl.check(),
         "after 1.1s the rate limiter must accept new requests"
     );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Audience parsing (Task 4)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn parse_audience_exact_model() {
+    assert_eq!(parse_audience("Model"), ToolAudience::Model);
+}
+
+#[test]
+fn parse_audience_exact_harness() {
+    assert_eq!(parse_audience("Harness"), ToolAudience::Harness);
+}
+
+#[test]
+fn parse_audience_exact_debug() {
+    assert_eq!(parse_audience("Debug"), ToolAudience::Debug);
+}
+
+#[test]
+fn parse_audience_case_insensitive_model() {
+    assert_eq!(parse_audience("model"), ToolAudience::Model);
+    assert_eq!(parse_audience("MODEL"), ToolAudience::Model);
+    assert_eq!(parse_audience("MoDeL"), ToolAudience::Model);
+}
+
+#[test]
+fn parse_audience_case_insensitive_harness() {
+    assert_eq!(parse_audience("harness"), ToolAudience::Harness);
+    assert_eq!(parse_audience("HARNESS"), ToolAudience::Harness);
+    assert_eq!(parse_audience("HaRnEsS"), ToolAudience::Harness);
+}
+
+#[test]
+fn parse_audience_case_insensitive_debug() {
+    assert_eq!(parse_audience("debug"), ToolAudience::Debug);
+    assert_eq!(parse_audience("DEBUG"), ToolAudience::Debug);
+    assert_eq!(parse_audience("DeBuG"), ToolAudience::Debug);
+}
+
+#[test]
+fn parse_audience_invalid_defaults_to_model() {
+    assert_eq!(parse_audience("invalid"), ToolAudience::Model);
+    assert_eq!(parse_audience(""), ToolAudience::Model);
+    assert_eq!(parse_audience("MODL"), ToolAudience::Model);
+    assert_eq!(parse_audience("123"), ToolAudience::Model);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

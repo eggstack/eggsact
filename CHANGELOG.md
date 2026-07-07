@@ -21,10 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Concurrency Model docs**: documented serial stdio read-loop semantics and
   `MAX_TOOL_WORKERS` scope in `architecture/mcp-server.md` and `architecture/overview.md`.
 - **`EGGCALC_MCP_AUDIENCE` env var**: controls `ToolAudience` for MCP subprocess
-  spawns (`Model`, `Harness`, `Debug`). Defaults to `Model`. Used by test helpers
-  to access HarnessOnly tools.
+  spawns (`Model`, `Harness`, `Debug`). Case-insensitive. Defaults to `Model`
+  on invalid values with a diagnostic warning. Used by test helpers to access
+  HarnessOnly tools.
+- **Accepted parity failures fixture**: `tests/fixtures/accepted_parity_failures.txt`
+  lists all 31 accepted parity failure test names for regression detection.
 
 ### Changed
+- **CI workflow** (`ci.yml`): Split single `test` job into `test-lib`,
+  `test-bins`, and `test-integration` (with `--skip parity`). Added
+  `workflow_dispatch` trigger. Package job depends on all five check jobs.
 - **Phase 3: Stable Response Contracts and Machine Codes**. Every non-OK tool
   response now carries a machine-readable `machine_code` for programmatic
   routing.

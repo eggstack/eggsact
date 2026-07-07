@@ -1,0 +1,37 @@
+# Accepted parity failures (categories C1–C6 from docs/parity.md decision table).
+# These are known behavioral differences between Python and Rust, not regressions.
+# Used by tests to detect future regressions: any parity failure NOT in this list
+# is an unexpected regression.
+#
+# 31 test functions as of 2026-07-07 (parity commit f695791).
+test_shell_split_comment_handling
+test_shell_split_quoted_hash
+test_shell_split_single_quotes
+test_shell_split_double_quotes
+test_shell_split_backslash_escape
+test_shell_split_backslash_in_double_quotes
+test_shell_split_pipes
+test_shell_split_empty_string
+test_shell_split_edge_cases
+test_prompt_input_inspect_clean
+test_prompt_input_inspect_with_hidden_chars
+test_prompt_input_inspect_phase4_cases
+test_prompt_input_inspect_ansi_case
+test_unicode_policy_check_identifier_strict
+test_unicode_policy_check_with_confusable
+test_unicode_policy_check_confusable
+test_text_security_inspect_with_hidden
+test_edit_preflight_basic
+test_cargo_toml_inspect_basic
+test_constant_lookup_speed_of_light
+test_unit_info_invalid
+test_tools_list_order_full
+test_tools_list_order_normal
+test_tools_list_order_compact
+test_tools_list_tier_true_as_bool
+test_tools_list_tier_false_as_bool
+test_tools_list_tier_int
+test_tools_list_full_schema_parity
+test_profiles_list_parity
+test_shell_split_basic
+test_bug006_prompt_inspect_vt_ff_detected

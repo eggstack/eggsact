@@ -23,16 +23,21 @@ cargo run --bin generate-docs -- --check  # verify generated docs are current (C
 
 ## CI
 
-GitHub Actions CI runs on push/PR to `main`:
+GitHub Actions CI runs on push/PR to `main` (plus manual `workflow_dispatch`):
 - `cargo fmt --all -- --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
-- `cargo test --all-features`
+- `cargo test --all-features --lib` (unit tests)
+- `cargo test --all-features --bins` (binary tests)
+- `cargo test --all-features --tests -- --skip parity` (integration tests, parity excluded)
 - `cargo run --bin generate-docs -- --check` (generated docs freshness)
 - `cargo package --verbose` (after all checks pass)
 
+Parity tests are excluded from CI because Python `eggcalc` is not available in
+the CI environment. Run parity locally with `cargo test --test lib parity`.
+
 ## Verification order
 
-`cargo fmt --all -- --check` → `cargo clippy --all-targets --all-features -- -D warnings` → `cargo test --all-features` → `cargo run --bin generate-docs -- --check` → `cargo package --verbose`
+`cargo fmt --all -- --check` → `cargo clippy --all-targets --all-features -- -D warnings` → `cargo test --all-features --lib` → `cargo test --all-features --bins` → `cargo test --all-features --tests -- --skip parity` → `cargo run --bin generate-docs -- --check` → `cargo package --verbose`
 
 ## Structure
 
@@ -185,13 +190,13 @@ Agent task skills in `.skills/`:
 - **Adding an MCP tool requires one `ToolSpec` entry** in `src/mcp/specs/<category>.rs`. This is the single source of truth for tool registration. A test (`tool_registration_tables_are_in_sync`) will catch drift.
 - **`^` is XOR, not exponentiation.** Use `**` for power. This matches Python behavior.
 - **`g` means gram** in unit expressions. Use `gravity` or `standardgravity` for standard gravity.
-- **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. As of 2026-07-07, the parity suite has 54 known failures (out of 416 tests) — see `docs/parity.md` `Verification status` and `Known parity gaps` for the breakdown (test-harness audience bug, tool/output drift, and a 3-tool gap: `config_file_inspect`, `dependency_edit_preflight`, `repo_manifest_inspect`). The 3 concurrent-ordering failures from the earlier pass were fixed by switching `mcp_request_multi()` to id-based correlation. The Rust `full` profile ships 71 tools; Python defines 67. Do not treat these as regressions — they accumulated across the phase 06–09 line of work and are tracked for follow-up.
+- **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. As of 2026-07-07, the parity suite has 31 known failures (out of 416 tests) — see `docs/parity.md` `Verification status` and `Known parity gaps` for the breakdown. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE` env var and updating test helpers. Categories C1–C6 (31 failures) are accepted behavioral differences tracked for follow-up. The 3 concurrent-ordering failures from the earlier pass were fixed by switching `mcp_request_multi()` to id-based correlation. The Rust `full` profile ships 71 tools; Python defines 67. An accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt` lists all 31 names for regression detection. Do not treat these as regressions — they accumulated across the phase 06–09 line of work and are tracked for follow-up.
 - **`mask_secret_preview()` in `src/tools/helpers.rs`** is a UTF-8-safe masking helper that operates on `.chars()` boundaries, never splitting multibyte sequences. Used by `config_file_inspect` and other tools that display secret values in findings. The old byte-slicing code was replaced with this helper to avoid panics on multi-byte Unicode input.
 - **`deny.toml` configures `cargo-deny`** for license/advisory/ban/source checks. Run `cargo deny check` locally. Allowed licenses: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, Unlicense, Unicode-DFS-2016, Unicode-3.0, Zlib.
 - **CI mirrors release gates.** GitHub Actions runs fmt, clippy, tests, generated-docs check, and `cargo package`.
 - **`Cargo.lock` is gitignored** but present. This is unusual for a binary crate — don't commit it.
 - **`serde_json` uses `preserve_order`** feature — key order is intentional in serialized JSON.
-- **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE`, `EGGCALC_MCP_SCHEMA_DETAIL`.
+- **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to `Model` on invalid values), `EGGCALC_MCP_SCHEMA_DETAIL`.
 - **Platform support**: `command_preflight` recognizes `platform` values `posix`, `windows`, and `auto`. Only `posix` is implemented; `windows` returns `UNSUPPORTED_FEATURE` and `auto` resolves to `posix`.
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
 - **`--diagnostics` CLI flag** prints version, tool count, profile summary, budget tiers, and env var names (no values). Supports `--format json`. `runtime_diagnostics` MCP tool exposes similar info to harness-only audiences.

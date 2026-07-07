@@ -36,6 +36,14 @@ fn test_runtime_diagnostics_returns_structured_output() {
         "active_profile should be a string"
     );
     assert!(
+        result.get("active_audience").is_some(),
+        "result should contain active_audience"
+    );
+    assert!(
+        result["active_audience"].is_string(),
+        "active_audience should be a string"
+    );
+    assert!(
         result.get("tool_count").is_some(),
         "result should contain tool_count"
     );

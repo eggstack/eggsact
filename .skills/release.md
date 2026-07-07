@@ -81,10 +81,12 @@ Version is defined in `Cargo.toml` and referenced in:
 
 ## CI Pipeline
 
-CI runs on GitHub Actions on push/PR to `main`:
+CI runs on GitHub Actions on push/PR to `main` (plus `workflow_dispatch`):
 - Check formatting
 - Run clippy with warnings denied
-- Run tests with `--all-features`
+- Run unit tests (`--all-features --lib`)
+- Run binary tests (`--all-features --bins`)
+- Run integration tests (`--all-features --tests -- --skip parity`)
 - Verify generated docs are current
 - Run `cargo package --verbose`
 

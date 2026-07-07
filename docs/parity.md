@@ -164,7 +164,9 @@ The 31 remaining failures are classified in the [decision table](#decision-table
 below. They are not regressions — they accumulated across the phase 06–09
 line of work. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE`
 env var support and updating test helpers. Categories C1–C6 (31 failures) are
-accepted behavioral differences tracked for follow-up.
+accepted behavioral differences tracked for follow-up. An
+accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt`
+lists all 31 test names for regression detection.
 
 ## Known parity gaps
 

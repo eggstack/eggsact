@@ -17,16 +17,19 @@ cargo package --verbose                  # release/package verification
 
 ## Verification Order
 
-Always run in this order (CI mirrors this exactly):
+Always run in this order (CI mirrors this with parity excluded):
 ```bash
 cargo fmt --all -- --check           # format gate
 cargo clippy --all-targets --all-features -- -D warnings  # lint (warnings denied)
-cargo test --all-features            # all tests
+cargo test --all-features --lib      # unit tests
+cargo test --all-features --bins     # binary tests
+cargo test --all-features --tests -- --skip parity  # integration (parity excluded)
 cargo run --bin generate-docs -- --check  # generated docs freshness
 cargo package --verbose              # crates.io package verification
 ```
 
-CI runs these checks on push/PR to `main` via `.github/workflows/ci.yml`.
+CI runs on push/PR to `main` (plus `workflow_dispatch`) via `.github/workflows/ci.yml`.
+Parity tests require Python `eggcalc` at `../eggcalc` and are local-only.
 
 ## Test Structure
 
