@@ -65,7 +65,7 @@ Tools marked `composite: true` orchestrate other tools internally. All emit a `v
 | Tool | Verdict Domain | What It Does |
 |------|---------------|-------------|
 | `edit_preflight` | allow / review / block | Pre-checks an edit using text tools. Composes `path_scope_check`, `text_security_inspect`, `text_fingerprint` when input fields are provided. |
-| `command_preflight` | allow / review / block | Pre-checks a shell command via policy engine. Classifies commands, detects behavioral features, checks destructive patterns, applies custom allow/deny lists. |
+| `command_preflight` | allow / review / block | Pre-checks a shell command via policy engine. Classifies commands, detects wrapper programs (sh/bash/python/node with `-c`/`-e` → review) and script runners (make/just/task → review), detects behavioral features (env mutation scans all argv entries), checks destructive patterns, applies custom allow/deny lists. |
 | `config_preflight` | valid / valid_with_warnings / invalid | Pre-checks a config file using validation tools. Auto-detects format (JSON, TOML, dotenv, INI, Cargo.toml). |
 | `text_security_inspect` | allow / review / block | Calls multiple text inspection tools and aggregates results. Checks invisible chars, confusables, bidi, prompt injection. |
 | `cargo_toml_inspect` | allow / review / block | Inspects Cargo.toml structure and naming. |

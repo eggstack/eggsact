@@ -109,9 +109,11 @@ The test `test_all_tool_responses_have_machine_code` verifies that every non-OK 
 
 ## Route-Critical Fixture Tests
 
-`tests/mcp/test_route_contracts.rs` contains fixture-backed contract tests for the 5 route-critical tools (`edit_preflight`, `command_preflight`, `config_preflight`, `patch_apply_check`, `text_security_inspect`). Each fixture declares expected `machine_code`, `verdict`, and a subset of expected findings. The `all_fixtures()` function is the single source of truth for all fixture cases.
+`tests/mcp/test_route_contracts.rs` contains fixture-backed contract tests for the 5 route-critical tools (`edit_preflight`, `command_preflight`, `config_preflight`, `patch_apply_check`, `text_security_inspect`). Each fixture declares expected `machine_code`, `verdict`, and a subset of expected findings. The `all_fixtures()` function is the single source of truth for all fixture cases. The `command_preflight` fixtures cover wrapper detection (bash/python/node with `-c`/`-e`), script runners (make, npm run), env mutation (`FOO=bar`), destructive patterns, and safe commands.
 
 When adding new finding codes or changing response behavior for route-critical tools, add or update fixtures in `all_fixtures()`. Registry invariant tests verify every route-critical tool has coverage and every fixture references a valid tool. MCP stdio tests verify the contract over the wire. Audience enforcement tests confirm HarnessOnly tools are rejected for Model audience.
+
+`tests/mcp/test_tool_gaps.rs` contains policy-mode matrix tests for `command_preflight` that verify verdict and machine_code across `default`, `strict`, and `permissive` policies for key command categories (read-only, destructive, network, wrappers, script runners, env mutation).
 
 `test_route_critical_finding_codes_are_enumerated` (in `tests/mcp/test_route_contracts.rs`) verifies that every UPPERCASE_SNAKE finding `code` emitted by a route-critical tool is present in `machine_codes::ALL`. Add new codes to `ALL` and reference them as constants (`machine_codes::FOO`), never as raw strings.
 

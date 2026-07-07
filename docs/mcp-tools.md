@@ -1147,16 +1147,17 @@ Preview the effect of a text edit before applying it. Supports literal find-repl
 
 ### command_preflight
 
-Analyze a shell command for safety before execution: detect dangerous patterns, pipes, redirections, and risky features.
+Analyze a shell command for safety before execution: detect dangerous patterns, wrapper programs (sh/bash/python/node with `-c`/`-e`), script runners (make/just/task), pipes, redirections, env mutation, and risky features.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `command` | string | yes | -- | Shell command to analyze |
 | `platform` | string | no | `"posix"` | Platform: `"posix"`, `"windows"`, `"auto"` |
 | `policy` | string | no | `"default"` | Policy: `"default"`, `"strict"`, `"permissive"` |
+| `policy_config` | object | no | -- | Custom allow/deny lists and behavioral overrides (`allow_commands`, `deny_commands`, `allow_subcommands`, `deny_subcommands`, `allow_network`, `allow_filesystem_write`, `allow_process_control`, `allow_env_mutation`, `max_command_length`) |
 | `working_directory` | string | no | -- | Working directory context |
 
-**Return:** `{"verdict": <string>, "argv": [<string>], "features": <object>, "risk_level": <string>, "findings": [<object>]}`
+**Return:** `{"verdict": <string>, "command": <string>, "platform": <string>, "policy": <string>, "program": <string>, "subcommand": <string>, "features": <object>, "findings": [<object>], "matched_rules": [<object>], "machine_code": <string>, "summary": <string>, "subresults": <object>, "working_directory": <string>}`
 
 ---
 

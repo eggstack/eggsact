@@ -428,8 +428,12 @@ fn classify_default(program: &str, subcommand: &str) -> CmdDisposition {
             "install" | "ci" | "update" | "add" | "remove" | "run" => CmdDisposition::Review,
             _ => CmdDisposition::Review,
         },
-        "pip" | "pip3" | "python" | "python3" => match subcommand {
-            "-c" | "-m" => CmdDisposition::Allow,
+        "pip" | "pip3" => match subcommand {
+            "install" | "uninstall" | "upgrade" => CmdDisposition::Review,
+            _ => CmdDisposition::Review,
+        },
+        "python" | "python3" => match subcommand {
+            "-c" | "-m" => CmdDisposition::Review,
             "install" | "uninstall" | "upgrade" => CmdDisposition::Review,
             _ => CmdDisposition::Review,
         },
@@ -442,6 +446,13 @@ fn classify_default(program: &str, subcommand: &str) -> CmdDisposition {
         "chmod" | "chown" | "chgrp" => CmdDisposition::Block,
         "dd" | "mkfs" | "fdisk" | "parted" => CmdDisposition::Block,
         "sudo" | "su" | "doas" | "pkexec" => CmdDisposition::Block,
+
+        // Wrapper programs — always review in strict mode
+        "sh" | "bash" | "zsh" | "ksh" | "dash" | "fish" | "ash" | "busybox" | "node" | "deno"
+        | "ruby" | "perl" | "lua" | "php" | "Rscript" => CmdDisposition::Review,
+
+        // Script runners — review (cannot inspect underlying task)
+        "make" | "just" | "task" => CmdDisposition::Review,
 
         // Process control — review
         "kill" | "pkill" | "killall" | "xkill" => CmdDisposition::Review,
@@ -467,15 +478,31 @@ fn classify_strict(program: &str, subcommand: &str) -> CmdDisposition {
         | "pwd" | "uname" | "date" => CmdDisposition::Allow,
         "rm" | "rmdir" | "shred" | "chmod" | "chown" | "chgrp" | "dd" | "mkfs" | "sudo" | "su"
         | "doas" => CmdDisposition::Block,
+        // Wrapper programs — review under strict
+        "sh" | "bash" | "zsh" | "ksh" | "dash" | "fish" | "node" | "deno" | "ruby" | "perl"
+        | "lua" | "php" | "Rscript" => CmdDisposition::Review,
+        // Script runners — review under strict
+        "make" | "just" | "task" => CmdDisposition::Review,
         _ => CmdDisposition::Review,
     }
 }
 
 /// Permissive policy: only block clearly destructive or exfiltration patterns.
-fn classify_permissive(program: &str, _subcommand: &str) -> CmdDisposition {
+/// Wrapper programs with code-execution flags are reviewed even in permissive mode.
+fn classify_permissive(program: &str, subcommand: &str) -> CmdDisposition {
     match program {
         "rm" | "rmdir" | "shred" | "wipefs" | "dd" | "mkfs" | "fdisk" | "parted" | "chmod"
         | "chown" | "chgrp" | "sudo" | "su" | "doas" | "pkexec" => CmdDisposition::Block,
+        // Wrapper programs with code-execution flags — review (can't inspect nested command)
+        "sh" | "bash" | "zsh" | "ksh" | "dash" | "fish" | "node" | "deno" | "bun" | "ruby"
+        | "perl" | "lua" | "php" | "Rscript" | "python" | "python3" => {
+            let code_flags = ["-c", "-e", "-x", "-l", "-eval"];
+            if code_flags.contains(&subcommand) {
+                CmdDisposition::Review
+            } else {
+                CmdDisposition::Allow
+            }
+        }
         _ => CmdDisposition::Allow,
     }
 }
@@ -573,13 +600,15 @@ fn detect_behavioral_features(
     }
 
     // Environment mutation detection (FOO=bar cmd pattern)
-    if let Some(first) = argv.first() {
-        if first.contains('=') && !first.starts_with('-') {
+    // Scan all argv entries for env prefix assignments (shell_split may split FOO=bar cargo test)
+    for arg in argv {
+        if arg.contains('=') && !arg.starts_with('-') && !arg.starts_with('/') {
             result.push((
                 machine_codes::SHELL_ENV_MUTATION,
                 "EnvMutation",
                 "command mutates environment variables",
             ));
+            break;
         }
     }
 
@@ -637,6 +666,8 @@ fn select_primary_code(codes: &[String]) -> String {
         machine_codes::SHELL_PIPELINE,
         machine_codes::SHELL_BACKGROUND_EXECUTION,
         machine_codes::SHELL_UNAPPROVED_COMMAND,
+        machine_codes::SHELL_ENV_MUTATION,
+        machine_codes::SHELL_POLICY_REVIEW,
         machine_codes::SHELL_RISK,
         machine_codes::REGEX_RISK,
     ];

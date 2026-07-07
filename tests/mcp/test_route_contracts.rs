@@ -1077,6 +1077,93 @@ fn all_fixtures() -> Vec<RouteFixture> {
         }],
     });
 
+    // ── command_preflight: wrapper detection ──────────────────────
+
+    f.push(RouteFixture {
+        tool: "command_preflight",
+        label: "bash -c wrapper",
+        args: json!({"command": "bash -c \"echo hello\""}),
+        expect_ok: true,
+        expect_machine_code: "COMMAND_OK",
+        expect_verdict: Some("review"),
+        expect_findings: vec![ExpectedFinding {
+            code: "SHELL_POLICY_REVIEW",
+            severity: "medium",
+            disposition: "caution",
+        }],
+    });
+    f.push(RouteFixture {
+        tool: "command_preflight",
+        label: "python -c wrapper",
+        args: json!({"command": "python -c \"print(1)\""}),
+        expect_ok: true,
+        expect_machine_code: "COMMAND_OK",
+        expect_verdict: Some("review"),
+        expect_findings: vec![ExpectedFinding {
+            code: "SHELL_POLICY_REVIEW",
+            severity: "medium",
+            disposition: "caution",
+        }],
+    });
+    f.push(RouteFixture {
+        tool: "command_preflight",
+        label: "node -e wrapper",
+        args: json!({"command": "node -e \"console.log(1)\""}),
+        expect_ok: true,
+        expect_machine_code: "COMMAND_OK",
+        expect_verdict: Some("review"),
+        expect_findings: vec![ExpectedFinding {
+            code: "SHELL_POLICY_REVIEW",
+            severity: "medium",
+            disposition: "caution",
+        }],
+    });
+
+    // ── command_preflight: script runners ─────────────────────────
+
+    f.push(RouteFixture {
+        tool: "command_preflight",
+        label: "make test",
+        args: json!({"command": "make test"}),
+        expect_ok: true,
+        expect_machine_code: "COMMAND_OK",
+        expect_verdict: Some("review"),
+        expect_findings: vec![ExpectedFinding {
+            code: "SHELL_POLICY_REVIEW",
+            severity: "medium",
+            disposition: "caution",
+        }],
+    });
+    f.push(RouteFixture {
+        tool: "command_preflight",
+        label: "npm run build",
+        args: json!({"command": "npm run build"}),
+        expect_ok: true,
+        expect_machine_code: "COMMAND_OK",
+        expect_verdict: Some("review"),
+        expect_findings: vec![ExpectedFinding {
+            code: "SHELL_POLICY_REVIEW",
+            severity: "medium",
+            disposition: "caution",
+        }],
+    });
+
+    // ── command_preflight: env mutation ───────────────────────────
+
+    f.push(RouteFixture {
+        tool: "command_preflight",
+        label: "env prefix FOO=bar",
+        args: json!({"command": "FOO=bar cargo test"}),
+        expect_ok: true,
+        expect_machine_code: "SHELL_ENV_MUTATION",
+        expect_verdict: Some("review"),
+        expect_findings: vec![ExpectedFinding {
+            code: "EnvMutation",
+            severity: "info",
+            disposition: "informational",
+        }],
+    });
+
     // ── config_preflight ───────────────────────────────────────────
 
     f.push(RouteFixture {
