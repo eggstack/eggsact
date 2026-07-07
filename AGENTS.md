@@ -79,20 +79,20 @@ src/
     json.rs         # json_extract, json_compare, json_canonicalize, etc. (6 tools)
     regex.rs        # validate_regex, regex_safety_check, regex_finditer
     validation.rs   # validate_json, validate_brackets, validate_toml, validate_schema_light
-    path.rs         # path_normalize, path_analyze, path_compare, glob_match, etc.
+    path.rs         # path_normalize, path_analyze, path_compare, path_scope_check, glob_match, path_batch_scope_check
     shell.rs        # shell_split, shell_quote_join, argv_compare, command_preflight
     list.rs         # list_compare, list_dedupe, list_sort
     markdown.rs     # markdown_structure, code_fence_extract
-    patch.rs        # patch_apply_check, patch_summary, edit_preflight
-    config.rs       # dotenv_validate, ini_validate, config_preflight
+    patch.rs        # patch_apply_check, patch_summary, edit_preflight, diff_risk_classify
+    config.rs       # dotenv_validate, ini_validate, config_preflight, toml_shape_tool
     identifier.rs   # identifier_analyze, identifier_inspect, identifier_table_inspect
     unicode.rs      # unicode_policy_check, canonicalize_text
     version.rs      # version_compare, version_constraint_check
     cargo.rs        # cargo_toml_inspect
-    dependency.rs   # dependency_edit_preflight, dependency_inspect
+    dependency.rs   # dependency_edit_preflight
     diagnostics.rs  # runtime_diagnostics
-    repo.rs         # repo_diff, repo_status, repo_log
-  text/             # text processing library (25 modules)
+    repo.rs         # repo_manifest_inspect, config_file_inspect, repo_tree_summarize
+  text/             # text processing library (24 modules)
   agent/            # in-process agent API (ToolRegistry, Profile, call_json)
   preflight/        # typed preflight wrappers (EditPreflight, CommandPreflight, ConfigPreflight, PatchApplyCheck, TextSecurityInspect), strict finding parsing, structured RecommendedNextTool
 tests/

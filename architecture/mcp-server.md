@@ -148,20 +148,20 @@ profile at construction time via `with_profile_and_audience`.
 | json | 6 | json_extract, json_compare, json_canonicalize, json_query, json_shape, structured_data_compare |
 | math | 4 | math_eval, unit_convert, unit_info, constant_lookup |
 | validation | 4 | validate_json, validate_brackets, validate_toml, validate_schema_light |
-| path | 5 | path_normalize, path_analyze, path_compare, path_scope_check, glob_match |
+| path | 6 | path_normalize, path_analyze, path_compare, path_scope_check, glob_match, path_batch_scope_check |
 | shell | 4 | shell_split, shell_quote_join, argv_compare, command_preflight |
 | regex | 3 | validate_regex, regex_safety_check, regex_finditer |
 | list | 3 | list_compare, list_dedupe, list_sort |
 | markdown | 2 | markdown_structure, code_fence_extract |
-| patch | 3 | patch_apply_check, patch_summary, edit_preflight |
-| config | 3 | dotenv_validate, ini_validate, config_preflight |
+| patch | 4 | patch_apply_check, patch_summary, edit_preflight, diff_risk_classify |
+| config | 4 | dotenv_validate, ini_validate, config_preflight, toml_shape_tool |
 | identifier | 3 | identifier_analyze, identifier_inspect, identifier_table_inspect |
 | unicode | 2 | unicode_policy_check, canonicalize_text |
 | version | 2 | version_compare, version_constraint_check |
 | toml | 1 | toml_shape |
 | cargo | 1 | cargo_toml_inspect |
 | dependency | 1 | dependency_edit_preflight |
-| repo | 2 | repo_manifest_inspect, config_file_inspect |
+| repo | 3 | repo_manifest_inspect, config_file_inspect, repo_tree_summarize |
 | diagnostics | 1 | runtime_diagnostics |
 
 ## Composite Tools

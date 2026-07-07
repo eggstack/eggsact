@@ -7,10 +7,12 @@
 ## Usage
 
 ```
-eggsact [--mcp | expression]
+eggsact [--mcp | --diagnostics [--format json|text] | expression]
 ```
 
 - `--mcp` -- Start MCP server mode (reads JSON-RPC from stdin, writes to stdout)
+- `--diagnostics` -- Print diagnostic information (version, tool count, profile, budget tiers, env var names)
+- `--format json|text` -- Output format for `--diagnostics` (default: text)
 - `-h`, `--help` -- Print usage information
 - `-V`, `--version` -- Print the installed eggsact version
 - `expression` -- Math expression to evaluate (one or more arguments joined with spaces)
@@ -54,13 +56,25 @@ eggsact --help
 eggsact --version
 ```
 
+### Diagnostics
+
+```bash
+eggsact --diagnostics
+# Prints: version, tool count, active profile, budget tiers, and env var names (no values)
+
+eggsact --diagnostics --format json
+# Same information in JSON format
+```
+
 ### No Arguments
 
 ```bash
 eggsact
 # Output:
-# Usage: eggsact [--mcp | expression]
+# Usage: eggsact [--mcp | --diagnostics [--format json|text] | expression]
 #   --mcp          Start MCP server mode
+#   --diagnostics  Print diagnostic information
+#   --format       Output format for --diagnostics (default: text)
 #   -h, --help     Print this help message
 #   -V, --version  Print version information
 #   expression     Evaluate math expression

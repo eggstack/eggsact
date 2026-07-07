@@ -4,11 +4,11 @@ Use this when adding a new MCP tool or modifying an existing one.
 
 ## Checklist
 
-1. **Implement the function** in `src/mcp/tools.rs`:
+1. **Implement the function** in `src/tools/<category>.rs`:
    - Take `&Value` (serde_json) as the input parameter
    - Validate arguments at the boundary
    - Call reusable library code from `src/text/` or `src/calc/`
-   - Return `ToolResponse` (from `src/mcp/schemas.rs`)
+   - Return `ToolResponse` (from `src/mcp/response.rs`)
 
 2. **Add a `ToolSpec` entry** in `src/mcp/specs/<category>.rs` — this is the single source of truth for tool registration. It defines the handler, category, tier, tags, profiles, input schema, and output schema all in one place. Each category exports a `pub const <CATEGORY>_TOOLS: &[ToolSpec]` slice, which `all_tools.rs` aggregates into the combined `ALL_TOOLS`.
 
@@ -24,7 +24,7 @@ Use this when adding a new MCP tool or modifying an existing one.
    This updates README tool tables, architecture profile references, and `generated/tool-cards.md`. Commit the generated files alongside your ToolSpec changes.
 
 5. **Add tests** at the right layer:
-   - Unit tests: `src/mcp/tools.rs` (inline `#[cfg(test)]`)
+   - Unit tests: `src/tools/<category>.rs` (inline `#[cfg(test)]`)
    - MCP protocol tests: `tests/mcp/`
    - Library behavior tests: `tests/text/` or `tests/calc/`
    - Python parity: `tests/parity/` using `compare_tool_parity()`
@@ -116,7 +116,7 @@ Add `#[allow(deprecated)]` to test code that calls `ToolRegistry::available_tool
 
 Tools marked `composite: true` orchestrate calls to other tools internally.
 Examples: `text_security_inspect`, `edit_preflight`, `command_preflight`, `config_preflight`, `structured_data_compare`.
-These are implemented in `src/text/synthesis.rs` and wrapped in `src/mcp/tools.rs`.
+These are implemented in `src/tools/` (category modules) with ToolSpec declarations in `src/mcp/specs/`.
 
 `edit_preflight` optionally composes additional tools when the corresponding input fields are provided: `path_scope_check` (via `file_path` + `workspace_root` fields), `text_security_inspect` (via `unicode_policy` field), and `text_fingerprint` (via `newline_policy` field for newline style detection). Each sub-tool call is included in the `subresults` map when invoked.
 
@@ -124,7 +124,7 @@ These are implemented in `src/text/synthesis.rs` and wrapped in `src/mcp/tools.r
 
 1. Create `src/text/<module>.rs` with the implementation
 2. Add `pub mod <module>;` to `src/text/mod.rs` and re-export key functions
-3. Add MCP tool wrapper in `src/mcp/tools.rs`
+3. Add tool function in `src/tools/<category>.rs`
 4. Add a `ToolSpec` entry in `src/mcp/specs/<category>.rs`
 5. Add tests in `tests/text/test_<module>.rs`
 6. Update `architecture/text-library.md` if significant

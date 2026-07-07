@@ -93,7 +93,7 @@ Many tools return a `hints` array with suggestions when validation fails:
 
 ## Tool Categories
 
-Tools are grouped into 16 metadata categories covering math, text, JSON, validation, regex, lists, paths, identifiers, shell, markdown, configuration, patches, TOML, Unicode, versioning, and Cargo metadata.
+Tools are grouped into 19 metadata categories covering math, text, JSON, validation, regex, lists, paths, identifiers, shell, markdown, configuration, patches, TOML, Unicode, versioning, Cargo metadata, dependency, repository, and diagnostics.
 
 ---
 
