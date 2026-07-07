@@ -1,190 +1,300 @@
 # eggsact Architecture Overview
 
-Single-crate Rust project. No workspace. Reimplements Python `eggcalc`.
+**Single-crate Rust project. No workspace. Reimplements Python `eggcalc`.**
 
-## Directory Layout
+eggsact is a natural language math calculator and MCP (Model Context Protocol) server for AI coding agents. It provides 71 tools across 19 categories for deterministic math, text processing, structured data, paths, Unicode safety, shell commands, and more.
+
+---
+
+## High-Level Architecture
 
 ```
-eggsact/
-├── src/                    # All source code
-│   ├── main.rs             # CLI entry, arg parsing, dispatch
-│   ├── lib.rs              # Library root, re-exports run()/evaluate()
-│   ├── calc/               # Calculator core (3 modules)
-│   ├── mcp/                # MCP server protocol, runtime, registry, validation
-│   │   ├── server.rs       # Protocol orchestration, stdio loop, dispatch
-│   │   ├── compat.rs       # CompatibilityMode enum (EggcalcPython vs StrictNative)
-│   │   ├── registry/         # Tool registration: aggregation, listing, types
-│   │   │   ├── mod.rs        # Re-exports, tests
-│   │   │   ├── types.rs      # ToolDefinition, ToolSpec, enums
-│   │   │   ├── all_tools.rs  # ALL_TOOLS aggregation from specs/, PROFILE_NAMES
-│   │   │   └── listing.rs    # Filtering, audience, schema compaction, suggestions
-│   │   ├── specs/            # ToolSpec declarations per tool category
-│   │   │   ├── mod.rs        # Re-exports all category slices
-│   │   │   ├── math.rs       # MATH_TOOLS
-│   │   │   ├── text.rs       # TEXT_TOOLS
-│   │   │   └── ... (one file per category)
-│   │   ├── protocol.rs     # JSON-RPC types
-│   │   ├── response.rs     # ToolResponse, error sanitization, finding() helpers, with_verdict, preflight builders
-│   │   ├── runtime.rs      # Rate limiter, constants, profile management
-│   │   ├── schema_validation.rs # Argument validation
-│   │   ├── machine_codes.rs # Machine-readable response codes
-│   │   ├── budget.rs       # Per-tool budgets, tiers, composite sub-budgets, BudgetContext
-│   │   └── schemas/        # JSON-schema builders per tool category
-│   │       ├── mod.rs      # Module declarations + re-exports
-│   │       ├── math.rs
-│   │       ├── text.rs
-│   │       ├── json.rs
-│   │       └── ... (one submodule per category)
-│   ├── tools/              # MCP tool implementations (by category)
-│   │   ├── helpers.rs      # Shared constants, utilities
-│   │   ├── math.rs         # Math & unit tools
-│   │   ├── text.rs         # Text processing tools (18)
-│   │   ├── json.rs         # JSON tools (6)
-│   │   ├── regex.rs        # Regex tools (3)
-│   │   ├── validation.rs   # Validation tools (4)
-│   │   ├── path.rs         # Path tools (6)
-│   │   ├── shell.rs        # Shell tools (4)
-│   │   ├── list.rs         # List tools (3)
-│   │   ├── markdown.rs     # Markdown tools (2)
-│   │   ├── patch.rs        # Patch tools (4)
-│   │   ├── config.rs       # Config tools (4)
-│   │   ├── identifier.rs   # Identifier tools (3)
-│   │   ├── unicode.rs      # Unicode tools (2)
-│   │   ├── version.rs      # Version tools (2)
-│   │   ├── cargo.rs        # Cargo tool (1)
-│   │   ├── dependency.rs   # Dependency tool (1)
-│   │   ├── diagnostics.rs  # Diagnostics tool (1)
-│   │   └── repo.rs         # Repo tools (3)
-│   ├── agent/              # In-process agent API (ToolRegistry, Profile, call_json)
-│   ├── preflight/          # Typed preflight wrappers with fail-closed contract enforcement (PreflightError), strict finding parsing, structured RecommendedNextTool, preflight_allow/review/block builders
-│   └── text/               # Text processing library (24 modules)
-├── tests/                  # Integration tests
-│   ├── lib.rs              # Test module declarations
-│   ├── calc/               # Calculator tests (4 files)
-│   ├── mcp/                # MCP protocol + tool tests (25 files)
-│   ├── parity/             # Python/Rust parity tests (12 files)
-│   └── text/               # Text processing tests (24 files)
-├── scripts/
-│   └── generate_confusables.py   # Regenerates confusables data
-├── data/
-│   └── confusables.rs      # Confusable character data
-├── docs/                   # Detailed documentation
-│   ├── cli.md
-│   ├── contributing.md
-│   ├── library-api.md
-│   ├── mcp-tools.md
-│   └── parity.md
-├── architecture/           # Architecture documentation
-│   ├── overview.md
-│   ├── calculator.md
-│   ├── mcp-server.md
-│   ├── machine-codes.md
-│   ├── text-library.md
-│   └── compatibility.md
-├── .skills/                # Agent task skills
-│   ├── mcp-tools.md
-│   ├── testing.md
-│   ├── debugging.md
-│   ├── release.md
-│   └── text-processing.md
-├── Cargo.toml              # Package manifest
-├── release.sh              # Release pipeline and crate packaging check
-└── build.sh                # Simple build script
+┌─────────────────────────────────────────────────────────────────┐
+│                         Entry Points                             │
+│                                                                   │
+│  main.rs              CLI arg parsing, dispatch                   │
+│    ├─ Expression args → calc::run()                               │
+│    ├─ --mcp           → mcp::server::main()                      │
+│    └─ --diagnostics   → runtime diagnostics                      │
+│                                                                   │
+│  lib.rs              Library root, public re-exports              │
+│    ├─ run() / evaluate()      (calculator)                        │
+│    ├─ agent::ToolRegistry     (in-process API)                    │
+│    └─ preflight::*            (typed wrappers)                    │
+└─────────────┬────────────────────┬───────────────────┬───────────┘
+              │                    │                   │
+              ▼                    ▼                   ▼
+┌─────────────────────┐ ┌───────────────────┐ ┌────────────────────┐
+│     calc/            │ │     mcp/           │ │    agent/           │
+│   Calculator Core    │ │  MCP Server        │ │  In-Process API    │
+│                      │ │                    │ │                    │
+│  normalize.rs        │ │  server.rs         │ │  ToolRegistry      │
+│  evaluator.rs        │ │  protocol.rs       │ │  Profile enum      │
+│  units.rs            │ │  response.rs       │ │  ToolAudience      │
+│  context.rs          │ │  runtime.rs        │ │  ExecutionContext   │
+│                      │ │  budget.rs         │ │  ToolCallError     │
+│  NL → tokens → AST   │ │  schema_valid.     │ │  ToolView          │
+│  → evaluation        │ │  compat.rs         │ │                    │
+│                      │ │  machine_codes.rs  │ │  call_json()       │
+│  16+ math functions  │ │  registry/         │ │  call_json_        │
+│  30+ unit categories │ │  specs/            │ │    with_budget()   │
+│  20+ constants       │ │  schemas/          │ │  call_json_        │
+└─────────┬───────────┘ └────────┬──────────┘ │    with_execution_  │
+          │                      │             │    context()        │
+          │                      │             └─────────┬──────────┘
+          │                      │                       │
+          ▼                      ▼                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     tools/ — Tool Implementations                │
+│                                                                   │
+│  71 tools across 19 categories:                                   │
+│  math(4) text(18) json(6) regex(3) validation(4) path(6)        │
+│  shell(4) list(3) markdown(2) patch(4) config(4) identifier(3)  │
+│  unicode(2) version(2) toml(1) cargo(1) dependency(1)           │
+│  repo(3) diagnostics(1)                                          │
+│                                                                   │
+│  helpers.rs — shared constants, utilities, spawn semaphore        │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     text/ — Text Processing Library               │
+│                                                                   │
+│  24 modules providing the core text operations:                   │
+│  primitives, confusables, diff, measure, validate, transform,   │
+│  position, regex_safety, replace, path, identifier, shell,       │
+│  markdown, glob, config, toml, patch, line_range, unicode_policy,│
+│  unicode_tools, inspect_prompt, synthesis, cargo, version        │
+│                                                                   │
+│  confusables_generated.rs — auto-generated Unicode data           │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Context Isolation Model
+---
 
-Mutable per-request state is isolated via two context structs:
+## Module Deep Dives
 
-- **`EvalContext`** (`src/calc/context.rs`) — per-evaluation calculator state (PRNG, memory registers, user variables, random/side-effect gates).
-- **`ExecutionContext`** (`src/agent/mod.rs`) — per-request dispatch state (eval context, compatibility mode, profile, audience, budget, cancellation, request ID, source).
+Each major component has a dedicated architecture doc:
 
-### Legacy vs context-aware paths
+| Component | Doc | What It Covers |
+|-----------|-----|----------------|
+| **Calculator Core** | [calculator.md](calculator.md) | Natural language normalization, AST evaluator, units, constants, EvalContext |
+| **MCP Server** | [mcp-server.md](mcp-server.md) | Protocol, tool registration, profiles, concurrency, budget, response contract |
+| **Machine Codes** | [machine-codes.md](machine-codes.md) | Response codes, severity/disposition/verdict constants, finding helpers |
+| **Text Library** | [text-library.md](text-library.md) | 24 text modules, public API, code patterns |
+| **Compatibility** | [compatibility.md](compatibility.md) | EggcalcPython vs StrictNative validation modes |
+| **Agent API** | [agent-api.md](agent-api.md) | ToolRegistry, Profile, ExecutionContext, in-process dispatch |
+| **Preflight Wrappers** | [preflight.md](preflight.md) | Typed wrappers, PreflightError, verdict enums, finding parsing |
+| **Tool Implementations** | [tools.md](tools.md) | Per-category tool details, composite tools, route-critical tools |
+| **Testing** | [testing.md](testing.md) | Test structure, parity tests, how to run tests |
+| **CLI & Binaries** | [cli-binaries.md](cli-binaries.md) | main.rs, generate-docs, verify-eggsact, diagnostics |
 
-| Path | API | State |
-|------|-----|-------|
-| Legacy calculator | `evaluate()`, `run()` | Uses process-global compatibility state (`MEMORY_REGISTERS`, `USER_VARIABLES`, `PRNG_STATE`, `GAUSS_SPARE` mutable globals, `ALLOW_RANDOM`/`ALLOW_SIDE_EFFECTS` AtomicBool flags). |
-| Context-aware calculator | `evaluate_with_context(expr, ctx)`, `run_with_context(expr, ctx)` | Accepts a mutable `EvalContext`. State mutations persist in the caller's `ctx` across calls. Preferred for persistent mutable state across multiple calculator calls. |
-| Context-aware tool dispatch | `call_json_with_execution_context(name, args, ctx)` | Accepts an `ExecutionContext`. Clones `ctx.eval_ctx` into a thread-local before dispatch (via `budget::with_eval_context`). Calculator-backed handlers read from the clone; mutations **do not persist** back to the caller's `ExecutionContext`. Also honors profile, audience, compatibility mode, budget, and cancellation from the context. |
-
-### Per-call seed/template semantics
-
-When `call_json_with_execution_context` dispatches a tool, `ctx.eval_ctx` is **cloned** before the handler runs. PRNG draws, memory mutations, and variable assignments inside the handler operate on the clone and never propagate back to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value.
-
-This immutable-context design means the caller retains full control over the seed/registers between calls. For persistent mutable `EvalContext` behavior across multiple calculator calls, use `evaluate_with_context()`/`run_with_context()` directly instead of dispatching through `call_json_with_execution_context`.
-
-### Cooperative cancellation
-
-Cancellation is cooperative, not forceful. The MCP server and in-process API create an `Arc<AtomicBool>` flag and attach it via `with_cancellation()`. On timeout, the flag is set, but blocking work may continue. Tool handlers check the flag at key pipeline stages via `BudgetContext::should_stop()` or `check_not_cancelled()`. High-risk handlers (`edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`) create a `BudgetContext` internally and call `should_stop()` at pipeline stage boundaries.
-
-### In-process vs MCP wire
-
-`call_json_with_execution_context` is an **in-process** API. It does not change the MCP JSON-RPC wire protocol. The MCP server still resolves its active profile and audience from startup environment variables (`EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE`) at init time. A future MCP request-level context API would be required to expose per-request context over the wire.
-
-### What remains global / thread-local
-
-Global statics (AtomicBool flags, RwLock profiles, LazyLock caches, thread-local cancel flags) represent startup-time immutable configuration and are intentionally shared across all requests. Legacy mutable globals (`MEMORY_REGISTERS`, `USER_VARIABLES`, `PRNG_STATE`, `GAUSS_SPARE`) remain for backward compatibility but are bypassed by context-aware APIs.
-
-## Concurrency Model
-
-The MCP stdio server reads requests serially but dispatches each one as a
-spawned tokio task via `JoinSet` (see `architecture/mcp-server.md`). Responses
-are serialized through an `mpsc` channel and written by a dedicated writer task,
-so request reads never block on tool execution. `MAX_IN_FLIGHT_REQUESTS`
-(32) caps total concurrent dispatches, and `MAX_TOOL_WORKERS` (16) caps
-concurrent tool executions within a single dispatch. Cancellation uses
-per-request `Arc<AtomicBool>` flags stored in the `ActiveRequests` map.
-The in-process agent API (`src/agent/`) is synchronous and avoids IPC overhead.
+---
 
 ## Module Dependency Flow
 
 ```
-main.rs → lib.rs → calc/normalize.rs → calc/evaluator.rs → calc/units.rs
-                    mcp/server.rs → mcp/protocol.rs, mcp/response.rs, mcp/runtime.rs
-                                 → mcp/schema_validation.rs, mcp/budget.rs
-                    mcp/registry/ → registry/types.rs, registry/all_tools.rs, registry/listing.rs
-                                 → specs/* (category ToolSpec declarations)
-                                 → tools/* → text/* modules
+main.rs
+  ├→ lib.rs
+  │    ├→ calc/         (normalize → evaluator → units)
+  │    ├→ mcp/server.rs (protocol, runtime, budget, schema_validation)
+  │    ├→ mcp/registry/ (types → all_tools → specs/* → listing)
+  │    ├→ mcp/response.rs, machine_codes.rs, compat.rs
+  │    ├→ tools/*       (category modules → text/* modules)
+  │    ├→ agent/        (ToolRegistry, ExecutionContext)
+  │    └→ preflight/    (typed wrappers over agent/ + tools/)
+  └→ bin/generate_docs.rs, bin/verify_eggsact.rs
 ```
 
-`ToolDefinition` lives in `registry/types.rs` (not `server.rs`). `ToolResponse::error`
-is hidden/deprecated; use `error_without_code_for_legacy_tests_only` only in
-legacy test code — all new code must use `error_with_code()`.
+---
+
+## Context Isolation Model
+
+Two context structs carry mutable per-request state:
+
+| Struct | Location | Purpose |
+|--------|----------|---------|
+| `EvalContext` | `src/calc/context.rs` | Calculator state: PRNG, memory registers, user variables, random/side-effect gates |
+| `ExecutionContext` | `src/agent/mod.rs` | Dispatch state: eval_ctx, profile, audience, budget, cancellation, compat mode, source |
+
+### Legacy vs Context-Aware APIs
+
+| Path | API | State Behavior |
+|------|-----|----------------|
+| Legacy calculator | `evaluate()`, `run()` | Uses process-global mutable statics (`MEMORY_REGISTERS`, `PRNG_STATE`, etc.) |
+| Context-aware calculator | `evaluate_with_context(expr, ctx)` | Accepts mutable `EvalContext`; mutations persist in caller's `ctx` across calls |
+| Context-aware dispatch | `call_json_with_execution_context(name, args, ctx)` | Clones `ctx.eval_ctx` into thread-local; handler mutations **do not persist** back |
+
+### Cooperative Cancellation
+
+Cancellation is cooperative, not forceful. An `Arc<AtomicBool>` flag is set on timeout. High-risk handlers (`edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`) check the flag at pipeline stages via `BudgetContext::should_stop()`.
+
+---
+
+## Concurrency Model
+
+The MCP stdio server reads requests serially but dispatches each as a tokio task via `JoinSet`:
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `MAX_IN_FLIGHT_REQUESTS` | 32 | Maximum concurrent request tasks |
+| `MAX_TOOL_WORKERS` | 16 | Semaphore for concurrent blocking tool executions |
+| `MAX_REQUESTS_PER_SECOND` | 10 | Rate limiter on incoming requests |
+| `MAX_REQUEST_BYTES` | 1,000,000 | Maximum request size |
+| `MAX_OUTPUT_BYTES` | 1,000,000 | Maximum response size |
+
+Responses are serialized through an `mpsc` channel to a dedicated writer task, preventing interleaved output. **Clients must correlate responses by JSON-RPC `id`**, not by arrival position.
+
+The in-process agent API (`src/agent/`) is synchronous and avoids IPC overhead.
+
+---
 
 ## Data Flow
 
-1. **CLI**: `main.rs` parses args, calls `run()` or starts MCP server
-2. **Library**: `lib.rs` re-exports `run()`, `evaluate()`, `split_at_operators()`
-3. **Natural language**: `run()` → `normalize.rs` (tokenize/normalize) → `evaluator.rs` (evaluate)
-4. **Direct math**: `evaluate()` → `evaluator.rs` (parse + evaluate)
-5. **MCP server**: stdio JSON-RPC 2.0 → `server.rs` (protocol orchestration) → `tools/*` (category modules) → `text/*` modules
-6. **In-process agent API**: `agent/ToolRegistry::call_json()` → lookup, profile check, audience/exposure check, validation (via `prepare_tool_call`) → `tools/*` handlers. No async dispatch; MCP retains timeout/semaphore, agent is synchronous. Uses `StrictNative` validation by default; MCP server uses `EggcalcPython`.
+```
+CLI args
+  │
+  ├─ Expression → calc::run() → normalize() → evaluator → result
+  │
+  ├─ --mcp → MCP stdio loop
+  │         → JSON-RPC 2.0 dispatch
+  │         → server.rs validates + routes
+  │         → registry lookup + profile/audience check
+  │         → schema validation
+  │         → tools/* handler execution
+  │         → text/* core operations
+  │         → ToolResponse construction
+  │         → budget truncation
+  │         → JSON-RPC response (may be out of order)
+  │
+  └─ In-process → agent::ToolRegistry::call_json()
+                  → prepare_tool_call() (lookup, profile, audience, validation)
+                  → handler execution
+                  → ToolResponse with budget enforcement
+```
+
+---
+
+## Key Files Reference
+
+### Source
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `src/main.rs` | 220 | CLI entry point, arg parsing, dispatch |
+| `src/lib.rs` | 81 | Library root, re-exports |
+| `src/calc/mod.rs` | — | Calculator module re-exports |
+| `src/calc/normalize.rs` | — | Natural language tokenization |
+| `src/calc/evaluator.rs` | — | AST-based expression evaluator |
+| `src/calc/units.rs` | — | Unit definitions and conversions |
+| `src/calc/context.rs` | — | EvalContext (mutable per-call state) |
+| `src/mcp/server.rs` | — | Protocol orchestration, stdio loop |
+| `src/mcp/protocol.rs` | — | JSON-RPC types |
+| `src/mcp/response.rs` | — | ToolResponse, error sanitization, finding helpers |
+| `src/mcp/runtime.rs` | — | Rate limiter, constants, profile management |
+| `src/mcp/budget.rs` | — | Per-tool budgets, BudgetContext, composite sub-budgets |
+| `src/mcp/schema_validation.rs` | — | Argument validation against tool schemas |
+| `src/mcp/compat.rs` | — | CompatibilityMode (EggcalcPython vs StrictNative) |
+| `src/mcp/machine_codes.rs` | — | Machine-readable response codes |
+| `src/mcp/registry/types.rs` | — | ToolDefinition, ToolSpec, enums |
+| `src/mcp/registry/all_tools.rs` | — | ALL_TOOLS aggregation, PROFILE_NAMES |
+| `src/mcp/registry/listing.rs` | — | Filtering, audience, schema compaction |
+| `src/mcp/specs/*.rs` | — | ToolSpec declarations (20 files, one per category) |
+| `src/mcp/schemas/*.rs` | — | JSON-schema builders (20 files, one per category) |
+| `src/tools/helpers.rs` | 1766 | Shared constants, utilities, spawn semaphore |
+| `src/tools/*.rs` | — | Tool implementations (19 files) |
+| `src/text/*.rs` | — | Text processing library (26 files) |
+| `src/agent/mod.rs` | — | ToolRegistry, Profile, ExecutionContext |
+| `src/preflight/mod.rs` | — | Typed preflight wrappers |
+
+### Tests
+
+| Directory | Files | What They Cover |
+|-----------|-------|----------------|
+| `tests/calc/` | 4 | Calculator unit tests (normalize, evaluator, units, regression) |
+| `tests/mcp/` | 26 | MCP protocol, tool tests, route contracts, concurrency, hardening |
+| `tests/text/` | 25 | Text processing module tests (one per module + regression) |
+| `tests/parity/` | 12 | Python/Rust parity tests (requires `eggcalc` at `../eggcalc`) |
+| `tests/test_context_isolation.rs` | 1 | Context isolation integration test |
+
+### Generated & Config
+
+| File | Purpose |
+|------|---------|
+| `generated/tool-cards.md` | Per-profile tool cards (generated by `cargo run --bin generate-docs`) |
+| `scripts/generate_confusables.py` | Regenerates `src/text/confusables_generated.rs` |
+| `release.sh` | Full release pipeline |
+| `deny.toml` | cargo-deny license/advisory checks |
+| `Cargo.toml` | Package manifest (18 dependencies) |
+
+---
+
+## Dependencies
+
+| Category | Crates |
+|----------|--------|
+| Core | `serde`, `serde_json` (preserve_order), `tokio` (full) |
+| Regex | `fancy-regex`, `regex` |
+| Unicode | `unicode-normalization`, `unicode-segmentation`, `unicode_names2`, `unicode-general-category`, `caseless` |
+| Crypto | `sha2`, `sha1`, `md5`, `crc32fast` |
+| Data | `ahash`, `urlencoding`, `toml`, `toml_edit` |
+
+---
 
 ## Key Constants
 
 | Constant | Value | Location |
 |----------|-------|----------|
-| MCP_PROTOCOL_VERSION | `"2024-11-05"` | `src/mcp/runtime.rs` |
-| MCP_SERVER_NAME | `"eggsact"` | `src/mcp/runtime.rs` |
-| MAX_REQUESTS_PER_SECOND | 10 | `src/mcp/runtime.rs` |
-| MAX_IN_FLIGHT_REQUESTS | 32 | `src/mcp/runtime.rs` |
-| MAX_TOOL_WORKERS | 16 | `src/mcp/runtime.rs` |
-| MAX_REQUEST_ID_LENGTH | 1024 | `src/mcp/runtime.rs` |
-| MAX_REQUEST_BYTES | 1,000,000 | `src/mcp/runtime.rs` |
-| MAX_OUTPUT_BYTES | 1,000,000 | `src/mcp/runtime.rs` |
-| MAX_TEXT_LENGTH | 100,000 | `src/tools/helpers.rs` |
-| MAX_EXPRESSION_LENGTH | 10,000 | `src/tools/helpers.rs` |
-| MAX_LIST_ITEMS | 10,000 | `src/tools/helpers.rs` |
-| MAX_REGEX_SAMPLES | 100 | `src/tools/helpers.rs` |
-| MAX_PATTERN_LENGTH | 1,000 | `src/tools/helpers.rs` |
-| MAX_FACTORIAL | 1,000 | `src/calc/evaluator.rs` |
-| MAX_PRIME | varies | `src/calc/evaluator.rs` |
-| MAX_PERM_COMB | varies | `src/calc/evaluator.rs` |
+| `MAX_TEXT_LENGTH` | 100,000 | `src/tools/helpers.rs` |
+| `MAX_EXPRESSION_LENGTH` | 10,000 | `src/tools/helpers.rs` |
+| `MAX_LIST_ITEMS` | 10,000 | `src/tools/helpers.rs` |
+| `MAX_REGEX_SAMPLES` | 100 | `src/tools/helpers.rs` |
+| `MAX_PATTERN_LENGTH` | 1,000 | `src/tools/helpers.rs` |
+| `MAX_METADATA_FIELD_LENGTH` | 1,000 | `src/tools/helpers.rs` |
+| `MAX_FACTORIAL` | 1,000 | `src/calc/evaluator.rs` |
+| `MCP_PROTOCOL_VERSION` | `"2024-11-05"` | `src/mcp/runtime.rs` |
+| `MCP_SERVER_NAME` | `"eggsact"` | `src/mcp/runtime.rs` |
 
-## Dependencies (18 crates)
+---
 
-Core: `serde`, `serde_json` (preserve_order), `tokio` (full)
-Math: `fancy-regex`, `regex`
-Unicode: `unicode-normalization`, `unicode-segmentation`, `unicode_names2`, `unicode-general-category`, `caseless`
-Crypto: `sha2`, `sha1`, `md5`, `crc32fast`
-Data: `ahash`, `urlencoding`, `toml`, `toml_edit`
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `EGGCALC_NO_CONFIG` | Disables config file loading (set in main.rs) |
+| `EGGCALC_MCP_PROFILE` | Active profile for MCP server (set at startup) |
+| `EGGCALC_MCP_AUDIENCE` | Active audience for MCP server (`Model`/`Harness`/`Debug`) |
+| `EGGCALC_MCP_SCHEMA_DETAIL` | Schema compaction control |
+
+---
+
+## Build & Test
+
+```bash
+cargo build                          # debug build
+cargo build --release                # release build
+cargo test                           # all tests
+cargo test --lib                     # unit tests only
+cargo test --test lib mcp            # MCP tests only
+cargo test --test lib parity         # parity tests only
+cargo test --test lib text           # text tests only
+cargo fmt --all -- --check           # format check
+cargo clippy --all-targets --all-features  # lint
+cargo run --bin generate-docs        # regenerate docs
+cargo run --bin generate-docs -- --check  # verify docs are current
+./release.sh                         # full release pipeline
+```
+
+---
+
+## Related Documentation
+
+| Doc | Location |
+|-----|----------|
+| CLI usage | `docs/cli.md` |
+| Library API | `docs/library-api.md` |
+| MCP tool catalog | `docs/mcp-tools.md` |
+| Contributing | `docs/contributing.md` |
+| Parity status | `docs/parity.md` |
+| Compatibility policy | `docs/compatibility-policy.md` |
+| Agent skills | `.skills/*.md` |
