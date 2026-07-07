@@ -71,6 +71,7 @@ src/
     schemas/        # JSON-schema builders per tool category
       mod.rs        # module declarations + re-exports
       math.rs       # math/text/json/regex/path/shell/etc. schema builders
+      ...           # one file per category (19 total)
   tools/            # MCP tool implementations (by category)
     helpers.rs      # shared constants, utilities, helper functions
     math.rs         # math_eval, unit_convert, unit_info, constant_lookup
@@ -88,13 +89,16 @@ src/
     unicode.rs      # unicode_policy_check, canonicalize_text
     version.rs      # version_compare, version_constraint_check
     cargo.rs        # cargo_toml_inspect
-  text/             # text processing library (24 modules)
+    dependency.rs   # dependency_edit_preflight, dependency_inspect
+    diagnostics.rs  # runtime_diagnostics
+    repo.rs         # repo_diff, repo_status, repo_log
+  text/             # text processing library (25 modules)
   agent/            # in-process agent API (ToolRegistry, Profile, call_json)
   preflight/        # typed preflight wrappers (EditPreflight, CommandPreflight, ConfigPreflight, PatchApplyCheck, TextSecurityInspect), strict finding parsing, structured RecommendedNextTool
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text
   calc/             # calculator tests (4 files)
-  mcp/              # MCP protocol + tool tests (22 files)
+  mcp/              # MCP protocol + tool tests (25 files)
   parity/           # Python/Rust parity tests (12 files)
   text/             # text processing tests (24 files)
 scripts/
@@ -114,9 +118,14 @@ Detailed architecture documentation is in `architecture/`:
 - `architecture/text-library.md` — all 24 text modules, public API, code patterns
 - `architecture/compatibility.md` — compatibility mode (EggcalcPython vs StrictNative), behavior differences
 
-Additional policy docs in `docs/`:
+Additional docs in `docs/`:
 
 - `docs/compatibility-policy.md` — semantic versioning, breaking changes, tool/schema/machine-code stability, deprecation timelines
+- `docs/contributing.md` — prerequisites, building, testing, parity test setup, adding new tools
+- `docs/parity.md` — Python/Rust parity framework, known gaps, verification status (31 known failures as of 2026-07-07)
+- `docs/library-api.md` — in-process API usage, ToolRegistry, call_json variants
+- `docs/mcp-tools.md` — MCP tool catalog with input/output schemas
+- `docs/cli.md` — CLI flags, subcommands, environment variables
 
 ## Agent API
 
