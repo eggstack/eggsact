@@ -203,6 +203,20 @@ impl ToolBudget {
             ..self
         }
     }
+
+    /// Derive a new budget with a custom `max_text_bytes` override.
+    ///
+    /// The field was renamed from `max_text_chars` to `max_text_bytes` in
+    /// 1.1.4 because enforcement is byte-based (`str::len()` returns UTF-8
+    /// bytes, not Unicode scalar values). This builder is the supported
+    /// way to customise the limit. Direct struct literals remain valid
+    /// but break ABI; prefer builders when feasible.
+    pub fn with_max_text_bytes(self, n: usize) -> Self {
+        Self {
+            max_text_bytes: n,
+            ..self
+        }
+    }
 }
 
 /// Map a tool's declared `ToolCost` to an enforceable `ToolBudget`.
@@ -356,6 +370,27 @@ impl BudgetContext {
         } else {
             Ok(())
         }
+    }
+
+    /// Deprecated alias for [`BudgetContext::check_text_bytes`].
+    ///
+    /// The method was renamed in 1.1.4 because the enforcement unit is
+    /// UTF-8 bytes (`str::len()`), not Unicode characters. This shim is
+    /// retained for backward compatibility with downstream callers that
+    /// referenced the old name. It forwards to `check_text_bytes` and
+    /// emits a deprecation note; remove calls in new code.
+    #[deprecated(
+        since = "1.1.4",
+        note = "use check_text_bytes (the limit is bytes, not characters)"
+    )]
+    #[allow(clippy::result_large_err)]
+    pub fn check_text_len(
+        &self,
+        field_name: &str,
+        text: &str,
+        tool_name: &str,
+    ) -> Result<(), ToolResponse> {
+        self.check_text_bytes(field_name, text, tool_name)
     }
 
     /// Returns `Err(TOOL_RESPONSE)` if the list length exceeds `max_list_items`.
@@ -715,6 +750,37 @@ mod tests {
             .check_text_bytes("text", &long_text, "my_tool")
             .unwrap_err();
         assert!(err.error.as_deref().unwrap_or("").contains("exceeds limit"));
+    }
+
+    #[test]
+    fn with_max_text_bytes_overrides_limit() {
+        let b = ToolBudget::CHEAP.with_max_text_bytes(7);
+        assert_eq!(b.max_text_bytes, 7);
+        assert_eq!(b.max_elapsed_ms, ToolBudget::CHEAP.max_elapsed_ms);
+        assert_eq!(b.max_output_bytes, ToolBudget::CHEAP.max_output_bytes);
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn check_text_len_shim_forwards_to_check_text_bytes() {
+        // The deprecated shim must produce identical behaviour to the new
+        // method so downstream callers that referenced the old name keep
+        // working until they migrate.
+        let ctx = BudgetContext::new(ToolBudget::CHEAP);
+
+        assert!(ctx.check_text_len("text", "hello", "test").is_ok());
+
+        let long_text = "x".repeat(ToolBudget::CHEAP.max_text_bytes + 1);
+        let err_shim = ctx
+            .check_text_len("text", &long_text, "my_tool")
+            .unwrap_err();
+        let err_new = ctx
+            .check_text_bytes("text", &long_text, "my_tool")
+            .unwrap_err();
+        assert_eq!(
+            err_shim.error, err_new.error,
+            "deprecated shim must produce identical error"
+        );
     }
 
     #[test]
