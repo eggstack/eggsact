@@ -9,6 +9,7 @@
 //! - JSON-RPC protocol edge cases not covered elsewhere
 
 use serde_json::Value;
+use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -29,6 +30,23 @@ fn mcp_request(request: &str) -> String {
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
+/// Send multiple JSON-RPC requests over a single MCP session and correlate
+/// the responses to the originating requests by `id`.
+///
+/// The MCP runtime dispatches requests concurrently, so responses may arrive
+/// in completion order rather than request order. JSON-RPC clients are
+/// expected to correlate by `id` — this helper does that explicitly so that
+/// positional assertions remain stable.
+///
+/// Behavior:
+/// - Requests without an `id` (notifications) do not produce a returned
+///   response and do not cause a "missing response" failure.
+/// - Duplicate response `id`s panic the test (the server should not emit two
+///   responses for the same request).
+/// - Missing response `id`s panic the test.
+/// - Unexpected response `id`s panic the test.
+/// - The returned `Vec<Value>` is ordered by request order, so existing
+///   positional assertions continue to work.
 fn mcp_request_multi(requests: &[&str]) -> Vec<Value> {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
@@ -46,11 +64,70 @@ fn mcp_request_multi(requests: &[&str]) -> Vec<Value> {
     }
     let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    stdout
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect()
+
+    // Parse request IDs up front so we can correlate responses by id.
+    let mut request_ids: Vec<Option<Value>> = Vec::with_capacity(requests.len());
+    for req in requests {
+        let parsed: Value = match serde_json::from_str(req) {
+            Ok(v) => v,
+            Err(_) => {
+                request_ids.push(None);
+                continue;
+            }
+        };
+        request_ids.push(parsed.get("id").cloned());
+    }
+
+    // Index responses by their id.
+    let mut by_id: HashMap<Value, Value> = HashMap::new();
+    let mut ordered_responses: Vec<Value> = Vec::new();
+    for line in stdout.lines().filter(|l| !l.trim().is_empty()) {
+        let resp: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let Some(id) = resp.get("id").cloned() {
+            if id.is_null() {
+                // Server should not respond to notifications with a null id,
+                // but if it does, surface it positionally rather than crash.
+                ordered_responses.push(resp);
+                continue;
+            }
+            if by_id.insert(id.clone(), resp).is_some() {
+                panic!("Duplicate response id {} in MCP session output", id);
+            }
+        } else {
+            // Response without an id — keep it in arrival order.
+            ordered_responses.push(resp);
+        }
+    }
+
+    // Reconstruct responses in request order, skipping notifications.
+    let mut ordered: Vec<Value> = Vec::with_capacity(requests.len());
+    for id in request_ids.iter() {
+        match id {
+            None => {
+                // Notification — no expected response.
+            }
+            Some(id_value) => match by_id.remove(id_value) {
+                Some(resp) => ordered.push(resp),
+                None => panic!("Missing response for request id {}", id_value),
+            },
+        }
+    }
+
+    // Any responses with ids we did not request indicate a server bug.
+    if !by_id.is_empty() {
+        let unexpected: Vec<String> = by_id.keys().map(|k| k.to_string()).collect();
+        panic!(
+            "Unexpected response ids (no matching request): {:?}",
+            unexpected
+        );
+    }
+
+    // Append any id-less responses (defensive — should not normally occur).
+    ordered.extend(ordered_responses);
+    ordered
 }
 
 fn call_tool_and_get_result(request: &str) -> Value {
@@ -738,6 +815,125 @@ fn test_sequential_session_same_tool_repeatedly() {
     assert_eq!(r1["result"]["value"], "100");
     assert_eq!(r2["result"]["value"], "400");
     assert_eq!(r3["result"]["value"], "900");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CORRELATION HELPER — id-based ordering regression tests
+// ═══════════════════════════════════════════════════════════════════════
+//
+// These tests verify that `mcp_request_multi` correlates responses to
+// requests by JSON-RPC `id`, not by arrival position. The MCP runtime
+// dispatches requests concurrently, so responses may arrive shuffled.
+// JSON-RPC clients are expected to correlate by id, and the helper
+// preserves positional assertions by reordering responses to match the
+// order of the input request slice.
+//
+// The tests below send realistic concurrent MCP sessions that the runtime
+// is free to complete in any order. They assert by request id semantics,
+// not by completion position.
+
+#[test]
+fn test_correlation_helper_uses_string_ids() {
+    // String ids are valid per JSON-RPC. The helper must preserve correlation.
+    let responses = mcp_request_multi(&[
+        r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"1+1"}},"id":"alpha"}"#,
+        r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"2+2"}},"id":"beta"}"#,
+        r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"3+3"}},"id":"gamma"}"#,
+    ]);
+    assert_eq!(responses.len(), 3);
+    // Each response must echo back the originating request id.
+    assert_eq!(responses[0]["id"], "alpha");
+    assert_eq!(responses[1]["id"], "beta");
+    assert_eq!(responses[2]["id"], "gamma");
+    // And the values must match the originating request — not whichever
+    // response arrived first.
+    let v0: Value = serde_json::from_str(
+        responses[0]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let v1: Value = serde_json::from_str(
+        responses[1]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let v2: Value = serde_json::from_str(
+        responses[2]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(v0["result"]["value"], "2");
+    assert_eq!(v1["result"]["value"], "4");
+    assert_eq!(v2["result"]["value"], "6");
+}
+
+#[test]
+fn test_correlation_helper_preserves_request_order_under_concurrency() {
+    // The runtime dispatches these concurrently. Each request evaluates a
+    // distinct expression so the expected value is unambiguous per id.
+    // The helper must reorder responses to match the request slice order.
+    let responses = mcp_request_multi(&[
+        r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"7+7"}},"id":10}"#,
+        r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"8+8"}},"id":20}"#,
+        r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"9+9"}},"id":30}"#,
+        r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"10+10"}},"id":40}"#,
+    ]);
+    assert_eq!(responses.len(), 4);
+    let expected_ids = [10, 20, 30, 40];
+    let expected_values = ["14", "16", "18", "20"];
+    for (i, expected_id) in expected_ids.iter().enumerate() {
+        assert_eq!(
+            responses[i]["id"],
+            Value::Number((*expected_id).into()),
+            "response at index {} should have id {}",
+            i,
+            expected_id
+        );
+        let v: Value = serde_json::from_str(
+            responses[i]["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(v["result"]["value"], expected_values[i]);
+    }
+}
+
+#[test]
+fn test_correlation_helper_handles_notification_alongside_requests() {
+    // A notification (no id) must not produce an entry in the response
+    // vector and must not trigger a missing-response panic. The
+    // notification here targets a request id that does not exist in this
+    // session (999) so it has no effect on the live requests; the test is
+    // verifying that the helper's notification handling is independent of
+    // any active request ids.
+    let responses = mcp_request_multi(&[
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"5+5"}},"id":1}"#,
+        r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":999,"reason":"test"}}"#,
+        r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"6+6"}},"id":2}"#,
+    ]);
+    // Only the two requests have ids, so only two responses are expected.
+    assert_eq!(responses.len(), 2);
+    assert_eq!(responses[0]["id"], Value::Number(1.into()));
+    assert_eq!(responses[1]["id"], Value::Number(2.into()));
+    let v0: Value = serde_json::from_str(
+        responses[0]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let v1: Value = serde_json::from_str(
+        responses[1]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(v0["result"]["value"], "10");
+    assert_eq!(v1["result"]["value"], "12");
 }
 
 // ═══════════════════════════════════════════════════════════════════════
