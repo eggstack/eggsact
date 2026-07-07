@@ -2850,18 +2850,24 @@ fn test_determinism_all_composite_tools() {
 
 #[test]
 fn test_concurrent_stress_math() {
+    use eggsact::agent::{Profile, ToolAudience, ToolRegistry};
+
     let handles: Vec<_> = (0..4)
         .map(|i| {
             thread::spawn(move || {
+                let registry =
+                    ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
                 let expr = format!("factorial({})", i);
-                let r = call_tool("math_eval", serde_json::json!({"expression": &expr}));
-                assert_eq!(
-                    r.get("ok"),
-                    Some(&Value::Bool(true)),
-                    "concurrent math_eval factorial({}) failed",
-                    i
+                let r = registry
+                    .call_json("math_eval", serde_json::json!({"expression": &expr}))
+                    .unwrap_or_else(|e| panic!("math_eval factorial({i}) failed: {e}"));
+                assert!(
+                    r.ok,
+                    "concurrent math_eval factorial({}) failed: {:?}",
+                    i, r.error
                 );
-                assert_eq!(r["result"]["type"], "int");
+                let result = r.result.unwrap();
+                assert_eq!(result["type"], "int");
             })
         })
         .collect();
