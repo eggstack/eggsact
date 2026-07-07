@@ -167,15 +167,19 @@ fn test_validate_regex_too_many_samples() {
     })
     .to_string();
     let raw = call_tool_raw(&request);
-    if raw.get("error").is_none() {
-        let resp = call_tool_and_get_result(&request);
-        if is_tool_error(&resp) {
-            assert_eq!(
-                resp.get("error_type").and_then(|v| v.as_str()),
-                Some("input_too_large")
-            );
-        }
-    }
+    assert!(
+        raw.get("error").is_some(),
+        "validate_regex should reject 101 samples via schema validation (maxItems=100)"
+    );
+    let err_code = raw
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_i64());
+    assert_eq!(
+        err_code,
+        Some(-32602),
+        "Should be JSON-RPC invalid params error"
+    );
 }
 
 #[test]
@@ -187,15 +191,25 @@ fn test_validate_regex_redos_pattern() {
         "id": 1
     }).to_string();
     let raw = call_tool_raw(&request);
-    if raw.get("error").is_none() {
-        let resp = call_tool_and_get_result(&request);
-        if is_tool_error(&resp) {
-            assert_eq!(
-                resp.get("error_type").and_then(|v| v.as_str()),
-                Some("unsafe_pattern")
-            );
-        }
-    }
+    assert!(
+        raw.get("error").is_none(),
+        "ReDoS pattern should not cause JSON-RPC error, got: {:?}",
+        raw.get("error")
+    );
+    let resp = call_tool_and_get_result(&request);
+    assert!(
+        is_tool_error(&resp),
+        "ReDoS pattern should return tool-level error (ok=false)"
+    );
+    assert_eq!(
+        resp.get("error_type").and_then(|v| v.as_str()),
+        Some("unsafe_pattern"),
+        "ReDoS pattern should return error_type=unsafe_pattern"
+    );
+    assert!(
+        resp.get("machine_code").is_some(),
+        "ReDoS error response should carry machine_code"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -377,15 +391,21 @@ fn test_validate_schema_light_invalid_json() {
         "id": 1
     }).to_string();
     let raw = call_tool_raw(&request);
-    if raw.get("error").is_none() {
-        let resp = call_tool_and_get_result(&request);
-        if is_tool_error(&resp) {
-            assert_eq!(
-                resp.get("error_type").and_then(|v| v.as_str()),
-                Some("invalid_arguments")
-            );
-        }
-    }
+    assert!(
+        raw.get("error").is_none(),
+        "Invalid JSON input should not cause JSON-RPC error, got: {:?}",
+        raw.get("error")
+    );
+    let resp = call_tool_and_get_result(&request);
+    assert!(
+        is_tool_error(&resp),
+        "Invalid JSON should return tool-level error (ok=false)"
+    );
+    assert_eq!(
+        resp.get("error_type").and_then(|v| v.as_str()),
+        Some("invalid_arguments"),
+        "Invalid JSON should return error_type=invalid_arguments"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -568,15 +588,19 @@ fn test_glob_match_invalid_platform() {
         "id": 1
     }).to_string();
     let raw = call_tool_raw(&request);
-    if raw.get("error").is_none() {
-        let resp = call_tool_and_get_result(&request);
-        if is_tool_error(&resp) {
-            assert_eq!(
-                resp.get("error_type").and_then(|v| v.as_str()),
-                Some("invalid_arguments")
-            );
-        }
-    }
+    assert!(
+        raw.get("error").is_some(),
+        "glob_match should reject invalid platform via schema validation"
+    );
+    let err_code = raw
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_i64());
+    assert_eq!(
+        err_code,
+        Some(-32602),
+        "Should be JSON-RPC invalid params error"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -786,15 +810,19 @@ fn test_unicode_policy_invalid_policy() {
         "id": 1
     }).to_string();
     let raw = call_tool_raw(&request);
-    if raw.get("error").is_none() {
-        let resp = call_tool_and_get_result(&request);
-        if is_tool_error(&resp) {
-            assert_eq!(
-                resp.get("error_type").and_then(|v| v.as_str()),
-                Some("invalid_arguments")
-            );
-        }
-    }
+    assert!(
+        raw.get("error").is_some(),
+        "unicode_policy_check should reject invalid policy via schema validation"
+    );
+    let err_code = raw
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_i64());
+    assert_eq!(
+        err_code,
+        Some(-32602),
+        "Should be JSON-RPC invalid params error"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1021,15 +1049,19 @@ fn test_escape_invalid_mode() {
     })
     .to_string();
     let raw = call_tool_raw(&request);
-    if raw.get("error").is_none() {
-        let resp = call_tool_and_get_result(&request);
-        if is_tool_error(&resp) {
-            assert_eq!(
-                resp.get("error_type").and_then(|v| v.as_str()),
-                Some("invalid_arguments")
-            );
-        }
-    }
+    assert!(
+        raw.get("error").is_some(),
+        "escape_text should reject invalid mode via schema validation"
+    );
+    let err_code = raw
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_i64());
+    assert_eq!(
+        err_code,
+        Some(-32602),
+        "Should be JSON-RPC invalid params error"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1765,15 +1797,19 @@ fn test_count_invalid_mode() {
     })
     .to_string();
     let raw = call_tool_raw(&request);
-    if raw.get("error").is_none() {
-        let resp = call_tool_and_get_result(&request);
-        if is_tool_error(&resp) {
-            assert_eq!(
-                resp.get("error_type").and_then(|v| v.as_str()),
-                Some("invalid_arguments")
-            );
-        }
-    }
+    assert!(
+        raw.get("error").is_some(),
+        "text_count should reject invalid count_mode via schema validation"
+    );
+    let err_code = raw
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_i64());
+    assert_eq!(
+        err_code,
+        Some(-32602),
+        "Should be JSON-RPC invalid params error"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

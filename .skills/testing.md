@@ -107,6 +107,12 @@ cargo test --test lib parity
 
 The test `test_all_tool_responses_have_machine_code` verifies that every non-OK `ToolResponse` includes a `machine_code` field. If you add a new error path, ensure it uses `error_with_code()` or `.with_machine_code()` — the test will catch missing codes.
 
+## Route-Critical Fixture Tests
+
+`tests/mcp/test_route_contracts.rs` contains fixture-backed contract tests for the 5 route-critical tools (`edit_preflight`, `command_preflight`, `config_preflight`, `patch_apply_check`, `text_security_inspect`). Each fixture declares expected `machine_code`, `verdict`, and a subset of expected findings. The `all_fixtures()` function is the single source of truth for all fixture cases.
+
+When adding new finding codes or changing response behavior for route-critical tools, add or update fixtures in `all_fixtures()`. Registry invariant tests verify every route-critical tool has coverage and every fixture references a valid tool. MCP stdio tests verify the contract over the wire. Audience enforcement tests confirm HarnessOnly tools are rejected for Model audience.
+
 `test_route_critical_finding_codes_are_enumerated` (in `tests/mcp/test_route_contracts.rs`) verifies that every UPPERCASE_SNAKE finding `code` emitted by a route-critical tool is present in `machine_codes::ALL`. Add new codes to `ALL` and reference them as constants (`machine_codes::FOO`), never as raw strings.
 
 See `architecture/machine-codes.md` for the full list of machine codes.

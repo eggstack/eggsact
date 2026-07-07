@@ -192,6 +192,8 @@ A subset of tools are classified as **route-critical** — they produce structur
 
 Route-critical tools must always emit a `machine_code` and `verdict` in their response envelope. The `patch_apply_check` tool is `HarnessOnly` exposure and does not appear in model-facing listings.
 
+These contracts are verified by fixture-backed tests in `tests/mcp/test_route_contracts.rs`: a `RouteFixture` struct drives table-driven assertions for each tool's happy-path and error-path responses, with registry invariant tests and MCP stdio coverage. The tests assert `machine_code`, `verdict`, and a subset of expected findings for each fixture, and verify audience enforcement for HarnessOnly tools.
+
 ## Concurrency Model
 
 The MCP stdio server now supports **concurrent request handling**. The read loop

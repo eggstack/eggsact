@@ -81,6 +81,12 @@ All composite tools use `finding()` / `finding_with_location()` helpers with can
 
 A subset of these tools are further classified as **route-critical** (`is_route_critical()` in `registry/listing.rs`). Route-critical tools (`edit_preflight`, `command_preflight`, `config_preflight`, `patch_apply_check`, `text_security_inspect`) must always emit `machine_code` and `verdict` fields in their response envelope. Route-critical tests verify this contract.
 
+### Fixture-Backed Contract Tests
+
+`tests/mcp/test_route_contracts.rs` contains a `RouteFixture` struct and table-driven fixture tests (`all_fixtures()`) that exercise representative code paths for each route-critical tool. Each fixture declares expected `machine_code`, `verdict`, and a subset of expected findings. The test runner calls the tool via the in-process API, asserts the response envelope matches, and verifies findings are a superset of the expected set.
+
+Registry invariant tests ensure every route-critical tool has at least one fixture, every fixture references a valid route-critical tool, and every fixture's tool is callable via the harness registry. MCP stdio tests spawn the server process and verify the contract over the wire. An audience enforcement test confirms `patch_apply_check` (HarnessOnly) is rejected for Model audience.
+
 ### Finding-Code Enumeration
 
 Every UPPERCASE_SNAKE finding `code` emitted by a route-critical tool must be present in `machine_codes::ALL`. This is enforced by `test_route_critical_finding_codes_are_enumerated` in `tests/mcp/test_route_contracts.rs`, which iterates over each tool's `findings[]` collection and asserts each `code` appears in the canonical table. When adding a new finding code:

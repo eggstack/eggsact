@@ -143,7 +143,7 @@ Additional docs in `docs/`:
 
 - **`ToolDefinition`** lives in `src/mcp/registry/types.rs` (not `server.rs`).
 - **`ToolAudience`** enum (`Model`, `Harness`, `Debug`) controls which exposure levels appear in tool listings and which tools may be executed. Use `available_tools_model_safe()` for model-facing integrations. `ToolAudience::can_execute_exposure()` enforces audience at dispatch time.
-- **Route-critical tools** (`is_route_critical()` in `registry/listing.rs`): `edit_preflight`, `command_preflight`, `config_preflight`, `patch_apply_check`, `text_security_inspect`. Must always emit `machine_code` and `verdict` in their response envelope. Verified by route-contract tests in `tests/mcp/test_route_contracts.rs`.
+- **Route-critical tools** (`is_route_critical()` in `registry/listing.rs`): `edit_preflight`, `command_preflight`, `config_preflight`, `patch_apply_check`, `text_security_inspect`. Must always emit `machine_code` and `verdict` in their response envelope. Verified by fixture-backed route-contract tests (`RouteFixture` struct, `all_fixtures()`) in `tests/mcp/test_route_contracts.rs`, including registry invariant tests, MCP stdio coverage, and audience enforcement.
 - **`Profile::from_str_opt`** is strict — returns `None` for unknown names. Use `Profile::custom(name)` to construct a custom profile explicitly.
 - **`ToolResponse::error`** has been renamed to `error_without_code_for_legacy_tests_only` (deprecated/hidden). Use `error_with_code()` instead.
 - **`CompatibilityMode`** enum (`EggcalcPython`, `StrictNative`) controls validation behavior. `StrictNative` is the default for in-process API; MCP server uses `EggcalcPython`. See `architecture/compatibility.md`.

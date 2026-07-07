@@ -116,7 +116,7 @@ These tools must always emit `machine_code` and `verdict` in their response enve
 - `patch_apply_check`
 - `text_security_inspect`
 
-Harnesses should verify that `machine_code` and `verdict` are present in the response for these tools. Missing fields indicate a contract violation.
+Harnesses should verify that `machine_code` and `verdict` are present in the response for these tools. Missing fields indicate a contract violation. Fixture-backed tests in `tests/mcp/test_route_contracts.rs` (`RouteFixture` struct, `all_fixtures()`) verify these contracts with table-driven assertions covering happy paths, error paths, finding subsets, and MCP stdio wire coverage.
 
 ## Concurrency Contract
 
