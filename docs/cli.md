@@ -2,7 +2,7 @@
 
 ## Overview
 
-`eggsact` is a command-line natural language math calculator. It evaluates mathematical expressions in English or standard math syntax, and can run as an MCP server for AI coding agents.
+`eggsact` is a command-line tool providing deterministic utility tools for coding agents. It evaluates mathematical expressions (including English like "thirty plus five") and can run as an MCP server for AI coding agents.
 
 ## Usage
 

@@ -1,8 +1,9 @@
-//! eggsact - Natural Language Math Calculator with MCP Server
+//! eggsact - Deterministic MCP and In-Process Utility Tools for Coding Agents
 //!
-//! A high-performance Rust implementation for parsing and evaluating mathematical
-//! expressions in natural language (e.g., "thirty plus five" → 35) with full
-//! MCP (Model Context Protocol) server support for AI coding agents.
+//! A high-performance Rust crate providing 71 deterministic tools across 19 categories
+//! for AI coding agents: math evaluation, text processing, JSON analysis, regex validation,
+//! path operations, Unicode safety, shell command preflight, config inspection, and more.
+//! Includes a full MCP (Model Context Protocol) server and an in-process agent API.
 //!
 //! # Quick Start
 //!

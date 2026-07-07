@@ -29,16 +29,19 @@ Tool implementations live in `src/tools/` (category modules):
 | `json.rs` | json_extract, json_compare, json_canonicalize, json_query, json_shape, structured_data_compare |
 | `regex.rs` | validate_regex, regex_safety_check, regex_finditer |
 | `validation.rs` | validate_json, validate_brackets, validate_toml, validate_schema_light |
-| `path.rs` | path_normalize, path_analyze, path_compare, path_scope_check, glob_match |
+| `path.rs` | path_normalize, path_analyze, path_compare, path_scope_check, glob_match, path_batch_scope_check |
 | `shell.rs` | shell_split, shell_quote_join, argv_compare, command_preflight |
 | `list.rs` | list_compare, list_dedupe, list_sort |
 | `markdown.rs` | markdown_structure, code_fence_extract |
-| `patch.rs` | patch_apply_check, patch_summary, edit_preflight |
-| `config.rs` | dotenv_validate, ini_validate, config_preflight |
+| `patch.rs` | patch_apply_check, patch_summary, edit_preflight, diff_risk_classify |
+| `config.rs` | dotenv_validate, ini_validate, config_preflight, toml_shape_tool |
 | `identifier.rs` | identifier_analyze, identifier_inspect, identifier_table_inspect |
 | `unicode.rs` | unicode_policy_check, canonicalize_text |
 | `version.rs` | version_compare, version_constraint_check |
 | `cargo.rs` | cargo_toml_inspect |
+| `dependency.rs` | dependency_edit_preflight |
+| `diagnostics.rs` | runtime_diagnostics |
+| `repo.rs` | repo_manifest_inspect, config_file_inspect, repo_tree_summarize |
 
 ## Protocol
 
@@ -154,7 +157,7 @@ profile at construction time via `with_profile_and_audience`.
 | list | 3 | list_compare, list_dedupe, list_sort |
 | markdown | 2 | markdown_structure, code_fence_extract |
 | patch | 4 | patch_apply_check, patch_summary, edit_preflight, diff_risk_classify |
-| config | 4 | dotenv_validate, ini_validate, config_preflight, toml_shape_tool |
+| config | 3 | dotenv_validate, ini_validate, config_preflight |
 | identifier | 3 | identifier_analyze, identifier_inspect, identifier_table_inspect |
 | unicode | 2 | unicode_policy_check, canonicalize_text |
 | version | 2 | version_compare, version_constraint_check |

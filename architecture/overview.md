@@ -1,8 +1,8 @@
 # eggsact Architecture Overview
 
-**Single-crate Rust project. No workspace. Reimplements Python `eggcalc`.**
+**Single-crate Rust project. No workspace.**
 
-eggsact is a natural language math calculator and MCP (Model Context Protocol) server for AI coding agents. It provides 71 tools across 19 categories for deterministic math, text processing, structured data, paths, Unicode safety, shell commands, and more.
+eggsact is a deterministic MCP (Model Context Protocol) server and in-process utility library for AI coding agents. It provides 71 tools across 19 categories: math evaluation, text processing, JSON analysis, regex validation, path operations, Unicode safety, shell command preflight, config inspection, patch analysis, dependency management, and more. It also re-implements the Python `eggcalc` calculator as one of its tool categories.
 
 ---
 

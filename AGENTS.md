@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Rust reimplementation of Python `eggcalc`. Natural language math calculator + MCP server with registered tools. Single crate, no workspace.
+Deterministic MCP and in-process utility tools for coding agents. Single crate, no workspace. 71 tools across 19 categories: math, text, JSON, regex, path, shell, config, patch, dependency, and more.
 
 ## Commands
 
@@ -117,6 +117,8 @@ Detailed architecture documentation is in `architecture/`:
 - `architecture/machine-codes.md` — machine-readable response codes, finding helpers, severity/disposition/verdict constants, composite tool verdicts
 - `architecture/text-library.md` — all 24 text modules, public API, code patterns
 - `architecture/compatibility.md` — compatibility mode (EggcalcPython vs StrictNative), behavior differences
+- `architecture/coding-agent-integration.md` — MCP stdio and in-process integration, profiles, audiences, concurrency contract
+- `architecture/generated-assets.md` — generated doc files, confusables data, parity workflow, diagnostics
 
 Additional docs in `docs/`:
 

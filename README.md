@@ -3,16 +3,17 @@
 [![Crates.io](https://img.shields.io/crates/v/eggsact)](https://crates.io/crates/eggsact)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Deterministic MCP and in-process utility tools for coding agents, including math, text processing, JSON, regex, paths, Unicode safety, shell, config, patch, dependency, and repository preflight helpers. Also serves as a natural language math calculator — parses expressions like "thirty plus five" or "30m + 100ft" and evaluates them to results.
+Deterministic MCP and in-process utility tools for coding agents. 71 tools across 19 categories: math, text, JSON, regex, path, shell, config, patch, dependency, and more. Includes a natural language math evaluator that parses expressions like "thirty plus five" or "30m + 100ft".
 
 ## Key Features
 
+- MCP server with 71 registered tools for AI agents to reduce hallucinations
+- In-process agent API for direct tool calls without MCP overhead
+- Typed preflight wrappers for edit, command, config, and patch workflows
 - Natural language math: "two to the power of ten" evaluates to 1024
 - Unit conversions: "30m to ft", "100C in F"
 - Physical and mathematical constants: `pi`, `c`, `planck`, `avogadro`, `gravity`
-- MCP server with registered tools for AI agents to reduce hallucinations
 - High-performance Rust implementation with zero required external services
-- Rust reimplementation of the Python `eggcalc` project
 
 ## Installation
 
@@ -500,16 +501,19 @@ eggsact/
 │   │   ├── json.rs          # json_extract, json_compare, json_canonicalize, etc. (6 tools)
 │   │   ├── regex.rs         # validate_regex, regex_safety_check, regex_finditer
 │   │   ├── validation.rs    # validate_json, validate_brackets, validate_toml, validate_schema_light
-│   │   ├── path.rs          # path_normalize, path_analyze, path_compare, glob_match, etc.
+│   │   ├── path.rs          # path_normalize, path_analyze, path_compare, glob_match, path_batch_scope_check
 │   │   ├── shell.rs         # shell_split, shell_quote_join, argv_compare, command_preflight
 │   │   ├── list.rs          # list_compare, list_dedupe, list_sort
 │   │   ├── markdown.rs      # markdown_structure, code_fence_extract
-│   │   ├── patch.rs         # patch_apply_check, patch_summary, edit_preflight
-│   │   ├── config.rs        # dotenv_validate, ini_validate, config_preflight
+│   │   ├── patch.rs         # patch_apply_check, patch_summary, edit_preflight, diff_risk_classify
+│   │   ├── config.rs        # dotenv_validate, ini_validate, config_preflight, toml_shape_tool
 │   │   ├── identifier.rs    # identifier_analyze, identifier_inspect, identifier_table_inspect
 │   │   ├── unicode.rs       # unicode_policy_check, canonicalize_text
 │   │   ├── version.rs       # version_compare, version_constraint_check
-│   │   └── cargo.rs         # cargo_toml_inspect
+│   │   ├── cargo.rs         # cargo_toml_inspect
+│   │   ├── dependency.rs    # dependency_edit_preflight
+│   │   ├── diagnostics.rs   # runtime_diagnostics
+│   │   └── repo.rs          # repo_manifest_inspect, config_file_inspect, repo_tree_summarize
 │   └── text/                # Text processing library (24 modules)
 │       ├── mod.rs           # Module re-exports
 │       ├── primitives.rs    # UTF-8 encoding, codepoint iteration
@@ -571,7 +575,7 @@ cargo run -- --mcp
 
 ## Relationship to Python eggcalc
 
-`eggsact` is a Rust reimplementation of the Python `eggcalc` project. The Python version uses AST parsing of natural language expressions and a plugin-based MCP server. `eggsact` reimplements the same normalization pipeline, evaluation engine, and all MCP tools in Rust for higher performance and easier distribution as a single binary.
+`eggsact` is a Rust reimplementation of the Python `eggcalc` project. The Python version uses AST parsing of expressions and a plugin-based MCP server. `eggsact` reimplements the same normalization pipeline, evaluation engine, and all MCP tools in Rust for higher performance and easier distribution as a single binary.
 
 The two projects are functionally equivalent for core math, unit conversion, and text processing operations.
 

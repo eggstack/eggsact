@@ -2,7 +2,7 @@
 
 ## Overview
 
-`eggsact` is a Rust crate that provides natural language math evaluation and an MCP (Model Context Protocol) server for AI coding agents. Use it as a library dependency or as a standalone CLI.
+`eggsact` is a Rust crate providing deterministic utility tools and an MCP (Model Context Protocol) server for AI coding agents. Use it as a library dependency or as a standalone CLI.
 
 ```toml
 [dependencies]
