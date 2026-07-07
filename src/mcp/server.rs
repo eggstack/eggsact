@@ -1,4 +1,4 @@
-use crate::agent::{Profile, ToolAudience, ToolCallError, ToolCallOutcome, ToolRegistry};
+use crate::agent::{Profile, ToolCallError, ToolCallOutcome, ToolRegistry};
 use crate::mcp::budget::{budget_for_tool, BudgetContext};
 use crate::mcp::compat::CompatibilityMode;
 use crate::mcp::machine_codes;
@@ -10,10 +10,10 @@ use crate::mcp::response::{
     python_json_dumps, sanitize_error, truncate_response, wrap_tool_response, ToolResponse,
 };
 use crate::mcp::runtime::{
-    self, apply_cancellation, get_active_profile, get_schema_detail, new_active_requests,
-    RateLimiter, MAX_IN_FLIGHT_REQUESTS, MAX_OUTPUT_BYTES, MAX_REQUESTS_PER_SECOND,
-    MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS, MCP_PROTOCOL_VERSION,
-    MCP_SERVER_NAME,
+    self, apply_cancellation, get_active_audience, get_active_profile, get_schema_detail,
+    new_active_requests, RateLimiter, MAX_IN_FLIGHT_REQUESTS, MAX_OUTPUT_BYTES,
+    MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS,
+    MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
 };
 use serde_json::Value;
 use std::sync::atomic::Ordering;
@@ -245,7 +245,7 @@ async fn handle_request_async(
             let active_profile = get_active_profile();
             let profile = Profile::from_str_opt(&active_profile)
                 .unwrap_or_else(|| Profile::custom(&active_profile));
-            let registry = ToolRegistry::with_profile_and_audience(profile, ToolAudience::Model)
+            let registry = ToolRegistry::with_profile_and_audience(profile, get_active_audience())
                 .with_compat_mode(CompatibilityMode::EggcalcPython);
             let handler = match registry.prepare_tool_call(name, &arguments_val) {
                 ToolCallOutcome::Ready { handler } => handler,

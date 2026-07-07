@@ -11,6 +11,7 @@
 //! - Tool name case sensitivity
 
 use serde_json::Value;
+use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -19,6 +20,7 @@ use eggsact::agent::{Profile, ToolAudience, ToolRegistry};
 fn mcp_request(request: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -36,6 +38,7 @@ fn mcp_request(request: &str) -> String {
 fn mcp_request_multi(requests: &[&str]) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -49,7 +52,68 @@ fn mcp_request_multi(requests: &[&str]) -> String {
         }
     }
     let output = child.wait_with_output().unwrap();
-    String::from_utf8_lossy(&output.stdout).to_string()
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+
+    // Parse request IDs up front so we can correlate responses by id.
+    let mut request_ids: Vec<Option<Value>> = Vec::with_capacity(requests.len());
+    for req in requests {
+        let parsed: Value = match serde_json::from_str(req) {
+            Ok(v) => v,
+            Err(_) => {
+                request_ids.push(None);
+                continue;
+            }
+        };
+        request_ids.push(parsed.get("id").cloned());
+    }
+
+    // Index responses by their id.
+    let mut by_id: HashMap<Value, Value> = HashMap::new();
+    let mut ordered_responses: Vec<Value> = Vec::new();
+    for line in stdout.lines().filter(|l| !l.trim().is_empty()) {
+        let resp: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let Some(id) = resp.get("id").cloned() {
+            if id.is_null() {
+                ordered_responses.push(resp);
+                continue;
+            }
+            if by_id.insert(id.clone(), resp).is_some() {
+                panic!("Duplicate response id {} in MCP session output", id);
+            }
+        } else {
+            ordered_responses.push(resp);
+        }
+    }
+
+    // Reconstruct responses in request order, skipping notifications.
+    let mut ordered: Vec<Value> = Vec::with_capacity(requests.len());
+    for id in request_ids.iter() {
+        match id {
+            None => {}
+            Some(id_value) => match by_id.remove(id_value) {
+                Some(resp) => ordered.push(resp),
+                None => panic!("Missing response for request id {}", id_value),
+            },
+        }
+    }
+
+    if !by_id.is_empty() {
+        let unexpected: Vec<String> = by_id.keys().map(|k| k.to_string()).collect();
+        panic!(
+            "Unexpected response ids (no matching request): {:?}",
+            unexpected
+        );
+    }
+
+    ordered.extend(ordered_responses);
+    ordered
+        .iter()
+        .map(|v| serde_json::to_string(v).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn call_tool_and_get_result(request: &str) -> Value {

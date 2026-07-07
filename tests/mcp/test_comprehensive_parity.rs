@@ -16,6 +16,7 @@ use std::process::{Command, Stdio};
 fn mcp_request(request: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -50,6 +51,7 @@ fn mcp_request(request: &str) -> String {
 fn mcp_request_multi(requests: &[&str]) -> Vec<Value> {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

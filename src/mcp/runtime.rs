@@ -1,3 +1,4 @@
+use crate::agent::ToolAudience;
 use crate::calc::set_mcp_mode;
 use crate::mcp::registry;
 use serde_json::Value;
@@ -52,6 +53,24 @@ static ACTIVE_SCHEMA_DETAIL: LazyLock<RwLock<String>> = LazyLock::new(|| {
     RwLock::new(detail)
 });
 
+static ACTIVE_AUDIENCE: LazyLock<RwLock<ToolAudience>> = LazyLock::new(|| {
+    let audience_str =
+        std::env::var("EGGCALC_MCP_AUDIENCE").unwrap_or_else(|_| "Model".to_string());
+    let audience = match audience_str.as_str() {
+        "Model" => ToolAudience::Model,
+        "Harness" => ToolAudience::Harness,
+        "Debug" => ToolAudience::Debug,
+        other => {
+            eprintln!(
+                "Error: Invalid EGGCALC_MCP_AUDIENCE: {:?}. Use Model, Harness, or Debug.",
+                other
+            );
+            std::process::exit(1);
+        }
+    };
+    RwLock::new(audience)
+});
+
 static MCP_DEFAULTS_CONFIGURED: AtomicBool = AtomicBool::new(false);
 
 pub fn set_active_profile(name: &str) -> Result<(), String> {
@@ -90,6 +109,11 @@ pub fn get_schema_detail() -> String {
         .read()
         .unwrap_or_else(|e| e.into_inner());
     detail.clone()
+}
+
+pub fn get_active_audience() -> ToolAudience {
+    let audience = ACTIVE_AUDIENCE.read().unwrap_or_else(|e| e.into_inner());
+    *audience
 }
 
 pub fn ensure_mcp_defaults() {

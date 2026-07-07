@@ -295,7 +295,7 @@ Legacy APIs remain as backward-compatible wrappers:
 
 ### MCP startup env vars → runtime context
 
-The MCP server reads `EGGCALC_MCP_PROFILE` and `EGGCALC_MCP_SCHEMA_DETAIL` at startup. These become the `profile` and `compatibility_mode` fields in `ExecutionContext::mcp_default()`. Once set, they apply to all subsequent tool calls — there is no per-call profile override in `tools/call`.
+The MCP server reads `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE`, and `EGGCALC_MCP_SCHEMA_DETAIL` at startup. These become the `profile`, `audience`, and `compatibility_mode` fields in `ExecutionContext::mcp_default()`. Once set, they apply to all subsequent tool calls — there is no per-call profile override in `tools/call`.
 
 ### Handler signatures unchanged
 
@@ -306,7 +306,7 @@ Tool handler functions retain the signature `fn(&Value) -> ToolResponse` for com
 | State | Why global |
 |-------|------------|
 | `MCP_MODE`, `ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS` AtomicBool | One-shot startup flags, race-safe. Context-aware APIs bypass these via `EvalContext` fields. |
-| `ACTIVE_PROFILE`, `ACTIVE_SCHEMA_DETAIL` RwLock | Set once at startup, read-only after init |
+| `ACTIVE_PROFILE`, `ACTIVE_AUDIENCE`, `ACTIVE_SCHEMA_DETAIL` RwLock | Set once at startup, read-only after init |
 | `SPAWN_SEMAPHORE` | Intentional global concurrency limiter |
 | `CURRENT_CANCEL_FLAG` thread-local | Properly scoped per-dispatch |
 | `CURRENT_EVAL_CONTEXT` thread-local | Set by `with_eval_context()` during calculator-backed tool dispatch; bypasses legacy globals |

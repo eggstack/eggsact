@@ -80,4 +80,5 @@ echo '{"jsonrpc":"2.0","method":"tools/call","id":3,"params":{"name":"math_eval"
 |----------|---------|
 | `EGGCALC_NO_CONFIG=1` | Disable config file loading (set in main.rs) |
 | `EGGCALC_MCP_PROFILE` | Select MCP tool profile |
+| `EGGCALC_MCP_AUDIENCE` | Select MCP audience (Model, Harness, Debug) |
 | `EGGCALC_MCP_SCHEMA_DETAIL` | Control schema detail level |

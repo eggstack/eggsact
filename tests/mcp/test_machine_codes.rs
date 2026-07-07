@@ -24,6 +24,7 @@ fn call_tool(name: &str, args: Value) -> Value {
     .to_string();
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -61,6 +62,7 @@ fn call_tool_error(name: &str, args: Value) -> Value {
     .to_string();
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

@@ -36,6 +36,7 @@ pub fn runtime_diagnostics(_args: &Value) -> ToolResponse {
         "known_env_vars": [
             "EGGCALC_NO_CONFIG",
             "EGGCALC_MCP_PROFILE",
+            "EGGCALC_MCP_AUDIENCE",
             "EGGCALC_MCP_SCHEMA_DETAIL",
         ],
         "generated_doc_command": "cargo run --bin generate-docs",

@@ -116,7 +116,7 @@ Cancellation is cooperative, not forceful. The MCP server and in-process API cre
 
 ### In-process vs MCP wire
 
-`call_json_with_execution_context` is an **in-process** API. It does not change the MCP JSON-RPC wire protocol. The MCP server still resolves its active profile from startup environment variables (`EGGCALC_MCP_PROFILE`) at init time. A future MCP request-level context API would be required to expose per-request context over the wire.
+`call_json_with_execution_context` is an **in-process** API. It does not change the MCP JSON-RPC wire protocol. The MCP server still resolves its active profile and audience from startup environment variables (`EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE`) at init time. A future MCP request-level context API would be required to expose per-request context over the wire.
 
 ### What remains global / thread-local
 

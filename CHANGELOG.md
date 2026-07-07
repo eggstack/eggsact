@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `error_with_code()`.
 - **Concurrency Model docs**: documented serial stdio read-loop semantics and
   `MAX_TOOL_WORKERS` scope in `architecture/mcp-server.md` and `architecture/overview.md`.
+- **`EGGCALC_MCP_AUDIENCE` env var**: controls `ToolAudience` for MCP subprocess
+  spawns (`Model`, `Harness`, `Debug`). Defaults to `Model`. Used by test helpers
+  to access HarnessOnly tools.
 
 ### Changed
 - **Phase 3: Stable Response Contracts and Machine Codes**. Every non-OK tool
@@ -109,6 +112,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BUG-208**: `glob_match` no longer panics when a malformed glob
   bracket range translates into an invalid regex; invalid translated
   segments are treated as non-matches.
+- **Parity Category A (23 tests)**: Fixed test-harness audience bug.
+  HarnessOnly tools were rejected by `ToolAudience::Model` in MCP
+  subprocess spawns. Added `EGGCALC_MCP_AUDIENCE` env var and updated
+  all 9 MCP test helper files.
 
 ### Changed
 - Centralized MCP server identity and protocol constants in

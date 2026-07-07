@@ -47,6 +47,7 @@ fn print_diagnostics(format: &str) {
     let env_var_names = [
         "EGGCALC_NO_CONFIG",
         "EGGCALC_MCP_PROFILE",
+        "EGGCALC_MCP_AUDIENCE",
         "EGGCALC_MCP_SCHEMA_DETAIL",
     ];
     let confusables_exists = std::path::Path::new("src/text/confusables_generated.rs").exists();
