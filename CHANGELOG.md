@@ -229,6 +229,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     2026-07-06); documented 3 new concurrent-ordering parity failures.
   - `AGENTS.md`: parity known-failures count updated 53 → 56.
 
+## [Unreleased — final closure pass] - 2026-07-07
+
+### Added
+- `ToolBudget::with_max_text_bytes(n)` builder for customising the per-call
+  text-length cap. Matches the existing builder pattern for `max_input_bytes`,
+  `max_output_bytes`, `max_findings`, and `max_elapsed_ms`.
+- 3 regression tests for the multi-request MCP correlation helper
+  (`tests/mcp/test_comprehensive_parity.rs`):
+  - `test_correlation_helper_uses_string_ids`
+  - `test_correlation_helper_preserves_request_order_under_concurrency`
+  - `test_correlation_helper_handles_notification_alongside_requests`
+- 1 budget unit test: `with_max_text_bytes_overrides_limit`
+  (`src/mcp/budget.rs`).
+- 1 budget unit test: `check_text_len_shim_forwards_to_check_text_bytes`
+  (`src/mcp/budget.rs`).
+
+### Changed
+- `mcp_request_multi()` (`tests/mcp/test_comprehensive_parity.rs`) now
+  correlates responses by JSON-RPC `id` field rather than positional index.
+  The MCP stdio server dispatches requests concurrently via `tokio::JoinSet`,
+  so responses may arrive in completion order. The helper:
+  - parses each request's `id` up front;
+  - indexes responses into a `HashMap<Value, Value>` keyed by id;
+  - returns responses in request-slice order so existing positional
+    assertions remain stable;
+  - skips notifications (no id) silently;
+  - hard-fails on duplicate, missing, or unexpected response ids.
+- `docs/parity.md`: Category D (concurrent ordering) marked Resolved;
+  verification status updated to 362 passed / 54 failed / 2 ignored (out of
+  416 parity tests, post id-correlation fix).
+- `architecture/mcp-server.md`: added explicit "Response ordering contract"
+  section to the concurrency model — clients must correlate responses to
+  requests by JSON-RPC `id`, not by arrival position. Notifications produce
+  no response by JSON-RPC contract.
+- `README.md`: MCP server section now notes concurrent dispatch and the
+  id-correlation requirement.
+- `AGENTS.md`: parity known-failures count updated 56 → 54; added Key
+  gotcha entry on MCP concurrent response ordering.
+
+### Deprecated
+- `BudgetContext::check_text_len(...)` is retained as a `#[deprecated]`
+  alias for `check_text_bytes(...)`. The method was renamed in 1.1.4 because
+  enforcement is byte-based (`str::len()`), not character-based. The shim
+  forwards to the canonical method and emits a deprecation note. Direct
+  struct literals of `ToolBudget` remain valid; prefer builders
+  (`ToolBudget::with_max_text_bytes(n)` etc.) to avoid ABI breaks when
+  fields are renamed.
+
+### Fixed
+- 3 parity failures in multi-request MCP sessions resolved by switching
+  `mcp_request_multi()` to id-based correlation. The concurrent server
+  behaviour is correct and intentional; the previous helper was
+  positionally correlating responses, which is not a valid assumption under
+  concurrent dispatch. Affected tests:
+  - `test_sequential_session_multiple_tools`
+  - `test_sequential_session_tool_then_error_then_tool`
+  - `test_correlation_helper_handles_notification_alongside_requests` (new
+    test caught a race condition where the test used
+    `notifications/cancelled` against a live request id, causing that
+    request to actually be cancelled; corrected to target an unused id 999).
+- Verification gates: `cargo fmt --check`, `cargo clippy
+  --all-targets --all-features -- -D warnings`,
+  `cargo run --bin generate-docs -- --check`, and
+  `cargo package --verbose` all pass locally. Full non-parity test suite:
+  2885 passed, 130 failed (130 pre-existing parity/MCP harness failures,
+  unchanged from baseline). Parity test suite: 362 passed, 54 failed
+  (improved from 356 passed / 57 failed baseline by 6 passing and 3 fewer
+  failing).
+
 ## [0.1.0] - 2026-05-30
 
 ### Added
