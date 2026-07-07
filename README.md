@@ -91,6 +91,8 @@ Start the server and connect via JSON-RPC 2.0 over stdio. The server identifies 
 eggsact --mcp
 ```
 
+The server dispatches requests **concurrently**. Responses may arrive out of request order. **Clients must correlate responses to requests by JSON-RPC `id`**, not by arrival position. See `architecture/mcp-server.md` for the full concurrency and response-ordering contract.
+
 ## Response Contract
 
 Every MCP tool response includes a `machine_code` field (when non-OK) for programmatic routing and classification. Machine codes are defined in `src/mcp/machine_codes.rs`. See `architecture/machine-codes.md` for the full code table and finding helpers.

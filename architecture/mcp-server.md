@@ -219,6 +219,24 @@ cancellation and timeout share the same signal. The handler can check
 server drains in-flight requests via `JoinSet::join_next()` before dropping the
 channel sender and waiting for the writer task to flush remaining responses.
 
+**Response ordering contract (JSON-RPC):** Because requests are dispatched
+concurrently and may complete out of request order, **clients must correlate
+responses to requests by JSON-RPC `id`**, not by arrival position. The `id`
+field on each response echoes the `id` of the originating request (string,
+integer, or null). JSON-RPC clients that implicitly assume ordered responses
+will observe races on multi-request sessions. The server intentionally does
+not serialize dispatch behind a head-of-line lock, because doing so would
+re-introduce the latency bottleneck that the concurrent runtime removed.
+
+Notifications (requests without an `id`) produce no response by JSON-RPC
+contract; clients must not expect them in the output stream.
+
+Test helpers in `tests/mcp/test_comprehensive_parity.rs`
+(`mcp_request_multi()`) implement id-based correlation explicitly and reorder
+responses to match request slice order so existing positional assertions
+remain stable. Any future helper that sends multiple requests in one session
+must do the same.
+
 For high-throughput preflight calls, codegg should use the **in-process agent
 API** (`src/agent/`) rather than the MCP stdio server. The agent API
 (`ToolRegistry::call_json()`) is synchronous and avoids the serialization and
@@ -319,8 +337,8 @@ The MCP server applies per-tool resource budgets during `tools/call` dispatch:
 - **`BudgetTier`** enum: `Cheap`, `Moderate`, `Heavy` — maps from `ToolCost` in `ToolSpec`.
 - **`ToolBudget`** struct: per-tool resource limits — `max_input_bytes`, `max_output_bytes`, `max_elapsed_ms`, `max_text_bytes`, `max_findings`, `max_list_items`, `max_pattern_length`, `max_regex_pattern_chars`, `max_regex_samples`, `max_spawned_workers`.
 - **`budget_for_tool(tool_name)`**: resolves the effective `ToolBudget` for a tool, applying composite overrides when a tool orchestrates other tools internally.
-- **Builders**: `ToolBudget::with_max_findings(n)`, `with_max_output_bytes(n)`, `with_max_input_bytes(n)` — used by callers (especially tests) to override a single budget field without rebuilding the whole struct.
-- **`BudgetContext`**: runtime context passed into tool handlers — holds a deadline (`Instant`), a `cancelled` flag, and `should_stop()` which checks both deadline expiry and cancellation. Helper methods: `check_not_cancelled(tool_name)`, `check_deadline(tool_name)`, `check_text_bytes(field, text, tool_name)`, `check_list_len(field, len, tool_name)`, `remaining_time_ms()`.
+- **Builders**: `ToolBudget::with_max_findings(n)`, `with_max_output_bytes(n)`, `with_max_input_bytes(n)`, `with_max_text_bytes(n)` — used by callers (especially tests) to override a single budget field without rebuilding the whole struct. Direct struct literals remain valid but break ABI when fields are renamed; prefer builders.
+- **`BudgetContext`**: runtime context passed into tool handlers — holds a deadline (`Instant`), a `cancelled` flag, and `should_stop()` which checks both deadline expiry and cancellation. Helper methods: `check_not_cancelled(tool_name)`, `check_deadline(tool_name)`, `check_text_bytes(field, text, tool_name)`, `check_list_len(field, len, tool_name)`, `remaining_time_ms()`. `check_text_len` is retained as a deprecated alias for `check_text_bytes` (renamed in 1.1.4 because enforcement is byte-based, not character-based).
 - **Composite sub-budgets**: `SubBudget` and `CompositeBudgetAllocator` allow composite tools (e.g., `edit_preflight`, `command_preflight`) to split their parent budget across child tool calls via `sub_budget_context()`.
 
 ### Response Truncation (`src/mcp/response.rs`)
