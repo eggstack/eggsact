@@ -158,21 +158,27 @@ in the CI environment), and the most recent local run against
 `/Users/davidbowman/projects/eggcalc` produced partial results.
 
 - **Command:** `cargo test --test lib parity`
-- **Date:** 2026-07-06
-- **Commit:** (corrective-verification-pass, post phase-04 concurrent runtime)
-- **Result:** 357 passed, **56 failed**, 2 ignored (out of 413 parity tests; 2520
+- **Date:** 2026-07-07
+- **Commit:** (post concurrent-runtime id-correlation fix)
+- **Result:** 362 passed, **54 failed**, 2 ignored (out of 416 parity tests; 2599
   non-parity tests filtered out)
 
 Do not interpret partial parity as a regression — the failures have accumulated across
 the phase 06–09 line of work and were not previously captured in this document. The
 previous "all parity tests pass" wording was unsupported and has been removed.
 
+**Note:** the 3 concurrent-ordering failures from the previous pass were resolved
+by switching `mcp_request_multi()` to id-based correlation (see Category D below,
+now marked Resolved).
+
 ## Known parity gaps
 
-The 56 failing parity tests fall into four categories. None are regressions
-introduced by a single change; they accumulated as the Rust tool set and audience
-model evolved. Fixing them is **explicitly out of scope** for the phase 06–09
-release-polish pass and is deferred to follow-up work.
+The 54 failing parity tests fall into three categories (Category D was
+resolved by switching the test helper to id-based correlation — see below).
+None of the remaining failures are regressions introduced by a single change;
+they accumulated as the Rust tool set and audience model evolved. Fixing them
+is **explicitly out of scope** for the phase 06–09 release-polish pass and is
+deferred to follow-up work.
 
 ### A. Test-harness audience bug (~41 failures)
 
@@ -238,22 +244,34 @@ tool sets differ — the `default`, `codegg_core_min`, `codegg_core`,
 `codegg_unicode_security`, `codegg_shell`, and `human_math` profiles match
 exactly, but the remaining four do not.
 
-### D. Concurrent ordering in multi-request sessions (3 failures)
+### D. ~~Concurrent ordering in multi-request sessions (3 failures)~~ — Resolved 2026-07-07
 
 Phase-04 introduced concurrent MCP request dispatch via `tokio::task::JoinSet`
 (see `architecture/mcp-server.md` § Concurrency Model). The `mcp_request_multi()`
-helper in `tests/mcp/test_comprehensive_parity.rs` writes all requests to the
-spawned MCP server's stdin before reading any responses, then parses responses
-positionally by index. With concurrent dispatch, tool calls complete at
-different speeds and responses arrive out of request order, breaking the
-positional assertions.
+helper in `tests/mcp/test_comprehensive_parity.rs` originally wrote all
+requests to the spawned MCP server's stdin before reading any responses, then
+parsed responses positionally by index. With concurrent dispatch, tool calls
+complete at different speeds and responses arrive out of request order,
+breaking the positional assertions.
 
-Affected tests (all in `tests/mcp/test_comprehensive_parity.rs`):
+**Resolution (2026-07-07):** `mcp_request_multi()` now correlates responses by
+JSON-RPC `id` field instead of positional order. The helper:
 
-- `test_sequential_session_multiple_tools`
-- `test_sequential_session_same_tool_repeatedly`
-- `test_sequential_session_tool_then_error_then_tool`
+- Parses each request's `id` up front and indexes responses by id into a map.
+- Returns responses in request-slice order so existing positional assertions
+  remain stable.
+- Skips notifications (no id) silently — they do not produce responses by
+  JSON-RPC contract.
+- Hard-fails on duplicate response ids (server bug) and missing/unexpected
+  response ids (server or harness bug).
 
-The fix is to correlate responses by JSON-RPC `id` field instead of relying on
-positional order. This is a test-harness issue; the concurrent server behavior
-is correct.
+Three regression tests were added to lock in the new behaviour:
+
+- `test_correlation_helper_uses_string_ids` — string ids correlate correctly.
+- `test_correlation_helper_preserves_request_order_under_concurrency` — out-
+  of-order responses still map to the right request outputs.
+- `test_correlation_helper_handles_notification_alongside_requests` —
+  notifications do not cause false missing-response failures.
+
+This was a test-harness issue; the concurrent server behavior is correct and
+intentional (see `architecture/mcp-server.md` § Response ordering contract).

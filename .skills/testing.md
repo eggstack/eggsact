@@ -108,6 +108,7 @@ Tests that need to exercise truncation or input-overflow behavior can override s
 - `ToolBudget::with_max_findings(n)` — exercise findings cap (reserves 1 slot for synthetic `OUTPUT_TOO_LARGE` notice).
 - `ToolBudget::with_max_output_bytes(n)` — exercise result truncation (oversized result is replaced with summary object preserving `machine_code`/`verdict`/`ok`/caller-`summary`).
 - `ToolBudget::with_max_input_bytes(n)` — exercise input pre-check (`INPUT_TOO_LARGE` rejection before handler dispatch).
+- `ToolBudget::with_max_text_bytes(n)` — exercise per-call text-length cap (UTF-8 byte based, enforced via `BudgetContext::check_text_bytes`).
 
 Existing truncation tests live in `src/mcp/response.rs` (`truncate_*` tests) and in-process tests live in `src/agent/mod.rs` (`call_json_with_budget_*` tests).
 
