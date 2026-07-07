@@ -1047,6 +1047,7 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
 }
 
 pub fn structured_data_compare(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::HEAVY);
     let a = match args.get("a").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
@@ -1240,6 +1241,12 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
         false
     };
 
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("structured_data_compare")
+            .unwrap_err();
+    }
+
     let shape_a = json_shape_tool(&serde_json::json!({"text": a}));
     let shape_b = json_shape_tool(&serde_json::json!({"text": b}));
     if let (Some(sa), Some(sb)) = (&shape_a.result, &shape_b.result) {
@@ -1260,6 +1267,12 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
             "shape_b".to_string(),
             shape_b.result.unwrap_or(serde_json::Value::Null),
         );
+    }
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("structured_data_compare")
+            .unwrap_err();
     }
 
     let machine_code = if !valid_a || !valid_b {

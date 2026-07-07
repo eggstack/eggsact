@@ -334,6 +334,8 @@ pub fn regex_safety_check_tool(args: &Value) -> ToolResponse {
 }
 
 pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::MODERATE);
+
     let pattern = match _require_str(args, "pattern", "regex_finditer") {
         Ok(s) => s,
         Err(e) => return *e,
@@ -448,6 +450,10 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
         );
     }
 
+    if budget_ctx.should_stop() {
+        return budget_ctx.check_should_stop("regex_finditer").unwrap_err();
+    }
+
     let safety = crate::text::regex_safety_check(pattern);
     if safety.risk == "medium" || safety.risk == "high" {
         return ToolResponse::error_with_code(
@@ -491,6 +497,10 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
             )
         }
     };
+
+    if budget_ctx.should_stop() {
+        return budget_ctx.check_should_stop("regex_finditer").unwrap_err();
+    }
 
     let matches: Vec<serde_json::Value> = result
         .matches

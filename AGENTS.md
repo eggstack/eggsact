@@ -66,7 +66,7 @@ src/
     response.rs     # ToolResponse, error sanitization, finding() helpers, with_verdict, preflight builders
     machine_codes.rs # machine-readable response codes, severity/disposition/verdict constants
     budget.rs       # per-tool budgets, tiers, composite sub-budgets, BudgetContext with cooperative helpers
-    runtime.rs      # rate limiter, constants, profile management
+    runtime.rs      # rate limiter, constants, profile management, schema detail validation
     schema_validation.rs # argument validation against tool schemas
     schemas/        # JSON-schema builders per tool category
       mod.rs        # module declarations + re-exports
@@ -179,7 +179,7 @@ Agent task skills in `.skills/`:
 
 - **Tool timeouts are budget-derived**: `tools/call` uses `budget.max_elapsed_ms` from `ToolBudget` (resolved via `budget_for_tool()` from `ToolSpec.cost`), not a fixed 30s constant. Composite tools get sub-budgets via `SubBudget`/`CompositeBudgetAllocator`.
 
-- **Cooperative budget checks in high-risk handlers**: `edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, and `dependency_edit_preflight` create a `BudgetContext` internally (since `ToolHandler` is `fn(&Value) -> ToolResponse` and cannot receive context). They call `should_stop()` at key pipeline stages. The MCP server creates an `Arc<AtomicBool>` cancel flag and attaches it via `with_cancellation()` before dispatch; on timeout, the flag is set but blocking work may continue (cooperative, not forceful).
+- **Cooperative budget checks in high-risk handlers**: `edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`, `text_security_inspect`, `structured_data_compare`, `text_diff_explain`, `patch_apply_check`, `patch_summary`, `identifier_table_inspect`, `regex_finditer`, and `repo_tree_summarize` create a `BudgetContext` internally (since `ToolHandler` is `fn(&Value) -> ToolResponse` and cannot receive context). They call `should_stop()` at key pipeline stages. The MCP server creates an `Arc<AtomicBool>` cancel flag and attaches it via `with_cancellation()` before dispatch; on timeout, the flag is set but blocking work may continue (cooperative, not forceful).
 
 - **Handler signatures remain `fn(&Value) -> ToolResponse`**: Tool functions do not accept an `ExecutionContext`. Context isolation is applied at the orchestration layer (`call_json_with_execution_context`), not passed into handlers. Calculator-backed handlers (e.g., `math_eval`) retrieve `EvalContext` from a thread-local set by `budget::with_eval_context()`. This preserves compatibility with existing handler code while enabling per-request state isolation.
 
@@ -207,9 +207,9 @@ Agent task skills in `.skills/`:
 - **CI mirrors release gates.** GitHub Actions runs fmt, clippy, tests, generated-docs check, and `cargo package`.
 - **`Cargo.lock` is gitignored** but present. This is unusual for a binary crate — don't commit it.
 - **`serde_json` uses `preserve_order`** feature — key order is intentional in serialized JSON.
-- **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to `Model` on invalid values), `EGGCALC_MCP_SCHEMA_DETAIL`.
+- **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to `Model` on invalid values), `EGGCALC_MCP_SCHEMA_DETAIL` (accepted values: `compact`, `normal`, `full`; defaults to `full` on invalid values with stderr warning).
 - **Platform support**: `command_preflight` recognizes `platform` values `posix`, `windows`, and `auto`. Only `posix` is implemented; `windows` returns `UNSUPPORTED_FEATURE` and `auto` resolves to `posix`.
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
-- **`--diagnostics` CLI flag** prints version, tool count, profile summary, budget tiers, and env var names (no values). Supports `--format json`. `runtime_diagnostics` MCP tool exposes similar info to harness-only audiences.
+- **`--diagnostics` CLI flag** prints version, tool count, profile summary, budget tiers, runtime settings (active profile, audience, schema detail, limits), and env var names (no values). Supports `--format json`. `runtime_diagnostics` MCP tool exposes similar info to harness-only audiences.
 - **`cargo run --bin verify-eggsact`** runs a 5-step verification pipeline (fmt, clippy, test, build, package) with optional parity check, and reports results as markdown.
 - **`ToolBudget` / `BudgetContext` compatibility shims**: `max_text_bytes` (formerly `max_text_chars`) is the canonical field name and `check_text_bytes` (formerly `check_text_len`) is the canonical method — enforcement is byte-based (`str::len()`). `BudgetContext::check_text_len` is retained as a `#[deprecated]` alias that forwards to `check_text_bytes` so downstream callers referencing the old name keep compiling. Prefer builders (`ToolBudget::with_max_text_bytes(n)`) over direct struct literals to avoid ABI breaks when fields are renamed.

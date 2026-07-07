@@ -1194,6 +1194,24 @@ Compare two structured data strings (JSON or TOML) with configurable comparison 
 
 ---
 
+## Diagnostics
+
+### runtime_diagnostics
+
+Return structured runtime diagnostics including active profile, tool counts, budget tiers, and environment status. For harness/debug audiences only.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| _(none)_ | -- | -- | -- | No parameters required |
+
+**Return (top-level):** `{"active_profile": <string>, "tool_count": <int>, "route_critical_tools": [<string>], "profile_tool_count": <int>, "compatibility_mode": <string>, "budget_tier_summary": <object>, "known_env_vars": [<string>], "generated_doc_command": <string>, "parity_available": <boolean>}`
+
+**`runtime` object (nested):** `{"active_profile": <string>, "active_audience": <string>, "schema_detail": <string>, "limits": {"max_requests_per_second": <int>, "max_in_flight_requests": <int>, "max_tool_workers": <int>, "max_request_bytes": <int>, "max_output_bytes": <int>}}`
+
+The `runtime` object reports the current runtime configuration: the active profile, audience, schema detail level, and server-side rate/concurrency limits. The `limits` sub-object exposes the values of `MAX_REQUESTS_PER_SECOND`, `MAX_IN_FLIGHT_REQUESTS`, `MAX_TOOL_WORKERS`, `MAX_REQUEST_BYTES`, and `MAX_OUTPUT_BYTES`.
+
+---
+
 ## Quick Reference Table
 
 | # | Tool | Category | Required Params |

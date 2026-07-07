@@ -47,10 +47,33 @@ static ACTIVE_PROFILE: LazyLock<RwLock<String>> = LazyLock::new(|| {
     RwLock::new(profile)
 });
 
+/// Parse a schema detail string, returning the validated value or `None` for
+/// invalid input. Valid values are `"compact"`, `"normal"`, and `"full"`.
+/// Empty strings and unknown values return `None`.
+#[doc(hidden)]
+pub fn parse_schema_detail(s: &str) -> Option<&'static str> {
+    match s {
+        "compact" => Some("compact"),
+        "normal" => Some("normal"),
+        "full" => Some("full"),
+        _ => None,
+    }
+}
+
 static ACTIVE_SCHEMA_DETAIL: LazyLock<RwLock<String>> = LazyLock::new(|| {
-    let detail = std::env::var("EGGCALC_MCP_SCHEMA_DETAIL")
+    let raw = std::env::var("EGGCALC_MCP_SCHEMA_DETAIL")
         .unwrap_or_else(|_| SCHEMA_DETAIL_FULL.to_string());
-    RwLock::new(detail)
+    match parse_schema_detail(&raw) {
+        Some(valid) => RwLock::new(valid.to_string()),
+        None => {
+            eprintln!(
+                "Warning: Invalid EGGCALC_MCP_SCHEMA_DETAIL: {:?}. \
+                 Accepted values: compact, normal, full. Defaulting to full.",
+                raw
+            );
+            RwLock::new(SCHEMA_DETAIL_FULL.to_string())
+        }
+    }
 });
 
 /// Parse an audience string into a `ToolAudience` variant.
@@ -102,7 +125,7 @@ pub fn get_active_profile() -> String {
 }
 
 pub fn set_schema_detail(level: &str) -> Result<(), String> {
-    if level != "compact" && level != "normal" && level != "full" {
+    if parse_schema_detail(level).is_none() {
         return Err(format!(
             "Invalid schema detail: {:?}. Use compact, normal, or full.",
             level

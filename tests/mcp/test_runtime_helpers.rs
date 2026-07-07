@@ -5,8 +5,8 @@
 
 use eggsact::agent::ToolAudience;
 use eggsact::mcp::runtime::{
-    apply_cancellation, new_active_requests, parse_audience, RateLimiter, MAX_IN_FLIGHT_REQUESTS,
-    MAX_REQUESTS_PER_SECOND,
+    apply_cancellation, new_active_requests, parse_audience, parse_schema_detail, RateLimiter,
+    MAX_IN_FLIGHT_REQUESTS, MAX_REQUESTS_PER_SECOND,
 };
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -253,6 +253,50 @@ fn parse_audience_invalid_defaults_to_model() {
     assert_eq!(parse_audience(""), ToolAudience::Model);
     assert_eq!(parse_audience("MODL"), ToolAudience::Model);
     assert_eq!(parse_audience("123"), ToolAudience::Model);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Schema detail parsing (Milestone 2, Task 3)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn parse_schema_detail_compact_accepted() {
+    assert_eq!(parse_schema_detail("compact"), Some("compact"));
+}
+
+#[test]
+fn parse_schema_detail_normal_accepted() {
+    assert_eq!(parse_schema_detail("normal"), Some("normal"));
+}
+
+#[test]
+fn parse_schema_detail_full_accepted() {
+    assert_eq!(parse_schema_detail("full"), Some("full"));
+}
+
+#[test]
+fn parse_schema_detail_empty_string_invalid() {
+    assert_eq!(parse_schema_detail(""), None);
+}
+
+#[test]
+fn parse_schema_detail_uppercase_invalid() {
+    assert_eq!(parse_schema_detail("FULL"), None);
+    assert_eq!(parse_schema_detail("Compact"), None);
+}
+
+#[test]
+fn parse_schema_detail_unknown_value_invalid() {
+    assert_eq!(parse_schema_detail("verbose"), None);
+    assert_eq!(parse_schema_detail("detailed"), None);
+    assert_eq!(parse_schema_detail("123"), None);
+}
+
+#[test]
+fn parse_schema_detail_whitespace_padded_invalid() {
+    assert_eq!(parse_schema_detail(" full "), None);
+    assert_eq!(parse_schema_detail("\tfull"), None);
+    assert_eq!(parse_schema_detail("full\n"), None);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

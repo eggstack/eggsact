@@ -925,6 +925,8 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
 // ---------------------------------------------------------------------------
 
 pub fn repo_tree_summarize(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::MODERATE);
+
     let paths = match require_array_arg(args, "paths", "repo_tree_summarize") {
         Ok(arr) => arr,
         Err(resp) => return *resp,
@@ -977,6 +979,12 @@ pub fn repo_tree_summarize(args: &Value) -> ToolResponse {
         }
     }
 
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("repo_tree_summarize")
+            .unwrap_err();
+    }
+
     let (buckets, entrypoint_candidates, high_leverage_paths, tool_hints, raw_findings) =
         classify_paths(&path_strs);
 
@@ -994,6 +1002,12 @@ pub fn repo_tree_summarize(args: &Value) -> ToolResponse {
                 directory_count += 1;
             }
         }
+    }
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("repo_tree_summarize")
+            .unwrap_err();
     }
 
     let mut project_types = Vec::new();

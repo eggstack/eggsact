@@ -153,5 +153,5 @@ Input is checked against `budget.max_input_bytes` before dispatch. Oversized inp
 |----------|---------|
 | `EGGCALC_MCP_PROFILE` | Set active profile at MCP server startup |
 | `EGGCALC_MCP_AUDIENCE` | Set audience for MCP tool listings (default: `Model`) |
-| `EGGCALC_MCP_SCHEMA_DETAIL` | Control schema detail level in tool listings |
+| `EGGCALC_MCP_SCHEMA_DETAIL` | Control schema detail level in tool listings (`compact`, `normal`, `full`; default: `full`. Invalid values warn to stderr and default to `full`) |
 | `EGGCALC_NO_CONFIG=1` | Disable config file loading (set automatically by `main.rs`) |

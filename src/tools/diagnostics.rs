@@ -23,6 +23,7 @@ pub fn runtime_diagnostics(_args: &Value) -> ToolResponse {
     }
 
     let active_audience = format!("{:?}", runtime::get_active_audience());
+    let schema_detail = runtime::get_schema_detail();
     let result = json!({
         "active_profile": active_profile,
         "active_audience": active_audience,
@@ -34,6 +35,18 @@ pub fn runtime_diagnostics(_args: &Value) -> ToolResponse {
             "cheap": cheap,
             "moderate": moderate,
             "heavy": heavy,
+        },
+        "runtime": {
+            "active_profile": active_profile,
+            "active_audience": active_audience,
+            "schema_detail": schema_detail,
+            "limits": {
+                "max_requests_per_second": runtime::MAX_REQUESTS_PER_SECOND,
+                "max_in_flight_requests": runtime::MAX_IN_FLIGHT_REQUESTS,
+                "max_tool_workers": runtime::MAX_TOOL_WORKERS,
+                "max_request_bytes": runtime::MAX_REQUEST_BYTES,
+                "max_output_bytes": runtime::MAX_OUTPUT_BYTES,
+            },
         },
         "known_env_vars": [
             "EGGCALC_NO_CONFIG",

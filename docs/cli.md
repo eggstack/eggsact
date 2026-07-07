@@ -60,7 +60,9 @@ eggsact --version
 
 ```bash
 eggsact --diagnostics
-# Prints: version, tool count, active profile, budget tiers, and env var names (no values)
+# Prints: version, tool count, active profile, budget tiers, env var names (no values),
+# active audience, active schema detail, and runtime limits (max_requests_per_second,
+# max_in_flight_requests, max_tool_workers, max_request_bytes, max_output_bytes)
 
 eggsact --diagnostics --format json
 # Same information in JSON format

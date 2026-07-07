@@ -1,5 +1,7 @@
 use std::env;
 
+use eggsact::mcp::runtime;
+
 #[derive(Debug, PartialEq, Eq)]
 enum CliCommand {
     Help,
@@ -93,6 +95,18 @@ fn print_diagnostics(format: &str) {
                 "in_process_api": compat_inprocess,
             },
             "budget_tiers": tiers_obj,
+            "runtime": {
+                "active_profile": runtime::get_active_profile(),
+                "active_audience": format!("{:?}", runtime::get_active_audience()),
+                "schema_detail": runtime::get_schema_detail(),
+                "limits": {
+                    "max_requests_per_second": runtime::MAX_REQUESTS_PER_SECOND,
+                    "max_in_flight_requests": runtime::MAX_IN_FLIGHT_REQUESTS,
+                    "max_tool_workers": runtime::MAX_TOOL_WORKERS,
+                    "max_request_bytes": runtime::MAX_REQUEST_BYTES,
+                    "max_output_bytes": runtime::MAX_OUTPUT_BYTES,
+                },
+            },
             "env_var_names": env_vars,
             "generated_data": {
                 "confusables_generated_rs": confusables_exists,
@@ -119,6 +133,19 @@ fn print_diagnostics(format: &str) {
         println!("Compatibility mode (default by surface):");
         println!("  MCP server:       {}", compat_mcp);
         println!("  In-process API:   {}", compat_inprocess);
+        println!();
+        println!("Runtime:");
+        println!("  Active profile: {}", runtime::get_active_profile());
+        println!("  Active audience: {:?}", runtime::get_active_audience());
+        println!("  Schema detail: {}", runtime::get_schema_detail());
+        println!(
+            "  Limits: {} req/s, {} in-flight, {} workers, {} bytes request, {} bytes output",
+            runtime::MAX_REQUESTS_PER_SECOND,
+            runtime::MAX_IN_FLIGHT_REQUESTS,
+            runtime::MAX_TOOL_WORKERS,
+            runtime::MAX_REQUEST_BYTES,
+            runtime::MAX_OUTPUT_BYTES,
+        );
         println!();
         println!("Budget tiers:");
         for (name, desc) in &budget_tiers {

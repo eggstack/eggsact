@@ -264,7 +264,7 @@ CLI args
 | `EGGCALC_NO_CONFIG` | Disables config file loading (set in main.rs) |
 | `EGGCALC_MCP_PROFILE` | Active profile for MCP server (set at startup) |
 | `EGGCALC_MCP_AUDIENCE` | Active audience for MCP server (`Model`/`Harness`/`Debug`) |
-| `EGGCALC_MCP_SCHEMA_DETAIL` | Schema compaction control |
+| `EGGCALC_MCP_SCHEMA_DETAIL` | Schema compaction control (`compact`, `normal`, `full`; default: `full`). Invalid values warn to stderr and default to `full` |
 
 ---
 

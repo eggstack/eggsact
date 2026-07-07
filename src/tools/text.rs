@@ -947,6 +947,8 @@ pub fn text_equal(args: &Value) -> ToolResponse {
 // ---------------------------------------------------------------------------
 
 pub fn text_diff_explain(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::MODERATE);
+
     let a = match _require_str(args, "a", "text_diff_explain") {
         Ok(s) => s,
         Err(e) => return *e,
@@ -1059,6 +1061,12 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
     let all_spans = crate::text::diff_spans(a, b, max_diffs_to_use);
     let truncated = all_spans.len() >= max_diffs_to_use;
     let max_diffs_applied = max_diffs_to_use;
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("text_diff_explain")
+            .unwrap_err();
+    }
 
     let prefix_len = common_prefix_len(a, b);
     let suffix_len = common_suffix_len(a, b);
@@ -2958,6 +2966,8 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
 // ---------------------------------------------------------------------------
 
 pub fn text_security_inspect(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::HEAVY);
+
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => {
@@ -3110,6 +3120,12 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         }
     }
 
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("text_security_inspect")
+            .unwrap_err();
+    }
+
     // 2. Map policy to unicode_policy_check policy (matching Python behavior)
     // Python: upolicy = "source_code" if policy == "source_code" else "human_text"
     let uc_policy = if policy == "source_code" {
@@ -3155,6 +3171,12 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                 }
             }
         }
+    }
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("text_security_inspect")
+            .unwrap_err();
     }
 
     // 3. If normalize != "none", use unicodedata.normalize directly (matching Python)
@@ -3223,6 +3245,12 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         }
     }
 
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("text_security_inspect")
+            .unwrap_err();
+    }
+
     // 5. If policy is "identifier" or "default", call identifier_inspect
     //    Filter words with is_identifier check (matching Python's .isidentifier())
     if matches!(policy, "identifier" | "default") {
@@ -3282,6 +3310,12 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
                 }
             }
         }
+    }
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("text_security_inspect")
+            .unwrap_err();
     }
 
     // 6. Determine verdict

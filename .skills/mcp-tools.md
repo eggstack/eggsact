@@ -83,6 +83,7 @@ Every non-OK `ToolResponse` must carry a `machine_code`. Use constants from `src
 - Use `.with_verdict(verdict)` to set the verdict field inside result JSON.
 - Use `preflight_allow(tool)`, `preflight_review(tool, findings)`, or `preflight_block(tool, machine_code, findings)` for quick preflight response construction.
 - Use `ToolResponse::next_tool(name, reason, arguments_hint)` for structured `recommended_next_tool`.
+- **Cooperative budget checks**: Heavy and moderate handlers (e.g. `edit_preflight`, `command_preflight`, `config_preflight`) should create a `BudgetContext` via `BudgetContext::for_handler(tool_name)` and call `should_stop()` at key pipeline stages to respect cancellation and timeout signals. This is cooperative — it does not force-stop the handler, so check at natural boundaries (before expensive I/O, after sub-tool calls).
 
 See `architecture/machine-codes.md` for the full code table and design rationale.
 

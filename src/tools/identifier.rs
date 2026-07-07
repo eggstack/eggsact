@@ -270,6 +270,8 @@ pub fn identifier_inspect(args: &Value) -> ToolResponse {
 }
 
 pub fn identifier_table_inspect(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::MODERATE);
+
     let identifiers = match args.get("identifiers").and_then(|v| v.as_array()) {
         Some(arr) => {
             let mut bad_entries: Vec<String> = Vec::new();
@@ -388,6 +390,13 @@ pub fn identifier_table_inspect(args: &Value) -> ToolResponse {
             )
         }
     };
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("identifier_table_inspect")
+            .unwrap_err();
+    }
+
     let language = args
         .get("language")
         .and_then(|v| v.as_str())
@@ -454,6 +463,12 @@ pub fn identifier_table_inspect(args: &Value) -> ToolResponse {
             Some(vec![format!("Use one of: {}", valid_languages.join(", "))]),
             Some("identifier_table_inspect"),
         );
+    }
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("identifier_table_inspect")
+            .unwrap_err();
     }
 
     let checks_ref = checks

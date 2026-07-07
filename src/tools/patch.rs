@@ -5,6 +5,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 pub fn patch_apply_check(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::MODERATE);
+
     let original_text_val = args.get("original_text");
     let original_text = match original_text_val.and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -93,6 +95,12 @@ pub fn patch_apply_check(args: &Value) -> ToolResponse {
         return_result_text,
     );
 
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("patch_apply_check")
+            .unwrap_err();
+    }
+
     let mut findings: Vec<serde_json::Value> = Vec::new();
     for msg in &result.findings {
         findings.push(finding(
@@ -157,6 +165,8 @@ pub fn patch_apply_check(args: &Value) -> ToolResponse {
 }
 
 pub fn patch_summary(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::MODERATE);
+
     let patch_text_val = args.get("patch_text");
     let patch_text = match patch_text_val.and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -191,6 +201,10 @@ pub fn patch_summary(args: &Value) -> ToolResponse {
     }
 
     let result = crate::text::patch_summary(patch_text);
+
+    if budget_ctx.should_stop() {
+        return budget_ctx.check_should_stop("patch_summary").unwrap_err();
+    }
 
     let mut findings: Vec<serde_json::Value> = Vec::new();
     for msg in &result.findings {
