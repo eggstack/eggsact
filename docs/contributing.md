@@ -209,7 +209,6 @@ Allowed licenses: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, Unlicense,
 Unicode-DFS-2016, Unicode-3.0, Zlib. All are permissive and compatible with
 the project's MIT license.
 
-## Release Checklist
+## Release Process
 
-See `docs/release.md` for the full release procedure, including verification order,
-generated docs, package checks, parity test policy, and post-release steps.
+The canonical release process is documented in `docs/release.md`. Key points: GitHub CI verifies release readiness but does not publish; the maintainer publishes manually with `cargo publish` from a local authenticated environment.

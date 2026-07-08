@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased — crates.io release polish] - 2026-07-08
+
+### Changed
+- **Canonical release doc**: `docs/release.md` is now the single source of truth for release procedure. Added explicit "Release policy" section stating GitHub CI verifies release readiness but does NOT publish to crates.io; the maintainer publishes manually with `cargo publish` from a local authenticated environment.
+- **Tagging policy**: documented tag-after-publish policy in `docs/release.md` (crates.io releases are immutable; tag after `cargo publish` succeeds).
+- **Crates.io publishing section**: new "Manual crates.io publishing" section in `docs/release.md` with prerequisites, pre-publish (`cargo publish --dry-run`), publish command, and tagging order.
+- **Package excludes tightened**: `Cargo.toml` `exclude` list now also excludes `.skills/`, `release.sh`, `AGENTS.md`, and `deny.toml`. Internal agent skill docs and CI-only config no longer ship in the published crate.
+
+### Added
+- **`docs/release-readiness.md`**: new file documenting the release candidate state (commit SHA, CI result, local gate, package status, known deferred items, publish checklist).
+- **CI policy statement**: AGENTS.md, `.skills/release.md`, and `docs/contributing.md` all now explicitly state that GitHub CI does not publish to crates.io.
+
+### Fixed
+- **Stale `architecture/release.md` reference**: AGENTS.md listed a file at `architecture/release.md` that does not exist. Replaced with a pointer to the canonical `docs/release.md`.
+
 ## [Unreleased]
 
 ### Added

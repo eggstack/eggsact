@@ -12,21 +12,12 @@ cargo test --all-features --test lib mcp # MCP tests only
 cargo test --all-features --test lib parity  # parity tests only
 cargo test --all-features --test lib text    # text tests only
 cargo test --doc                         # doc tests
-cargo package --verbose                  # release/package verification
+cargo package --verbose                  # package verification
 ```
 
 ## Verification Order
 
-Always run in this order (CI mirrors this with parity excluded):
-```bash
-cargo fmt --all -- --check           # format gate
-cargo clippy --all-targets --all-features -- -D warnings  # lint (warnings denied)
-cargo test --all-features --lib      # unit tests
-cargo test --all-features --bins     # binary tests
-cargo test --all-features --tests -- --skip parity  # integration (parity excluded)
-cargo run --bin generate-docs -- --check  # generated docs freshness
-cargo package --verbose              # crates.io package verification
-```
+The canonical release gate (including the full test suite) is defined in `docs/release.md` — do not duplicate it here.
 
 CI runs on push/PR to `main` (plus `workflow_dispatch`) via `.github/workflows/ci.yml`.
 Parity tests require Python `eggcalc` at `../eggcalc` and are local-only.

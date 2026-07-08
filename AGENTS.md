@@ -35,6 +35,8 @@ GitHub Actions CI runs on push/PR to `main` (plus manual `workflow_dispatch`):
 Parity tests are excluded from CI because Python `eggcalc` is not available in
 the CI environment. Run parity locally with `cargo test --test lib parity`.
 
+GitHub Actions CI verifies release readiness but does **not** publish to crates.io. The maintainer publishes manually per `docs/release.md`.
+
 ## Verification order
 
 `cargo fmt --all -- --check` → `cargo clippy --all-targets --all-features -- -D warnings` → `cargo test --all-features --lib` → `cargo test --all-features --bins` → `cargo test --all-features --tests -- --skip parity` → `cargo test --doc` → `cargo run --bin generate-docs -- --check` → `cargo package --verbose`
@@ -121,13 +123,13 @@ Detailed architecture documentation is in `architecture/`:
 - `architecture/coding-agent-integration.md` — MCP stdio and in-process integration, profiles, audiences, concurrency contract
 - `architecture/generated-assets.md` — generated doc files, confusables data, parity workflow, diagnostics
 - `architecture/testing.md` — test structure, CI pipeline, how to add tests
-- `architecture/release.md` — release checklist, canonical release gate, publish procedure
 
 Additional docs in `docs/`:
 
 - `docs/compatibility-policy.md` — semantic versioning, breaking changes, tool/schema/machine-code stability, deprecation timelines
 - `docs/contributing.md` — prerequisites, building, testing, parity test setup, adding new tools
 - `docs/parity.md` — Python/Rust parity framework, known gaps, verification status (33 known failures as of 2026-07-08)
+- `docs/release.md` — canonical release checklist, manual crates.io publishing procedure, tagging policy (CI verifies only)
 - `docs/library-api.md` — in-process API usage, ToolRegistry, call_json variants
 - `docs/mcp-tools.md` — MCP tool catalog with input/output schemas
 - `docs/cli.md` — CLI flags, subcommands, environment variables
@@ -207,7 +209,7 @@ Agent task skills in `.skills/`:
 - **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. As of 2026-07-08, the parity suite has 33 known failures (out of 418 tests) — see `docs/parity.md` `Verification status` and `Known parity gaps` for the breakdown. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE` env var and updating test helpers. Categories C1–C6 (33 failures) are accepted behavioral differences tracked for follow-up. The 3 concurrent-ordering failures from the earlier pass were fixed by switching `mcp_request_multi()` to id-based correlation. The Rust `full` profile ships 80 tools; Python defines 67. An accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt` lists all 33 names for regression detection. Do not treat these as regressions — they accumulated across the phase 06–09 line of work and are tracked for follow-up.
 - **`mask_secret_preview()` in `src/tools/helpers.rs`** is a UTF-8-safe masking helper that operates on `.chars()` boundaries, never splitting multibyte sequences. Used by `config_file_inspect` and other tools that display secret values in findings. The old byte-slicing code was replaced with this helper to avoid panics on multi-byte Unicode input.
 - **`deny.toml` configures `cargo-deny`** for license/advisory/ban/source checks. Run `cargo deny check` locally. Allowed licenses: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, Unlicense, Unicode-DFS-2016, Unicode-3.0, Zlib.
-- **CI mirrors release gates.** GitHub Actions runs fmt, clippy, tests, generated-docs check, and `cargo package`.
+- **CI mirrors release gates.** GitHub Actions runs fmt, clippy, tests, generated-docs check, and `cargo package`. GitHub CI does not publish to crates.io. The maintainer publishes manually — see `docs/release.md` for the manual procedure.
 - **`Cargo.lock` is gitignored** but present. This is unusual for a binary crate — don't commit it.
 - **`serde_json` uses `preserve_order`** feature — key order is intentional in serialized JSON.
 - **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to `Model` on invalid values), `EGGCALC_MCP_SCHEMA_DETAIL` (accepted values: `compact`, `normal`, `full`; defaults to `full` on invalid values with stderr warning).
