@@ -95,7 +95,20 @@ fn main() {
             "warnings",
         ],
     );
-    let test = run_cmd("cargo", &["test", "--all-features"]);
+    let test_lib = run_cmd("cargo", &["test", "--all-features", "--lib"]);
+    let test_bins = run_cmd("cargo", &["test", "--all-features", "--bins"]);
+    let test_integration = run_cmd(
+        "cargo",
+        &[
+            "test",
+            "--all-features",
+            "--tests",
+            "--",
+            "--skip",
+            "parity",
+        ],
+    );
+    let test_doc = run_cmd("cargo", &["test", "--doc"]);
     let docs = run_cmd("cargo", &["run", "--bin", "generate-docs", "--", "--check"]);
     let package = run_cmd("cargo", &["package", "--verbose"]);
     let parity = if has_parity {
@@ -111,7 +124,10 @@ fn main() {
     let all_steps: Vec<(&str, &StepStatus)> = vec![
         ("cargo fmt", &fmt),
         ("cargo clippy", &clippy),
-        ("cargo test", &test),
+        ("cargo test --lib", &test_lib),
+        ("cargo test --bins", &test_bins),
+        ("cargo test --tests (skip parity)", &test_integration),
+        ("cargo test --doc", &test_doc),
         ("generate-docs --check", &docs),
         ("cargo package", &package),
         ("parity tests", &parity),

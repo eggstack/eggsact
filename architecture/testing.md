@@ -162,8 +162,9 @@ GitHub Actions runs on push/PR to `main`:
 3. `cargo test --all-features --lib` (unit tests)
 4. `cargo test --all-features --bins` (binary tests)
 5. `cargo test --all-features --tests -- --skip parity` (integration, parity excluded)
-6. `cargo run --bin generate-docs -- --check` (generated docs freshness)
-7. `cargo package --verbose`
+6. `cargo test --doc` (doc tests)
+7. `cargo run --bin generate-docs -- --check` (generated docs freshness)
+8. `cargo package --verbose`
 
 Parity tests are excluded from CI because Python `eggcalc` is not available in CI. Run locally with `cargo test --test lib parity`.
 

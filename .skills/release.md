@@ -24,7 +24,10 @@ The canonical release gate (used by CI, release.sh, and this document):
 ```bash
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
+cargo test --all-features --lib
+cargo test --all-features --bins
+cargo test --all-features --tests -- --skip parity
+cargo test --doc
 cargo run --bin generate-docs -- --check
 cargo package --verbose
 ```
@@ -37,7 +40,9 @@ cargo test --test lib parity    # requires Python eggcalc at ../eggcalc
 
 ## Pre-Release Checklist
 
-- [ ] All tests pass: `cargo test --all-features`
+- [ ] All tests pass: `cargo test --all-features --lib` and `cargo test --all-features --bins`
+- [ ] Integration tests pass (parity excluded): `cargo test --all-features --tests -- --skip parity`
+- [ ] Doc tests pass: `cargo test --doc`
 - [ ] No formatting issues: `cargo fmt --all -- --check`
 - [ ] No clippy warnings: `cargo clippy --all-targets --all-features -- -D warnings`
 - [ ] Generated docs current: `cargo run --bin generate-docs -- --check`
@@ -87,6 +92,7 @@ CI runs on GitHub Actions on push/PR to `main` (plus `workflow_dispatch`):
 - Run unit tests (`--all-features --lib`)
 - Run binary tests (`--all-features --bins`)
 - Run integration tests (`--all-features --tests -- --skip parity`)
+- Run doc tests (`--doc`)
 - Verify generated docs are current
 - Run `cargo package --verbose`
 

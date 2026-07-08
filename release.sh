@@ -14,8 +14,17 @@ cargo fmt --all -- --check
 echo "=== Running clippy ==="
 cargo clippy --all-targets --all-features -- -D warnings
 
-echo "=== Running tests ==="
-cargo test --all-features
+echo "=== Running unit tests ==="
+cargo test --all-features --lib
+
+echo "=== Running binary tests ==="
+cargo test --all-features --bins
+
+echo "=== Running integration tests (parity excluded) ==="
+cargo test --all-features --tests -- --skip parity
+
+echo "=== Running doc tests ==="
+cargo test --doc
 
 echo "=== Checking generated docs freshness ==="
 cargo run --bin generate-docs -- --check

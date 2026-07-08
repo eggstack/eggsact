@@ -70,10 +70,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features --tests -- --skip parity
 
+  test-doc:
+    name: Test (doc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --doc
+
   package:
     name: Package
     runs-on: ubuntu-latest
-    needs: [check, clippy, generated-docs, test-lib, test-bins, test-integration]
+    needs: [check, clippy, generated-docs, test-lib, test-bins, test-integration, test-doc]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

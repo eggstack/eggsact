@@ -37,7 +37,7 @@ the CI environment. Run parity locally with `cargo test --test lib parity`.
 
 ## Verification order
 
-`cargo fmt --all -- --check` → `cargo clippy --all-targets --all-features -- -D warnings` → `cargo test --all-features --lib` → `cargo test --all-features --bins` → `cargo test --all-features --tests -- --skip parity` → `cargo run --bin generate-docs -- --check` → `cargo package --verbose`
+`cargo fmt --all -- --check` → `cargo clippy --all-targets --all-features -- -D warnings` → `cargo test --all-features --lib` → `cargo test --all-features --bins` → `cargo test --all-features --tests -- --skip parity` → `cargo test --doc` → `cargo run --bin generate-docs -- --check` → `cargo package --verbose`
 
 ## Structure
 
@@ -99,7 +99,7 @@ src/
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text
   calc/             # calculator tests (4 files)
-  mcp/              # MCP protocol + tool tests (25 files)
+  mcp/              # MCP protocol + tool tests (26 files)
   parity/           # Python/Rust parity tests (12 files)
   text/             # text processing tests (24 files)
 scripts/
@@ -120,6 +120,8 @@ Detailed architecture documentation is in `architecture/`:
 - `architecture/compatibility.md` — compatibility mode (EggcalcPython vs StrictNative), behavior differences
 - `architecture/coding-agent-integration.md` — MCP stdio and in-process integration, profiles, audiences, concurrency contract
 - `architecture/generated-assets.md` — generated doc files, confusables data, parity workflow, diagnostics
+- `architecture/testing.md` — test structure, CI pipeline, how to add tests
+- `architecture/release.md` — release checklist, canonical release gate, publish procedure
 
 Additional docs in `docs/`:
 
