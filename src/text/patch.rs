@@ -120,10 +120,9 @@ pub fn parse_unified_diff(patch_text: &str) -> PatchParseResult {
     let mut current_hunk_info: Option<(usize, usize, usize, usize)> = None;
     let mut in_hunk = false;
 
-    while i < lines.len() {
-        let line = lines[i];
-
-        if line.starts_with("--- ") || line.starts_with("+++ ") {
+    // Helper: flush any pending in-progress hunk into current_hunks.
+    macro_rules! flush_hunk {
+        () => {
             if in_hunk {
                 if let Some((old_s, old_c, new_s, new_c)) = current_hunk_info {
                     let raw = format!("{}\n{}", current_hunk_header, current_hunk_lines.join("\n"));
@@ -141,18 +140,30 @@ pub fn parse_unified_diff(patch_text: &str) -> PatchParseResult {
                     current_hunk_info = None;
                 }
             }
+        };
+    }
 
-            if let Some(rest) = line.strip_prefix("--- ") {
-                current_old_file = rest.trim().to_string();
-                if current_old_file == "/dev/null" {
-                    current_old_file = String::new();
-                }
-            } else if let Some(rest) = line.strip_prefix("+++ ") {
-                current_new_file = rest.trim().to_string();
-                if current_new_file == "/dev/null" {
-                    current_new_file = String::new();
-                }
+    while i < lines.len() {
+        let line = lines[i];
+
+        if line.starts_with("--- ") {
+            // Flush any in-progress hunk first.
+            flush_hunk!();
+            // Starting a new file — finalize the previous one (if any).
+            if !current_old_file.is_empty()
+                || !current_new_file.is_empty()
+                || !current_hunks.is_empty()
+            {
+                files.push(PatchFile {
+                    old_file: std::mem::take(&mut current_old_file),
+                    new_file: std::mem::take(&mut current_new_file),
+                    hunks: std::mem::take(&mut current_hunks),
+                    raw: String::new(),
+                });
             }
+            current_old_file = strip_diff_path_prefix(line.strip_prefix("--- ").unwrap().trim());
+        } else if line.starts_with("+++ ") {
+            current_new_file = strip_diff_path_prefix(line.strip_prefix("+++ ").unwrap().trim());
         } else if line.starts_with("@@ ") {
             if in_hunk {
                 if let Some((old_s, old_c, new_s, new_c)) = current_hunk_info {
@@ -204,7 +215,7 @@ pub fn parse_unified_diff(patch_text: &str) -> PatchParseResult {
             old_file: current_old_file,
             new_file: current_new_file,
             hunks: current_hunks,
-            raw: patch_text.to_string(),
+            raw: String::new(),
         });
     }
 
@@ -223,6 +234,26 @@ pub fn parse_unified_diff(patch_text: &str) -> PatchParseResult {
         files,
         error: None,
     }
+}
+
+/// Strip the unified-diff path prefix (`a/` or `b/`) and the optional
+/// trailing timestamp from a diff header path. `/dev/null` becomes empty.
+fn strip_diff_path_prefix(path: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed == "/dev/null" {
+        return String::new();
+    }
+    if let Some(stripped) = trimmed.strip_prefix("a/") {
+        return stripped.to_string();
+    }
+    if let Some(stripped) = trimmed.strip_prefix("b/") {
+        return stripped.to_string();
+    }
+    // Some diffs contain a tab-separated timestamp after the path; trim it.
+    if let Some(idx) = trimmed.find('\t') {
+        return trimmed[..idx].to_string();
+    }
+    trimmed.to_string()
 }
 
 fn text_to_lines(text: &str) -> Vec<String> {

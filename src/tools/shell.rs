@@ -1036,6 +1036,9 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
     {
         // Only add review finding if no higher-severity finding already present
         matched_rules.push("policy_classify_review".to_string());
+        if !code_list.contains(&machine_codes::SHELL_POLICY_REVIEW.to_string()) {
+            code_list.push(machine_codes::SHELL_POLICY_REVIEW.to_string());
+        }
         findings.push(finding(
             machine_codes::SHELL_POLICY_REVIEW,
             severity::MEDIUM,

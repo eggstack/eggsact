@@ -257,15 +257,14 @@ pub(crate) fn validate_property_inner(
         };
         let sub_props = obj.get("properties").and_then(|v| v.as_object());
         let sub_required = obj.get("required").and_then(|v| v.as_array());
-        let sub_additional = obj
-            .get("additionalProperties")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let sub_additional_raw = obj.get("additionalProperties");
+        let sub_additional_bool = sub_additional_raw.and_then(|v| v.as_bool());
+        let sub_additional_schema = sub_additional_raw.and_then(|v| v.as_object());
 
         let has_sub_schema =
             sub_props.is_some_and(|p| !p.is_empty()) || sub_required.is_some_and(|r| !r.is_empty());
 
-        if has_sub_schema {
+        if has_sub_schema || sub_additional_schema.is_some() {
             if let Some(req) = sub_required {
                 for field in req {
                     if let Some(field_name) = field.as_str() {
@@ -279,7 +278,7 @@ pub(crate) fn validate_property_inner(
                 }
             }
 
-            if !sub_additional {
+            if sub_additional_bool == Some(false) {
                 if let (Some(props), Some(val_obj)) = (sub_props, value.as_object()) {
                     let unknown: Vec<&String> = val_obj
                         .keys()
@@ -313,6 +312,19 @@ pub(crate) fn validate_property_inner(
                             ) {
                                 return Some(err);
                             }
+                            continue;
+                        }
+                    }
+                    if let Some(additional_schema) = sub_additional_schema {
+                        let sub_path = format!("{}.{}", path, sub_key);
+                        if let Some(err) = validate_property_inner(
+                            sub_val,
+                            &Value::Object(additional_schema.clone()),
+                            &sub_path,
+                            max_depth - 1,
+                            compat,
+                        ) {
+                            return Some(err);
                         }
                     }
                 }

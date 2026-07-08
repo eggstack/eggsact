@@ -1003,7 +1003,7 @@ fn all_fixtures() -> Vec<RouteFixture> {
         label: "empty command",
         args: json!({"command": ""}),
         expect_ok: true,
-        expect_machine_code: "COMMAND_OK",
+        expect_machine_code: "SHELL_POLICY_REVIEW",
         expect_verdict: Some("review"),
         expect_findings: vec![ExpectedFinding {
             code: "SHELL_POLICY_REVIEW",
@@ -1042,7 +1042,7 @@ fn all_fixtures() -> Vec<RouteFixture> {
         label: "safe cargo build",
         args: json!({"command": "cargo build"}),
         expect_ok: true,
-        expect_machine_code: "COMMAND_OK",
+        expect_machine_code: "SHELL_POLICY_REVIEW",
         expect_verdict: Some("review"),
         expect_findings: vec![ExpectedFinding {
             code: "SHELL_POLICY_REVIEW",
@@ -1084,7 +1084,7 @@ fn all_fixtures() -> Vec<RouteFixture> {
         label: "bash -c wrapper",
         args: json!({"command": "bash -c \"echo hello\""}),
         expect_ok: true,
-        expect_machine_code: "COMMAND_OK",
+        expect_machine_code: "SHELL_POLICY_REVIEW",
         expect_verdict: Some("review"),
         expect_findings: vec![ExpectedFinding {
             code: "SHELL_POLICY_REVIEW",
@@ -1097,7 +1097,7 @@ fn all_fixtures() -> Vec<RouteFixture> {
         label: "python -c wrapper",
         args: json!({"command": "python -c \"print(1)\""}),
         expect_ok: true,
-        expect_machine_code: "COMMAND_OK",
+        expect_machine_code: "SHELL_POLICY_REVIEW",
         expect_verdict: Some("review"),
         expect_findings: vec![ExpectedFinding {
             code: "SHELL_POLICY_REVIEW",
@@ -1110,7 +1110,7 @@ fn all_fixtures() -> Vec<RouteFixture> {
         label: "node -e wrapper",
         args: json!({"command": "node -e \"console.log(1)\""}),
         expect_ok: true,
-        expect_machine_code: "COMMAND_OK",
+        expect_machine_code: "SHELL_POLICY_REVIEW",
         expect_verdict: Some("review"),
         expect_findings: vec![ExpectedFinding {
             code: "SHELL_POLICY_REVIEW",
@@ -1126,7 +1126,7 @@ fn all_fixtures() -> Vec<RouteFixture> {
         label: "make test",
         args: json!({"command": "make test"}),
         expect_ok: true,
-        expect_machine_code: "COMMAND_OK",
+        expect_machine_code: "SHELL_POLICY_REVIEW",
         expect_verdict: Some("review"),
         expect_findings: vec![ExpectedFinding {
             code: "SHELL_POLICY_REVIEW",
@@ -1139,7 +1139,7 @@ fn all_fixtures() -> Vec<RouteFixture> {
         label: "npm run build",
         args: json!({"command": "npm run build"}),
         expect_ok: true,
-        expect_machine_code: "COMMAND_OK",
+        expect_machine_code: "SHELL_POLICY_REVIEW",
         expect_verdict: Some("review"),
         expect_findings: vec![ExpectedFinding {
             code: "SHELL_POLICY_REVIEW",

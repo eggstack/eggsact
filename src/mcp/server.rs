@@ -1,4 +1,4 @@
-use crate::agent::{Profile, ToolCallError, ToolCallOutcome, ToolRegistry};
+use crate::agent::{Profile, ToolAudience, ToolCallError, ToolCallOutcome, ToolRegistry};
 use crate::mcp::budget::{budget_for_tool, BudgetContext};
 use crate::mcp::compat::CompatibilityMode;
 use crate::mcp::machine_codes;
@@ -130,6 +130,15 @@ async fn handle_request_async(
                         ));
                     }
                 }
+                if let Some(a) = p.get("audience") {
+                    if !a.is_string() || !matches!(a.as_str(), Some("model" | "harness" | "debug"))
+                    {
+                        return Some(invalid_request(
+                            "Invalid 'audience' parameter: expected model, harness, or debug",
+                            request.id.clone(),
+                        ));
+                    }
+                }
             }
             let schema_detail = get_schema_detail();
             let detail = params
@@ -142,6 +151,9 @@ async fn handle_request_async(
             let profile_filter = params
                 .and_then(|p| p.get("profile"))
                 .and_then(|p| p.as_str());
+            let audience_filter: Option<&str> = params
+                .and_then(|p| p.get("audience"))
+                .and_then(|a| a.as_str());
             let tier_filter = params.and_then(|p| p.get("tier")).and_then(|t| {
                 // Python treats bool as int (isinstance(True, int) == True)
                 match t {
@@ -156,6 +168,15 @@ async fn handle_request_async(
 
             let active_profile = get_active_profile();
             let effective_profile = profile_filter.unwrap_or(&active_profile);
+            // Default to the active audience when no explicit audience is provided,
+            // so harness-only tools are excluded from Model listings and the listing
+            // agrees with what tools/call will dispatch.
+            let effective_audience_str =
+                audience_filter.unwrap_or_else(|| match get_active_audience() {
+                    ToolAudience::Model => "model",
+                    ToolAudience::Harness => "harness",
+                    ToolAudience::Debug => "debug",
+                });
             if effective_profile != "full" && !registry::PROFILE_NAMES.contains(&effective_profile)
             {
                 let available = registry::PROFILE_NAMES.join(", ");
@@ -179,12 +200,18 @@ async fn handle_request_async(
                     .filter_map(|v| v.as_str().map(String::from))
                     .collect()
             });
+            let audience = Some(match effective_audience_str {
+                "harness" => registry::ToolListAudience::Harness,
+                "debug" => registry::ToolListAudience::Debug,
+                _ => registry::ToolListAudience::Model,
+            });
             let options = registry::ToolListOptions {
                 profile: effective_profile,
                 names: names_vec.as_deref(),
                 tier: tier_filter.map(|t| t as u8),
                 tags: tags_vec.as_deref(),
                 schema_detail: detail,
+                audience,
             };
             let tools = registry::list_tool_definitions(options);
             Some(serde_json::json!({"tools": tools}))

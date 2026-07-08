@@ -119,6 +119,7 @@ pub struct ToolListOptions<'a> {
     pub tier: Option<u8>,
     pub tags: Option<&'a [String]>,
     pub schema_detail: &'a str,
+    pub audience: Option<ToolListAudience>,
 }
 
 /// Filter tool definitions by profile, names, tier, tags, and schema detail.
@@ -126,7 +127,10 @@ pub struct ToolListOptions<'a> {
 /// This is the core listing logic that was previously in server.rs.
 /// It returns a `Vec<ToolDefinition>` ready for MCP serialization.
 pub fn list_tool_definitions(options: ToolListOptions<'_>) -> Vec<super::types::ToolDefinition> {
-    let profile_tools = tools_for_profile(options.profile);
+    let profile_tools = match options.audience {
+        Some(aud) => tools_for_profile_audience(options.profile, aud),
+        None => tools_for_profile(options.profile),
+    };
     let mut tools: Vec<super::types::ToolDefinition> = profile_tools
         .into_iter()
         .map(|spec| {
@@ -422,6 +426,7 @@ mod tests {
             tier: None,
             tags: None,
             schema_detail: "normal",
+            audience: None,
         };
         let tools = list_tool_definitions(options);
         assert!(!tools.is_empty());
@@ -439,6 +444,7 @@ mod tests {
             tier: None,
             tags: None,
             schema_detail: "normal",
+            audience: None,
         };
         let tools = list_tool_definitions(options);
         assert_eq!(tools.len(), 2);
@@ -454,6 +460,7 @@ mod tests {
             tier: Some(0),
             tags: None,
             schema_detail: "normal",
+            audience: None,
         };
         let tools = list_tool_definitions(options);
         for tool in &tools {
@@ -469,6 +476,7 @@ mod tests {
             tier: None,
             tags: None,
             schema_detail: "compact",
+            audience: None,
         };
         let tools = list_tool_definitions(options);
         assert_eq!(tools.len(), 1);
@@ -490,6 +498,7 @@ mod tests {
             tier: None,
             tags: Some(&[String::from("math")]),
             schema_detail: "normal",
+            audience: None,
         };
         let tools = list_tool_definitions(options);
         for tool in &tools {
@@ -510,6 +519,7 @@ mod tests {
             tier: None,
             tags: None,
             schema_detail: "normal",
+            audience: None,
         };
         let tools = list_tool_definitions(options);
         // human_math should have math tools
