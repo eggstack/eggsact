@@ -124,6 +124,10 @@ Detailed architecture documentation is in `architecture/`:
 - `architecture/coding-agent-integration.md` — MCP stdio and in-process integration, profiles, audiences, concurrency contract
 - `architecture/generated-assets.md` — generated doc files, confusables data, parity workflow, diagnostics
 - `architecture/testing.md` — test structure, CI pipeline, how to add tests
+- `architecture/agent-api.md` — in-process ToolRegistry, call_json variants, preflight wrappers
+- `architecture/preflight.md` — typed preflight wrappers, strict finding parsing, contract enforcement
+- `architecture/tools.md` — tool implementation patterns, handler conventions, budget integration
+- `architecture/cli-binaries.md` — CLI entry points, generate-docs and verify-eggsact binaries
 
 Additional docs in `docs/`:
 
