@@ -774,6 +774,90 @@ fn test_regex_safety_check_complex_pattern() {
     assert!(inner.get("risk").is_some());
 }
 
+// regex backend contract tests (MCP layer)
+
+#[test]
+fn test_regex_finditer_backend_metadata_simple() {
+    let result = call_tool(
+        "regex_finditer",
+        serde_json::json!({"pattern": "\\d+", "text": "abc123"}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(
+        inner.get("engine_used"),
+        Some(&Value::String("rust-regex".to_string()))
+    );
+    assert_eq!(
+        inner.get("dialect"),
+        Some(&Value::String("eggsact-regex".to_string()))
+    );
+}
+
+#[test]
+fn test_regex_finditer_backend_metadata_lookahead() {
+    let result = call_tool(
+        "regex_finditer",
+        serde_json::json!({"pattern": "\\d+(?=px)", "text": "15px"}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(
+        inner.get("engine_used"),
+        Some(&Value::String("fancy-regex".to_string()))
+    );
+}
+
+#[test]
+fn test_regex_finditer_backend_metadata_lookbehind() {
+    let result = call_tool(
+        "regex_finditer",
+        serde_json::json!({"pattern": "(?<=\\$)\\d+", "text": "$100"}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(
+        inner.get("engine_used"),
+        Some(&Value::String("fancy-regex".to_string()))
+    );
+}
+
+#[test]
+fn test_regex_finditer_unsupported_pcry_construct() {
+    let result = call_tool(
+        "regex_finditer",
+        serde_json::json!({"pattern": "\\K\\d+", "text": "abc123"}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("valid_pattern"), Some(&Value::Bool(false)));
+    assert!(inner.get("unsupported_features").is_some());
+    let unsupported = inner
+        .get("unsupported_features")
+        .unwrap()
+        .as_array()
+        .unwrap();
+    assert!(!unsupported.is_empty());
+}
+
+#[test]
+fn test_validate_regex_backend_metadata() {
+    let result = call_tool(
+        "validate_regex",
+        serde_json::json!({"pattern": "\\d+", "samples": ["abc123"]}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(
+        inner.get("engine_used"),
+        Some(&Value::String("rust-regex".to_string()))
+    );
+    assert_eq!(
+        inner.get("dialect"),
+        Some(&Value::String("eggsact-regex".to_string()))
+    );
+}
+
 // version_compare tests
 
 #[test]

@@ -62,9 +62,10 @@ eggsact is a deterministic MCP (Model Context Protocol) server and in-process ut
 │                                                                   │
 │  24 modules providing the core text operations:                   │
 │  primitives, confusables, diff, measure, validate, transform,   │
-│  position, regex_safety, replace, path, identifier, shell,       │
-│  markdown, glob, config, toml, patch, line_range, unicode_policy,│
-│  unicode_tools, inspect_prompt, synthesis, cargo, version        │
+│  position, regex_safety, regex_engine, replace, path,           │
+│  identifier, shell, markdown, glob, config, toml, patch,        │
+│  line_range, unicode_policy, unicode_tools, inspect_prompt,     │
+│  synthesis, cargo, version                                       │
 │                                                                   │
 │  confusables_generated.rs — auto-generated Unicode data           │
 └─────────────────────────────────────────────────────────────────┘

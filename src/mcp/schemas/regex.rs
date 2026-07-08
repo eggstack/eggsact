@@ -42,11 +42,11 @@ pub fn regex_safety_check_input() -> Value {
 }
 
 pub fn validate_regex_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid_pattern":{"type":"boolean"},"results":{"type":"array"},"error":{"type":["string","null"]},"flags_used":{"type":"object"}}})
+    serde_json::json!({"type":"object","properties":{"valid_pattern":{"type":"boolean"},"results":{"type":"array"},"error":{"type":["string","null"]},"flags_used":{"type":"object"},"engine_used":{"type":"string","description":"Backend engine used (rust-regex or fancy-regex)"},"dialect":{"type":"string","description":"Regex dialect (eggsact-regex)"},"unsupported_features":{"type":"array","items":{"type":"string"},"description":"Unsupported PCRE constructs detected in pattern"}}})
 }
 
 pub fn regex_finditer_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid_pattern":{"type":"boolean"},"matches":{"type":"array","description":"List of regex matches with positions and groups"},"truncated":{"type":"boolean"},"match_count":{"type":"integer"},"error":{"type":["string","null"]}}})
+    serde_json::json!({"type":"object","properties":{"valid_pattern":{"type":"boolean"},"matches":{"type":"array","description":"List of regex matches with positions and groups"},"truncated":{"type":"boolean"},"match_count":{"type":"integer"},"error":{"type":["string","null"]},"engine_used":{"type":"string","description":"Backend engine used (rust-regex or fancy-regex)"},"dialect":{"type":"string","description":"Regex dialect (eggsact-regex)"},"unsupported_features":{"type":"array","items":{"type":"string"},"description":"Unsupported PCRE constructs detected in pattern"}}})
 }
 
 pub fn regex_safety_check_output() -> Value {

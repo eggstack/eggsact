@@ -3,34 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::text::primitives::byte_offset_to_char_index;
-
-/// Check if a pattern requires fancy_regex features (lookahead/lookbehind).
-fn needs_fancy_regex(pattern: &str) -> bool {
-    let mut chars = pattern.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            chars.next();
-            continue;
-        }
-        if c == '(' && chars.peek() == Some(&'?') {
-            chars.next();
-            if let Some(&next) = chars.peek() {
-                if next == '=' || next == '!' {
-                    return true;
-                }
-                if next == '<' {
-                    // Check for lookbehind: (?<= or (?<!, but not (?<name>...)
-                    if let Some(&next2) = chars.peek() {
-                        if next2 == '=' || next2 == '!' {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    false
-}
+use crate::text::regex_engine::{classify_pattern, RegexEngineUsed};
 
 const MAX_PATTERN_LENGTH: usize = 1000;
 const MAX_PATTERN_NESTING: usize = 5;
@@ -84,6 +57,12 @@ pub struct RegexTestResult {
     pub results: Vec<RegexMatch>,
     pub error: Option<String>,
     pub flags_used: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_used: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dialect: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unsupported_features: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -581,6 +560,33 @@ pub fn regex_test(
             results: vec![],
             error: Some(e),
             flags_used: None,
+            engine_used: None,
+            dialect: None,
+            unsupported_features: None,
+        };
+    }
+
+    let classification = classify_pattern(pattern);
+
+    // Reject unsupported PCRE constructs before compilation
+    if !classification.unsupported_features.is_empty() {
+        return RegexTestResult {
+            valid_pattern: false,
+            results: vec![],
+            error: Some(format!(
+                "Pattern uses unsupported constructs: {}",
+                classification.unsupported_features.join(", ")
+            )),
+            flags_used: None,
+            engine_used: Some(
+                match classification.preferred_engine {
+                    RegexEngineUsed::RustRegex => "rust-regex",
+                    RegexEngineUsed::FancyRegex => "fancy-regex",
+                }
+                .to_string(),
+            ),
+            dialect: Some("eggsact-regex".to_string()),
+            unsupported_features: Some(classification.unsupported_features),
         };
     }
 
@@ -594,6 +600,15 @@ pub fn regex_test(
                 results: vec![],
                 error: Some(e.to_string()),
                 flags_used: None,
+                engine_used: Some(
+                    match classification.preferred_engine {
+                        RegexEngineUsed::RustRegex => "rust-regex",
+                        RegexEngineUsed::FancyRegex => "fancy-regex",
+                    }
+                    .to_string(),
+                ),
+                dialect: Some("eggsact-regex".to_string()),
+                unsupported_features: None,
             }
         }
     };
@@ -611,6 +626,15 @@ pub fn regex_test(
                     sample_chars, MAX_SAMPLE_LENGTH
                 )),
                 flags_used: None,
+                engine_used: Some(
+                    match classification.preferred_engine {
+                        RegexEngineUsed::RustRegex => "rust-regex",
+                        RegexEngineUsed::FancyRegex => "fancy-regex",
+                    }
+                    .to_string(),
+                ),
+                dialect: Some("eggsact-regex".to_string()),
+                unsupported_features: None,
             };
         }
         let find_result = re.find(sample);
@@ -694,6 +718,15 @@ pub fn regex_test(
         results,
         error: None,
         flags_used: Some(flags_used),
+        engine_used: Some(
+            match classification.preferred_engine {
+                RegexEngineUsed::RustRegex => "rust-regex",
+                RegexEngineUsed::FancyRegex => "fancy-regex",
+            }
+            .to_string(),
+        ),
+        dialect: Some("eggsact-regex".to_string()),
+        unsupported_features: None,
     }
 }
 
@@ -1142,6 +1175,12 @@ pub struct RegexFindIterResult {
     pub truncated: bool,
     pub match_count: i32,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_used: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dialect: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unsupported_features: Option<Vec<String>>,
 }
 
 fn get_line_column_for_index(text: &str, index: usize) -> (i32, i32) {
@@ -1208,6 +1247,9 @@ pub fn regex_finditer(
                 text.chars().count(),
                 MAX_TEXT_LENGTH_REGEX
             )),
+            engine_used: None,
+            dialect: None,
+            unsupported_features: None,
         };
     }
 
@@ -1222,6 +1264,9 @@ pub fn regex_finditer(
                 pattern.chars().count(),
                 MAX_PATTERN_LENGTH_REGEX
             )),
+            engine_used: None,
+            dialect: None,
+            unsupported_features: None,
         };
     }
 
@@ -1232,6 +1277,34 @@ pub fn regex_finditer(
             truncated: false,
             match_count: 0,
             error: Some(e),
+            engine_used: None,
+            dialect: None,
+            unsupported_features: None,
+        };
+    }
+
+    let classification = classify_pattern(pattern);
+
+    // Reject unsupported PCRE constructs before compilation
+    if !classification.unsupported_features.is_empty() {
+        return RegexFindIterResult {
+            valid_pattern: false,
+            matches: vec![],
+            truncated: false,
+            match_count: 0,
+            error: Some(format!(
+                "Pattern uses unsupported constructs: {}",
+                classification.unsupported_features.join(", ")
+            )),
+            engine_used: Some(
+                match classification.preferred_engine {
+                    RegexEngineUsed::RustRegex => "rust-regex",
+                    RegexEngineUsed::FancyRegex => "fancy-regex",
+                }
+                .to_string(),
+            ),
+            dialect: Some("eggsact-regex".to_string()),
+            unsupported_features: Some(classification.unsupported_features),
         };
     }
 
@@ -1267,9 +1340,8 @@ pub fn regex_finditer(
         pattern.to_string()
     };
 
-    // Try standard regex crate first (handles \b natively), fall back to
-    // fancy-regex only when the pattern uses lookaheads/lookbehinds.
-    if !needs_fancy_regex(&pattern_with_flags) {
+    // Route through classifier: use rust-regex for simple patterns, fancy-regex for extended.
+    if classification.preferred_engine == RegexEngineUsed::RustRegex {
         let std_re = match regex::Regex::new(&pattern_with_flags) {
             Ok(r) => r,
             Err(e) => {
@@ -1279,6 +1351,9 @@ pub fn regex_finditer(
                     truncated: false,
                     match_count: 0,
                     error: Some(format!("Invalid pattern: {}", e)),
+                    engine_used: Some("rust-regex".to_string()),
+                    dialect: Some("eggsact-regex".to_string()),
+                    unsupported_features: None,
                 };
             }
         };
@@ -1358,9 +1433,13 @@ pub fn regex_finditer(
             truncated,
             match_count,
             error: None,
+            engine_used: Some("rust-regex".to_string()),
+            dialect: Some("eggsact-regex".to_string()),
+            unsupported_features: None,
         };
     }
 
+    // Fancy-regex path for patterns needing lookaround/backreferences
     let compiled = match Regex::new(&pattern_with_flags) {
         Ok(c) => c,
         Err(e) => {
@@ -1370,6 +1449,9 @@ pub fn regex_finditer(
                 truncated: false,
                 match_count: 0,
                 error: Some(format!("Invalid pattern: {}", e)),
+                engine_used: Some("fancy-regex".to_string()),
+                dialect: Some("eggsact-regex".to_string()),
+                unsupported_features: None,
             };
         }
     };
@@ -1465,6 +1547,9 @@ pub fn regex_finditer(
         truncated,
         match_count,
         error: None,
+        engine_used: Some("fancy-regex".to_string()),
+        dialect: Some("eggsact-regex".to_string()),
+        unsupported_features: None,
     }
 }
 

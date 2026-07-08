@@ -237,6 +237,8 @@ pub const TEXT_SECURITY_OK: &str = "TEXT_SECURITY_OK";
 pub const REGEX_SAFE: &str = "REGEX_SAFE";
 /// Regex pattern has safety concerns (catastrophic backtracking, etc.).
 pub const REGEX_UNSAFE: &str = "REGEX_UNSAFE";
+/// Regex pattern uses unsupported PCRE-only constructs (branch reset, recursion, \K, control verbs, etc.).
+pub const REGEX_UNSUPPORTED_FEATURE: &str = "REGEX_UNSUPPORTED_FEATURE";
 
 // ---------------------------------------------------------------------------
 // Version / Cargo
@@ -517,6 +519,7 @@ pub const ALL: &[&str] = &[
     TEXT_SECURITY_OK,
     REGEX_SAFE,
     REGEX_UNSAFE,
+    REGEX_UNSUPPORTED_FEATURE,
     CONSTRAINT_NOTE,
     CONSTRAINT_NOT_SATISFIED,
     CARGO_OK,

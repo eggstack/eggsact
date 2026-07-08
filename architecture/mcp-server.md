@@ -212,6 +212,23 @@ profile at construction time via `with_profile_and_audience`.
 | analysis | 4 | import_export_inspect, code_block_map, symbol_name_diff, lockfile_inspect |
 | diagnostics | 3 | runtime_diagnostics, profile_inspect, tool_availability_explain |
 
+### Regex Backend Contract
+
+The `validate_regex`, `regex_safety_check`, and `regex_finditer` tools auto-select between two regex backends via the `classify_pattern()` function in `src/text/regex_engine.rs`. The classification is based on which constructs the pattern uses:
+
+- **Rust `regex`** (linear-time, safe): used for patterns with no lookaround, no backreferences, and no PCRE-only constructs. This is the default and preferred backend.
+- **`fancy-regex`** (backtracking-based): used when the pattern contains lookaround (`(?=...)`, `(?!...)`, `(?<=...)`, `(?<!...)`) or backreferences (`\1`, `(?P=name)`). Supports named captures `(?P<name>...)` with both engines.
+
+Regex tool outputs include these fields reflecting the backend decision:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `engine_used` | string | `"rust-regex"` or `"fancy-regex"` — which backend compiled the pattern |
+| `dialect` | string | `"eggsact-regex"` — the eggsact regex dialect identifier |
+| `unsupported_features` | string[] | PCRE-only constructs detected (branch reset, recursion, `\K`, control verbs, atomic groups). Empty when all constructs are supported. |
+
+When `unsupported_features` is non-empty, the tool returns machine code `REGEX_UNSUPPORTED_FEATURE`. This is distinct from `REGEX_UNSAFE` (ReDoS safety) — a pattern can be fully supported by the engine but unsafe, or safe but unsupported. See `architecture/machine-codes.md` for the full machine code table.
+
 ## Composite Tools
 
 Tools marked `composite: true` orchestrate other tools internally. All emit a `verdict` field in their result JSON via the `.with_verdict()` builder, and use `finding()` helpers with canonical `severity::*` and `disposition::*` constants.

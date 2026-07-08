@@ -206,6 +206,23 @@ Both modes reject booleans for numeric schema fields.
 - Tightening validation that matches the Python reference (bug fix)
 - Documentation-only changes
 
+### Regex Backend Contract Extension
+
+The `validate_regex` and `regex_finditer` tools gained new optional output
+fields (`engine_used`, `dialect`, `unsupported_features`) and a new machine
+code (`REGEX_UNSUPPORTED_FEATURE`) in a minor release. This is a backward-
+compatible behavioral extension:
+
+- Callers that ignore unknown fields in the response envelope continue to
+  work unchanged (standard JSON ignore-unknown behavior).
+- The `REGEX_UNSUPPORTED_FEATURE` machine code is new (MINOR) and can be
+  handled by callers that support it or ignored by callers that do not.
+- The `dialect` field always reports `"eggsact-regex"` and is not expected
+  to change. The `engine_used` field reflects backend selection between
+  `"rust-regex"` and `"fancy-regex"` based on pattern features — callers
+  should not assume a specific engine, only that the engine is chosen
+  automatically to support the pattern's features.
+
 ## Versioning Workflow
 
 1. Before release, run the canonical verification gate (see `release.sh`).

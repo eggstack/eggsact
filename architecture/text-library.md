@@ -21,6 +21,7 @@ The `src/text/` module provides 24 text processing modules used by MCP tools and
 | `position` | `position.rs` | `text_position`, `text_window` | `text_position()`, `text_window()` |
 | `primitives` | `primitives.rs` | (internal) | `count_graphemes()`, `truncate_to_grapheme()` |
 | `regex_safety` | `regex_safety.rs` | `regex_safety_check` | `regex_safety_check()` |
+| `regex_engine` | `regex_engine.rs` | (used by `validate_regex`, `regex_safety_check`, `regex_finditer`) | `classify_pattern()` |
 | `replace` | `replace.rs` | `text_replace_check` | `text_replace_check()` |
 | `shell` | `shell.rs` | `shell_split`, `shell_quote_join`, `argv_compare` | `shell_split()`, `shell_quote_join()`, `argv_compare()` |
 | `synthesis` | `synthesis.rs` | composite tools | `text_security_inspect()`, `edit_preflight()`, `command_preflight()`, `config_preflight()` |
@@ -92,3 +93,35 @@ MCP tool wrappers in `tools.rs` convert to `ToolResponse`.
 ### Position
 - `text_position(text, ...)` → convert between byte/codepoint/line-col
 - `text_window(text, position, context)` → extract context window
+
+## Regex Backend Classifier
+
+`regex_engine.rs` determines which regex backend compiles a given pattern. It exports:
+
+### `classify_pattern(pattern) -> RegexClassification`
+
+Scans a pattern string and returns a classification containing:
+
+- **`preferred_engine`**: `RegexEngineUsed` — either `RustRegex` or `FancyRegex`. Driven by whether the pattern uses lookaround or backreferences (which require `fancy-regex`) or PCRE-only constructs (which are unsupported).
+- **`features`**: `Vec<RegexFeature>` — detected features (`LookAhead`, `LookBehind`, `Backreference`, `NamedCapture`, `InlineFlags`, `UnsupportedPcreConstruct`).
+- **`unsupported_features`**: `Vec<String>` — human-readable descriptions of PCRE-only constructs (branch reset, recursion/subroutines, `\K`, control verbs, atomic groups).
+
+### `RegexEngineUsed` enum
+
+| Variant | Backend | When selected |
+|---------|---------|---------------|
+| `RustRegex` | `regex` crate | No lookaround, no backreferences, no PCRE-only constructs |
+| `FancyRegex` | `fancy-regex` crate | Pattern uses lookaround or backreferences |
+
+### `RegexFeature` enum
+
+| Variant | Meaning | Forces backend |
+|---------|---------|----------------|
+| `LookAhead` | `(?=...)` or `(?!...)` | FancyRegex |
+| `LookBehind` | `(?<=...)` or `(?<!...)` | FancyRegex |
+| `Backreference` | `\1`–`\9` or `(?P=name)` | FancyRegex |
+| `NamedCapture` | `(?P<name>...)` | Neither (both support) |
+| `InlineFlags` | `(?i)`, `(?m)`, etc. | Neither (both support) |
+| `UnsupportedPcreConstruct(String)` | branch reset, recursion, `\K`, control verbs, atomic groups | — (unsupported by either backend) |
+
+The classifier is a conservative scanner that handles escapes and character classes correctly to avoid false positives on lookaround-like text inside literals or character classes. It is used by `validate_regex`, `regex_safety_check`, and `regex_finditer` to route patterns and report `engine_used`, `dialect`, and `unsupported_features` in their output.

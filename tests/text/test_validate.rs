@@ -464,7 +464,136 @@ fn test_json_compare_same_type_true_for_key_mismatch() {
         result.same_type);
 }
 
-// ─── BUG-010: json_extract summary on invalid JSON ─────────────────────
+// ─── Regex backend contract tests ──────────────────────────────────────
+
+#[test]
+fn test_regex_backend_simple_pattern_uses_rust_regex() {
+    let result = regex_finditer(r"\d+", "abc123", None, 100, false, true);
+    assert!(result.valid_pattern);
+    assert_eq!(result.engine_used.as_deref(), Some("rust-regex"));
+    assert_eq!(result.dialect.as_deref(), Some("eggsact-regex"));
+    assert!(
+        result.unsupported_features.is_none()
+            || result.unsupported_features.as_ref().unwrap().is_empty()
+    );
+}
+
+#[test]
+fn test_regex_backend_lookahead_uses_fancy_regex() {
+    let result = regex_finditer(r"\d+(?=px)", "15px 20em", None, 100, false, true);
+    assert!(result.valid_pattern);
+    assert_eq!(result.engine_used.as_deref(), Some("fancy-regex"));
+    assert_eq!(result.dialect.as_deref(), Some("eggsact-regex"));
+}
+
+#[test]
+fn test_regex_backend_negative_lookahead_uses_fancy_regex() {
+    let result = regex_finditer(r"\d+(?!px)", "15px 20em", None, 100, false, true);
+    assert!(result.valid_pattern);
+    assert_eq!(result.engine_used.as_deref(), Some("fancy-regex"));
+}
+
+#[test]
+fn test_regex_backend_positive_lookbehind_uses_fancy_regex() {
+    let result = regex_finditer(r"(?<=\$)\d+", "$100 €200", None, 100, false, true);
+    assert!(result.valid_pattern);
+    assert_eq!(result.engine_used.as_deref(), Some("fancy-regex"));
+    assert_eq!(result.matches.len(), 1);
+    assert_eq!(result.matches[0].m, "100");
+}
+
+#[test]
+fn test_regex_backend_negative_lookbehind_uses_fancy_regex() {
+    let result = regex_finditer(r"(?<!\$)\d+", "$100 €200", None, 100, false, true);
+    assert!(result.valid_pattern);
+    assert_eq!(result.engine_used.as_deref(), Some("fancy-regex"));
+    assert!(
+        !result.matches.is_empty(),
+        "should match at least one non-dollar-prefixed number"
+    );
+}
+
+#[test]
+fn test_regex_backend_escaped_lookaround_is_rust_regex() {
+    // \(?= is a literal ( followed by literal =, should NOT force fancy routing
+    let result = regex_finditer(
+        r"\(\?=literal",
+        "test (=foo) literal",
+        None,
+        100,
+        false,
+        true,
+    );
+    assert!(result.valid_pattern);
+    assert_eq!(result.engine_used.as_deref(), Some("rust-regex"));
+}
+
+#[test]
+fn test_regex_backend_char_class_lookaround_is_rust_regex() {
+    let result = regex_finditer(r"[?=]+", "a=b?c", None, 100, false, true);
+    assert!(result.valid_pattern);
+    assert_eq!(result.engine_used.as_deref(), Some("rust-regex"));
+}
+
+#[test]
+fn test_regex_backend_unsupported_branch_reset() {
+    let result = regex_finditer(r"(?|a|b)", "a", None, 100, false, true);
+    assert!(!result.valid_pattern);
+    assert!(result.unsupported_features.is_some());
+    assert!(!result.unsupported_features.as_ref().unwrap().is_empty());
+}
+
+#[test]
+fn test_regex_backend_unsupported_backslash_k() {
+    let result = regex_finditer(r"\K\d+", "abc123", None, 100, false, true);
+    assert!(!result.valid_pattern);
+    assert!(result.unsupported_features.is_some());
+}
+
+#[test]
+fn test_regex_backend_unsupported_control_verb() {
+    let result = regex_finditer(r"(*SKIP)foo", "foo", None, 100, false, true);
+    assert!(!result.valid_pattern);
+    assert!(result.unsupported_features.is_some());
+}
+
+#[test]
+fn test_regex_test_backend_metadata() {
+    let result = regex_test(r"\d+", &["abc123"], None, false, false, false, false);
+    assert!(result.valid_pattern);
+    assert_eq!(result.engine_used.as_deref(), Some("rust-regex"));
+    assert_eq!(result.dialect.as_deref(), Some("eggsact-regex"));
+}
+
+#[test]
+fn test_regex_test_unsupported_feature() {
+    let result = regex_test(r"\K\d+", &["abc123"], None, false, false, false, false);
+    assert!(!result.valid_pattern);
+    assert!(result.unsupported_features.is_some());
+    assert!(!result.unsupported_features.as_ref().unwrap().is_empty());
+}
+
+#[test]
+fn test_regex_backend_simple_word_boundary_is_rust_regex() {
+    let result = regex_finditer(
+        r"\b[a-z_][a-z0-9_]*\b",
+        "hello world",
+        None,
+        100,
+        false,
+        true,
+    );
+    assert!(result.valid_pattern);
+    assert_eq!(result.engine_used.as_deref(), Some("rust-regex"));
+}
+
+#[test]
+fn test_regex_backend_captures_are_rust_regex() {
+    let result = regex_finditer(r"(foo)-(bar)", "foo-bar", None, 100, false, true);
+    assert!(result.valid_pattern);
+    assert_eq!(result.engine_used.as_deref(), Some("rust-regex"));
+    assert_eq!(result.matches[0].groups, vec!["foo", "bar"]);
+}
 
 #[test]
 fn test_json_extract_invalid_json_summary_has_error() {

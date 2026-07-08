@@ -260,7 +260,18 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | Code | Meaning | Severity | Blocking | Harness Action | Used by |
 |------|---------|----------|----------|----------------|---------|
 | `REGEX_SAFE` | Pattern is safe | info | no | proceed | `regex_safety_check` |
-| `REGEX_UNSAFE` | Pattern has safety issues | medium | review | fix pattern | `regex_safety_check` |
+| `REGEX_UNSAFE` | Pattern has safety issues (catastrophic backtracking risk) | medium | review | fix pattern | `regex_safety_check` |
+| `REGEX_UNSUPPORTED_FEATURE` | Pattern uses unsupported PCRE-only constructs | high | yes | rewrite pattern or simplify | `validate_regex`, `regex_safety_check` |
+
+`REGEX_SAFE` and `REGEX_UNSAFE` are returned by `regex_safety_check` and concern pattern safety (ReDoS risk). `REGEX_UNSUPPORTED_FEATURE` is returned by both `validate_regex` and `regex_safety_check` and concerns dialect compatibility — the pattern parsed successfully but contains PCRE-only constructs that neither the Rust `regex` nor `fancy-regex` backend can compile. Unsupported constructs include:
+
+- Branch reset: `(?|a|b)`
+- Recursion/subroutines: `(?R)`, `(?1)`, `(?&name)`
+- `\K` (reset match start)
+- Control verbs: `(*SKIP)`, `(*PRUNE)`, `(*ACCEPT)`, `(*FAIL)`, `(*COMMIT)`, `(*THEN)`, etc.
+- Atomic groups: `(?>abc)`
+
+These are distinct from `REGEX_UNSAFE` (safety/ReDoS) — a pattern can be both safe and unsupported, or unsafe but fully supported by the engine.
 
 ### Version / Cargo
 

@@ -260,8 +260,25 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
     if let Some(ref err) = result.error {
         result_value["error"] = serde_json::json!(err);
     }
+    if let Some(ref engine) = result.engine_used {
+        result_value["engine_used"] = serde_json::json!(engine);
+    }
+    if let Some(ref dialect) = result.dialect {
+        result_value["dialect"] = serde_json::json!(dialect);
+    }
+    if let Some(ref unsupported) = result.unsupported_features {
+        result_value["unsupported_features"] = serde_json::json!(unsupported);
+    }
 
-    ToolResponse::success(result_value, Some("validate_regex")).with_tool("validate_regex")
+    // Emit REGEX_UNSUPPORTED_FEATURE for unsupported dialect constructs
+    let mut resp =
+        ToolResponse::success(result_value, Some("validate_regex")).with_tool("validate_regex");
+    if let Some(ref unsupported) = result.unsupported_features {
+        if !unsupported.is_empty() {
+            resp = resp.with_machine_code(machine_codes::REGEX_UNSUPPORTED_FEATURE);
+        }
+    }
+    resp
 }
 
 pub fn regex_safety_check_tool(args: &Value) -> ToolResponse {
@@ -520,15 +537,26 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
         })
         .collect();
 
-    ToolResponse::success(
+    let mut resp = ToolResponse::success(
         serde_json::json!({
             "valid_pattern": result.valid_pattern,
             "matches": matches,
             "truncated": result.truncated,
             "match_count": result.match_count,
             "error": result.error,
+            "engine_used": result.engine_used,
+            "dialect": result.dialect,
+            "unsupported_features": result.unsupported_features,
         }),
         Some("regex_finditer"),
     )
-    .with_tool("regex_finditer")
+    .with_tool("regex_finditer");
+
+    // Emit REGEX_UNSUPPORTED_FEATURE for unsupported dialect constructs
+    if let Some(ref unsupported) = result.unsupported_features {
+        if !unsupported.is_empty() {
+            resp = resp.with_machine_code(machine_codes::REGEX_UNSUPPORTED_FEATURE);
+        }
+    }
+    resp
 }

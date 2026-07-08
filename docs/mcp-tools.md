@@ -533,6 +533,12 @@ Supported schema properties: `type`, `required`, `properties`, `additional_prope
 
 ## Regex
 
+eggsact regex tools use the `eggsact-regex` dialect: the server auto-selects between the Rust `regex` crate (linear-time, fast) and `fancy-regex` (lookaround/backreference support) based on pattern features. Patterns requiring lookaround (`(?=...)`, `(?<=...)`) or backreferences (`\1`, `(?P=name)`) are routed to `fancy-regex`; everything else uses `rust-regex`.
+
+Both `validate_regex` and `regex_finditer` emit `engine_used`, `dialect`, and `unsupported_features` in their response (when applicable). The `dialect` field is always `"eggsact-regex"`. The `engine_used` field is `"rust-regex"` or `"fancy-regex"`. The `unsupported_features` field lists PCRE-only constructs that are not supported by either backend, such as branch reset (`(?|...)`), atomic groups (`(?>...)`), recursion (`(?R)`, `(?1)`), `\K` (reset match start), and control verbs (`(*SKIP)`, `(*PRUNE)`, `(*ACCEPT)`, etc.). When unsupported features are detected, the response includes the `REGEX_UNSUPPORTED_FEATURE` machine code.
+
+This is **NOT** PCRE2. Named captures `(?P<name>...)` and inline flags `(?i)`, `(?m)`, `(?s)`, `(?x)` work with both engines. The dialect does not support PCRE-specific features like possessive quantifiers, subroutine calls, or the `(*SKIP)` family of control verbs.
+
 ### validate_regex
 
 Test a regex pattern against sample strings.
@@ -547,7 +553,7 @@ Test a regex pattern against sample strings.
 | `dotall` | boolean | no | `false` | Dot matches newlines |
 | `ascii` | boolean | no | `false` | ASCII-only character classes |
 
-**Return:** `{"valid_pattern": <boolean>, "results": [<{sample, matched, groups}>]}`
+**Return:** `{"valid_pattern": <boolean>, "results": [<{sample, matched, groups}>], "engine_used": <string>, "dialect": "eggsact-regex", "unsupported_features": [<string>]}`
 
 ---
 
@@ -576,7 +582,7 @@ Find all regex matches in text with position and group information.
 | `include_line_column` | boolean | no | `true` | Include line/column positions |
 | `include_groups` | boolean | no | `true` | Include capture groups |
 
-**Return:** `{"valid_pattern": <boolean>, "matches": [<{match, span, line?, column?, groups?, groupdict?}>], "truncated": <boolean>, "match_count": <int>, "error": <string|null>}`
+**Return:** `{"valid_pattern": <boolean>, "matches": [<{match, span, line?, column?, groups?, groupdict?}>], "truncated": <boolean>, "match_count": <int>, "error": <string|null>, "engine_used": <string>, "dialect": "eggsact-regex", "unsupported_features": [<string>]}`
 
 ```json
 // Request
