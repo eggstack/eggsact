@@ -1105,6 +1105,261 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
 }
 
 // ---------------------------------------------------------------------------
+// patch_contract_check
+// ---------------------------------------------------------------------------
+
+pub fn patch_contract_check(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::MODERATE);
+
+    let patch_text = match args.get("patch_text").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => {
+            return ToolResponse::error_with_code(
+                "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
+                "Missing 'patch_text' parameter",
+                None,
+                Some("patch_contract_check"),
+            )
+        }
+    };
+
+    let workspace_root = args.get("workspace_root").and_then(|v| v.as_str());
+
+    if patch_text.chars().count() > MAX_TEXT_LENGTH {
+        return ToolResponse::error_with_code(
+            "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
+            &format!(
+                "Patch text length {} exceeds maximum of {}",
+                patch_text.chars().count(),
+                MAX_TEXT_LENGTH
+            ),
+            None,
+            Some("patch_contract_check"),
+        );
+    }
+
+    let parse_result = crate::text::patch::parse_unified_diff(patch_text);
+    if !parse_result.ok {
+        let findings = vec![finding(
+            machine_codes::PATCH_FAILED,
+            severity::HIGH,
+            &parse_result
+                .error
+                .unwrap_or_else(|| "Patch parse failed".to_string()),
+            Some(disposition::BLOCKING),
+            None,
+        )];
+        let result = serde_json::json!({
+            "summary": "Patch failed to parse",
+            "files_changed": 0,
+            "categories": [],
+            "files_by_category": {},
+            "scope_escape_detected": false,
+            "large_deletions_detected": false,
+            "verdict": verdict::BLOCK,
+            "machine_code": machine_codes::PATCH_FAILED,
+        });
+        return ToolResponse::success(result, Some("patch_contract_check"))
+            .with_tool("patch_contract_check")
+            .with_machine_code(machine_codes::PATCH_FAILED)
+            .with_verdict(verdict::BLOCK)
+            .with_findings(findings);
+    }
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("patch_contract_check")
+            .unwrap_err();
+    }
+
+    let mut categories: Vec<String> = Vec::new();
+    let mut files_by_category: HashMap<String, Vec<String>> = HashMap::new();
+    let mut findings = Vec::new();
+    let mut scope_escape_detected = false;
+    let mut large_deletions_detected = false;
+
+    // Classify each file for contract relevance
+    for file in &parse_result.files {
+        let path = if file.new_file.is_empty() || file.new_file == "/dev/null" {
+            &file.old_file
+        } else {
+            &file.new_file
+        };
+
+        // Check scope escape
+        if let Some(wr) = workspace_root {
+            if !path.starts_with(wr) && (path.starts_with("../") || path.contains("/../")) {
+                scope_escape_detected = true;
+                categories.push("scope_escape".to_string());
+                files_by_category
+                    .entry("scope_escape".to_string())
+                    .or_default()
+                    .push(path.to_string());
+                findings.push(finding(
+                    machine_codes::PATCH_SCOPE_ESCAPE,
+                    severity::HIGH,
+                    &format!("File path escapes workspace root: {}", path),
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
+            }
+        }
+
+        // Classify by contract-relevant category
+        let category = classify_diff_path(path);
+        match category.as_str() {
+            "lockfiles" => {
+                categories.push("lockfile_change".to_string());
+                files_by_category
+                    .entry("lockfile_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+                findings.push(finding(
+                    machine_codes::PATCH_LOCKFILE_CHANGE,
+                    severity::MEDIUM,
+                    &format!("Lockfile changed: {}", path),
+                    Some(disposition::CAUTION),
+                    None,
+                ));
+            }
+            "manifests" => {
+                categories.push("manifest_change".to_string());
+                files_by_category
+                    .entry("manifest_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+                findings.push(finding(
+                    machine_codes::PATCH_MANIFEST_CHANGE,
+                    severity::MEDIUM,
+                    &format!("Manifest changed: {}", path),
+                    Some(disposition::CAUTION),
+                    None,
+                ));
+            }
+            "ci" => {
+                categories.push("ci_change".to_string());
+                files_by_category
+                    .entry("ci_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+            }
+            "configs" => {
+                categories.push("config_change".to_string());
+                files_by_category
+                    .entry("config_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+            }
+            "generated" => {
+                categories.push("generated_change".to_string());
+                files_by_category
+                    .entry("generated_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+            }
+            "vendor" => {
+                categories.push("vendor_change".to_string());
+                files_by_category
+                    .entry("vendor_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+            }
+            _ => {
+                // source, tests, docs, scripts, etc.
+                categories.push("source_change".to_string());
+                files_by_category
+                    .entry("source_change".to_string())
+                    .or_default()
+                    .push(path.to_string());
+            }
+        }
+    }
+
+    // Check for large deletions (>200 deleted lines in a single file)
+    for file in &parse_result.files {
+        let mut deletions = 0;
+        for hunk in &file.hunks {
+            for line in &hunk.lines {
+                if line.starts_with('-') && !line.starts_with("---") {
+                    deletions += 1;
+                }
+            }
+        }
+        if deletions > 200 {
+            large_deletions_detected = true;
+            let path = if file.new_file.is_empty() || file.new_file == "/dev/null" {
+                &file.old_file
+            } else {
+                &file.new_file
+            };
+            findings.push(finding(
+                machine_codes::PATCH_LARGE_DELETE,
+                severity::MEDIUM,
+                &format!("Large deletion ({} lines) in {}", deletions, path),
+                Some(disposition::CAUTION),
+                None,
+            ));
+        }
+    }
+
+    // Deduplicate categories
+    categories.sort();
+    categories.dedup();
+
+    // Determine verdict
+    let has_blocking = findings.iter().any(|f| {
+        f.get("severity")
+            .and_then(|s| s.as_str())
+            .map(|s| s == "high" || s == "critical")
+            .unwrap_or(false)
+    });
+    let has_review = findings.iter().any(|f| {
+        f.get("severity")
+            .and_then(|s| s.as_str())
+            .map(|s| s == "medium")
+            .unwrap_or(false)
+    });
+
+    let (contract_verdict, machine_code) = if has_blocking {
+        (verdict::BLOCK, machine_codes::PATCH_CONTRACT_BLOCK)
+    } else if has_review {
+        (verdict::REVIEW, machine_codes::PATCH_CONTRACT_REVIEW)
+    } else {
+        (verdict::ALLOW, machine_codes::PATCH_CONTRACT_OK)
+    };
+
+    let summary_str = format!(
+        "{} files, categories: [{}]",
+        parse_result.files.len(),
+        categories.join(", ")
+    );
+
+    let result = serde_json::json!({
+        "summary": summary_str,
+        "files_changed": parse_result.files.len(),
+        "categories": categories,
+        "files_by_category": files_by_category,
+        "scope_escape_detected": scope_escape_detected,
+        "large_deletions_detected": large_deletions_detected,
+        "verdict": contract_verdict,
+        "machine_code": machine_code,
+    });
+
+    let mut resp = ToolResponse::success(result, Some("patch_contract_check"))
+        .with_tool("patch_contract_check")
+        .with_machine_code(machine_code)
+        .with_verdict(contract_verdict);
+
+    if !findings.is_empty() {
+        resp = resp.with_findings(findings);
+    }
+
+    resp
+}
+
+// ---------------------------------------------------------------------------
 // diff_risk_classify
 // ---------------------------------------------------------------------------
 

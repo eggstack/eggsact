@@ -47,6 +47,7 @@ const CATEGORY_ORDER: &[&str] = &[
     "cargo",
     "dependency",
     "repo",
+    "analysis",
     "diagnostics",
 ];
 

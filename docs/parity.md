@@ -9,7 +9,7 @@ tools. Clients do not need to change any code to switch from Python to Rust for
 matching tools.
 
 The Python reference lives in `eggcalc/mcp/` (schemas.py, tools.py, server.py) and
-provides 67 tool definitions. The Rust implementation in `src/mcp/` ships 71 tools
+provides 67 tool definitions. The Rust implementation in `src/mcp/` ships 78 tools
 (see [Known parity gaps](#known-parity-gaps) below); the remaining 3 are planned for
 phase 10 work.
 
@@ -158,19 +158,19 @@ environment). The most recent local run:
 - **Command:** `cargo test --test lib parity`
 - **Date:** 2026-07-07
 - **Commit:** `f695791`
-- **Result:** 385 passed, **31 failed**, 2 ignored (out of 416 parity tests)
+- **Result:** 383 passed, **33 failed**, 2 ignored (out of 416 parity tests)
 
-The 31 remaining failures are classified in the [decision table](#decision-table)
+The 33 remaining failures are classified in the [decision table](#decision-table)
 below. They are not regressions — they accumulated across the phase 06–09
 line of work. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE`
-env var support and updating test helpers. Categories C1–C6 (31 failures) are
+env var support and updating test helpers. Categories C1–C6 (33 failures) are
 accepted behavioral differences tracked for follow-up. An
 accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt`
-lists all 31 test names for regression detection.
+lists all 33 test names for regression detection.
 
 ## Known parity gaps
 
-The 31 remaining parity failures are classified below (down from 54 after
+The 33 remaining parity failures are classified below (down from 54 after
 fixing Category A). None are regressions from a single change; they
 accumulated across the phase 06–09 line of work. The concurrent-ordering
 failures (old Category D) were resolved 2026-07-07 by switching
@@ -263,14 +263,18 @@ tool handler.
 **C3 — Unicode policy check drift (3 failures).** Output shape or finding
 severity/details differ between Rust and Python for `unicode_policy_check`.
 
-**C4 — Tool output drift (5 failures).** Miscellaneous output differences:
+**C4 — Tool output drift (7 failures).** Miscellaneous output differences:
 `cargo_toml_inspect` shape, `constant_lookup` metadata ordering,
 `unit_info` error envelope, `text_security_inspect` finding shape,
-`edit_preflight` missing `match_codepoint_length` field in subtool output.
+`edit_preflight` missing `match_codepoint_length` field in subtool output,
+`math_eval` power expression output, `version_compare` phase4 case output.
 
-**C5 — Tools/list ordering and tool-set gap (8 failures).** Rust has 71
-tools; Python has 67. Four extra Rust tools (`runtime_diagnostics`,
-`repo_tree_summarize`, `diff_risk_classify`, `path_batch_scope_check`)
+**C5 — Tools/list ordering and tool-set gap (8 failures).** Rust has 78
+tools; Python has 67. Eleven extra Rust tools (`runtime_diagnostics`,
+`repo_tree_summarize`, `diff_risk_classify`, `path_batch_scope_check`,
+`code_block_map`, `import_export_inspect`, `symbol_name_diff`,
+`lockfile_inspect`, `patch_contract_check`, `test_command_suggest`,
+`repo_language_detect`)
 cause ordering and count mismatches. Also, within the shared set, index 11
 differs: Python emits `validate_brackets`, Rust emits `text_position`.
 
@@ -290,16 +294,19 @@ calls a HarnessOnly tool without proper audience setup.
 | C1 — Shell tokenization | 9 | Defer: accepted Rust behavioral difference | No |
 | C2 — Prompt input inspect | 4 | Defer: Rust has richer findings | No |
 | C3 — Unicode policy check | 3 | Defer: Rust has different finding structure | No |
-| C4 — Tool output drift | 5 | Defer: cosmetic or intentional Rust differences | No |
-| C5 — Tools/list ordering | 8 | Defer: Rust superset (71 vs 67 tools) | No |
+| C4 — Tool output drift | 7 | Defer: cosmetic or intentional Rust differences | No |
+| C5 — Tools/list ordering | 8 | Defer: Rust superset (78 vs 67 tools) | No |
 | C6 — Error handling | 2 | Defer: needs Harness audience in test | No |
-| **Total** | **54** | **385 passed, 31 failed, 2 ignored** | **None** |
+| **Total** | **54** | **383 passed, 33 failed, 2 ignored** | **None** |
 
-### Known tool-set gap: 71 vs 67 tools
+### Known tool-set gap: 78 vs 67 tools
 
-The Rust `full` profile ships 71 tools; the Python reference defines 67.
-Four extra Rust tools not in Python: `runtime_diagnostics`,
-`repo_tree_summarize`, `diff_risk_classify`, `path_batch_scope_check`.
+The Rust `full` profile ships 78 tools; the Python reference defines 67.
+Eleven extra Rust tools not in Python: `runtime_diagnostics`,
+`repo_tree_summarize`, `diff_risk_classify`, `path_batch_scope_check`,
+`code_block_map`, `import_export_inspect`, `symbol_name_diff`,
+`lockfile_inspect`, `patch_contract_check`, `test_command_suggest`,
+`repo_language_detect`.
 
 The three tools previously missing from Rust (`config_file_inspect`,
 `dependency_edit_preflight`, `repo_manifest_inspect`) were added in phase 09.

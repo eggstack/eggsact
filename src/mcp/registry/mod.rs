@@ -193,12 +193,16 @@ mod tests {
         let actual = snapshot_names("codegg_core", ToolListAudience::Model);
         let expected = vec![
             "cargo_toml_inspect",
+            "code_block_map",
             "command_preflight",
             "config_preflight",
             "edit_preflight",
             "identifier_inspect",
+            "import_export_inspect",
             "path_normalize",
+            "repo_language_detect",
             "structured_data_compare",
+            "test_command_suggest",
             "text_diff_explain",
             "text_equal",
             "text_fingerprint",
@@ -222,7 +226,9 @@ mod tests {
             "config_preflight",
             "dependency_edit_preflight",
             "edit_preflight",
+            "lockfile_inspect",
             "patch_apply_check",
+            "patch_contract_check",
             "path_batch_scope_check",
             "path_scope_check",
             "prompt_input_inspect",
@@ -244,7 +250,10 @@ mod tests {
             "edit_preflight",
             "line_range_compare",
             "line_range_extract",
+            "lockfile_inspect",
+            "patch_contract_check",
             "patch_summary",
+            "symbol_name_diff",
             "text_diff_explain",
             "text_replace_check",
         ];
@@ -262,9 +271,12 @@ mod tests {
             "edit_preflight",
             "line_range_compare",
             "line_range_extract",
+            "lockfile_inspect",
             "patch_apply_check",
+            "patch_contract_check",
             "patch_summary",
             "path_batch_scope_check",
+            "symbol_name_diff",
             "text_diff_explain",
             "text_replace_check",
         ];
@@ -332,6 +344,7 @@ mod tests {
             "command_preflight",
             "regex_safety_check",
             "shell_quote_join",
+            "test_command_suggest",
         ];
         assert_eq!(
             actual,
@@ -348,6 +361,7 @@ mod tests {
             "regex_safety_check",
             "shell_quote_join",
             "shell_split",
+            "test_command_suggest",
         ];
         assert_eq!(
             actual,
@@ -396,15 +410,22 @@ mod tests {
         let actual = snapshot_names("codegg_repo_audit", ToolListAudience::Model);
         let expected = vec![
             "cargo_toml_inspect",
+            "code_block_map",
             "code_fence_extract",
             "config_file_inspect",
             "dependency_edit_preflight",
             "diff_risk_classify",
             "identifier_table_inspect",
+            "import_export_inspect",
             "json_shape",
+            "lockfile_inspect",
             "markdown_structure",
+            "patch_contract_check",
+            "repo_language_detect",
             "repo_manifest_inspect",
             "repo_tree_summarize",
+            "symbol_name_diff",
+            "test_command_suggest",
             "text_fingerprint",
         ];
         assert_eq!(

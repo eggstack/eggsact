@@ -82,6 +82,16 @@ Inspect Cargo.toml text without network or filesystem access. Reports package me
 - **Required args**:
   - `text` (string)
 
+### `code_block_map`
+
+Return approximate top-level block ranges (functions, classes, modules, headings) from source text or Markdown. Helps agents target edits without full parsing.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_core`
+- **Required args**:
+  - `source` (string)
+
 ### `command_preflight`
 
 Composite: analyze a command before user approval or execution. Applies a policy engine (default/strict/permissive) with optional policy_config allow/deny overrides. Calls shell_split and regex_safety_check. Detects behavioral features (network, filesystem, process, env) and destructive patterns. Returns parsed argv, program, subcommand, features, risk findings, matched_rules, and a verdict. Must not execute anything.
@@ -125,6 +135,16 @@ Inspect identifiers for validity and collisions. Detects confusables, mixed scri
 - **Required args**:
   - `identifiers` (array)
 
+### `import_export_inspect`
+
+Extract import/export/module-use statements from source text using lightweight language-aware heuristics. Supports Rust, Python, JavaScript/TypeScript, and Go.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_core`
+- **Required args**:
+  - `source` (string)
+
 ### `path_normalize`
 
 Normalize a path using posixpath or ntpath semantics. Collapse dot segments, resolve components.
@@ -134,6 +154,16 @@ Normalize a path using posixpath or ntpath semantics. Collapse dot segments, res
 - **Profile**: `codegg_core`
 - **Required args**:
   - `path` (string)
+
+### `repo_language_detect`
+
+Detect programming languages and ecosystems from repository file paths and manifest content. Uses file extensions, manifest presence, and optional content heuristics.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_core`
+- **Required args**:
+  - `paths` (array)
 
 ### `structured_data_compare`
 
@@ -146,6 +176,16 @@ Composite: compare structured config/data output. Calls json_compare, json_canon
 - **Required args**:
   - `a` (string)
   - `b` (string)
+
+### `test_command_suggest`
+
+Suggest verification commands (build, test, lint, format) from repository paths and manifest content. Heuristic: returns confidence scores for each suggestion.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_core`
+- **Required args**:
+  - `paths` (array)
 
 ### `text_diff_explain`
 
@@ -280,6 +320,25 @@ Composite: validate a proposed edit before applying it. Calls text_replace_check
 - **Required args**:
   - `original` (string)
 
+### `lockfile_inspect`
+
+Inspect lockfile content or diffs for deterministic dependency-change signals. Detects added/removed/updated packages, git/path dependencies, and large churn. Not a vulnerability scanner.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_preflight`
+- **Required args**: none
+
+### `patch_contract_check`
+
+Classify a unified diff by contract-relevant change categories (lockfiles, manifests, scope escapes, large deletions, security paths). Reports verdict and structured findings for automated routing.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_preflight`
+- **Required args**:
+  - `patch_text` (string)
+
 ### `text_security_inspect`
 
 Composite security-oriented text hygiene pass. Runs text_inspect, unicode_policy_check, canonicalize_text, prompt_input_inspect, and identifier_inspect depending on policy. Returns a verdict (allow/review/block) plus structured findings and machine codes.
@@ -339,6 +398,25 @@ Extract exact line ranges from text and return stable offsets, byte positions, l
   - `start_line` (integer)
   - `end_line` (integer)
 
+### `lockfile_inspect`
+
+Inspect lockfile content or diffs for deterministic dependency-change signals. Detects added/removed/updated packages, git/path dependencies, and large churn. Not a vulnerability scanner.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_patch`
+- **Required args**: none
+
+### `patch_contract_check`
+
+Classify a unified diff by contract-relevant change categories (lockfiles, manifests, scope escapes, large deletions, security paths). Reports verdict and structured findings for automated routing.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_patch`
+- **Required args**:
+  - `patch_text` (string)
+
 ### `patch_summary`
 
 Summarize a unified diff without applying it. Reports file counts, hunk counts, additions, deletions, renames, and line ranges by file.
@@ -348,6 +426,17 @@ Summarize a unified diff without applying it. Reports file counts, hunk counts, 
 - **Profile**: `codegg_patch`
 - **Required args**:
   - `patch_text` (string)
+
+### `symbol_name_diff`
+
+Compare old/new source text and report added, removed, and possibly renamed top-level symbols using brace/indentation-based heuristics.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_patch`
+- **Required args**:
+  - `old_source` (string)
+  - `new_source` (string)
 
 ### `text_diff_explain`
 
@@ -632,6 +721,16 @@ Safely quote a list of argv tokens into a POSIX-like shell string. Verifies roun
 - **Required args**:
   - `argv` (array)
 
+### `test_command_suggest`
+
+Suggest verification commands (build, test, lint, format) from repository paths and manifest content. Heuristic: returns confidence scores for each suggestion.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_shell`
+- **Required args**:
+  - `paths` (array)
+
 ## `codegg_repo_audit`
 
 ### `cargo_toml_inspect`
@@ -643,6 +742,16 @@ Inspect Cargo.toml text without network or filesystem access. Reports package me
 - **Profile**: `codegg_repo_audit`
 - **Required args**:
   - `text` (string)
+
+### `code_block_map`
+
+Return approximate top-level block ranges (functions, classes, modules, headings) from source text or Markdown. Helps agents target edits without full parsing.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_repo_audit`
+- **Required args**:
+  - `source` (string)
 
 ### `code_fence_extract`
 
@@ -699,6 +808,16 @@ Inspect a table of identifiers for casefold collisions, normalization collisions
 - **Required args**:
   - `identifiers` (array)
 
+### `import_export_inspect`
+
+Extract import/export/module-use statements from source text using lightweight language-aware heuristics. Supports Rust, Python, JavaScript/TypeScript, and Go.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_repo_audit`
+- **Required args**:
+  - `source` (string)
+
 ### `json_shape`
 
 Analyze the structure of a JSON document without returning values. Shows type, keys, and nested structure with configurable depth limits.
@@ -709,6 +828,15 @@ Analyze the structure of a JSON document without returning values. Shows type, k
 - **Required args**:
   - `text` (string)
 
+### `lockfile_inspect`
+
+Inspect lockfile content or diffs for deterministic dependency-change signals. Detects added/removed/updated packages, git/path dependencies, and large churn. Not a vulnerability scanner.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_repo_audit`
+- **Required args**: none
+
 ### `markdown_structure`
 
 Parse Markdown structure with a deterministic line scanner: headings (level, text, slug), code fences (language, open/close state), links (visible vs target mismatch), HTML comments, frontmatter detection, and table detection. Not a full CommonMark parser.
@@ -718,6 +846,26 @@ Parse Markdown structure with a deterministic line scanner: headings (level, tex
 - **Profile**: `codegg_repo_audit`
 - **Required args**:
   - `text` (string)
+
+### `patch_contract_check`
+
+Classify a unified diff by contract-relevant change categories (lockfiles, manifests, scope escapes, large deletions, security paths). Reports verdict and structured findings for automated routing.
+
+- **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_repo_audit`
+- **Required args**:
+  - `patch_text` (string)
+
+### `repo_language_detect`
+
+Detect programming languages and ecosystems from repository file paths and manifest content. Uses file extensions, manifest presence, and optional content heuristics.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_repo_audit`
+- **Required args**:
+  - `paths` (array)
 
 ### `repo_manifest_inspect`
 
@@ -734,6 +882,27 @@ Classify project manifests from a bounded path list. Detects Rust, Python, Node,
 Summarize repository shape from a bounded path list and optional metadata. Provides path bucketing, entrypoint/config/test/source/generated/vendor classification, and recommended next tools.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_repo_audit`
+- **Required args**:
+  - `paths` (array)
+
+### `symbol_name_diff`
+
+Compare old/new source text and report added, removed, and possibly renamed top-level symbols using brace/indentation-based heuristics.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
+- **Exposure**: contextual
+- **Profile**: `codegg_repo_audit`
+- **Required args**:
+  - `old_source` (string)
+  - `new_source` (string)
+
+### `test_command_suggest`
+
+Suggest verification commands (build, test, lint, format) from repository paths and manifest content. Heuristic: returns confidence scores for each suggestion.
+
+- **Tier**: 2 | **Cost**: cheap | **Stability**: stable
 - **Exposure**: contextual
 - **Profile**: `codegg_repo_audit`
 - **Required args**:

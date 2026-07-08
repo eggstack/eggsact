@@ -313,6 +313,55 @@ pub const REPO_TREE_OK: &str = "REPO_TREE_OK";
 pub const REPO_TREE_REVIEW: &str = "REPO_TREE_REVIEW";
 
 // ---------------------------------------------------------------------------
+// Patch Contract Check
+// ---------------------------------------------------------------------------
+
+/// Patch contract check passed — no contract-relevant concerns.
+pub const PATCH_CONTRACT_OK: &str = "PATCH_CONTRACT_OK";
+/// Patch contract check flagged items for review.
+pub const PATCH_CONTRACT_REVIEW: &str = "PATCH_CONTRACT_REVIEW";
+/// Patch contract check blocked due to policy violations.
+pub const PATCH_CONTRACT_BLOCK: &str = "PATCH_CONTRACT_BLOCK";
+/// Patch touches lockfiles.
+pub const PATCH_LOCKFILE_CHANGE: &str = "PATCH_LOCKFILE_CHANGE";
+/// Patch touches manifests.
+pub const PATCH_MANIFEST_CHANGE: &str = "PATCH_MANIFEST_CHANGE";
+/// Patch escapes allowed path scope.
+pub const PATCH_SCOPE_ESCAPE: &str = "PATCH_SCOPE_ESCAPE";
+/// Patch contains a large deletion.
+pub const PATCH_LARGE_DELETE: &str = "PATCH_LARGE_DELETE";
+
+// ---------------------------------------------------------------------------
+// Repo Language Detection
+// ---------------------------------------------------------------------------
+
+/// Languages/ecosystems detected from repo tree.
+pub const REPO_LANGUAGE_DETECTED: &str = "REPO_LANGUAGE_DETECTED";
+
+// ---------------------------------------------------------------------------
+// Test Command Suggestion
+// ---------------------------------------------------------------------------
+
+/// Verification commands suggested from manifest/tree analysis.
+pub const TEST_COMMANDS_SUGGESTED: &str = "TEST_COMMANDS_SUGGESTED";
+
+// ---------------------------------------------------------------------------
+// Source Inspection (import/export, code blocks, symbols)
+// ---------------------------------------------------------------------------
+
+/// Source inspection returned heuristic results.
+pub const SOURCE_INSPECT_HEURISTIC: &str = "SOURCE_INSPECT_HEURISTIC";
+
+// ---------------------------------------------------------------------------
+// Lockfile Inspection
+// ---------------------------------------------------------------------------
+
+/// Lockfile changes detected.
+pub const LOCKFILE_CHANGE_DETECTED: &str = "LOCKFILE_CHANGE_DETECTED";
+/// Lockfile failed to parse.
+pub const LOCKFILE_PARSE_ERROR: &str = "LOCKFILE_PARSE_ERROR";
+
+// ---------------------------------------------------------------------------
 // Diff Risk Classification
 // ---------------------------------------------------------------------------
 
@@ -492,6 +541,18 @@ pub const ALL: &[&str] = &[
     REPO_UNKNOWN,
     REPO_TREE_OK,
     REPO_TREE_REVIEW,
+    PATCH_CONTRACT_OK,
+    PATCH_CONTRACT_REVIEW,
+    PATCH_CONTRACT_BLOCK,
+    PATCH_LOCKFILE_CHANGE,
+    PATCH_MANIFEST_CHANGE,
+    PATCH_SCOPE_ESCAPE,
+    PATCH_LARGE_DELETE,
+    REPO_LANGUAGE_DETECTED,
+    TEST_COMMANDS_SUGGESTED,
+    SOURCE_INSPECT_HEURISTIC,
+    LOCKFILE_CHANGE_DETECTED,
+    LOCKFILE_PARSE_ERROR,
     DIFF_RISK_OK,
     DIFF_RISK_REVIEW,
     DIFF_RISK_BLOCK,

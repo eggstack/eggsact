@@ -3,7 +3,7 @@
 # Used by tests to detect future regressions: any parity failure NOT in this list
 # is an unexpected regression.
 #
-# 31 test functions as of 2026-07-07 (parity commit f695791).
+# 33 test functions as of 2026-07-08 (milestone 6 commit).
 test_shell_split_comment_handling
 test_shell_split_quoted_hash
 test_shell_split_single_quotes
@@ -35,3 +35,5 @@ test_tools_list_full_schema_parity
 test_profiles_list_parity
 test_shell_split_basic
 test_bug006_prompt_inspect_vt_ff_detected
+test_math_eval_power
+test_version_compare_phase4_cases

@@ -197,6 +197,129 @@ pub fn config_file_inspect_output() -> Value {
     })
 }
 
+pub fn test_command_suggest_input() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Repository-relative file paths"
+            },
+            "manifest_snippets": {
+                "type": "object",
+                "description": "Optional map from manifest path to its content snippet",
+                "additionalProperties": {"type": "string"}
+            },
+            "detail": {
+                "type": "string",
+                "enum": ["summary", "normal", "full"],
+                "default": "normal",
+                "description": "Detail level for output"
+            }
+        },
+        "required": ["paths"]
+    })
+}
+
+pub fn test_command_suggest_output() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "project_types": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Detected project types"
+            },
+            "suggested_commands": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Suggested verification commands with category and confidence",
+                "properties": {
+                    "command": {"type": "string"},
+                    "category": {"type": "string", "enum": ["build", "test", "lint", "format", "typecheck", "other"]},
+                    "confidence": {"type": "number", "description": "Confidence score 0.0-1.0"},
+                    "reason": {"type": "string"}
+                }
+            },
+            "verdict": {
+                "type": "string",
+                "enum": ["allow", "review", "block"],
+                "description": "Whether suggestions are deterministically derivable"
+            },
+            "machine_code": {"type": "string", "description": "Machine-readable response code"},
+            "findings": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Structured findings"
+            }
+        }
+    })
+}
+
+pub fn repo_language_detect_input() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Repository-relative file paths to analyze"
+            },
+            "manifest_snippets": {
+                "type": "object",
+                "description": "Optional map from manifest path to its content snippet",
+                "additionalProperties": {"type": "string"}
+            },
+            "max_paths": {
+                "type": "integer",
+                "default": 500,
+                "description": "Maximum number of paths to process"
+            }
+        },
+        "required": ["paths"]
+    })
+}
+
+pub fn repo_language_detect_output() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "languages": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Detected languages with file counts and confidence",
+                "properties": {
+                    "name": {"type": "string"},
+                    "file_count": {"type": "integer"},
+                    "extensions": {"type": "array", "items": {"type": "string"}},
+                    "confidence": {"type": "number", "description": "Confidence score 0.0-1.0"}
+                }
+            },
+            "ecosystems": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Detected ecosystems (rust, python, node, go, etc.)"
+            },
+            "primary_language": {
+                "type": ["string", "null"],
+                "description": "Dominant language by file count"
+            },
+            "verdict": {
+                "type": "string",
+                "enum": ["allow", "review", "block"],
+                "description": "Whether detection is deterministically derivable"
+            },
+            "machine_code": {"type": "string", "description": "Machine-readable response code"},
+            "findings": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Structured findings"
+            }
+        }
+    })
+}
+
 pub fn repo_tree_summarize_input() -> Value {
     serde_json::json!({
         "type": "object",

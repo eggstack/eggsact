@@ -35,6 +35,7 @@ static ALL_TOOLS_VEC: LazyLock<Vec<ToolSpec>> = LazyLock::new(|| {
     tools.extend_from_slice(CARGO_TOOLS);
     tools.extend_from_slice(DEPENDENCY_TOOLS);
     tools.extend_from_slice(REPO_TOOLS);
+    tools.extend_from_slice(ANALYSIS_TOOLS);
     tools.extend_from_slice(DIAGNOSTICS_TOOLS);
     tools
 });

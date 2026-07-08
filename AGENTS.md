@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Deterministic MCP and in-process utility tools for coding agents. Single crate, no workspace. 71 tools across 19 categories: math, text, JSON, regex, path, shell, config, patch, dependency, and more.
+Deterministic MCP and in-process utility tools for coding agents. Single crate, no workspace. 78 tools across 20 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, and more.
 
 ## Commands
 
@@ -61,7 +61,7 @@ src/
       math.rs       # MATH_TOOLS
       text.rs       # TEXT_TOOLS
       json.rs       # JSON_TOOLS
-      ...           # one file per category (19 total)
+      ...           # one file per category (20 total)
     protocol.rs     # JSON-RPC types (Request, Response, Error, InitializeResult)
     response.rs     # ToolResponse, error sanitization, finding() helpers, with_verdict, preflight builders
     machine_codes.rs # machine-readable response codes, severity/disposition/verdict constants
@@ -71,7 +71,7 @@ src/
     schemas/        # JSON-schema builders per tool category
       mod.rs        # module declarations + re-exports
       math.rs       # math/text/json/regex/path/shell/etc. schema builders
-      ...           # one file per category (19 total)
+      ...           # one file per category (20 total)
   tools/            # MCP tool implementations (by category)
     helpers.rs      # shared constants, utilities, helper functions
     math.rs         # math_eval, unit_convert, unit_info, constant_lookup
@@ -83,7 +83,7 @@ src/
     shell.rs        # shell_split, shell_quote_join, argv_compare, command_preflight
     list.rs         # list_compare, list_dedupe, list_sort
     markdown.rs     # markdown_structure, code_fence_extract
-    patch.rs        # patch_apply_check, patch_summary, edit_preflight, diff_risk_classify
+    patch.rs        # patch_apply_check, patch_summary, edit_preflight, diff_risk_classify, patch_contract_check
     config.rs       # dotenv_validate, ini_validate, config_preflight, toml_shape_tool
     identifier.rs   # identifier_analyze, identifier_inspect, identifier_table_inspect
     unicode.rs      # unicode_policy_check, canonicalize_text
@@ -91,7 +91,8 @@ src/
     cargo.rs        # cargo_toml_inspect
     dependency.rs   # dependency_edit_preflight
     diagnostics.rs  # runtime_diagnostics
-    repo.rs         # repo_manifest_inspect, config_file_inspect, repo_tree_summarize
+    repo.rs         # repo_manifest_inspect, config_file_inspect, repo_tree_summarize, test_command_suggest, repo_language_detect
+    analysis.rs     # import_export_inspect, code_block_map, symbol_name_diff, lockfile_inspect
   text/             # text processing library (24 modules)
   agent/            # in-process agent API (ToolRegistry, Profile, call_json)
   preflight/        # typed preflight wrappers (EditPreflight, CommandPreflight, ConfigPreflight, PatchApplyCheck, TextSecurityInspect), strict finding parsing, structured RecommendedNextTool
@@ -124,7 +125,7 @@ Additional docs in `docs/`:
 
 - `docs/compatibility-policy.md` — semantic versioning, breaking changes, tool/schema/machine-code stability, deprecation timelines
 - `docs/contributing.md` — prerequisites, building, testing, parity test setup, adding new tools
-- `docs/parity.md` — Python/Rust parity framework, known gaps, verification status (31 known failures as of 2026-07-07)
+- `docs/parity.md` — Python/Rust parity framework, known gaps, verification status (33 known failures as of 2026-07-08)
 - `docs/library-api.md` — in-process API usage, ToolRegistry, call_json variants
 - `docs/mcp-tools.md` — MCP tool catalog with input/output schemas
 - `docs/cli.md` — CLI flags, subcommands, environment variables
@@ -201,7 +202,7 @@ Agent task skills in `.skills/`:
 - **Adding an MCP tool requires one `ToolSpec` entry** in `src/mcp/specs/<category>.rs`. This is the single source of truth for tool registration. A test (`tool_registration_tables_are_in_sync`) will catch drift.
 - **`^` is XOR, not exponentiation.** Use `**` for power. This matches Python behavior.
 - **`g` means gram** in unit expressions. Use `gravity` or `standardgravity` for standard gravity.
-- **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. As of 2026-07-07, the parity suite has 31 known failures (out of 416 tests) — see `docs/parity.md` `Verification status` and `Known parity gaps` for the breakdown. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE` env var and updating test helpers. Categories C1–C6 (31 failures) are accepted behavioral differences tracked for follow-up. The 3 concurrent-ordering failures from the earlier pass were fixed by switching `mcp_request_multi()` to id-based correlation. The Rust `full` profile ships 71 tools; Python defines 67. An accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt` lists all 31 names for regression detection. Do not treat these as regressions — they accumulated across the phase 06–09 line of work and are tracked for follow-up.
+- **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. As of 2026-07-08, the parity suite has 33 known failures (out of 418 tests) — see `docs/parity.md` `Verification status` and `Known parity gaps` for the breakdown. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE` env var and updating test helpers. Categories C1–C6 (33 failures) are accepted behavioral differences tracked for follow-up. The 3 concurrent-ordering failures from the earlier pass were fixed by switching `mcp_request_multi()` to id-based correlation. The Rust `full` profile ships 78 tools; Python defines 67. An accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt` lists all 33 names for regression detection. Do not treat these as regressions — they accumulated across the phase 06–09 line of work and are tracked for follow-up.
 - **`mask_secret_preview()` in `src/tools/helpers.rs`** is a UTF-8-safe masking helper that operates on `.chars()` boundaries, never splitting multibyte sequences. Used by `config_file_inspect` and other tools that display secret values in findings. The old byte-slicing code was replaced with this helper to avoid panics on multi-byte Unicode input.
 - **`deny.toml` configures `cargo-deny`** for license/advisory/ban/source checks. Run `cargo deny check` locally. Allowed licenses: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, Unlicense, Unicode-DFS-2016, Unicode-3.0, Zlib.
 - **CI mirrors release gates.** GitHub Actions runs fmt, clippy, tests, generated-docs check, and `cargo package`.

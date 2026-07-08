@@ -1,6 +1,6 @@
 # Tool Implementations
 
-The `src/tools/` module contains the actual handler functions for all 71 MCP tools. Each category has its own file, plus a shared helpers module.
+The `src/tools/` module contains the actual handler functions for all 78 MCP tools. Each category has its own file, plus a shared helpers module.
 
 See also: [MCP Server](mcp-server.md), [Text Library](text-library.md)
 
@@ -18,7 +18,7 @@ See also: [MCP Server](mcp-server.md), [Text Library](text-library.md)
 | `shell.rs` | shell | 4 |
 | `list.rs` | list | 3 |
 | `markdown.rs` | markdown | 2 |
-| `patch.rs` | patch | 4 |
+| `patch.rs` | patch | 5 |
 | `config.rs` | config | 4 |
 | `identifier.rs` | identifier | 3 |
 | `unicode.rs` | unicode | 2 |
@@ -26,7 +26,8 @@ See also: [MCP Server](mcp-server.md), [Text Library](text-library.md)
 | `cargo.rs` | cargo | 1 |
 | `dependency.rs` | dependency | 1 |
 | `diagnostics.rs` | diagnostics | 1 |
-| `repo.rs` | repo | 3 |
+| `repo.rs` | repo | 5 |
+| `analysis.rs` | analysis | 4 |
 
 ## Handler Signature
 
@@ -180,7 +181,7 @@ Route-critical tools must always emit `machine_code` and `verdict` in their resp
 | `markdown_structure` | Parse markdown structure (headings, links, etc.) |
 | `code_fence_extract` | Extract code fences from markdown |
 
-### Patch (4 tools)
+### Patch (5 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -188,6 +189,7 @@ Route-critical tools must always emit `machine_code` and `verdict` in their resp
 | `patch_summary` | Summarize a unified diff |
 | `edit_preflight` | Pre-check edit operations (composite) |
 | `diff_risk_classify` | Classify diff risk level |
+| `patch_contract_check` | Classify diff by contract-relevant categories |
 
 ### Config (4 tools)
 
@@ -232,13 +234,24 @@ Route-critical tools must always emit `machine_code` and `verdict` in their resp
 |------|-------------|
 | `dependency_edit_preflight` | Pre-check dependency manifest edits |
 
-### Repo (3 tools)
+### Repo (5 tools)
 
 | Tool | Description |
 |------|-------------|
 | `repo_manifest_inspect` | Inspect repository manifest |
 | `config_file_inspect` | Inspect config files with secret masking |
 | `repo_tree_summarize` | Summarize repository file tree |
+| `test_command_suggest` | Suggest verification commands from repo paths |
+| `repo_language_detect` | Detect languages/ecosystems from repo tree |
+
+### Analysis (4 tools)
+
+| Tool | Description |
+|------|-------------|
+| `import_export_inspect` | Extract import/export statements from source |
+| `code_block_map` | Return top-level block ranges from source/markdown |
+| `symbol_name_diff` | Compare old/new source for symbol changes |
+| `lockfile_inspect` | Inspect lockfile diffs for dependency-change signals |
 
 ### Diagnostics (1 tool)
 

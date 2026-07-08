@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod cargo;
 pub mod config;
 pub mod dependency;
@@ -18,6 +19,7 @@ pub mod unicode;
 pub mod validation;
 pub mod version;
 
+pub use analysis::ANALYSIS_TOOLS;
 pub use cargo::CARGO_TOOLS;
 pub use config::CONFIG_TOOLS;
 pub use dependency::DEPENDENCY_TOOLS;

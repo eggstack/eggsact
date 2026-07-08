@@ -1134,3 +1134,491 @@ pub fn repo_tree_summarize(args: &Value) -> ToolResponse {
 
     resp
 }
+
+// ---------------------------------------------------------------------------
+// test_command_suggest
+// ---------------------------------------------------------------------------
+
+struct CommandTemplate {
+    command: &'static str,
+    category: &'static str,
+    confidence: f64,
+    reason: &'static str,
+}
+
+fn suggest_commands_for_project(project_types: &[String]) -> Vec<CommandTemplate> {
+    let mut commands = Vec::new();
+
+    for ptype in project_types {
+        match ptype.as_str() {
+            "rust" => {
+                commands.push(CommandTemplate {
+                    command: "cargo check",
+                    category: "build",
+                    confidence: 0.95,
+                    reason: "Rust project detected via Cargo.toml",
+                });
+                commands.push(CommandTemplate {
+                    command: "cargo test",
+                    category: "test",
+                    confidence: 0.95,
+                    reason: "Rust project detected via Cargo.toml",
+                });
+                commands.push(CommandTemplate {
+                    command: "cargo fmt --check",
+                    category: "format",
+                    confidence: 0.9,
+                    reason: "Rust project detected via Cargo.toml",
+                });
+                commands.push(CommandTemplate {
+                    command: "cargo clippy --all-targets --all-features",
+                    category: "lint",
+                    confidence: 0.9,
+                    reason: "Rust project detected via Cargo.toml",
+                });
+            }
+            "python" => {
+                commands.push(CommandTemplate {
+                    command: "python -m pytest",
+                    category: "test",
+                    confidence: 0.85,
+                    reason: "Python project detected",
+                });
+                commands.push(CommandTemplate {
+                    command: "ruff check .",
+                    category: "lint",
+                    confidence: 0.8,
+                    reason: "Python project detected",
+                });
+                commands.push(CommandTemplate {
+                    command: "ruff format --check .",
+                    category: "format",
+                    confidence: 0.75,
+                    reason: "Python project detected",
+                });
+            }
+            "node" => {
+                commands.push(CommandTemplate {
+                    command: "npm test",
+                    category: "test",
+                    confidence: 0.85,
+                    reason: "Node.js project detected via package.json",
+                });
+                commands.push(CommandTemplate {
+                    command: "npm run lint",
+                    category: "lint",
+                    confidence: 0.8,
+                    reason: "Node.js project detected",
+                });
+                commands.push(CommandTemplate {
+                    command: "npx tsc --noEmit",
+                    category: "typecheck",
+                    confidence: 0.7,
+                    reason: "Node.js project detected",
+                });
+            }
+            "go" => {
+                commands.push(CommandTemplate {
+                    command: "go build ./...",
+                    category: "build",
+                    confidence: 0.9,
+                    reason: "Go project detected via go.mod",
+                });
+                commands.push(CommandTemplate {
+                    command: "go test ./...",
+                    category: "test",
+                    confidence: 0.9,
+                    reason: "Go project detected via go.mod",
+                });
+                commands.push(CommandTemplate {
+                    command: "go vet ./...",
+                    category: "lint",
+                    confidence: 0.85,
+                    reason: "Go project detected via go.mod",
+                });
+            }
+            _ => {}
+        }
+    }
+
+    commands.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    commands.dedup_by(|a, b| a.command == b.command);
+    commands
+}
+
+pub fn test_command_suggest(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::CHEAP);
+
+    let paths = match args.get("paths").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => {
+            return ToolResponse::error_with_code(
+                "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
+                "Missing 'paths' parameter (expected array)",
+                None,
+                Some("test_command_suggest"),
+            )
+        }
+    };
+
+    if paths.len() > MAX_LIST_ITEMS {
+        return ToolResponse::error_with_code(
+            "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
+            &format!(
+                "Path list ({} items) exceeds maximum of {}",
+                paths.len(),
+                MAX_LIST_ITEMS
+            ),
+            None,
+            Some("test_command_suggest"),
+        );
+    }
+
+    let path_strings: Vec<String> = paths
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+
+    let project_types = detect_project_types(&path_strings);
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("test_command_suggest")
+            .unwrap_err();
+    }
+
+    let templates = suggest_commands_for_project(&project_types);
+
+    let suggested_commands: Vec<Value> = templates
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "command": t.command,
+                "category": t.category,
+                "confidence": t.confidence,
+                "reason": t.reason,
+            })
+        })
+        .collect();
+
+    let is_unknown = project_types.iter().any(|t| t == "unknown");
+    let mut findings = Vec::new();
+
+    if is_unknown {
+        findings.push(finding(
+            machine_codes::TEST_COMMANDS_SUGGESTED,
+            severity::INFO,
+            "Could not determine project type; suggestions may be inaccurate",
+            Some(disposition::INFORMATIONAL),
+            None,
+        ));
+    }
+
+    let (cmd_verdict, machine_code) = if is_unknown {
+        (verdict::REVIEW, machine_codes::TEST_COMMANDS_SUGGESTED)
+    } else {
+        (verdict::ALLOW, machine_codes::TEST_COMMANDS_SUGGESTED)
+    };
+
+    let result = serde_json::json!({
+        "project_types": project_types,
+        "suggested_commands": suggested_commands,
+        "verdict": cmd_verdict,
+    });
+
+    let mut resp = ToolResponse::success(result, Some("test_command_suggest"))
+        .with_tool("test_command_suggest")
+        .with_machine_code(machine_code)
+        .with_verdict(cmd_verdict);
+
+    if !findings.is_empty() {
+        resp = resp.with_findings(findings);
+    }
+
+    resp
+}
+
+// ---------------------------------------------------------------------------
+// repo_language_detect
+// ---------------------------------------------------------------------------
+
+struct LanguageGuess {
+    name: &'static str,
+    extensions: &'static [&'static str],
+}
+
+const LANGUAGE_TABLE: &[LanguageGuess] = &[
+    LanguageGuess {
+        name: "rust",
+        extensions: &[".rs"],
+    },
+    LanguageGuess {
+        name: "python",
+        extensions: &[".py", ".pyi", ".pyx"],
+    },
+    LanguageGuess {
+        name: "javascript",
+        extensions: &[".js", ".jsx", ".mjs", ".cjs"],
+    },
+    LanguageGuess {
+        name: "typescript",
+        extensions: &[".ts", ".tsx", ".mts", ".cts"],
+    },
+    LanguageGuess {
+        name: "go",
+        extensions: &[".go"],
+    },
+    LanguageGuess {
+        name: "c",
+        extensions: &[".c", ".h"],
+    },
+    LanguageGuess {
+        name: "cpp",
+        extensions: &[".cpp", ".cxx", ".cc", ".hpp", ".hxx"],
+    },
+    LanguageGuess {
+        name: "java",
+        extensions: &[".java"],
+    },
+    LanguageGuess {
+        name: "ruby",
+        extensions: &[".rb", ".erb"],
+    },
+    LanguageGuess {
+        name: "php",
+        extensions: &[".php"],
+    },
+    LanguageGuess {
+        name: "swift",
+        extensions: &[".swift"],
+    },
+    LanguageGuess {
+        name: "kotlin",
+        extensions: &[".kt", ".kts"],
+    },
+    LanguageGuess {
+        name: "scala",
+        extensions: &[".scala", ".sc"],
+    },
+    LanguageGuess {
+        name: "haskell",
+        extensions: &[".hs"],
+    },
+    LanguageGuess {
+        name: "lua",
+        extensions: &[".lua"],
+    },
+    LanguageGuess {
+        name: "shell",
+        extensions: &[".sh", ".bash", ".zsh"],
+    },
+    LanguageGuess {
+        name: "sql",
+        extensions: &[".sql"],
+    },
+    LanguageGuess {
+        name: "markdown",
+        extensions: &[".md", ".mdx"],
+    },
+    LanguageGuess {
+        name: "yaml",
+        extensions: &[".yaml", ".yml"],
+    },
+    LanguageGuess {
+        name: "json",
+        extensions: &[".json"],
+    },
+    LanguageGuess {
+        name: "toml",
+        extensions: &[".toml"],
+    },
+    LanguageGuess {
+        name: "html",
+        extensions: &[".html", ".htm"],
+    },
+    LanguageGuess {
+        name: "css",
+        extensions: &[".css", ".scss", ".less"],
+    },
+    LanguageGuess {
+        name: "xml",
+        extensions: &[".xml"],
+    },
+    LanguageGuess {
+        name: "dockerfile",
+        extensions: &[],
+    },
+    LanguageGuess {
+        name: "makefile",
+        extensions: &[],
+    },
+];
+
+pub fn repo_language_detect(args: &Value) -> ToolResponse {
+    let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::CHEAP);
+
+    let paths = match args.get("paths").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => {
+            return ToolResponse::error_with_code(
+                "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
+                "Missing 'paths' parameter (expected array)",
+                None,
+                Some("repo_language_detect"),
+            )
+        }
+    };
+
+    let max_paths = args
+        .get("max_paths")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(500) as usize;
+
+    if paths.len() > max_paths {
+        return ToolResponse::error_with_code(
+            "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
+            &format!(
+                "Path list ({} items) exceeds max_paths limit ({})",
+                paths.len(),
+                max_paths
+            ),
+            None,
+            Some("repo_language_detect"),
+        );
+    }
+
+    let path_strings: Vec<String> = paths
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+
+    let mut lang_counts: std::collections::HashMap<String, (usize, Vec<String>)> =
+        std::collections::HashMap::new();
+
+    for p in &path_strings {
+        let basename = p.rsplit('/').next().unwrap_or(p);
+        let lower = basename.to_lowercase();
+
+        let lang = if lower == "dockerfile" || lower.starts_with("dockerfile.") {
+            Some("dockerfile".to_string())
+        } else if lower == "makefile" || lower == "gnumakefile" {
+            Some("makefile".to_string())
+        } else {
+            let ext = match p.rfind('.') {
+                Some(idx) => &p[idx..],
+                None => "",
+            };
+            LANGUAGE_TABLE
+                .iter()
+                .find(|l| l.extensions.contains(&ext))
+                .map(|l| l.name.to_string())
+        };
+
+        if let Some(name) = lang {
+            let entry = lang_counts
+                .entry(name.clone())
+                .or_insert_with(|| (0, Vec::new()));
+            entry.0 += 1;
+            let ext_str = if name == "dockerfile" {
+                "Dockerfile".to_string()
+            } else if name == "makefile" {
+                "Makefile".to_string()
+            } else {
+                p.rfind('.')
+                    .map(|idx| p[idx..].to_string())
+                    .unwrap_or_default()
+            };
+            if !ext_str.is_empty() && !entry.1.contains(&ext_str) {
+                entry.1.push(ext_str);
+            }
+        }
+    }
+
+    let mut ecosystems = Vec::new();
+    for p in &path_strings {
+        let basename = p.rsplit('/').next().unwrap_or(p);
+        if RUST_MANIFESTS.contains(&basename) && !ecosystems.contains(&"rust".to_string()) {
+            ecosystems.push("rust".to_string());
+        }
+        if PYTHON_MANIFESTS.contains(&basename) && !ecosystems.contains(&"python".to_string()) {
+            ecosystems.push("python".to_string());
+        }
+        if NODE_MANIFESTS.contains(&basename) && !ecosystems.contains(&"node".to_string()) {
+            ecosystems.push("node".to_string());
+        }
+        if GO_MANIFESTS.contains(&basename) && !ecosystems.contains(&"go".to_string()) {
+            ecosystems.push("go".to_string());
+        }
+    }
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("repo_language_detect")
+            .unwrap_err();
+    }
+
+    let mut languages: Vec<Value> = lang_counts
+        .iter()
+        .map(|(name, (count, exts))| {
+            serde_json::json!({
+                "name": name,
+                "file_count": count,
+                "extensions": exts,
+                "confidence": if *count > 5 { 0.9 } else if *count > 1 { 0.7 } else { 0.5 },
+            })
+        })
+        .collect();
+    languages.sort_by(|a, b| {
+        b.get("file_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+            .cmp(&a.get("file_count").and_then(|v| v.as_u64()).unwrap_or(0))
+    });
+
+    let primary_language = languages.first().and_then(|l| l.get("name").cloned());
+
+    let is_empty = languages.is_empty();
+    let mut findings = Vec::new();
+
+    if is_empty {
+        findings.push(finding(
+            machine_codes::REPO_LANGUAGE_DETECTED,
+            severity::INFO,
+            "No programming languages detected from provided paths",
+            Some(disposition::INFORMATIONAL),
+            None,
+        ));
+    }
+
+    let (lang_verdict, machine_code) = if is_empty {
+        (verdict::REVIEW, machine_codes::REPO_LANGUAGE_DETECTED)
+    } else {
+        (verdict::ALLOW, machine_codes::REPO_LANGUAGE_DETECTED)
+    };
+
+    let result = serde_json::json!({
+        "languages": languages,
+        "ecosystems": ecosystems,
+        "primary_language": primary_language,
+        "verdict": lang_verdict,
+    });
+
+    let mut resp = ToolResponse::success(result, Some("repo_language_detect"))
+        .with_tool("repo_language_detect")
+        .with_machine_code(machine_code)
+        .with_verdict(lang_verdict);
+
+    if !findings.is_empty() {
+        resp = resp.with_findings(findings);
+    }
+
+    resp
+}

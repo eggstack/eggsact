@@ -135,6 +135,56 @@ pub fn diff_risk_classify_output() -> Value {
     })
 }
 
+pub fn patch_contract_check_input() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "patch_text": {"type": "string", "description": "Unified diff text to classify by contract categories"},
+            "workspace_root": {"type": "string", "description": "Optional workspace root for path-scope context"},
+            "detail": {
+                "type": "string",
+                "enum": ["summary", "normal", "full"],
+                "default": "normal",
+                "description": "Detail level for output"
+            }
+        },
+        "required": ["patch_text"]
+    })
+}
+
+pub fn patch_contract_check_output() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "description": "Compact human-readable summary"},
+            "files_changed": {"type": "integer", "description": "Number of files changed"},
+            "categories": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Contract-relevant change categories detected"
+            },
+            "files_by_category": {
+                "type": "object",
+                "description": "Files grouped by contract category",
+                "additionalProperties": {"type": "array", "items": {"type": "string"}}
+            },
+            "scope_escape_detected": {"type": "boolean", "description": "True if any file path escapes the workspace root"},
+            "large_deletions_detected": {"type": "boolean", "description": "True if any file has a large number of deletions"},
+            "verdict": {
+                "type": "string",
+                "enum": ["allow", "review", "block"],
+                "description": "Contract verdict"
+            },
+            "machine_code": {"type": "string", "description": "Machine-readable response code"},
+            "findings": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Structured findings with severity and disposition"
+            }
+        }
+    })
+}
+
 pub fn edit_preflight_output() -> Value {
     serde_json::json!({"type":"object","properties":{"ok_to_apply":{"type":"boolean"},"mode":{"type":"string"},"verdict":{"type":"string","enum":["allow","review","block","safe_to_apply","safe_with_warnings"],"description":"Typed verdict for programmatic routing"},"findings":{"type":"array"},"machine_code":{"type":"string","description":"Primary machine code (highest-priority finding)"},"secondary_machine_codes":{"type":"array","items":{"type":"string"},"description":"Additional machine codes when multiple findings exist"},"recommended_next_tool":{"type":["string","null"]},"summary":{"type":"string"},"subresults":{"type":"object"},"path_scope":{"type":["object","null"],"properties":{"inside_root":{"type":"boolean"},"escapes_via_dotdot":{"type":"boolean"},"relative_path":{"type":"string"},"normalized_target":{"type":["string","null"],"description":"Normalized absolute target path (lexical only, no symlink resolution)"},"reason":{"type":["string","null"],"description":"Human-readable reason for the path scope decision"}},"description":"Path scope check result (lexical only, no symlink resolution)"},"newline_check":{"type":["object","null"],"properties":{"style":{"type":"string"},"mixed":{"type":"boolean"},"policy":{"type":"string"},"recommended_normalization":{"type":["string","null"]},"original_style":{"type":["string","null"],"description":"Newline style detected in the original text"},"replacement_style":{"type":["string","null"],"description":"Newline style detected in the replacement text"}},"description":"Newline style check result"},"unicode_check":{"type":["object","null"],"properties":{"verdict":{"type":"string"},"machine_code":{"type":"string"},"finding_count":{"type":"integer"},"findings":{"type":"array","items":{"type":"object","description":"Structured findings from text_security_inspect"}}},"description":"Unicode security check result"},"fingerprint":{"type":["object","null"],"properties":{"sha256":{"type":"string"},"newline_style":{"type":"string"}},"description":"Fingerprint verification result"}}})
 }

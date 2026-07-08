@@ -2,7 +2,7 @@
 
 **Single-crate Rust project. No workspace.**
 
-eggsact is a deterministic MCP (Model Context Protocol) server and in-process utility library for AI coding agents. It provides 71 tools across 19 categories: math evaluation, text processing, JSON analysis, regex validation, path operations, Unicode safety, shell command preflight, config inspection, patch analysis, dependency management, and more. It also re-implements the Python `eggcalc` calculator as one of its tool categories.
+eggsact is a deterministic MCP (Model Context Protocol) server and in-process utility library for AI coding agents. It provides 78 tools across 20 categories: math evaluation, text processing, JSON analysis, regex validation, path operations, Unicode safety, shell command preflight, config inspection, patch analysis, dependency management, source analysis, and more. It also re-implements the Python `eggcalc` calculator as one of its tool categories.
 
 ---
 
@@ -47,7 +47,7 @@ eggsact is a deterministic MCP (Model Context Protocol) server and in-process ut
 ┌─────────────────────────────────────────────────────────────────┐
 │                     tools/ — Tool Implementations                │
 │                                                                   │
-│  71 tools across 19 categories:                                   │
+│  78 tools across 20 categories:                                   │
 │  math(4) text(18) json(6) regex(3) validation(4) path(6)        │
 │  shell(4) list(3) markdown(2) patch(4) config(4) identifier(3)  │
 │  unicode(2) version(2) toml(1) cargo(1) dependency(1)           │

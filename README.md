@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/eggsact)](https://crates.io/crates/eggsact)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Deterministic MCP and in-process utility tools for coding agents. 71 tools across 19 categories: math, text, JSON, regex, path, shell, config, patch, dependency, and more. Includes a natural language math evaluator that parses expressions like "thirty plus five" or "30m + 100ft".
+Deterministic MCP and in-process utility tools for coding agents. 78 tools across 20 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, and more. Includes a natural language math evaluator that parses expressions like "thirty plus five" or "30m + 100ft".
 
 ## Key Features
 
@@ -101,7 +101,7 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 ## MCP Tools
 
 <!-- BEGIN GENERATED: eggsact tools -->
-71 tools across 19 categories. See `architecture/mcp-server.md` for the full reference.
+78 tools across 20 categories. See `architecture/mcp-server.md` for the full reference.
 
 ### Math (4)
 
@@ -234,13 +234,14 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 |------|------|----------|-----------|------|----------|
 | `toml_shape` | 2 | contextual | stable | mod | codegg_config, full |
 
-### Patch (4)
+### Patch (5)
 
 | Tool | Tier | Exposure | Stability | Cost | Profiles |
 |------|------|----------|-----------|------|----------|
 | `patch_apply_check` | 2 | harness | stable | mod | codegg_patch, codegg_preflight, full |
 | `patch_summary` | 2 | contextual | stable | mod | codegg_patch, full |
 | `edit_preflight` | 1 | default | stable | heavy | codegg_core, codegg_core_min, codegg_patch, codegg_preflight, full |
+| `patch_contract_check` | 2 | contextual | stable | mod | codegg_patch, codegg_preflight, codegg_repo_audit, full |
 | `diff_risk_classify` | 2 | contextual | stable | mod | codegg_patch, codegg_repo_audit, full |
 
 ### Cargo (1)
@@ -255,13 +256,24 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 |------|------|----------|-----------|------|----------|
 | `dependency_edit_preflight` | 2 | contextual | stable | mod | codegg_config, codegg_preflight, codegg_repo_audit, full |
 
-### Repo (3)
+### Repo (5)
 
 | Tool | Tier | Exposure | Stability | Cost | Profiles |
 |------|------|----------|-----------|------|----------|
 | `repo_manifest_inspect` | 2 | contextual | stable | cheap | codegg_repo_audit, full |
 | `config_file_inspect` | 2 | contextual | stable | mod | codegg_config, codegg_repo_audit, full |
+| `test_command_suggest` | 2 | contextual | stable | cheap | codegg_core, codegg_repo_audit, codegg_shell, full |
+| `repo_language_detect` | 2 | contextual | stable | cheap | codegg_core, codegg_repo_audit, full |
 | `repo_tree_summarize` | 2 | contextual | stable | mod | codegg_repo_audit, full |
+
+### Analysis (4)
+
+| Tool | Tier | Exposure | Stability | Cost | Profiles |
+|------|------|----------|-----------|------|----------|
+| `import_export_inspect` | 2 | contextual | stable | cheap | codegg_core, codegg_repo_audit, full |
+| `code_block_map` | 2 | contextual | stable | cheap | codegg_core, codegg_repo_audit, full |
+| `symbol_name_diff` | 2 | contextual | stable | cheap | codegg_patch, codegg_repo_audit, full |
+| `lockfile_inspect` | 2 | contextual | stable | mod | codegg_patch, codegg_preflight, codegg_repo_audit, full |
 
 ### Diagnostics (1)
 
