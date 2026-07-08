@@ -7,9 +7,10 @@ Version: 1.1.3 (current in `Cargo.toml`)
 ## Release candidate
 
 - **Branch:** `main`
-- **Commit SHA:** `92156cff44dcb2747377fcbb040c145204735fc7`
+- **Commit SHA:** `a33ab8b2ef4772d8db18a22c37ef329c02f74aea`
 - **Version:** `1.1.3`
-- **Working tree:** clean (no uncommitted changes at the verified commit; subsequent polish commits are unstaged)
+- **Working tree:** clean
+- **Status:** **PUBLISHED**
 
 ## Verification
 
@@ -55,13 +56,49 @@ tests as of 2026-07-08. These are tracked for follow-up and are not regressions.
 
 ### Publish dry run
 
-Not yet run on the final candidate. To complete readiness, run from a clean worktree:
+`cargo publish --dry-run` ran on the verified commit (`a33ab8b`) against a clean worktree:
 
-```bash
-cargo publish --dry-run
+```
+Packaged 217 files, 4.1MiB (695.8KiB compressed)
+Compiling eggsact v1.1.3
+Finished `dev` profile
+Uploading eggsact v1.1.3
+warning: aborting upload due to dry run
 ```
 
-Must succeed before any `cargo publish`.
+Dry run passed.
+
+### Actual publish
+
+`cargo publish` was run from the maintainer's local machine against commit `a33ab8b`:
+
+```
+Updating crates.io index
+Packaging eggsact v1.1.3
+Packaged 217 files, 4.1MiB (695.8KiB compressed)
+Verifying eggsact v1.1.3
+Compiling eggsact v1.1.3
+Finished `dev` profile
+Uploading eggsact v1.1.3
+Uploaded eggsact v1.1.3 to registry `crates-io`
+Published eggsact v1.1.3 at registry `crates-io`
+```
+
+Confirmed live on crates.io via API:
+
+```
+name: eggsact
+max_version: 1.1.3
+max_stable_version: 1.1.3
+newest_version: 1.1.3
+license: MIT
+repository: https://github.com/eggstack/eggsact
+```
+
+### Tag
+
+Tag `v1.1.3` (annotated) created on commit `a33ab8b` and pushed to `origin` after
+publish succeeded, per the tag-after-publish policy in `docs/release.md`.
 
 ## Publishing
 
@@ -118,9 +155,10 @@ Resulting `.crate` file: `target/package/eggsact-1.1.3.crate`, ~709 KB.
 - [x] Crates.io metadata reviewed
 - [x] Canonical release doc in `docs/release.md`
 - [x] `docs/release-readiness.md` reflects this candidate
-- [ ] `cargo publish --dry-run` run on final candidate (maintainer action)
-- [ ] `cargo publish` run from clean worktree (maintainer action)
-- [ ] `git tag vX.Y.Z && git push origin vX.Y.Z` after publish succeeds (maintainer action)
+- [x] `cargo publish --dry-run` run on final candidate — passed
+- [x] `cargo publish` run from clean worktree — published `eggsact 1.1.3` to crates.io
+- [x] `git tag vX.Y.Z && git push origin vX.Y.Z` — tag `v1.1.3` pushed to `origin`
 
-Maintainer: when ready to publish, follow `docs/release.md` end-to-end. CI has already verified
-the local gate — re-run locally before publishing if any time has passed since this note.
+Maintainer: this release is complete. Next steps are post-release hygiene only:
+bump `Cargo.toml` to the next development version if desired, and start the
+1.1.4 / 1.2.0 milestone cycle.
