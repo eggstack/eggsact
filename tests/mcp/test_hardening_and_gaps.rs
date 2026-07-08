@@ -482,6 +482,157 @@ fn test_profile_invariant_core_min_subset_of_core() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// PROFILE SYSTEM — Invariant: route-critical tools
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_route_critical_tools_not_hidden() {
+    let route_critical = [
+        "edit_preflight",
+        "command_preflight",
+        "config_preflight",
+        "patch_apply_check",
+        "text_security_inspect",
+    ];
+    let full = list_tools_with_params(serde_json::json!({"profile": "full", "audience": "debug"}));
+    if let Some(tools) = full.get("tools").and_then(|t| t.as_array()) {
+        let tool_map: std::collections::HashMap<String, Value> = tools
+            .iter()
+            .filter_map(|t| {
+                t.get("name")
+                    .and_then(|n| n.as_str())
+                    .map(|n| (n.to_string(), t.clone()))
+            })
+            .collect();
+        for name in &route_critical {
+            if let Some(tool) = tool_map.get(*name) {
+                let exposure = tool.get("llm_exposure").and_then(|e| e.as_str());
+                assert_ne!(
+                    exposure,
+                    Some("hidden"),
+                    "route-critical tool '{}' should not be hidden",
+                    name
+                );
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROFILE SYSTEM — Invariant: every non-hidden tool in at least one profile
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_every_non_hidden_tool_in_at_least_one_named_profile() {
+    let full = list_tools_with_params(serde_json::json!({"profile": "full", "audience": "debug"}));
+    let named_profiles = [
+        "default",
+        "human_math",
+        "codegg_core_min",
+        "codegg_core",
+        "codegg_preflight",
+        "codegg_patch",
+        "codegg_config",
+        "codegg_unicode_security",
+        "codegg_shell",
+        "codegg_repo_audit",
+    ];
+    let mut profile_tool_sets: Vec<std::collections::HashSet<String>> = Vec::new();
+    for profile in &named_profiles {
+        let result = list_tools_with_params(serde_json::json!({"profile": profile}));
+        if let Some(tools) = result.get("tools").and_then(|t| t.as_array()) {
+            let set: std::collections::HashSet<String> = tools
+                .iter()
+                .filter_map(|t| t.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                .collect();
+            profile_tool_sets.push(set);
+        }
+    }
+    if let Some(tools) = full.get("tools").and_then(|t| t.as_array()) {
+        for tool in tools {
+            let exposure = tool.get("llm_exposure").and_then(|e| e.as_str());
+            if exposure != Some("default") {
+                continue;
+            }
+            let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+            let in_any = profile_tool_sets.iter().any(|set| set.contains(name));
+            assert!(
+                in_any,
+                "non-hidden tool '{}' is not in any named profile",
+                name
+            );
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROFILE SYSTEM — Invariant: no deprecated tools in codegg profiles
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_no_deprecated_tools_in_codegg_profiles() {
+    let codegg_profiles = [
+        "codegg_core_min",
+        "codegg_core",
+        "codegg_preflight",
+        "codegg_patch",
+        "codegg_config",
+        "codegg_unicode_security",
+        "codegg_shell",
+        "codegg_repo_audit",
+    ];
+    for profile in &codegg_profiles {
+        let result = list_tools_with_params(serde_json::json!({"profile": profile}));
+        if let Some(tools) = result.get("tools").and_then(|t| t.as_array()) {
+            for tool in tools {
+                let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+                let stability = tool.get("stability").and_then(|s| s.as_str());
+                assert_ne!(
+                    stability,
+                    Some("deprecated"),
+                    "deprecated tool '{}' found in codegg profile '{}'",
+                    name,
+                    profile
+                );
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROFILE SYSTEM — Invariant: heavy cost tools are composite
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_heavy_cost_tools_are_composite() {
+    let registry =
+        ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Debug);
+    let heavy_composite = [
+        "text_security_inspect",
+        "structured_data_compare",
+        "command_preflight",
+        "config_preflight",
+        "edit_preflight",
+    ];
+    let tools = registry.available_tools_model_safe();
+    let tool_map: std::collections::HashMap<String, _> = tools
+        .iter()
+        .map(|t| (t.name.clone(), t))
+        .collect();
+    for name in &heavy_composite {
+        if let Some(tool) = tool_map.get(*name) {
+            if tool.cost == "heavy" {
+                assert!(
+                    tool.composite,
+                    "heavy cost tool '{}' should be composite",
+                    name
+                );
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // PROFILE SYSTEM — Hardening
 // ═══════════════════════════════════════════════════════════════════════
 

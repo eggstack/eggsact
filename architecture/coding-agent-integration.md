@@ -74,20 +74,21 @@ let tools = registry.available_tools_for_current_audience();
 
 ## Profile Selection
 
-Profiles control which tools are registered in the `ToolRegistry`. Each profile is a named subset of the 71 available tools. The active profile is set once at server startup via `EGGCALC_MCP_PROFILE` (MCP) or at `ToolRegistry` construction (in-process).
+Profiles control which tools are registered in the `ToolRegistry`. Each profile is a named subset of the 78 available tools. The active profile is set once at server startup via `EGGCALC_MCP_PROFILE` (MCP) or at `ToolRegistry` construction (in-process).
 
 ### Recommended Profiles by Workflow
 
-| Profile | Tool Count | Audience | Use Case |
-|---------|-----------|----------|----------|
-| `codegg_core_min` | minimal | Model | Minimal model-visible tools for constrained sessions |
-| `codegg_core` | moderate | Model | Normal coding sessions with text, math, path, JSON tools |
-| `codegg_preflight` | broad | Harness | Harness-driven edit/command/config preflight checks |
-| `codegg_patch` | focused | Model | Edit and patch workflows (edit_preflight, patch_apply_check) |
-| `codegg_config` | focused | Model | Config validation (config_preflight, dotenv_validate, ini_validate) |
-| `codegg_unicode_security` | focused | Model | Suspicious text/identifier review (unicode_policy_check, text_security_inspect) |
-| `codegg_shell` | focused | Model | Command planning and preflight (command_preflight, shell_split, argv_compare) |
-| `codegg_repo_audit` | focused | Model | Repository inspection (repo_manifest_inspect, config_file_inspect) |
+| Profile | Tools | Audience | Use Case |
+|---------|-------|----------|----------|
+| `codegg_core_min` | 6 | Model | Minimal model-visible tools for constrained sessions (validate_json, text_replace_check, command_preflight, config_preflight, edit_preflight, text_security_inspect) |
+| `codegg_core` | 19 | Model | Normal coding sessions with text, math, path, JSON, analysis tools |
+| `codegg_preflight` | 13 | Harness | Harness-driven edit/command/config/patch/dependency preflight checks |
+| `codegg_patch` | 12 | Model | Edit, patch, symbol-diff, and patch-risk workflows |
+| `codegg_config` | 14 | Model | Config validation (JSON, TOML, dotenv, INI, Cargo.toml, structured data) |
+| `codegg_unicode_security` | 8 | Model | Suspicious text/identifier review (unicode, confusables, invisible chars) |
+| `codegg_shell` | 6 | Model | Command planning, shell parsing, and preflight checks |
+| `codegg_repo_audit` | 18 | Model | Repository inspection (manifest, config, lockfile, language, source structure) |
+| `human_math` | 4 | Model | Calculator-only: math_eval, unit_convert, unit_info, constant_lookup |
 
 ### Profile Construction (In-Process)
 

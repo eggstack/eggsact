@@ -7,7 +7,7 @@ Deterministic MCP and in-process utility tools for coding agents. 78 tools acros
 
 ## Key Features
 
-- MCP server with 71 registered tools for AI agents to reduce hallucinations
+- MCP server with 78 registered tools for AI agents to reduce hallucinations
 - In-process agent API for direct tool calls without MCP overhead
 - Typed preflight wrappers for edit, command, config, and patch workflows
 - Natural language math: "two to the power of ten" evaluates to 1024
