@@ -177,12 +177,12 @@ It requires Python 3.x and `eggcalc` at `../eggcalc` (sibling directory).
 cargo test --test lib parity
 ```
 
-As of 2026-07-04, the Rust parity suite has known gaps documented in `docs/parity.md`
-(`Verification status` and `Known parity gaps` sections). The 64-of-67 tool subset
-passes for matching tools; the remaining 53 failures are categorized as test-harness
-audience bug, tool/output drift, and a 3-tool gap (`config_file_inspect`,
-`dependency_edit_preflight`, `repo_manifest_inspect`). Closing these gaps is out of
-scope for release polish and is tracked for follow-up work.
+As of 2026-07-08, the Rust parity suite has known gaps documented in `docs/parity.md`
+(`Verification status` and `Known parity gaps` sections). The 80-tool Rust superset
+passes for matching tools; the 33 remaining failures are categorized as accepted
+behavioral differences (shell tokenization, prompt input inspect, unicode policy check,
+tool output drift, tools/list ordering, and error handling drift). Closing these gaps
+is out of scope for release polish and is tracked for follow-up work.
 
 When changing behavior, verify parity tests for the affected tools still pass. If your
 change introduces a valid behavioral difference from Python, update the parity test to
