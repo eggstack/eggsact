@@ -10,9 +10,14 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | `registry/` | Tool registration: aggregation, listing, types |
 | `specs/` | `ToolSpec` declarations per tool category (single source of truth) |
 | `protocol.rs` | JSON-RPC types: `JsonRpcRequest`, `JsonRpcResponse`, `InitializeResult`, error constructors |
-| `response.rs` | `ToolResponse` struct, `sanitize_error`, response builders |
+| `response.rs` | `ToolResponse` struct, `sanitize_error`, response builders, `CallMetrics` |
 | `runtime.rs` | Rate limiter, constants, profile management |
 | `schema_validation.rs` | MCP argument validation against tool input schemas |
+| `compat.rs` | `CompatibilityMode` enum (EggcalcPython vs StrictNative) |
+| `machine_codes.rs` | Machine-readable response codes, severity/disposition/verdict constants |
+| `budget.rs` | Per-tool budget limits, `BudgetTier` enum, composite sub-budgets, `BudgetContext` with cooperative helpers |
+| `schemas/` | JSON-schema builders per tool category (math, text, json, regex, etc.) |
+| `mod.rs` | Module declarations |
 
 ### Schema Validation Subset
 
@@ -57,11 +62,6 @@ The following keywords must **never** appear in registered tool schemas:
 #### Recursive validation
 
 Validation recurses into nested schemas via `validate_property_inner()` with a `max_depth` limit of 10. This supports `properties` sub-schemas, `items` element schemas, and `additionalProperties` object schemas. Deeply nested schemas beyond 10 levels produce a "Schema nesting too deep" error.
-| `compat.rs` | `CompatibilityMode` enum (EggcalcPython vs StrictNative) |
-| `machine_codes.rs` | Machine-readable response codes, severity/disposition/verdict constants |
-| `budget.rs` | Per-tool budget limits, `BudgetTier` enum, composite sub-budgets, `BudgetContext` with cooperative helpers (`check_not_cancelled`, `check_deadline`, `check_text_bytes`, `check_list_len`, `remaining_time_ms`) |
-| `schemas/` | JSON-schema builders per tool category (math, text, json, regex, etc.) |
-| `mod.rs` | Module declarations |
 
 Tool implementations live in `src/tools/` (category modules):
 
@@ -77,7 +77,7 @@ Tool implementations live in `src/tools/` (category modules):
 | `shell.rs` | shell_split, shell_quote_join, argv_compare, command_preflight |
 | `list.rs` | list_compare, list_dedupe, list_sort |
 | `markdown.rs` | markdown_structure, code_fence_extract |
-| `patch.rs` | patch_apply_check, patch_summary, edit_preflight, diff_risk_classify |
+| `patch.rs` | patch_apply_check, patch_summary, edit_preflight, diff_risk_classify, patch_contract_check |
 | `config.rs` | dotenv_validate, ini_validate, config_preflight, toml_shape_tool |
 | `identifier.rs` | identifier_analyze, identifier_inspect, identifier_table_inspect |
 | `unicode.rs` | unicode_policy_check, canonicalize_text |
@@ -85,7 +85,8 @@ Tool implementations live in `src/tools/` (category modules):
 | `cargo.rs` | cargo_toml_inspect |
 | `dependency.rs` | dependency_edit_preflight |
 | `diagnostics.rs` | runtime_diagnostics, profile_inspect, tool_availability_explain |
-| `repo.rs` | repo_manifest_inspect, config_file_inspect, repo_tree_summarize |
+| `repo.rs` | repo_manifest_inspect, config_file_inspect, repo_tree_summarize, test_command_suggest, repo_language_detect |
+| `analysis.rs` | import_export_inspect, code_block_map, symbol_name_diff, lockfile_inspect |
 
 ## Protocol
 
@@ -200,7 +201,7 @@ profile at construction time via `with_profile_and_audience`.
 | regex | 3 | validate_regex, regex_safety_check, regex_finditer |
 | list | 3 | list_compare, list_dedupe, list_sort |
 | markdown | 2 | markdown_structure, code_fence_extract |
-| patch | 4 | patch_apply_check, patch_summary, edit_preflight, diff_risk_classify |
+| patch | 5 | patch_apply_check, patch_contract_check, patch_summary, edit_preflight, diff_risk_classify |
 | config | 3 | dotenv_validate, ini_validate, config_preflight |
 | identifier | 3 | identifier_analyze, identifier_inspect, identifier_table_inspect |
 | unicode | 2 | unicode_policy_check, canonicalize_text |
@@ -402,18 +403,19 @@ The MCP server applies per-tool resource budgets during `tools/call` dispatch:
 ### Budget Module (`src/mcp/budget.rs`)
 
 - **`BudgetTier`** enum: `Cheap`, `Moderate`, `Heavy` — maps from `ToolCost` in `ToolSpec`.
-- **`ToolBudget`** struct: per-tool resource limits — `max_input_bytes`, `max_output_bytes`, `max_elapsed_ms`, `max_text_bytes`, `max_findings`, `max_list_items`, `max_pattern_length`, `max_regex_pattern_chars`, `max_regex_samples`, `max_spawned_workers`.
-- **`budget_for_tool(tool_name)`**: resolves the effective `ToolBudget` for a tool, applying composite overrides when a tool orchestrates other tools internally.
-- **Builders**: `ToolBudget::with_max_findings(n)`, `with_max_output_bytes(n)`, `with_max_input_bytes(n)`, `with_max_text_bytes(n)` — used by callers (especially tests) to override a single budget field without rebuilding the whole struct. Direct struct literals remain valid but break ABI when fields are renamed; prefer builders.
+- **`ToolBudget`** struct: per-tool resource limits — `max_input_bytes`, `max_output_bytes`, `max_elapsed_ms`, `max_text_bytes`, `max_findings`, `max_list_items`, `max_regex_pattern_chars`, `max_regex_samples`, `max_spawned_workers`.
+- **`budget_for_tool(tool_name)`**: resolves the effective `ToolBudget` for a tool. Composite tools (`edit_preflight`, `command_preflight`, `config_preflight`, `text_security_inspect`, `patch_apply_check`) always receive `HEAVY` budgets regardless of their declared `ToolCost`. Other tools map from their `ToolCost` via `BudgetTier`.
+- **Builders**: `ToolBudget::with_max_findings(n)`, `with_max_output_bytes(n)`, `with_max_input_bytes(n)`, `with_max_text_bytes(n)`, `with_max_elapsed_ms(n)` — used by callers (especially tests) to override a single budget field without rebuilding the whole struct. Direct struct literals remain valid but break ABI when fields are renamed; prefer builders.
 - **`BudgetContext`**: runtime context passed into tool handlers — holds a deadline (`Instant`), a `cancelled` flag, and `should_stop()` which checks both deadline expiry and cancellation. Helper methods: `check_not_cancelled(tool_name)`, `check_deadline(tool_name)`, `check_text_bytes(field, text, tool_name)`, `check_list_len(field, len, tool_name)`, `remaining_time_ms()`. `check_text_len` is retained as a deprecated alias for `check_text_bytes` (renamed in 1.1.4 because enforcement is byte-based, not character-based).
-- **Composite sub-budgets**: `SubBudget` and `CompositeBudgetAllocator` allow composite tools (e.g., `edit_preflight`, `command_preflight`) to split their parent budget across child tool calls via `sub_budget_context()`.
+- **`for_handler(budget)`**: convenience constructor that picks up the thread-local cancellation flag. Recommended for handler functions with signature `fn(&Value) -> ToolResponse` that cannot receive context directly.
+- **Composite sub-budgets**: `SubBudget` and `CompositeBudgetAllocator` allow composite tools (e.g., `edit_preflight`, `command_preflight`) to split their parent budget across child tool calls via `sub_budget_context()`. The allocator divides input/output/text/findings limits evenly across `N` sub-tools, sharing the parent deadline.
 
 ### Response Truncation (`src/mcp/response.rs`)
 
 `truncate_response()` enforces budget limits on completed tool responses. When a tool produces more findings, output bytes, or text characters than its budget allows, the response is truncated and `limits_applied` is populated with descriptions of what was capped.
 
-- **Findings cap** (`max_findings`): when findings exceed the cap, excess entries are dropped and a synthetic `OUTPUT_TOO_LARGE` notice is appended. The total findings length is always ≤ `max_findings` (the synthetic notice itself reserves one slot, so N findings + 1 synthetic ≤ N+1 entries).
-- **Result truncation** (`max_output_bytes`): when the serialized `result` object exceeds the cap, it is **replaced** with a summary object containing only `machine_code`, `verdict`, `ok`, and any caller-supplied `summary` key, plus `truncated: true`, `original_size_bytes`, `max_output_bytes`. This guarantees the wire payload fits the budget while preserving route-critical fields.
+- **Findings cap** (`max_findings`): when findings exceed the cap, excess entries are dropped (sorted by severity, highest kept) and a synthetic `OUTPUT_TOO_LARGE` notice is appended as the final entry. One slot is always reserved for the notice, so the total findings length is ≤ `max_findings` — real findings are capped at `max_findings - 1` plus the notice.
+- **Result truncation** (`max_output_bytes`): when the serialized `result` object exceeds the cap, it is **replaced** with a summary object containing only `machine_code`, `verdict`, `ok`, and any caller-supplied `summary` key, plus `truncated: true`, `original_size_bytes`, `max_output_bytes`. This guarantees the wire payload fits the budget while preserving route-critical fields. Caller-supplied `summary` strings are preserved rather than overwritten.
 - `limits_applied` in the response envelope reports what was truncated.
 
 ### Input Pre-Check (`src/agent/mod.rs`)
@@ -422,7 +424,7 @@ The MCP server applies per-tool resource budgets during `tools/call` dispatch:
 
 ### Runtime Metrics (`src/mcp/response.rs`)
 
-`CallMetrics` struct captures per-call resource usage. `CallMetricsBuilder` (via `.with_metrics()`) collects elapsed time, output size, and other metrics during execution, feeding back into budget enforcement.
+`CallMetrics` struct captures per-call resource usage (elapsed time, input bytes, output bytes before/after truncation, budget tier, limits applied count, sub-tool count). `CallMetricsBuilder` (via `.with_metrics()`) collects these during execution, attaching them as `_metrics` inside `result`. Fields with `None` values are skipped during serialization.
 
 ### Integration
 
@@ -434,7 +436,7 @@ The MCP server applies per-tool resource budgets during `tools/call` dispatch:
 6. After the handler returns, `truncate_response()` caps findings/output if the budget was exceeded
 7. `limits_applied` in the response envelope reports what was truncated
 
-Heavy and moderate tool handlers also create a `BudgetContext` via `BudgetContext::for_handler()` and poll `should_stop()` at meaningful pipeline stages (after format detection, before sub-tool dispatches, in iteration loops). High-risk handlers (`edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`) do the same at additional stages. Since `ToolHandler` signatures are `fn(&Value) -> ToolResponse`, the MCP server attaches the cancel flag to a shared context that handlers access via internal initialization.
+Heavy and moderate tool handlers also create a `BudgetContext` via `BudgetContext::for_handler()` and poll `should_stop()` at meaningful pipeline stages (after format detection, before sub-tool dispatches, in iteration loops). High-risk handlers (`edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`, `text_security_inspect`) do the same at additional stages. Since `ToolHandler` signatures are `fn(&Value) -> ToolResponse`, the MCP server attaches the cancel flag to a shared context that handlers access via internal initialization.
 
 For the in-process agent API, `call_json_with_budget()` on `ToolRegistry` accepts a custom `ToolBudget` to override the default per-tool limits. Input is pre-checked against `max_input_bytes` and rejected with `INPUT_TOO_LARGE` before handler dispatch.
 
@@ -445,7 +447,7 @@ Every tool call returns a `ToolResponse` (defined in `src/mcp/response.rs`) with
 | Field | Type | When present |
 |-------|------|-------------|
 | `ok` | bool | always |
-| `tool` | string | always |
+| `tool` | string | usually present (set by handlers; technically optional) |
 | `result` | object | `ok=true` |
 | `error_type` | string | `ok=false` |
 | `error` | string | `ok=false` |

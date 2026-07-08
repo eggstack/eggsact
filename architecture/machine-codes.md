@@ -13,13 +13,13 @@ Every tool call returns a `ToolResponse` (serialized as JSON) with these 11 fiel
 | Field | Type | Always present | Description |
 |-------|------|---------------|-------------|
 | `ok` | bool | yes | `true` for success, `false` for error |
-| `tool` | string | yes | Tool name that was invoked |
+| `tool` | string | when set | Tool name that was invoked |
 | `result` | object | when `ok=true` | Tool-specific result payload |
 | `error_type` | string | when `ok=false` | Legacy error category (e.g. `evaluation_error`) |
 | `error` | string | when `ok=false` | Sanitized human-readable error message |
 | `hints` | string[] | when `ok=false` | Suggestions for the caller |
 | `warnings` | string[] | optional | Non-fatal warnings |
-| `limits_applied` | string[] | optional | Which input limits were enforced |
+| `limits_applied` | string[] | optional | Which limits were enforced (input size, output truncation) |
 | `findings` | object[] | optional | Structured findings with codes, severity, messages |
 | `machine_code` | string | when set | Machine-readable code from `machine_codes` module |
 | `recommended_next_tool` | object | optional | Suggested next tool for the caller |
@@ -38,9 +38,9 @@ Every tool call returns a `ToolResponse` (serialized as JSON) with these 11 fiel
 | `.with_limits_applied(limits)` | Record which limits were enforced |
 | `.with_verdict(verdict)` | Set verdict inside result JSON (for composite tools) |
 | `.with_recommended_next_tool(tool)` | Suggest the next tool to call (structured `{name, reason, arguments_hint}`) |
-| `preflight_allow(tool)` | Quick preflight success — `ok=true`, `machine_code=OK`, `verdict=allow` |
-| `preflight_review(tool, findings)` | Quick preflight with warnings — `ok=true`, verdict=`review`, findings attached |
-| `preflight_block(tool, machine_code, findings)` | Quick preflight failure — `ok=true`, verdict=`block`, findings attached |
+| `preflight_allow(tool, machine_code, result, findings, next_tool)` | Preflight success — `ok=true`, `verdict=allow`, machine code set |
+| `preflight_review(tool, machine_code, result, findings, next_tool)` | Preflight with warnings — `ok=true`, `verdict=review`, findings attached |
+| `preflight_block(tool, machine_code, result, findings)` | Preflight failure — `ok=true`, `verdict=block`, findings attached |
 | `ToolResponse::next_tool(name, reason, arguments_hint)` | Static helper returning structured `recommended_next_tool` JSON |
 
 ## Finding Helpers
@@ -48,14 +48,14 @@ Every tool call returns a `ToolResponse` (serialized as JSON) with these 11 fiel
 Structured findings are JSON objects with `code`, `severity`, `message`, and optional `disposition` fields. Three helpers are available in `src/mcp/response.rs`:
 
 ```rust
-// Simple finding (disposition is optional)
-finding(code, severity, message, details, disposition)
+// Simple finding (disposition and details are optional)
+finding(code, severity, message, disposition, details)
 
 // Finding with source location (line/column)
-finding_with_location(code, severity, message, line, column, disposition)
+finding_with_location(code, severity, message, disposition, line, column)
 
 // Finding for prompt inspection (span instead of location)
-prompt_finding(code, severity, message, byte_offset, end_byte_offset, details, disposition)
+prompt_finding(code, severity, message, disposition, byte_offset, end_byte_offset, details)
 ```
 
 Use `severity::*` constants (`info`, `low`, `medium`, `high`, `critical`) and `disposition::*` constants (`informational`, `caution`, `blocking`) from `machine_codes.rs`.
@@ -114,7 +114,7 @@ Common error codes have category-prefixed aliases for use by orchestration layer
 
 ### Codegg Routing Aliases
 
-Category-specific aliases for codegg routing. These share string values with their originals and are wire-compatible.
+Category-specific aliases for codegg routing. These share string values with their originals and are wire-compatible. Note: shell sub-codes (`SHELL_NETWORK_ACCESS`, `SHELL_FILESYSTEM_WRITE`, etc.) have their own unique string values — they are independent machine codes, not aliases.
 
 | Alias Constant | Original Constant | String Value |
 |----------------|-------------------|--------------|
@@ -124,16 +124,6 @@ Category-specific aliases for codegg routing. These share string values with the
 | `EDIT_STALE_CONTEXT` | `FINGERPRINT_MISMATCH` | `"FINGERPRINT_MISMATCH"` |
 | `SHELL_SAFE_COMMAND` | `COMMAND_OK` | `"COMMAND_OK"` |
 | `SHELL_DESTRUCTIVE_COMMAND` | `SHELL_RISK` | `"SHELL_RISK"` |
-| `SHELL_NETWORK_ACCESS` | `SHELL_RISK` | `"SHELL_RISK"` |
-| `SHELL_FILESYSTEM_WRITE` | `SHELL_RISK` | `"SHELL_RISK"` |
-| `SHELL_PROCESS_CONTROL` | `SHELL_RISK` | `"SHELL_RISK"` |
-| `SHELL_ENV_MUTATION` | `SHELL_RISK` | `"SHELL_RISK"` |
-| `SHELL_PRIVILEGE_ESCALATION` | `SHELL_RISK` | `"SHELL_RISK"` |
-| `SHELL_COMMAND_SUBSTITUTION` | `SHELL_RISK` | `"SHELL_RISK"` |
-| `SHELL_REDIRECTION` | `SHELL_RISK` | `"SHELL_RISK"` |
-| `SHELL_PIPELINE` | `SHELL_RISK` | `"SHELL_RISK"` |
-| `SHELL_BACKGROUND_EXECUTION` | `SHELL_RISK` | `"SHELL_RISK"` |
-| `SHELL_UNAPPROVED_COMMAND` | `SHELL_RISK` | `"SHELL_RISK"` |
 | `CONFIG_VALID` | `CONFIG_OK` | `"CONFIG_OK"` |
 | `CONFIG_INVALID` | `CONFIG_PARSE_FAILED` | `"CONFIG_PARSE_FAILED"` |
 | `UNICODE_BIDI_DETECTED` | `BIDI_DETECTED` | `"BIDI_DETECTED"` |
@@ -217,6 +207,13 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | `PATH_HAS_TRAVERSAL` | Path escapes scope | high | yes | reject path | `path_scope_check` |
 | `PATH_IS_HIDDEN` | Path is hidden file/dir | low | no | note | `path_analyze` |
 
+### Path Batch Scope Check
+
+| Code | Meaning | Severity | Blocking | Harness Action | Used by |
+|------|---------|----------|----------|----------------|---------|
+| `PATH_BATCH_OK` | All paths inside root | info | no | proceed | `path_batch_scope_check` |
+| `PATH_BATCH_REVIEW` | One or more paths escape root | high | yes | reject paths | `path_batch_scope_check` |
+
 ### Config
 
 | Code | Meaning | Severity | Blocking | Harness Action | Used by |
@@ -225,6 +222,17 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | `CONFIG_PARSE_FAILED` | Config parse error | high | yes | fix config | `config_preflight`, `dotenv_validate`, `ini_validate` |
 | `CONFIG_SCHEMA_MISMATCH` | Config violates schema | medium | yes | fix config | `config_preflight` |
 | `CONFIG_HAS_WARNINGS` | Config valid with warnings | low | no | review warnings | `config_preflight` |
+
+### Config Risk
+
+| Code | Meaning | Severity | Blocking | Harness Action | Used by |
+|------|---------|----------|----------|----------------|---------|
+| `CONFIG_RISK_SECRET_KEY` | Config contains a secret-like key (token, password, api_key) | high | review | redact secrets | `config_file_inspect` |
+| `CONFIG_RISK_INSECURE_URL` | Config contains an insecure URL (http:// where https:// expected) | medium | review | review URL | `config_file_inspect` |
+| `CONFIG_RISK_DEBUG_FLAG` | Config contains a debug flag that may be risky in production | low | no | note | `config_file_inspect` |
+| `CONFIG_RISK_COMMAND_HOOK` | Config contains a command hook (install, preinstall, postinstall) | medium | review | review hook | `config_file_inspect` |
+| `CONFIG_RISK_TLS_DISABLED` | Config disables TLS verification | high | review | review TLS setting | `config_file_inspect` |
+| `CONFIG_RISK_WILDCARD_HOST` | Config contains a wildcard host or permissive CORS setting | medium | review | review host config | `config_file_inspect` |
 
 ### Identifier / Naming
 
@@ -263,15 +271,7 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | `REGEX_UNSAFE` | Pattern has safety issues (catastrophic backtracking risk) | medium | review | fix pattern | `regex_safety_check` |
 | `REGEX_UNSUPPORTED_FEATURE` | Pattern uses unsupported PCRE-only constructs | high | yes | rewrite pattern or simplify | `validate_regex`, `regex_safety_check` |
 
-`REGEX_SAFE` and `REGEX_UNSAFE` are returned by `regex_safety_check` and concern pattern safety (ReDoS risk). `REGEX_UNSUPPORTED_FEATURE` is returned by both `validate_regex` and `regex_safety_check` and concerns dialect compatibility — the pattern parsed successfully but contains PCRE-only constructs that neither the Rust `regex` nor `fancy-regex` backend can compile. Unsupported constructs include:
-
-- Branch reset: `(?|a|b)`
-- Recursion/subroutines: `(?R)`, `(?1)`, `(?&name)`
-- `\K` (reset match start)
-- Control verbs: `(*SKIP)`, `(*PRUNE)`, `(*ACCEPT)`, `(*FAIL)`, `(*COMMIT)`, `(*THEN)`, etc.
-- Atomic groups: `(?>abc)`
-
-These are distinct from `REGEX_UNSAFE` (safety/ReDoS) — a pattern can be both safe and unsupported, or unsafe but fully supported by the engine.
+`REGEX_SAFE` and `REGEX_UNSAFE` concern pattern safety (ReDoS risk). `REGEX_UNSUPPORTED_FEATURE` concerns dialect compatibility — the pattern parsed but contains PCRE-only constructs neither Rust `regex` nor `fancy-regex` can compile: branch reset `(?|...)`, recursion `(?R)`, `\K`, control verbs `(*SKIP)`/`(*PRUNE)`/etc., atomic groups `(?>...)`. These are distinct from `REGEX_UNSAFE` — a pattern can be both safe and unsupported, or unsafe but fully supported.
 
 ### Version / Cargo
 
@@ -287,9 +287,15 @@ These are distinct from `REGEX_UNSAFE` (safety/ReDoS) — a pattern can be both 
 
 | Code | Meaning | Severity | Blocking | Harness Action | Used by |
 |------|---------|----------|----------|----------------|---------|
-| `DEPENDENCY_UNKNOWN_ECOSYSTEM` | Ecosystem value (`cargo`/`npm`/`pip`/...) is not recognized | high | yes | specify valid ecosystem | `dependency_edit_preflight` |
+| `DEPENDENCY_OK` | Dependency structure is clean | info | no | proceed | `dependency_edit_preflight` |
 | `DEPENDENCY_ADDED` | A dependency was added | low | no | review new dep | `dependency_edit_preflight` |
 | `DEPENDENCY_REMOVED` | A dependency was removed | low | no | review removal | `dependency_edit_preflight` |
+| `DEPENDENCY_VERSION_WIDENED` | Version constraint was widened (e.g. patch → range) | low | no | review change | `dependency_edit_preflight` |
+| `DEPENDENCY_GIT_SOURCE` | Git source dependency detected | medium | review | review git dep | `dependency_edit_preflight` |
+| `DEPENDENCY_PATH_SOURCE` | Path source dependency detected | medium | review | review path dep | `dependency_edit_preflight` |
+| `DEPENDENCY_BUILD_SCRIPT` | Build script change detected | medium | review | review build script | `dependency_edit_preflight` |
+| `DEPENDENCY_PATCH_OVERRIDE` | Patch/replace override detected | high | yes | review override | `dependency_edit_preflight` |
+| `DEPENDENCY_UNKNOWN_ECOSYSTEM` | Ecosystem not recognized | high | yes | specify valid ecosystem | `dependency_edit_preflight` |
 
 ### TOML
 
@@ -305,12 +311,36 @@ These are distinct from `REGEX_UNSAFE` (safety/ReDoS) — a pattern can be both 
 | `TEXT_EQUAL` | Texts are equal | info | no | proceed | `text_equal` |
 | `TEXT_NOT_EQUAL` | Texts are not equal | low | no | review diffs | `text_equal` |
 
-### Repo Tree Summary
+### Patch Contract Check
 
 | Code | Meaning | Severity | Blocking | Harness Action | Used by |
 |------|---------|----------|----------|----------------|---------|
+| `PATCH_CONTRACT_OK` | No contract-relevant concerns | info | no | proceed | `patch_contract_check` |
+| `PATCH_CONTRACT_REVIEW` | Items flagged for review | medium | review | review | `patch_contract_check` |
+| `PATCH_CONTRACT_BLOCK` | Policy violations blocked | high | yes | do not apply | `patch_contract_check` |
+| `PATCH_LOCKFILE_CHANGE` | Patch touches lockfiles | medium | review | review lockfile change | `patch_contract_check` |
+| `PATCH_MANIFEST_CHANGE` | Patch touches manifests | medium | review | review manifest change | `patch_contract_check` |
+| `PATCH_SCOPE_ESCAPE` | Patch escapes allowed path scope | high | yes | reject patch | `patch_contract_check` |
+| `PATCH_LARGE_DELETE` | Patch contains a large deletion | medium | review | review deletion | `patch_contract_check` |
+
+### Repo / Source Inspection
+
+| Code | Meaning | Severity | Blocking | Harness Action | Used by |
+|------|---------|----------|----------|----------------|---------|
+| `REPO_DETECTED` | Repo type detected from path list | info | no | proceed | `repo_manifest_inspect` |
+| `REPO_UNKNOWN` | Repo type could not be determined | medium | yes | provide more context | `repo_manifest_inspect` |
 | `REPO_TREE_OK` | Repo tree summarized, no concerns | info | no | proceed | `repo_tree_summarize` |
 | `REPO_TREE_REVIEW` | Repo tree has items needing review | low | no | review | `repo_tree_summarize` |
+| `REPO_LANGUAGE_DETECTED` | Languages/ecosystems detected | info | no | proceed | `repo_language_detect` |
+| `TEST_COMMANDS_SUGGESTED` | Verification commands suggested | info | no | proceed | `test_command_suggest` |
+| `SOURCE_INSPECT_HEURISTIC` | Source inspection returned heuristic results | low | no | review findings | `import_export_inspect`, `code_block_map`, `symbol_name_diff` |
+
+### Lockfile Inspection
+
+| Code | Meaning | Severity | Blocking | Harness Action | Used by |
+|------|---------|----------|----------|----------------|---------|
+| `LOCKFILE_CHANGE_DETECTED` | Lockfile changes detected | low | no | review | `lockfile_inspect` |
+| `LOCKFILE_PARSE_ERROR` | Lockfile failed to parse | high | yes | fix lockfile | `lockfile_inspect` |
 
 ### Diff Risk Classification
 
@@ -319,13 +349,6 @@ These are distinct from `REGEX_UNSAFE` (safety/ReDoS) — a pattern can be both 
 | `DIFF_RISK_OK` | Diff is low risk | info | no | proceed | `diff_risk_classify` |
 | `DIFF_RISK_REVIEW` | Diff has medium risk items | medium | review | review changes | `diff_risk_classify` |
 | `DIFF_RISK_BLOCK` | Diff is high risk | high | yes | block or escalate | `diff_risk_classify` |
-
-### Path Batch Scope Check
-
-| Code | Meaning | Severity | Blocking | Harness Action | Used by |
-|------|---------|----------|----------|----------------|---------|
-| `PATH_BATCH_OK` | All paths inside root | info | no | proceed | `path_batch_scope_check` |
-| `PATH_BATCH_REVIEW` | One or more paths escape root | high | yes | reject paths | `path_batch_scope_check` |
 
 ## Forward-Looking: Dotted Taxonomy
 

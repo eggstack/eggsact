@@ -1,6 +1,6 @@
 # Text Processing Library
 
-The `src/text/` module provides 25 text processing modules used by MCP tools and available as a library API.
+The `src/text/` module provides **25 text processing modules** plus auto-generated confusable data, used by MCP tools and available as a library API. It covers measurement, diffing, validation, transformation, regex processing, Unicode policy enforcement, shell parsing, path analysis, markdown inspection, patch operations, and more.
 
 ## Module Index
 
@@ -8,120 +8,981 @@ The `src/text/` module provides 25 text processing modules used by MCP tools and
 |--------|------|-----------|------------|
 | `cargo` | `cargo.rs` | `cargo_toml_inspect` | `cargo_toml_inspect()` |
 | `config` | `config.rs` | `dotenv_validate`, `ini_validate` | `dotenv_validate()`, `ini_validate()` |
-| `confusables` | `confusables.rs` | (used by identifier_inspect) | `has_confusables()`, `find_confusables()`, `CONFUSABLES` |
-| `diff` | `diff.rs` | `text_diff_explain` | `levenshtein_distance()`, `diff_spans()` |
+| `confusables` | `confusables.rs` | (used by `identifier_inspect`) | `has_confusables()`, `find_confusables()`, `CONFUSABLES` |
+| `diff` | `diff.rs` | `text_diff_explain` | `levenshtein_distance()`, `diff_spans()`, `first_diff()`, `common_prefix_suffix()` |
 | `glob` | `glob.rs` | `glob_match` | `glob_match()` |
-| `identifier` | `identifier.rs` | `identifier_analyze`, `identifier_inspect`, `identifier_table_inspect` | `identifier_analyze()`, `identifier_inspect()` |
+| `identifier` | `identifier.rs` | `identifier_analyze`, `identifier_inspect`, `identifier_table_inspect` | `identifier_analyze()`, `identifier_inspect()`, `identifier_table_inspect()` |
 | `inspect_prompt` | `inspect_prompt.rs` | `prompt_input_inspect` | `prompt_input_inspect()` |
 | `line_range` | `line_range.rs` | `line_range_extract`, `line_range_compare` | `line_range_extract()`, `line_range_compare()` |
 | `markdown` | `markdown.rs` | `markdown_structure`, `code_fence_extract` | `markdown_structure()`, `code_fence_extract()` |
-| `measure` | `measure.rs` | `text_measure` | `text_length()`, `word_count()`, `line_count()` |
+| `measure` | `measure.rs` | `text_measure` | `text_length()`, `word_count()`, `line_count()`, `char_frequency()`, `word_metrics()`, `char_category_metrics()` |
 | `patch` | `patch.rs` | `patch_apply_check`, `patch_summary` | `patch_apply_check()`, `patch_summary()` |
-| `path` | `path.rs` | `path_normalize`, `path_analyze`, `path_compare`, `path_scope_check` | `path_analyze()`, `path_compare()`, `path_scope_check()` |
+| `path` | `path.rs` | `path_analyze`, `path_compare`, `path_scope_check` | `path_analyze()`, `path_compare()`, `path_scope_check()` |
 | `position` | `position.rs` | `text_position`, `text_window` | `text_position()`, `text_window()` |
-| `primitives` | `primitives.rs` | (internal) | `count_graphemes()`, `truncate_to_grapheme()` |
+| `primitives` | `primitives.rs` | (internal) | `codepoints()`, `count_graphemes()`, `truncate_to_grapheme()`, `codepoint_index_to_byte_offset()` |
 | `regex_safety` | `regex_safety.rs` | `regex_safety_check` | `regex_safety_check()` |
 | `regex_engine` | `regex_engine.rs` | (used by `validate_regex`, `regex_safety_check`, `regex_finditer`) | `classify_pattern()` |
-| `replace` | `replace.rs` | `text_replace_check` | `text_replace_check()` |
+| `replace` | `replace.rs` | `text_replace_check` | `text_replace_check()`, `text_replace_check_with_options()` |
 | `shell` | `shell.rs` | `shell_split`, `shell_quote_join`, `argv_compare` | `shell_split()`, `shell_quote_join()`, `argv_compare()` |
-| `synthesis` | `synthesis.rs` | composite tools | `text_security_inspect()`, `edit_preflight()`, `command_preflight()`, `config_preflight()` |
+| `synthesis` | `synthesis.rs` | composite tools | (maps Python synthesis functions to Rust submodules) |
 | `toml` | `toml.rs` | `validate_toml`, `toml_shape` | `validate_toml()`, `toml_shape()` |
-| `transform` | `transform.rs` | `text_transform`, `escape_text`, `unescape_text`, `text_fingerprint`, `text_hash` | `text_transform()`, `escape_text()`, `text_fingerprint()`, `text_hash()` |
+| `transform` | `transform.rs` | `text_transform`, `escape_text`, `unescape_text`, `text_fingerprint`, `text_hash` | `text_transform()`, `escape_text()`, `unescape_text()`, `text_fingerprint()`, `text_hash()` |
 | `unicode_policy` | `unicode_policy.rs` | `unicode_policy_check`, `canonicalize_text` | `unicode_policy_check()`, `canonicalize_text()` |
-| `unicode_tools` | `unicode_tools.rs` | (internal) | Mixed-script detection, invisible char detection |
-| `validate` | `validate.rs` | `validate_json`, `validate_regex`, `validate_brackets`, `validate_schema_light` | `validate_json()`, `validate_regex()`, `validate_brackets()`, `json_shape()` |
-| `version` | `version.rs` | `version_compare`, `version_constraint_check` | `check_version_constraint()`, `version_compare()` |
+| `unicode_tools` | `unicode_tools.rs` | (internal) | `unicode_casefold()`, `find_invisibles()`, `detect_mixed_scripts()`, `build_safe_repr()`, `script_name()`, `unicode_scripts()`, `confusables_count()`, `reverse_confusables()` |
+| `validate` | `validate.rs` | `validate_json`, `validate_regex`, `validate_brackets`, `validate_schema_light`, `json_shape`, `json_canonicalize`, `json_compare`, `json_extract`, `regex_finditer`, `regex_test` | `validate_json()`, `validate_regex()`, `validate_brackets()`, `json_shape()`, `regex_finditer()`, `regex_test()` |
+| `version` | `version.rs` | `version_compare`, `version_constraint_check` | `version_compare()`, `check_version_constraint()` |
 
-Plus `confusables_generated.rs` — auto-generated data file.
+Plus `confusables_generated.rs` — auto-generated by `scripts/generate_confusables.py` from unicode.org data. **Never edit directly.**
 
 ## Code Patterns
 
 ### Result Structs
 
-Each module defines result structs with `#[derive(Serialize)]`:
+Every module defines result structs with `#[derive(Debug, Clone, Serialize, Deserialize)]` (or `#[derive(Serialize)]` for internal results). Structs use serde `rename` attributes for JSON key mapping. All public functions return these structs rather than tuples.
+
 ```rust
-#[derive(Serialize)]
-pub struct TextMeasureResult {
-    pub bytes_utf8: usize,
-    pub codepoints: usize,
-    pub graphemes: usize,
-    pub words: usize,
-    pub lines: usize,
-    // ...
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidateJsonResult {
+    pub valid: bool,
+    pub error: Option<String>,
+    pub line: Option<i32>,
+    pub column: Option<i32>,
+    pub position: Option<i32>,
+    #[serde(rename = "type")]
+    pub json_type: Option<String>,
+    pub top_level_keys: Option<Vec<String>>,
 }
 ```
 
 ### Error Handling
 
-Library functions return `Result<T, String>` or specific result types.
-MCP tool wrappers in `tools.rs` convert to `ToolResponse`.
+- **Library functions** return `Result<T, String>` for validation/parsing errors, or direct result types when failures are representable in the struct fields (e.g., `valid: false`).
+- **MCP tool wrappers** in `tools/*.rs` convert to `ToolResponse` via the `ToolResponse` builder.
+- **Input limits** are enforced with named constants (e.g., `MAX_INPUT_LENGTH = 100_000`, `MAX_PATTERN_LENGTH = 1000`). Oversized inputs fail early with descriptive error messages.
 
 ### Testing
 
-- Unit tests: `#[cfg(test)]` modules at bottom of each file
-- Integration tests: `tests/text/test_<module>.rs`
-- Each text module has a corresponding test file
+- **Unit tests**: `#[cfg(test)] mod tests` at the bottom of each file. Test naming convention: `test_<function>_<scenario>`.
+- **Integration tests**: `tests/text/test_<module>.rs` — each text module has a corresponding test file.
+- **Parity tests**: `tests/parity/` compare Rust output against Python `eggcalc` reference.
+- **Doc tests**: Inline examples in public API doc comments.
 
-## Key Functions
+## Core Primitives (`primitives.rs`)
 
-### Text Measurement
-- `text_length(text)` → character count
-- `word_count(text)` → whitespace-delimited word count
-- `line_count(text)` → newline-separated line count
+Low-level Unicode primitives used by all other modules. No MCP tools directly expose these.
 
-### Diff & Similarity
-- `levenshtein_distance(a, b)` → edit distance
-- `diff_spans(a, b, max_diffs)` → semantic diff
+### Functions
 
-### Validation
-- `validate_json(text)` → JSON syntax check
-- `validate_brackets(input)` → bracket balance check
-- `validate_regex(pattern, text)` → regex syntax check
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `codepoints` | `(s: &str) -> Vec<CodepointInfo>` | Enumerate all codepoints with index, char, Unicode name, and general category |
+| `count_graphemes` | `(s: &str) -> usize` | Count grapheme clusters using `unicode-segmentation` |
+| `truncate_to_grapheme` | `(s: &str, max: usize) -> String` | Truncate to N grapheme clusters (safe for emoji/combining) |
+| `codepoint_index_to_byte_offset` | `(text: &str, idx: usize) -> Result<usize, String>` | Convert codepoint index to UTF-8 byte offset |
+| `byte_offset_to_char_index` | `(text: &str, offset: usize) -> Result<usize, String>` | Convert UTF-8 byte offset to codepoint index |
 
-### Transforms
-- `escape_text(text, mode)` → escape characters
-- `text_transform(text, ops)` → apply transforms
-- `text_fingerprint(text)` → content hash
-- `text_hash(text, algos, encoding)` → multi-algorithm hash
+### `CodepointInfo`
 
-### Unicode
-- `has_confusables(text)` → check for homoglyphs
-- `find_confusables(text)` → find with mappings
-- `unicode_policy_check(text)` → policy validation
-- `canonicalize_text(text, profile)` → normalize
+```rust
+pub struct CodepointInfo {
+    pub index: usize,       // codepoint position
+    pub char: String,       // character as string
+    pub codepoint: String,  // "U+XXXX" format
+    pub name: String,       // Unicode name (via unicode_names2)
+    pub category: String,   // General category abbreviation
+}
+```
 
-### Position
-- `text_position(text, ...)` → convert between byte/codepoint/line-col
-- `text_window(text, position, context)` → extract context window
+Grapheme counting uses `unicode_segmentation::UnicodeSegmentation::graphemes(true)` — the `true` enables extended grapheme cluster mode, correctly handling emoji sequences (🇺🇸 counts as 1, not 7).
 
-## Regex Backend Classifier
+## Measurement (`measure.rs`)
 
-`regex_engine.rs` determines which regex backend compiles a given pattern. It exports:
+Text metrics: character counts, word counts, line counts, frequency analysis, and category breakdowns.
+
+### Functions
+
+| Function | Description |
+|----------|-------------|
+| `text_length(text)` | Character (codepoint) count |
+| `word_count(text)` | Whitespace-delimited word count |
+| `line_count(text)` | Line count (normalizes `\r\n` and `\r` to `\n` first) |
+| `char_frequency(text)` | `HashMap<char, usize>` — count of each character |
+| `word_metrics(text)` | Returns `WordMetrics { words, unique_words_casefolded }` — filters to alphabetic-only words, uses caseless folding for unique count |
+| `char_category_metrics(text)` | Returns `CharCategoryMetrics` with counts for letters, digits, punctuation, symbols, spaces, control chars, combining marks |
+
+### `WordMetrics` and `CharCategoryMetrics`
+
+```rust
+pub struct WordMetrics {
+    pub words: usize,
+    pub unique_words_casefolded: usize, // case-insensitive unique count
+}
+
+pub struct CharCategoryMetrics {
+    pub letters: usize,
+    pub digits: usize,
+    pub punctuation: usize,
+    pub symbols: usize,
+    pub spaces: usize,
+    pub control_chars: usize,
+    pub combining_marks: usize,
+}
+```
+
+Category detection uses `unicode_general_category::get_general_category()` to classify each character by its Unicode general category (L, N, P, S, Z, C, M).
+
+## Diff & Similarity (`diff.rs`)
+
+String comparison, edit distance, and semantic diff operations.
+
+### Functions
+
+| Function | Description |
+|----------|-------------|
+| `levenshtein_distance(a, b)` | Levenshtein edit distance with 10,000 char limit |
+| `levenshtein_distance_with_limit(a, b, max_len)` | Edit distance with configurable input limit |
+| `diff_spans(a, b, max_diffs)` | LCS-based semantic diff returning `Vec<DiffSpan>` — identifies replace/insert/delete regions |
+| `first_diff(a, b)` | Find the first differing codepoint between two strings |
+| `common_prefix_suffix(a, b)` | Length of common prefix and suffix |
+
+### `DiffSpan`
+
+```rust
+pub struct DiffSpan {
+    pub a_start: usize,  // codepoint index in a
+    pub a_end: usize,
+    pub b_start: usize,  // codepoint index in b
+    pub b_end: usize,
+    pub kind: String,    // "replace", "insert", or "delete"
+    pub a_text: String,
+    pub b_text: String,
+}
+```
+
+`diff_spans` uses LCS dynamic programming with backtracking (mirrors Python's `difflib.SequenceMatcher`) to find optimal matching blocks and produce edit opcodes. Operates on codepoints, not bytes.
+
+### `FirstDiff`
+
+```rust
+pub struct FirstDiff {
+    pub a_index: usize,
+    pub b_index: usize,
+    pub a_char: String,
+    pub b_char: String,
+    pub a_codepoint: String,  // "U+XXXX"
+    pub b_codepoint: String,
+}
+```
+
+## Validation (`validate.rs`)
+
+Syntax validation, bracket balancing, regex testing, JSON shape analysis, and JSON comparison. The largest module at 1,500+ lines.
+
+### Functions
+
+| Function | Description |
+|----------|-------------|
+| `validate_json(text)` | Parse JSON, return type/top-level keys/error position. Maps serde_json errors to Python `json.JSONDecodeError` messages for parity. |
+| `validate_brackets(text)` | Check bracket balance for `()`, `[]`, `{}`, `<>`. Returns unmatched openers/closers with line/column. |
+| `validate_brackets_with_pairs(text, pairs)` | Custom bracket pair validation |
+| `validate_regex(pattern, text)` | Compile regex and test match (fancy-regex backend) |
+| `regex_test(pattern, samples, flags, ...)` | Test pattern against multiple samples, returns matches/fullmatch/span/groups/groupdict per sample. Supports `IGNORECASE`, `MULTILINE`, `DOTALL`, `VERBOSE` flags. |
+| `regex_finditer(pattern, text, flags, max_matches, ...)` | Find all non-overlapping matches with line/column info. Routes through regex engine classifier for backend selection. |
+| `json_shape(text, max_depth, max_keys, max_array_items)` | Analyze JSON structure depth, key names, array item types. Returns `JsonShapeResult` with recursive shape and summary string. |
+| `json_canonicalize(text)` | Produce deterministic JSON (sorted keys, normalized whitespace) |
+| `json_compare(a, b)` | Structural JSON comparison |
+| `json_extract(text, path)` | Extract value at JSONPath |
+| `list_dedupe(items)` | Deduplicate list items |
+| `list_sort(items, ...)` | Sort list items |
+| `validate_schema_light(text, schema)` | Lightweight schema validation |
+
+### Pattern Complexity Limits
+
+The `check_pattern_complexity()` internal function enforces:
+- `MAX_PATTERN_LENGTH = 1000` characters
+- `MAX_PATTERN_NESTING = 5` levels of group/char-class nesting
+- Rejects adjacent quantifiers (`++`, `*+`) and nested quantifiers (`(a+)+`)
+- Checks for unmatched closing parentheses
+
+### `RegexTestResult`
+
+```rust
+pub struct RegexTestResult {
+    pub valid_pattern: bool,
+    pub results: Vec<RegexMatch>,
+    pub error: Option<String>,
+    pub flags_used: Option<Value>,
+    pub engine_used: Option<String>,    // "rust-regex" or "fancy-regex"
+    pub dialect: Option<String>,        // "eggsact-regex"
+    pub unsupported_features: Option<Vec<String>>,
+}
+```
+
+### `JsonShapeResult`
+
+```rust
+pub struct JsonShapeResult {
+    pub valid: bool,
+    pub shape: Option<JsonShapeKey>,
+    pub truncated: bool,
+    pub summary: String,  // e.g., "object with 3 keys ({name: string, age: integer, ...})"
+}
+
+pub struct JsonShapeKey {
+    pub key_type: String,                           // "object", "array", "string", "integer", etc.
+    pub keys: Option<HashMap<String, JsonShapeKey>>, // nested shape for objects
+    pub key_count: Option<usize>,
+    pub item_types: Option<Vec<String>>,             // element types for arrays
+    pub item_count: Option<usize>,
+}
+```
+
+### JSON Error Parity
+
+`validate_json` maps serde_json error messages to Python's `json.JSONDecodeError.msg` format. For example:
+- `"key must be a string"` → `"Expecting property name enclosed in double quotes"`
+- `"trailing comma"` → `"Illegal trailing comma before end of list"` (or `"...end of object"`)
+
+The mapping uses `context_at_position()` to determine array vs object context for trailing commas.
+
+## Transforms (`transform.rs`)
+
+Text transformation, escaping/unescaping, hashing, and fingerprinting.
+
+### `text_transform(text, operations)`
+
+Apply a chain of named operations. Operations are case-insensitive and applied sequentially.
+
+| Operation | Description |
+|-----------|-------------|
+| `normalize_nfc` | Unicode NFC normalization |
+| `normalize_nfd` | Unicode NFD normalization |
+| `normalize_nfkc` | Unicode NFKC normalization |
+| `normalize_nfkd` | Unicode NFKD normalization |
+| `casefold` | Caseless folding (via `caseless::default_case_fold_str`) |
+| `trim` | Strip leading/trailing whitespace |
+| `trim_trailing_whitespace` | Strip trailing whitespace per line |
+| `trim_lines` | Strip leading/trailing whitespace per line |
+| `normalize_newlines_lf` / `normalize_newline` | Convert `\r\n` and `\r` to `\n` |
+| `ensure_final_newline` | Add trailing `\n` if missing |
+| `strip_final_newline` | Remove trailing `\n` if present |
+| `remove_zero_width` | Remove ZWSP, ZWNJ, ZWJ, WORD JOINER |
+| `remove_bidi_controls` / `remove_bidi` | Remove LRE, RLE, PDF, LRO, RLO, LRI, RLI, FSI, PDI |
+| `visible_repr` | Replace whitespace/control chars with visible Unicode symbols (␠, ␉, ␊, ␍) and bracketed labels (`[ZWSP]`) |
+| `title_case` | Title-case each whitespace-delimited word |
+| `upper` | Uppercase |
+| `lower` | Lowercase |
+
+Returns `TextTransformResult { changed, text, operations_applied, removed, warnings, summary }`.
+
+### `escape_text(text, mode)`
+
+Escape text for embedding in various target formats.
+
+| Mode | Description |
+|------|-------------|
+| `json_string` | JSON string literal (quoted, with escapes) |
+| `python_string` | Python single-quoted string with `\\`, `\'`, `\n`, `\r`, `\t`, `\xHH` |
+| `rust_string` | Rust double-quoted string with `\\`, `\"`, `\n`, `\r`, `\t` |
+| `posix_shell_single` | POSIX shell single-quoted (`'...'` with `'\''` for embedded quotes) |
+| `regex_literal` | Escape regex metacharacters (`.`, `+`, `*`, `?`, `(`, `)`, `[`, `]`, `{`, `}`, `^`, `$`, `|`, `\\`) |
+| `markdown_inline_code` | Inline code (uses `` `` `` fences if text contains backticks) |
+| `markdown_code_block` | Fenced code block (` ``` `) |
+| `html_text` | HTML entity escaping (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#39;`) |
+| `url_component` | URL percent-encoding (via `urlencoding::encode`) |
+
+### `unescape_text(text, mode)`
+
+Reverse escaping for: `json_string`, `python_string`, `unicode_escape` (`\uXXXX` and `\UXXXXXXXX`), `url_component`.
+
+### `text_hash(text, algorithms, encoding)`
+
+Compute hashes over encoded text bytes.
+
+**Encodings**: `utf-8` (default), `utf-16` (LE), `utf-16be`, `utf-16le`, `ascii` (non-ASCII → `?`), `latin-1`/`iso-8859-1`.
+
+**Algorithms**: `sha256`, `sha1`, `md5` (with non-crypto warning), `crc32`.
+
+Returns `TextHashResult { encoding, bytes, codepoints, hashes: HashMap<String, String>, warnings, summary }`.
+
+### `text_fingerprint(text, unicode_norm, newline_style, trim_final_newline, casefold)`
+
+Compute SHA-256 fingerprint with configurable canonicalization:
+- `unicode_norm`: `"raw"`, `"NFC"`, `"NFD"`, `"NFKC"`, `"NFKD"`
+- `newline_style`: `"LF"` (normalize all to LF)
+- `trim_final_newline`: strip trailing `\n` before hashing
+- `casefold`: caseless fold before hashing
+
+Also detects and reports the input's newline style (LF, CRLF, CR, mixed, none).
+
+## Regex Engine (`regex_engine.rs`)
+
+Pattern classification for backend routing. Determines whether a regex pattern should be compiled by `regex` (fast, linear-time) or `fancy-regex` (supports lookaround/backreferences).
 
 ### `classify_pattern(pattern) -> RegexClassification`
 
-Scans a pattern string and returns a classification containing:
+Scans pattern text and returns:
 
-- **`preferred_engine`**: `RegexEngineUsed` — either `RustRegex` or `FancyRegex`. Driven by whether the pattern uses lookaround or backreferences (which require `fancy-regex`) or PCRE-only constructs (which are unsupported).
-- **`features`**: `Vec<RegexFeature>` — detected features (`LookAhead`, `LookBehind`, `Backreference`, `NamedCapture`, `InlineFlags`, `UnsupportedPcreConstruct`).
-- **`unsupported_features`**: `Vec<String>` — human-readable descriptions of PCRE-only constructs (branch reset, recursion/subroutines, `\K`, control verbs, atomic groups).
+```rust
+pub struct RegexClassification {
+    pub preferred_engine: RegexEngineUsed,
+    pub features: Vec<RegexFeature>,
+    pub unsupported_features: Vec<String>,
+}
+```
 
-### `RegexEngineUsed` enum
+### `RegexEngineUsed`
 
-| Variant | Backend | When selected |
+| Variant | Backend | Selected when |
 |---------|---------|---------------|
 | `RustRegex` | `regex` crate | No lookaround, no backreferences, no PCRE-only constructs |
 | `FancyRegex` | `fancy-regex` crate | Pattern uses lookaround or backreferences |
 
-### `RegexFeature` enum
+### `RegexFeature`
 
-| Variant | Meaning | Forces backend |
-|---------|---------|----------------|
-| `LookAhead` | `(?=...)` or `(?!...)` | FancyRegex |
-| `LookBehind` | `(?<=...)` or `(?<!...)` | FancyRegex |
-| `Backreference` | `\1`–`\9` or `(?P=name)` | FancyRegex |
-| `NamedCapture` | `(?P<name>...)` | Neither (both support) |
-| `InlineFlags` | `(?i)`, `(?m)`, etc. | Neither (both support) |
-| `UnsupportedPcreConstruct(String)` | branch reset, recursion, `\K`, control verbs, atomic groups | — (unsupported by either backend) |
+| Variant | Triggers backend | Example |
+|---------|-----------------|---------|
+| `LookAhead` | FancyRegex | `(?=px)`, `(?!px)` |
+| `LookBehind` | FancyRegex | `(?<=\$)`, `(?<!\$)` |
+| `Backreference` | FancyRegex | `\1`, `(?P=name)` |
+| `NamedCapture` | Neither | `(?P<year>\d{4})` |
+| `InlineFlags` | Neither | `(?i)hello` |
+| `UnsupportedPcreConstruct(String)` | — | branch reset, recursion, `\K`, control verbs, atomic groups |
 
-The classifier is a conservative scanner that handles escapes and character classes correctly to avoid false positives on lookaround-like text inside literals or character classes. It is used by `validate_regex`, `regex_safety_check`, and `regex_finditer` to route patterns and report `engine_used`, `dialect`, and `unsupported_features` in their output.
+### Classifier behavior
+
+The classifier is a **conservative scanner** that:
+- Skips escaped characters (next char is literal)
+- Tracks character class `[...]` boundaries (contents are literal)
+- Detects group-opening constructs `(?...)` including lookaround, named groups, inline flags
+- Detects PCRE control verbs `(*SKIP)`, `(*PRUNE)`, `(*ACCEPT)`, etc.
+- Detects `\K` (reset match start), `(?|...)` (branch reset), `(?>...)` (atomic groups), `(?R)`/`(?1)`/`(?&name)` (recursion)
+- Does NOT false-positive on lookaround-like text inside character classes or after escapes
+
+### Unsupported PCRE constructs
+
+These produce `unsupported_features` entries and cause tool calls to fail with `REGEX_UNSUPPORTED_FEATURE`:
+
+| Construct | Example |
+|-----------|---------|
+| Branch reset | `(?|a|b)` |
+| Recursion/subroutine | `(?R)`, `(?1)`, `(?&name)` |
+| `\K` (reset match start) | `\K\d+` |
+| Control verbs | `(*SKIP)`, `(*PRUNE)`, `(*ACCEPT)`, `(*FAIL)`, `(*THEN)`, `(*COMMIT)`, `(*RESET)`, `(*ATOMIC)` |
+| Atomic groups | `(?>abc)` |
+
+## Regex Safety (`regex_safety.rs`)
+
+Analyze regex patterns for catastrophic backtracking risk and other safety concerns.
+
+### `regex_safety_check(pattern) -> RegexSafetyResult`
+
+```rust
+pub struct RegexSafetyResult {
+    pub valid_pattern: bool,
+    pub risk: String,               // "low", "medium", "high"
+    pub findings: Vec<RegexSafetyFinding>,
+}
+
+pub struct RegexSafetyFinding {
+    pub kind: String,               // "complexity", "nested_quantifier", "backreference", "ambiguous_dot_star"
+    pub span: Vec<i32>,             // [start, end] codepoint indices
+    pub message: String,
+}
+```
+
+### Risk levels
+
+- **`high`**: Complexity check failed (pattern too long, too deeply nested, adjacent/nested quantifiers detected)
+- **`medium`**: Backreferences or ambiguous `.*` patterns found
+- **`low`**: No safety concerns
+
+### Finding kinds
+
+| Kind | Description |
+|------|-------------|
+| `complexity` | Pattern exceeds `MAX_PATTERN_LENGTH` or `MAX_PATTERN_NESTING`, or has adjacent/nested quantifiers |
+| `nested_quantifier` | Quantifier after group with internal quantifier (e.g., `(a+)+`) |
+| `backreference` | `\1`–`\9` or `\g<name>` — can cause exponential matching |
+| `ambiguous_dot_star` | `.*` pattern — may match more than intended |
+
+## Replace (`replace.rs`)
+
+Pre-flight replacement analysis — checks whether a proposed text replacement is safe before applying it.
+
+### `text_replace_check(text, old, new, mode, expected_count, allow_multiple, newline_policy, return_preview, max_preview_chars)`
+
+Returns `TextReplaceCheckResult`:
+
+```rust
+pub struct TextReplaceCheckResult {
+    pub match_count: usize,
+    pub unique_match: bool,
+    pub expected_count_met: bool,
+    pub would_change: bool,
+    pub positions: Vec<PositionInfo>,
+    pub changed_text_fingerprint: String,
+    pub newline_style_before: String,
+    pub newline_style_after: String,
+    pub preview_before: String,
+    pub preview_after: String,
+    pub findings: Vec<Finding>,
+}
+```
+
+### Match modes
+
+| Mode | Behavior |
+|------|----------|
+| `exact` | Literal string matching |
+| `nfc` | Match after NFC normalization |
+| `nfkc` | Match after NFKC normalization |
+| `casefold` | Case-insensitive matching |
+| `whitespace_collapse` | Normalize whitespace sequences to single space |
+
+### Newline policies
+
+| Policy | Behavior |
+|--------|----------|
+| `preserve` | No newline modification |
+| `normalize_lf` | Convert all newlines to LF |
+| `normalize_crlf` | Convert all newlines to CRLF |
+
+### Findings
+
+| Kind | Meaning |
+|------|---------|
+| `no_match` | Pattern not found in text |
+| `count_mismatch` | Actual count differs from `expected_count` |
+| `ambiguous_replacement` | Multiple matches but `allow_multiple` is false |
+| `preview_truncated` | Preview was truncated at `max_preview_chars` |
+
+## Shell (`shell.rs`)
+
+POSIX shell command tokenization, quoting, and feature detection.
+
+### `shell_split(command, shell, detect_risky_features) -> ShellSplitResult`
+
+Tokenizes a shell command into argv components. Only `"posix"` shell is supported.
+
+Handles:
+- Single-quoted strings (no escapes inside)
+- Double-quoted strings (escapes `\"`, `\\`, `$`, `` ` ``, `\n`)
+- Backslash escapes outside quotes
+- `#` comments (end of line)
+- Unbalanced quote detection
+
+### `ShellFeatures`
+
+Detected when `detect_risky_features` is true:
+
+| Feature | Detection method |
+|---------|-----------------|
+| `has_pipe` | `\|` in joined argv |
+| `has_redirection` | `<` or `>` in joined argv |
+| `has_command_substitution` | `$(` or `` ` `` in raw command |
+| `has_variable_expansion` | `$VAR` or `${VAR}` (excluding single-quoted regions) |
+| `has_glob_pattern` | `*`, `?`, `[` in any token |
+| `has_control_operator` | `&&`, `\|\|`, `;`, or standalone `&` |
+| `has_background` | Standalone `&` at end of pipeline (not `&&`) |
+| `has_unbalanced_quotes` | Unclosed quote detected |
+
+### `shell_quote_join(argv, shell) -> ShellQuoteJoinResult`
+
+Joins argv tokens into a safely quoted shell command. Verifies round-trip consistency by re-splitting the result and comparing.
+
+### `argv_compare(left_command, right_command, left_argv, right_argv, shell) -> ArgvCompareResult`
+
+Compares two command representations (either raw strings or pre-split argvs). Reports `argv_equal`, `first_difference` index, and diagnostic findings.
+
+## Unicode (`unicode_policy.rs`, `unicode_tools.rs`, `confusables.rs`)
+
+### Unicode Policy Check (`unicode_policy.rs`)
+
+`unicode_policy_check(text, policy, normalization)` validates text against named security/integrity policies.
+
+#### Policies
+
+| Policy | Default norm | Checks | Severity |
+|--------|-------------|--------|----------|
+| `identifier_strict` | NFC | mixed scripts, bidi controls, zero-width chars, confusables, normalization instability, invisible chars | error |
+| `filename_safe` | NFC | control chars, path separators (`\/:*?"<>\|`), bidi controls, zero-width chars, Windows reserved names | error |
+| `source_code` | NFC | bidi controls (error), zero-width chars (error), confusables (warning) | mixed |
+| `human_text` | NFC | bidi controls (warning), zero-width chars (warning), mixed scripts (warning), confusables (warning) | all warnings |
+| `json_key` | NFC | bidi controls (error), zero-width chars (error), confusables (warning), control characters (error) | mixed |
+| `domain_like` | NFKC | mixed scripts (error), confusables (error), bidi controls (error), zero-width chars (error) | error |
+
+### Canonicalize Text (`unicode_policy.rs`)
+
+`canonicalize_text(text, profile, return_mapping)` normalizes text for comparison.
+
+#### Profiles
+
+| Profile | Operations |
+|---------|------------|
+| `source_file_identity` | NFC → LF newlines → strip trailing whitespace → ensure final newline → collapse multiple trailing newlines |
+| `identifier_compare` | NFC → casefold |
+| `human_label_compare` | NFC → casefold → trim → collapse whitespace to single space |
+| `json_key_compare` | NFC → casefold |
+| `path_segment_compare` | NFC → lowercase → LF newlines |
+
+Returns `CanonicalizeResultWithMapping` with before/after SHA-256 fingerprints and optional character-level mapping of changes.
+
+### Unicode Tools (`unicode_tools.rs`)
+
+Utility functions for character analysis:
+
+| Function | Description |
+|----------|-------------|
+| `unicode_casefold(s)` | Caseless folding via `caseless::default_case_fold_str` |
+| `is_invisible_char(c)` | Check if char is in the invisible character set (ZWSP, ZWNJ, ZWJ, ZWNJ, BOM, NBSP, variation selectors, bidi isolates, etc.) |
+| `is_known_invisible_char(c)` | Subset of invisible chars with known display names |
+| `is_combining_mark(c)` | Check if char has Unicode general category starting with 'M' |
+| `invisible_display_name(c)` | Short display name (ZWSP, ZWNJ, ZWJ, LRM, RLM, BOM, NBSP, etc.) |
+| `find_invisibles(text)` | Find all invisible characters with position, codepoint, name, category, and display name |
+| `build_safe_repr(text)` | Replace invisible/control chars with visible Unicode symbols and bracketed labels |
+| `script_name(c)` | Map character to script name (Latin, Cyrillic, Greek, Hebrew, Arabic, Devanagari, Thai, Hiragana, Katakana, Han, Hangul, etc.) |
+| `detect_mixed_scripts(text)` | Detect if text contains multiple scripts, return script list and per-character positions |
+| `unicode_scripts(s)` | Return per-character script names |
+| `confusables_count(s)` | Count characters that have confusable mappings |
+| `reverse_confusables(ch)` | Find source characters that confusable-map to the given target character |
+
+### Confusables (`confusables.rs`)
+
+Static confusables map loaded from generated data at startup via `LazyLock`:
+
+```rust
+pub static CONFUSABLES: LazyLock<HashMap<&'static str, &'static str>>
+```
+
+Source data: `src/text/confusables_generated.rs` (auto-generated from unicode.org confusables.txt by `scripts/generate_confusables.py`). Contains 1,400+ entries mapping Unicode codepoints to their confusable equivalents.
+
+| Function | Description |
+|----------|-------------|
+| `has_confusables(text)` | Returns `true` if any character has a confusable mapping |
+| `find_confusables(text)` | Returns `Vec<(char, &'static str)>` — each confusable char and its target codepoint(s) |
+
+## Prompt Inspection (`inspect_prompt.rs`)
+
+Analyze text for prompt injection red flags and security concerns.
+
+### `prompt_input_inspect(text, checks, phrase_patterns) -> PromptInspectResult`
+
+```rust
+pub struct PromptInspectResult {
+    pub findings: Vec<Value>,           // JSON objects with code, severity, message, span, details
+    pub summary: String,                // "Risk score: N/100. X error(s), Y warning(s), Z info(s)."
+    pub risk_score: i64,                // weighted score (error=5, warn=3, info=1)
+    pub recommended_next_tool: Option<String>,
+    pub findings_truncated: bool,       // true if > 1000 findings
+    pub text_length: usize,
+    pub checks_run: Vec<String>,
+}
+```
+
+### Detection categories
+
+| Check name | What it detects | Severity |
+|------------|----------------|----------|
+| `unicode_hidden` | C0/C1 controls, ZWSP, ZWNJ, ZWJ, WORD JOINER, BOM, variation selectors, line/paragraph separators | error (hidden), warn (control) |
+| `bidi` | LRE, RLE, PDF, LRO, RLO, LRI, RLI, FSI, PDI, LRM, RLM | warn |
+| `html_comments` | `<!-- ... -->` blocks | warn (non-empty), info (empty) |
+| `markdown_links` | `[text](target)` — classifies as external/anchor/relative, flags label≠target mismatches | warn (external/anchor with mismatch) |
+| `ansi_escapes` | ANSI escape sequences (`ESC[...letter`) | warn |
+| `terminal_controls` | C0 controls, DEL, escape sequences for terminal modes | warn |
+| `base64_like_blobs` | Base64-like strings ≥40 chars with entropy >4.2 | warn |
+| `instruction_phrases` | 20+ prompt-injection phrases (e.g., "ignore previous", "jailbreak", "do anything now") | warn |
+| `long_minified_lines` | Lines >1000 chars | info |
+
+### Deduplication and truncation
+
+Findings are deduplicated by `(position, codepoint)`. If >1000 findings, sorted by severity and truncated, with `findings_truncated: true`.
+
+### `recommended_next_tool`
+
+Based on finding codes:
+- `HIDDEN_CHAR` / `BIDI_CONTROL` → `"text_inspect"`
+- `ANSI_ESCAPE` / `TERMINAL_CONTROL` → `"text_transform"`
+- `MARKDOWN_LINK` → `"markdown_structure"`
+
+## Path (`path.rs`)
+
+Path analysis, comparison, and scope checking for both POSIX and Windows paths.
+
+### `path_analyze(path, style) -> PathAnalyzeResult`
+
+```rust
+pub struct PathAnalyzeResult {
+    pub input: String,
+    pub style: String,              // "posix", "windows", or "auto" (detected)
+    pub absolute: bool,
+    pub has_traversal: bool,        // contains ".." segments
+    pub components: Vec<String>,
+    pub parent: Option<String>,
+    pub name: Option<String>,       // last component
+    pub stem: Option<String>,       // name without first suffix
+    pub suffix: Option<String>,     // last suffix (e.g., ".rs")
+    pub suffixes: Vec<String>,      // all suffixes (e.g., [".tar", ".gz"])
+    pub hidden: bool,               // name starts with "."
+    pub normalized_lexical: String,
+    pub warnings: Vec<String>,      // traversal, confusables, redundant "."
+    pub summary: String,            // "POSIX absolute, hidden, 3 components, suffix '.rs'"
+}
+```
+
+Auto-detection checks for drive letters (`C:`), UNC paths (`\\`), or backslash separators.
+
+### `path_compare(left, right, platform, case_sensitive, normalize_separators, collapse_dot_segments)`
+
+Normalizes both paths and compares. Reports differences.
+
+### `path_scope_check(root, target, platform, case_sensitive)`
+
+Determines if `target` is within `root` directory. Resolves relative paths against root. Reports `inside_root`, `escapes_via_dotdot`, `relative_path`, and `absolute_target`.
+
+## Position (`position.rs`)
+
+Convert between byte offset, codepoint index, line+column, UTF-16 offset, and grapheme index.
+
+### `text_position(text, byte_offset, codepoint_index, line, column, utf16_offset, line_base, column_base)`
+
+Exactly one locator mode must be provided. Returns `TextPositionResult` with all position forms:
+
+```rust
+pub struct TextPositionResult {
+    pub valid: bool,
+    pub byte_offset: Option<usize>,
+    pub codepoint_index: Option<usize>,
+    pub utf16_offset: Option<usize>,
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+    pub line_base: usize,         // 0 or 1
+    pub column_base: usize,       // 0 or 1
+    pub char: Option<String>,
+    pub codepoint: Option<String>, // "U+XXXX"
+    pub name: Option<String>,     // Unicode name
+    pub line_text_preview: Option<String>,
+    pub error: Option<String>,
+    pub summary: String,
+}
+```
+
+Validates UTF-8 byte boundaries, detects multibyte character splits, and converts between UTF-16 surrogate pairs.
+
+### `text_window(text, position, context_lines, include_visible_repr)`
+
+Extract a context window around a position. Supports `byte_offset`, `codepoint_index`, `grapheme_index`, and `line_column` position kinds.
+
+Returns `TextWindowResult` with:
+- `position` (byte, codepoint, grapheme, line, column)
+- `line_text` and `line_visible_repr` (with visible whitespace)
+- `before` / `after` context lines
+- `newline_style` (LF, CRLF, CR, mixed, none)
+- `at_codepoint` info (char, codepoint, name, category)
+- `warnings` (e.g., position inside multi-byte sequence)
+
+## Markdown (`markdown.rs`)
+
+Markdown structure analysis and code fence extraction.
+
+### `markdown_structure(text, include_sections, include_links, include_code_fences, include_html_comments)`
+
+Returns `MarkdownStructureResult`:
+- **headings**: level, text, line number, slug (for anchor links)
+- **code_fences**: language, start/end lines, closed/unclosed
+- **links**: visible text, target, mismatch flags (`visible_is_url`, `visible_is_domain`)
+- **html_comments**: text, line, start/end columns
+- **frontmatter**: present, format (yaml/toml), line range
+- **tables_detected**: boolean (checks for `|---|` separator rows)
+
+Detects YAML (`---`) and TOML (`+++`) frontmatter. Tracks code fence nesting (backtick vs tilde, fence length matching).
+
+### `code_fence_extract(text, language, include_content)`
+
+Extract code fence blocks with optional language filtering and content inclusion. Each block gets a SHA-256 fingerprint. Reports unclosed fences separately.
+
+## Identifier (`identifier.rs`)
+
+Identifier analysis, validation, and collision detection across programming languages.
+
+### `identifier_analyze(text, languages) -> IdentifierAnalyzeResult`
+
+Classifies identifier naming convention and validates against language rules.
+
+**Naming styles detected**: `snake_case`, `camelCase`, `PascalCase`, `kebab-case`, `SCREAMING_SNAKE_CASE`, `mixed`, `invalid`
+
+**Language validation**:
+- **Python**: Unicode XID_Start/XID_Continue (`fancy-regex`), keyword detection
+- **Rust**: ASCII-only `[a-zA-Z_][a-zA-Z0-9_]*`, keyword detection
+- **JavaScript**: `[a-zA-Z_$][a-zA-Z0-9_$]*`, keyword detection
+- **env**: `[A-Z_][A-Z0-9_]*`
+
+Returns style suggestions in all formats (snake_case, kebab-case, PascalCase, camelCase, SCREAMING_SNAKE_CASE).
+
+### `identifier_inspect(identifiers, language, normalization, casefold, check_confusables)`
+
+Inspects a list of identifiers for:
+- Per-identifier: normalization, scripts, invisible characters, confusables, validity
+- **Collisions**: confusable pairs (shared confusable targets or substring containment), casefold collisions, normalization collisions
+
+### `identifier_table_inspect(entries, language, checks)`
+
+Batch analysis of identifier tables (e.g., all names in a codebase). Checks:
+- `casefold`: case-insensitive collisions
+- `normalization`: NFC collisions
+- `confusable`: confusable characters and Levenshtein distance ≤1 near-collisions
+- `style`: mixed naming conventions for same logical name
+- `reserved`: reserved keyword hits
+- `mixed_style_groups`: groups with multiple naming styles
+
+### Keyword lists
+
+Full keyword lists for Python (35), Rust (38), JavaScript (36), and TypeScript (72, includes JS + TS-specific).
+
+## Config (`config.rs`)
+
+Environment variable and INI file validation.
+
+### `dotenv_validate(text, allow_export, key_pattern, duplicate_policy)`
+
+Parses `.env` files. Reports:
+- **entries**: key, value, quote_style, line number
+- **duplicates**: first/second line positions
+- **invalid_lines**: reason (missing `=`, export keyword, key pattern mismatch)
+- **requires_quoting**: unquoted values with spaces
+- **contains_expansion_syntax**: keys with `$VAR` or `${VAR}` references
+
+`allow_export`: whether `export KEY=VALUE` syntax is accepted. `duplicate_policy`: `"error"`, `"warn"`, or `"silent"`.
+
+### `ini_validate(text, duplicate_policy)`
+
+Parses INI files with `[section]` headers. Reports sections, keys by section, duplicates, and invalid lines. Supports `=` and `:` as key-value separators.
+
+## TOML (`toml.rs`)
+
+TOML validation and shape analysis using `toml_edit`.
+
+### `validate_toml(text) -> ValidateTomlResult`
+
+Returns `valid`, `error` (Python-compatible format: `"message (at line N, column M)"`), `top_level_keys`, `tables`.
+
+### `toml_shape(text, max_tables) -> TomlShapeResult`
+
+Returns top-level keys, full table list (with truncation at `max_tables`), and summary string.
+
+## Patch (`patch.rs`)
+
+Unified diff parsing, application checking, and summary generation.
+
+### `patch_apply_check(original_text, patch_text, strict, return_result_fingerprint, return_result_text)`
+
+Applies hunks sequentially, tracking which succeed/fail. In `strict` mode, verifies exact context match before applying each hunk.
+
+Returns `PatchApplyCheckResult`:
+- `applies`: all hunks applied successfully
+- `hunks_total`, `hunks_applied`, `hunks_failed`
+- `failed_hunks`: expected vs actual context, failure reason
+- `affected_line_ranges`: line ranges modified
+- `result_text` and `result_fingerprint` (optional)
+- Newline style before/after
+
+### `patch_summary(patch_text)`
+
+Parses patch and reports: `files_changed`, `hunks_total`, `additions`, `deletions`, `renames_detected`, `binary_patch_detected`, `line_ranges_by_file`.
+
+### Unified diff parsing
+
+`parse_unified_diff(patch_text)` handles:
+- `--- a/file` / `+++ b/file` headers (with `/dev/null` for new/deleted files)
+- `@@ -old_start,old_count +new_start,new_count @@` hunk headers
+- Context lines (space prefix), deletions (`-`), additions (`+`)
+
+## Line Range (`line_range.rs`)
+
+Extract and compare text by line ranges.
+
+### `line_range_extract(text, start_line, end_line, line_base, include_line_numbers, include_fingerprint)`
+
+Extracts a slice of lines. Supports `line_base` 0 or 1. Returns extracted text, per-line data, byte/char offsets, newline style, and SHA-256 fingerprint.
+
+### `line_range_compare(left_text, right_text, start_line, end_line, line_base, comparison_mode)`
+
+Compares line ranges between two texts.
+
+| Mode | Behavior |
+|------|----------|
+| `exact` | Byte-identical comparison |
+| `ignore_trailing_whitespace` | Trim trailing whitespace per line |
+| `normalize_newlines` | Normalize all newlines to LF |
+
+Returns `equal`, fingerprints, `diff_summary`, and `first_difference` (line offset, number, left/right content).
+
+## Version (`version.rs`)
+
+Semantic version comparison and constraint checking.
+
+### `version_compare(a, b, scheme) -> VersionCompareResult`
+
+| Scheme | Behavior |
+|--------|----------|
+| `semver` | Strict `MAJOR.MINOR.PATCH` with pre-release ordering |
+| `loose` | Numeric segment comparison (extracts all digit sequences) |
+| `pep440` | Not implemented (returns error) |
+
+Pre-release ordering: `dev` < `alpha`/`a` < `beta`/`b` < `rc`/`c` < release. Numeric identifiers sort before alpha. Unknown labels sort lexicographically.
+
+### `check_version_constraint(version, constraint, scheme)`
+
+Evaluates version against constraints:
+
+| Constraint type | Example | Behavior |
+|----------------|---------|----------|
+| Caret | `^1.2.3` | `>=1.2.3, <2.0.0` (or `<0.minor+1` if major=0, or `<0.0.patch+1` if major=minor=0) |
+| Tilde | `~1.2.3` | `>=1.2.3, <1.3.0` (allows patch-level changes) |
+| Wildcard | `1.2.*` | `>=1.2.0, <1.3.0` |
+| Range | `>=1.0, <2.0` | Comma-separated comparison expressions |
+| Comparison | `>=1.0` | Single comparison operator |
+
+Supports `semver` and `cargo` schemes. Parses both strict semver (`1.2.3`) and lax (`1.2`, `1`).
+
+## Cargo (`cargo.rs`)
+
+Cargo.toml inspection for package metadata, workspace structure, and dependency analysis.
+
+### `cargo_toml_inspect(text, check_workspace, check_dependencies) -> CargoInspectResult`
+
+Parses and analyzes:
+- **package**: name, version, edition, license, repository, readme (validates required fields, checks edition values: 2015/2018/2021/2024)
+- **workspace**: members, exclude
+- **dependencies**: all three sections (dependencies, dev-dependencies, build-dependencies) plus target-specific dependencies
+- **path_dependencies**: collected from all dep sections
+- **suspicious names**: starts with digit, contains non-alphanumeric chars, double underscores/dashes, dots, uppercase
+- **confusable names**: NFKC-normalized + casefolded + separator-collapsed deduplication (e.g., `foo-bar` and `foo_bar` are confusable)
+
+## Glob (`glob.rs`)
+
+Glob pattern matching with platform support.
+
+### `glob_match(pattern, path, platform, case_sensitive)`
+
+Supports:
+- `*` — match any characters within a path segment (not `/`)
+- `?` — match single character (not `/`)
+- `[abc]` / `[!abc]` — character classes
+- `**` — match zero or more path segments (recursive)
+
+Handles POSIX and Windows path separators. Converts glob patterns to regex for segment matching. The `**` matcher uses a recursive algorithm that tries all possible segment alignments.
+
+## Synthesis (`synthesis.rs`)
+
+Documentation-only module mapping Python `synthesis` functions to their Rust sources. No executable code — serves as a cross-reference table.
+
+| Python function | Rust source |
+|---|---|
+| `measure_text` | `measure` module |
+| `text_equal` | inline in `mcp::tools` |
+| `explain_diff` | `diff` module |
+| `inspect_text` | `primitives` + `confusables` |
+| `count_chars` | `measure::char_frequency` |
+| `text_replace_check` | `replace` module |
+| `text_window` | `position` module |
+| `line_range_extract` | `line_range` module |
+| `line_range_compare` | `line_range` module |
+| `list_compare` | inline in `mcp::tools` |
+
+## Key Functions Reference by Category
+
+### Measurement
+- `text_length(text)` → character count
+- `word_count(text)` → whitespace-delimited word count
+- `line_count(text)` → newline-separated line count
+- `char_frequency(text)` → `HashMap<char, usize>`
+- `word_metrics(text)` → `WordMetrics { words, unique_words_casefolded }`
+- `char_category_metrics(text)` → `CharCategoryMetrics`
+
+### Diff & Similarity
+- `levenshtein_distance(a, b)` → edit distance
+- `diff_spans(a, b, max_diffs)` → `Vec<DiffSpan>`
+- `first_diff(a, b)` → `Option<FirstDiff>`
+- `common_prefix_suffix(a, b)` → `CommonPrefixSuffix`
+
+### Validation
+- `validate_json(text)` → `ValidateJsonResult`
+- `validate_brackets(input)` → `CheckBracketsResult`
+- `validate_regex(pattern, text)` → `Result<bool, String>`
+- `regex_test(pattern, samples, flags, ...)` → `RegexTestResult`
+- `regex_finditer(pattern, text, flags, max_matches, ...)` → `RegexFindIterResult`
+- `json_shape(text, max_depth, max_keys, max_array_items)` → `JsonShapeResult`
+
+### Transforms
+- `text_transform(text, ops)` → `TextTransformResult`
+- `escape_text(text, mode)` → `EscapeTextResult`
+- `unescape_text(text, mode)` → `UnescapeTextResult`
+- `text_hash(text, algos, encoding)` → `TextHashResult`
+- `text_fingerprint(text, norm, nl, trim, fold)` → `TextFingerprintResult`
+
+### Unicode & Security
+- `unicode_policy_check(text, policy, normalization)` → `UnicodePolicyCheckResult`
+- `canonicalize_text(text, profile, return_mapping)` → `CanonicalizeResultWithMapping`
+- `has_confusables(text)` → `bool`
+- `find_confusables(text)` → `Vec<(char, &str)>`
+- `regex_safety_check(pattern)` → `RegexSafetyResult`
+- `prompt_input_inspect(text, checks, phrases)` → `PromptInspectResult`
+
+### Position & Context
+- `text_position(text, ...)` → `TextPositionResult`
+- `text_window(text, position, context_lines, ...)` → `TextWindowResult`
+- `codepoints(s)` → `Vec<CodepointInfo>`
+- `count_graphemes(s)` → `usize`
+
+### Path & File
+- `path_analyze(path, style)` → `PathAnalyzeResult`
+- `path_compare(left, right, platform, ...)` → `PathCompareResult`
+- `path_scope_check(root, target, platform, ...)` → `PathScopeCheckResult`
+- `glob_match(pattern, path, platform, case_sensitive)` → `GlobMatchResult`
+
+### Shell
+- `shell_split(command, shell, detect_features)` → `ShellSplitResult`
+- `shell_quote_join(argv, shell)` → `ShellQuoteJoinResult`
+- `argv_compare(left, right, ...)` → `ArgvCompareResult`
+
+### Config & Metadata
+- `validate_toml(text)` → `ValidateTomlResult`
+- `toml_shape(text, max_tables)` → `TomlShapeResult`
+- `dotenv_validate(text, allow_export, key_pattern, dup_policy)` → `DotenvValidateResult`
+- `ini_validate(text, dup_policy)` → `IniValidateResult`
+- `cargo_toml_inspect(text, check_ws, check_deps)` → `CargoInspectResult`
+
+### Identifier
+- `identifier_analyze(text, languages)` → `IdentifierAnalyzeResult`
+- `identifier_inspect(ids, language, norm, casefold, confusables)` → `IdentifierInspectResult`
+- `identifier_table_inspect(entries, language, checks)` → `IdentifierTableInspectResult`
+
+### Markdown
+- `markdown_structure(text, sections, links, fences, comments)` → `MarkdownStructureResult`
+- `code_fence_extract(text, language, include_content)` → `CodeFenceExtractResult`
+
+### Patch
+- `patch_apply_check(original, patch, strict, fp, text)` → `PatchApplyCheckResult`
+- `patch_summary(patch_text)` → `PatchSummaryResult`
+
+### Line Range
+- `line_range_extract(text, start, end, base, numbers, fp)` → `LineRangeExtractResult`
+- `line_range_compare(left, right, start, end, base, mode)` → `LineRangeCompareResult`
+
+### Version
+- `version_compare(a, b, scheme)` → `VersionCompareResult`
+- `check_version_constraint(version, constraint, scheme)` → `VersionConstraintResult`
+
+## Testing Approach
+
+Each text module has:
+1. **Unit tests** in `#[cfg(test)] mod tests` at the bottom of the source file
+2. **Integration tests** in `tests/text/test_<module>.rs`
+3. **Parity tests** in `tests/parity/` comparing against Python `eggcalc` output
+
+Test naming follows `test_<function>_<scenario>` convention. Tests cover:
+- Happy path (valid inputs)
+- Edge cases (empty strings, boundary values, Unicode)
+- Error cases (invalid patterns, out-of-range, oversized inputs)
+- Cross-module consistency (e.g., primitives used correctly by validate)
