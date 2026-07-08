@@ -13,6 +13,50 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | `response.rs` | `ToolResponse` struct, `sanitize_error`, response builders |
 | `runtime.rs` | Rate limiter, constants, profile management |
 | `schema_validation.rs` | MCP argument validation against tool input schemas |
+
+### Schema Validation Subset
+
+The schema validator in `schema_validation.rs` implements a **strict subset** of JSON Schema (draft 2020-12). Tool schemas in `src/mcp/schemas/` must only use keywords from the supported list. The boundary invariant is enforced by `test_schema_boundaries` in `tests/mcp/test_schema_boundaries.rs`, which walks all registered tool schemas and rejects any that use unsupported keywords.
+
+#### Supported validation keywords
+
+| Keyword | Behavior |
+|---------|----------|
+| `type` | String or array of strings. Checked against JSON value type. |
+| `properties` | Object sub-property schemas. Recursively validated. |
+| `required` | Required fields in objects. Returns "Missing required argument" on absence. |
+| `additionalProperties` | Boolean (default `false`). When false, rejects extra fields not in `properties`. |
+| `items` | Array element schema. Each element recursively validated. |
+| `minItems`, `maxItems` | Array length bounds. |
+| `uniqueItems` | When `true`, rejects arrays with duplicate serialized elements. |
+| `minLength`, `maxLength` | String char-count bounds (`.chars().count()`, not byte length). |
+| `pattern` | Regex match on strings. Compiled via `regex::Regex`. |
+| `minimum`, `maximum` | Inclusive numeric bounds (f64). |
+| `exclusiveMinimum`, `exclusiveMaximum` | Strict numeric bounds (`>` / `<`). |
+| `multipleOf` | Numeric divisibility with epsilon tolerance (abs < 1e-12 or rel < 1e-9). |
+| `enum` | Array membership check. Value must match one of the listed values. |
+| `const` | Exact value match. |
+
+#### Annotation-only keywords (allowed, not enforced)
+
+`description`, `title`, `default`, `examples`, `$schema` — present in schemas for documentation/tooling but not validated at runtime.
+
+#### Explicitly unsupported keywords
+
+The following keywords must **never** appear in registered tool schemas:
+
+- **Composition**: `$ref`, `$defs`, `definitions`, `oneOf`, `anyOf`, `allOf`, `not`
+- **Conditionals**: `if`/`then`/`else`
+- **Pattern properties**: `patternProperties`, `propertyNames`
+- **Dependencies**: `dependentRequired`, `dependentSchemas`
+- **Array extras**: `contains`, `prefixItems`, tuple validation
+- **Format/content**: `format`, `contentEncoding`, `contentMediaType`
+- **Property counts**: `minProperties`, `maxProperties`
+- **Unevaluated**: unevaluated properties/items
+
+#### Recursive validation
+
+Validation recurses into nested schemas via `validate_property_inner()` with a `max_depth` limit of 10. This supports `properties` sub-schemas, `items` element schemas, and `additionalProperties` object schemas. Deeply nested schemas beyond 10 levels produce a "Schema nesting too deep" error.
 | `compat.rs` | `CompatibilityMode` enum (EggcalcPython vs StrictNative) |
 | `machine_codes.rs` | Machine-readable response codes, severity/disposition/verdict constants |
 | `budget.rs` | Per-tool budget limits, `BudgetTier` enum, composite sub-budgets, `BudgetContext` with cooperative helpers (`check_not_cancelled`, `check_deadline`, `check_text_bytes`, `check_list_len`, `remaining_time_ms`) |
@@ -164,7 +208,8 @@ profile at construction time via `with_profile_and_audience`.
 | toml | 1 | toml_shape |
 | cargo | 1 | cargo_toml_inspect |
 | dependency | 1 | dependency_edit_preflight |
-| repo | 3 | repo_manifest_inspect, config_file_inspect, repo_tree_summarize |
+| repo | 5 | repo_manifest_inspect, config_file_inspect, repo_tree_summarize, test_command_suggest, repo_language_detect |
+| analysis | 4 | import_export_inspect, code_block_map, symbol_name_diff, lockfile_inspect |
 | diagnostics | 3 | runtime_diagnostics, profile_inspect, tool_availability_explain |
 
 ## Composite Tools

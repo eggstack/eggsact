@@ -99,7 +99,7 @@ src/
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text
   calc/             # calculator tests (4 files)
-  mcp/              # MCP protocol + tool tests (26 files)
+  mcp/              # MCP protocol + tool tests (28 files)
   parity/           # Python/Rust parity tests (12 files)
   text/             # text processing tests (24 files)
 scripts/

@@ -212,7 +212,7 @@ CLI args
 | Directory | Files | What They Cover |
 |-----------|-------|----------------|
 | `tests/calc/` | 4 | Calculator unit tests (normalize, evaluator, units, regression) |
-| `tests/mcp/` | 26 | MCP protocol, tool tests, route contracts, concurrency, hardening |
+| `tests/mcp/` | 27 | MCP protocol, tool tests, route contracts, concurrency, hardening |
 | `tests/text/` | 25 | Text processing module tests (one per module + regression) |
 | `tests/parity/` | 12 | Python/Rust parity tests (requires `eggcalc` at `../eggcalc`) |
 | `tests/test_context_isolation.rs` | 1 | Context isolation integration test |

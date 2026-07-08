@@ -10,8 +10,7 @@ matching tools.
 
 The Python reference lives in `eggcalc/mcp/` (schemas.py, tools.py, server.py) and
 provides 67 tool definitions. The Rust implementation in `src/mcp/` ships 80 tools
-(see [Known parity gaps](#known-parity-gaps) below); the remaining 3 are planned for
-phase 10 work.
+(see [Known parity gaps](#known-parity-gaps) below), a superset of the Python reference.
 
 The parity suite is intended to validate all Rust tools against the Python reference
 when `eggcalc` is available in the expected path. See
@@ -170,7 +169,7 @@ lists all 33 test names for regression detection.
 
 ## Known parity gaps
 
-The 33 remaining parity failures are classified below (down from 54 after
+The 33 remaining parity failures are classified below (down from 56 after
 fixing Category A). None are regressions from a single change; they
 accumulated across the phase 06–09 line of work. The concurrent-ordering
 failures (old Category D) were resolved 2026-07-07 by switching
@@ -226,7 +225,9 @@ updating all MCP test helpers to use `Harness` audience.
 | 42 | `parity/test_tools_tier3.rs` | `test_cargo_toml_inspect_basic` | C4 | Output shape differs | No | Defer: Rust has different finding format |
 | 43 | `parity/test_tools_tier0.rs` | `test_constant_lookup_speed_of_light` | C4 | Unit metadata or field ordering differs | No | Defer: cosmetic difference |
 | 44 | `parity/test_tools_tier0.rs` | `test_unit_info_invalid` | C4 | Error envelope shape differs | No | Defer: cosmetic difference |
-| 45 | `parity/test_tools_list.rs` | `test_tools_list_order_full` | C5 | Index 11: Python=validate_brackets, Rust=text_position | No | Defer: registration order difference |
+| 45 | `parity/test_tools_core.rs` | `test_math_eval_power` | C4 | Power expression output differs | No | Defer: cosmetic difference |
+| 46 | `parity/test_tools_phase4.rs` | `test_version_compare_phase4_cases` | C4 | Version compare output differs | No | Defer: cosmetic difference |
+| 47 | `parity/test_tools_list.rs` | `test_tools_list_order_full` | C5 | Index 11: Python=validate_brackets, Rust=text_position | No | Defer: registration order difference |
 | 46 | `parity/test_tools_list.rs` | `test_tools_list_order_normal` | C5 | Same | No | Defer |
 | 47 | `parity/test_tools_list.rs` | `test_tools_list_order_compact` | C5 | Same | No | Defer |
 | 48 | `parity/test_semantic_parity.rs` | `test_tools_list_tier_true_as_bool` | C5 | Rust has 4 extra tools vs Python | No | Defer: Rust superset |
@@ -269,12 +270,12 @@ severity/details differ between Rust and Python for `unicode_policy_check`.
 `edit_preflight` missing `match_codepoint_length` field in subtool output,
 `math_eval` power expression output, `version_compare` phase4 case output.
 
-**C5 — Tools/list ordering and tool-set gap (8 failures).** Rust has 78
-tools; Python has 67. Eleven extra Rust tools (`runtime_diagnostics`,
-`repo_tree_summarize`, `diff_risk_classify`, `path_batch_scope_check`,
-`code_block_map`, `import_export_inspect`, `symbol_name_diff`,
-`lockfile_inspect`, `patch_contract_check`, `test_command_suggest`,
-`repo_language_detect`)
+**C5 — Tools/list ordering and tool-set gap (8 failures).** Rust has 80
+tools; Python has 67. Thirteen extra Rust tools (`runtime_diagnostics`,
+`profile_inspect`, `tool_availability_explain`, `repo_tree_summarize`,
+`diff_risk_classify`, `path_batch_scope_check`, `code_block_map`,
+`import_export_inspect`, `symbol_name_diff`, `lockfile_inspect`,
+`patch_contract_check`, `test_command_suggest`, `repo_language_detect`)
 cause ordering and count mismatches. Also, within the shared set, index 11
 differs: Python emits `validate_brackets`, Rust emits `text_position`.
 
@@ -297,16 +298,16 @@ calls a HarnessOnly tool without proper audience setup.
 | C4 — Tool output drift | 7 | Defer: cosmetic or intentional Rust differences | No |
 | C5 — Tools/list ordering | 8 | Defer: Rust superset (78 vs 67 tools) | No |
 | C6 — Error handling | 2 | Defer: needs Harness audience in test | No |
-| **Total** | **54** | **383 passed, 33 failed, 2 ignored** | **None** |
+| **Total** | **56** | **383 passed, 33 failed, 2 ignored** | **None** |
 
 ### Known tool-set gap: 78 vs 67 tools
 
 The Rust `full` profile ships 80 tools; the Python reference defines 67.
-Eleven extra Rust tools not in Python: `runtime_diagnostics`,
-`repo_tree_summarize`, `diff_risk_classify`, `path_batch_scope_check`,
-`code_block_map`, `import_export_inspect`, `symbol_name_diff`,
-`lockfile_inspect`, `patch_contract_check`, `test_command_suggest`,
-`repo_language_detect`.
+Thirteen extra Rust tools not in Python: `runtime_diagnostics`,
+`profile_inspect`, `tool_availability_explain`, `repo_tree_summarize`,
+`diff_risk_classify`, `path_batch_scope_check`, `code_block_map`,
+`import_export_inspect`, `symbol_name_diff`, `lockfile_inspect`,
+`patch_contract_check`, `test_command_suggest`, `repo_language_detect`.
 
 The three tools previously missing from Rust (`config_file_inspect`,
 `dependency_edit_preflight`, `repo_manifest_inspect`) were added in phase 09.

@@ -74,7 +74,7 @@ let tools = registry.available_tools_for_current_audience();
 
 ## Profile Selection
 
-Profiles control which tools are registered in the `ToolRegistry`. Each profile is a named subset of the 78 available tools. The active profile is set once at server startup via `EGGCALC_MCP_PROFILE` (MCP) or at `ToolRegistry` construction (in-process).
+Profiles control which tools are registered in the `ToolRegistry`. Each profile is a named subset of the 80 available tools. The active profile is set once at server startup via `EGGCALC_MCP_PROFILE` (MCP) or at `ToolRegistry` construction (in-process).
 
 ### Recommended Profiles by Workflow
 

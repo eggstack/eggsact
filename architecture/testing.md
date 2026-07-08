@@ -11,7 +11,7 @@ tests/
   lib.rs                    # declares test modules
   test_context_isolation.rs # context isolation integration test
   calc/                     # calculator tests (4 files)
-  mcp/                      # MCP protocol + tool tests (26 files)
+  mcp/                      # MCP protocol + tool tests (27 files)
   parity/                   # Python/Rust parity tests (12 files)
   text/                     # text processing tests (25 files)
   fixtures/                 # test data files
@@ -67,6 +67,8 @@ All tests run via `cargo test --test lib`.
 | `test_lifecycle_and_gaps.rs` | Tool lifecycle testing |
 | `test_runtime_helpers.rs` | Runtime helper functions |
 | `test_repo_diff_path_tools.rs` | Repository/diff/path tools |
+| `test_analysis_tools.rs` | Analysis tools (import/export, code blocks, symbol diff, lockfile) |
+| `test_schema_boundaries.rs` | Schema boundary enforcement (all tool schemas use only supported keywords) |
 | `test_comprehensive_parity.rs` | Comprehensive parity with Python eggcalc |
 
 ## Text Tests (`tests/text/`)
@@ -118,9 +120,9 @@ Compare Rust output against Python `eggcalc` (requires `../eggcalc` to exist). T
 | `test_error_handling.rs` | Error handling parity |
 | `test_bug_fixes.rs` | Bug fix parity |
 
-As of 2026-07-07, there are 31 known failures out of 416 parity tests. See `docs/parity.md` for the breakdown.
+As of 2026-07-08, there are 33 known failures out of 418 parity tests. See `docs/parity.md` for the breakdown.
 
-An accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt` lists all 31 names for regression detection.
+An accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt` lists all 33 names for regression detection.
 
 ## How to Run Tests
 

@@ -44,7 +44,7 @@ tests/
     test_units.rs            # unit conversion tests
     test_bug_regression.rs   # regression tests for bugs
   mcp/
-    mod.rs                   # re-exports 25 modules
+    mod.rs                   # re-exports 27 modules
     test_protocol.rs         # JSON-RPC protocol tests
     test_mcp_tools.rs        # tool behavior tests
     test_edge_cases.rs       # edge case coverage (168 tests)
@@ -70,6 +70,8 @@ tests/
     test_repo_diff_path_tools.rs
     test_preflight_wrappers.rs
     test_runtime_helpers.rs
+    test_analysis_tools.rs
+    test_schema_boundaries.rs
   parity/
     mod.rs                   # ParityTestResult, run_python_request, run_rust_tool helpers
     test_tools_core.rs       # core tool parity with Python

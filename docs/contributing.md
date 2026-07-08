@@ -211,26 +211,5 @@ the project's MIT license.
 
 ## Release Checklist
 
-Run the release script from the repository root before tagging or publishing:
-
-```sh
-./release.sh
-```
-
-The script regenerates confusable-character data, verifies formatting, runs clippy,
-runs the full test suite, and verifies the crates.io
-package with `cargo package --verbose`.
-
-Before publishing, make sure the worktree is clean after `./release.sh`, the version
-in `Cargo.toml` matches the release tag, and `CHANGELOG.md` has an entry for the
-release. Publish with:
-
-```sh
-cargo publish
-```
-
-GitHub Actions mirrors the release gates on pull requests and pushes to `main`:
-`cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
-`cargo test --all-features`, `cargo run --bin generate-docs -- --check`, and
-`cargo package --verbose`. Parity tests are not run in CI (Python `eggcalc` is not
-available in the CI environment) and must be run locally.
+See `docs/release.md` for the full release procedure, including verification order,
+generated docs, package checks, parity test policy, and post-release steps.
