@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Deterministic MCP and in-process utility tools for coding agents. Single crate, no workspace. 78 tools across 20 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, and more.
+Deterministic MCP and in-process utility tools for coding agents. Single crate, no workspace. 80 tools across 20 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, and more.
 
 ## Commands
 
@@ -90,7 +90,7 @@ src/
     version.rs      # version_compare, version_constraint_check
     cargo.rs        # cargo_toml_inspect
     dependency.rs   # dependency_edit_preflight
-    diagnostics.rs  # runtime_diagnostics
+    diagnostics.rs  # runtime_diagnostics, profile_inspect, tool_availability_explain
     repo.rs         # repo_manifest_inspect, config_file_inspect, repo_tree_summarize, test_command_suggest, repo_language_detect
     analysis.rs     # import_export_inspect, code_block_map, symbol_name_diff, lockfile_inspect
   text/             # text processing library (24 modules)
@@ -202,7 +202,7 @@ Agent task skills in `.skills/`:
 - **Adding an MCP tool requires one `ToolSpec` entry** in `src/mcp/specs/<category>.rs`. This is the single source of truth for tool registration. A test (`tool_registration_tables_are_in_sync`) will catch drift.
 - **`^` is XOR, not exponentiation.** Use `**` for power. This matches Python behavior.
 - **`g` means gram** in unit expressions. Use `gravity` or `standardgravity` for standard gravity.
-- **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. As of 2026-07-08, the parity suite has 33 known failures (out of 418 tests) — see `docs/parity.md` `Verification status` and `Known parity gaps` for the breakdown. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE` env var and updating test helpers. Categories C1–C6 (33 failures) are accepted behavioral differences tracked for follow-up. The 3 concurrent-ordering failures from the earlier pass were fixed by switching `mcp_request_multi()` to id-based correlation. The Rust `full` profile ships 78 tools; Python defines 67. An accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt` lists all 33 names for regression detection. Do not treat these as regressions — they accumulated across the phase 06–09 line of work and are tracked for follow-up.
+- **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. As of 2026-07-08, the parity suite has 33 known failures (out of 418 tests) — see `docs/parity.md` `Verification status` and `Known parity gaps` for the breakdown. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE` env var and updating test helpers. Categories C1–C6 (33 failures) are accepted behavioral differences tracked for follow-up. The 3 concurrent-ordering failures from the earlier pass were fixed by switching `mcp_request_multi()` to id-based correlation. The Rust `full` profile ships 80 tools; Python defines 67. An accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt` lists all 33 names for regression detection. Do not treat these as regressions — they accumulated across the phase 06–09 line of work and are tracked for follow-up.
 - **`mask_secret_preview()` in `src/tools/helpers.rs`** is a UTF-8-safe masking helper that operates on `.chars()` boundaries, never splitting multibyte sequences. Used by `config_file_inspect` and other tools that display secret values in findings. The old byte-slicing code was replaced with this helper to avoid panics on multi-byte Unicode input.
 - **`deny.toml` configures `cargo-deny`** for license/advisory/ban/source checks. Run `cargo deny check` locally. Allowed licenses: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, Unlicense, Unicode-DFS-2016, Unicode-3.0, Zlib.
 - **CI mirrors release gates.** GitHub Actions runs fmt, clippy, tests, generated-docs check, and `cargo package`.
@@ -211,6 +211,6 @@ Agent task skills in `.skills/`:
 - **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to `Model` on invalid values), `EGGCALC_MCP_SCHEMA_DETAIL` (accepted values: `compact`, `normal`, `full`; defaults to `full` on invalid values with stderr warning).
 - **Platform support**: `command_preflight` recognizes `platform` values `posix`, `windows`, and `auto`. Only `posix` is implemented; `windows` returns `UNSUPPORTED_FEATURE` and `auto` resolves to `posix`.
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
-- **`--diagnostics` CLI flag** prints version, tool count, profile summary, budget tiers, runtime settings (active profile, audience, schema detail, limits), and env var names (no values). Supports `--format json`. `runtime_diagnostics` MCP tool exposes similar info to harness-only audiences.
+- **`--diagnostics` CLI flag** prints version, tool count, profile summary, budget tiers, runtime settings (active profile, audience, schema detail, limits), generated data status, and env var names (no values). Supports `--format json`. `runtime_diagnostics`, `profile_inspect`, and `tool_availability_explain` MCP tools expose introspection to harness-only audiences.
 - **`cargo run --bin verify-eggsact`** runs a 5-step verification pipeline (fmt, clippy, test, build, package) with optional parity check, and reports results as markdown.
 - **`ToolBudget` / `BudgetContext` compatibility shims**: `max_text_bytes` (formerly `max_text_chars`) is the canonical field name and `check_text_bytes` (formerly `check_text_len`) is the canonical method — enforcement is byte-based (`str::len()`). `BudgetContext::check_text_len` is retained as a `#[deprecated]` alias that forwards to `check_text_bytes` so downstream callers referencing the old name keep compiling. Prefer builders (`ToolBudget::with_max_text_bytes(n)`) over direct struct literals to avoid ABI breaks when fields are renamed.

@@ -3,11 +3,11 @@
 [![Crates.io](https://img.shields.io/crates/v/eggsact)](https://crates.io/crates/eggsact)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Deterministic MCP and in-process utility tools for coding agents. 78 tools across 20 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, and more. Includes a natural language math evaluator that parses expressions like "thirty plus five" or "30m + 100ft".
+Deterministic MCP and in-process utility tools for coding agents. 80 tools across 20 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, and more. Includes a natural language math evaluator that parses expressions like "thirty plus five" or "30m + 100ft".
 
 ## Key Features
 
-- MCP server with 78 registered tools for AI agents to reduce hallucinations
+- MCP server with 80 registered tools for AI agents to reduce hallucinations
 - In-process agent API for direct tool calls without MCP overhead
 - Typed preflight wrappers for edit, command, config, and patch workflows
 - Natural language math: "two to the power of ten" evaluates to 1024
@@ -101,7 +101,7 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 ## MCP Tools
 
 <!-- BEGIN GENERATED: eggsact tools -->
-78 tools across 20 categories. See `architecture/mcp-server.md` for the full reference.
+80 tools across 20 categories. See `architecture/mcp-server.md` for the full reference.
 
 ### Math (4)
 
@@ -275,11 +275,13 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 | `symbol_name_diff` | 2 | contextual | stable | cheap | codegg_patch, codegg_repo_audit, full |
 | `lockfile_inspect` | 2 | contextual | stable | mod | codegg_patch, codegg_preflight, codegg_repo_audit, full |
 
-### Diagnostics (1)
+### Diagnostics (3)
 
 | Tool | Tier | Exposure | Stability | Cost | Profiles |
 |------|------|----------|-----------|------|----------|
 | `runtime_diagnostics` | 3 | harness | stable | cheap | full |
+| `profile_inspect` | 3 | harness | stable | cheap | full |
+| `tool_availability_explain` | 3 | harness | stable | cheap | full |
 
 
 <!-- END GENERATED: eggsact tools -->

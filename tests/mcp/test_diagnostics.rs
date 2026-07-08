@@ -74,6 +74,64 @@ fn test_runtime_diagnostics_returns_structured_output() {
 }
 
 #[test]
+fn test_runtime_diagnostics_expanded_fields() {
+    let resp = call_tool_response("runtime_diagnostics", json!({}));
+    assert!(resp.ok);
+    let result = resp.result.as_ref().expect("result should be present");
+
+    assert!(
+        result.get("model_visible_tool_count").is_some(),
+        "result should contain model_visible_tool_count"
+    );
+    assert!(
+        result["model_visible_tool_count"].is_number(),
+        "model_visible_tool_count should be a number"
+    );
+    assert!(
+        result.get("harness_visible_tool_count").is_some(),
+        "result should contain harness_visible_tool_count"
+    );
+    assert!(
+        result["harness_visible_tool_count"].is_number(),
+        "harness_visible_tool_count should be a number"
+    );
+    assert!(
+        result.get("verification_command").is_some(),
+        "result should contain verification_command"
+    );
+    assert!(
+        result["verification_command"].is_string(),
+        "verification_command should be a string"
+    );
+    assert!(
+        result.get("generated_data").is_some(),
+        "result should contain generated_data"
+    );
+    let gen_data = &result["generated_data"];
+    assert!(
+        gen_data.get("confusables_generated_rs").is_some(),
+        "generated_data should contain confusables_generated_rs"
+    );
+    assert!(
+        gen_data.get("tool_cards_md").is_some(),
+        "generated_data should contain tool_cards_md"
+    );
+    assert!(
+        result.get("runtime").is_some(),
+        "result should contain runtime"
+    );
+    let runtime = &result["runtime"];
+    assert!(
+        runtime.get("schema_detail").is_some(),
+        "runtime should contain schema_detail"
+    );
+    assert!(
+        runtime.get("limits").is_some(),
+        "runtime should contain limits"
+    );
+}
+
+#[test]
 fn test_runtime_diagnostics_harness_only_not_listed_to_model() {
     let model_tools = tools_for_profile_audience("full", ToolListAudience::Model);
     let has_runtime_diagnostics = model_tools.iter().any(|t| t.name == "runtime_diagnostics");
@@ -197,5 +255,173 @@ fn test_cancelled_is_distinct_from_timeout() {
         machine_codes::TIMEOUT,
         machine_codes::CANCELLED,
         "TIMEOUT and CANCELLED must be distinct machine code constants"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// profile_inspect tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_profile_inspect_returns_structured_output() {
+    let resp = call_tool_response("profile_inspect", json!({"profile": "full"}));
+    assert!(resp.ok, "profile_inspect should succeed");
+    assert_eq!(resp.machine_code.as_deref(), Some("OK"));
+    let result = resp.result.as_ref().expect("result should be present");
+    assert_eq!(result["name"], "full");
+    assert!(result["tool_count"].is_number());
+    assert!(result["tool_count"].as_i64().unwrap() > 0);
+    assert!(result["model_visible_tool_count"].is_number());
+    assert!(result["harness_visible_tool_count"].is_number());
+    assert!(result["intended_audience"].is_string());
+    assert!(result["purpose"].is_string());
+    assert!(result["contains_route_critical_tools"].is_boolean());
+    assert!(result["contains_harness_only_tools"].is_boolean());
+    assert!(result["representative_tools"].is_array());
+    assert!(result["warnings"].is_array());
+}
+
+#[test]
+fn test_profile_inspect_known_profiles() {
+    let profiles = [
+        "full",
+        "default",
+        "codegg_core_min",
+        "codegg_core",
+        "codegg_preflight",
+        "codegg_patch",
+        "codegg_config",
+        "codegg_unicode_security",
+        "codegg_shell",
+        "codegg_repo_audit",
+        "human_math",
+    ];
+    for name in &profiles {
+        let resp = call_tool_response("profile_inspect", json!({"profile": name}));
+        assert!(resp.ok, "profile_inspect for '{}' should succeed", name);
+        let result = resp.result.as_ref().unwrap();
+        assert_eq!(result["name"], *name);
+        assert!(
+            result["tool_count"].as_i64().unwrap() > 0,
+            "profile '{}' should have at least one tool",
+            name
+        );
+    }
+}
+
+#[test]
+fn test_profile_inspect_unknown_profile_returns_error() {
+    let resp = call_tool_response("profile_inspect", json!({"profile": "nonexistent_profile"}));
+    assert!(!resp.ok, "profile_inspect for unknown profile should fail");
+    assert_eq!(
+        resp.machine_code.as_deref(),
+        Some("INVALID_ARGUMENTS"),
+        "should use INVALID_ARGUMENTS machine code"
+    );
+}
+
+#[test]
+fn test_profile_inspect_harness_only_excluded_from_model() {
+    let model_tools = tools_for_profile_audience("full", ToolListAudience::Model);
+    let has_profile_inspect = model_tools.iter().any(|t| t.name == "profile_inspect");
+    assert!(
+        !has_profile_inspect,
+        "profile_inspect should NOT appear in Model audience listing"
+    );
+}
+
+#[test]
+fn test_profile_inspect_codegg_preflight_has_harness_only() {
+    let resp = call_tool_response("profile_inspect", json!({"profile": "codegg_preflight"}));
+    assert!(resp.ok);
+    let result = resp.result.as_ref().unwrap();
+    assert_eq!(result["contains_harness_only_tools"], true);
+}
+
+#[test]
+fn test_profile_inspect_full_has_route_critical() {
+    let resp = call_tool_response("profile_inspect", json!({"profile": "full"}));
+    assert!(resp.ok);
+    let result = resp.result.as_ref().unwrap();
+    assert_eq!(result["contains_route_critical_tools"], true);
+}
+
+// ---------------------------------------------------------------------------
+// tool_availability_explain tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_tool_availability_explain_existing_model_safe_tool() {
+    let resp = call_tool_response("tool_availability_explain", json!({"tool": "math_eval"}));
+    assert!(resp.ok, "tool_availability_explain should succeed");
+    let result = resp.result.as_ref().expect("result should be present");
+    assert_eq!(result["exists"], true);
+    assert_eq!(result["available_in_profile"], true);
+    assert!(result["exposure"].is_string());
+    assert!(result["profiles"].is_array());
+    assert!(result["reason"].is_string());
+}
+
+#[test]
+fn test_tool_availability_explain_harness_only_tool_in_model() {
+    let resp = call_tool_response(
+        "tool_availability_explain",
+        json!({"tool": "runtime_diagnostics", "audience": "Model"}),
+    );
+    assert!(resp.ok);
+    let result = resp.result.as_ref().unwrap();
+    assert_eq!(result["exists"], true);
+    assert_eq!(result["available_in_profile"], true);
+    assert_eq!(result["callable_by_audience"], false);
+    assert_eq!(result["exposure"], "harness_only");
+    assert_eq!(result["suggested_audience"], "Harness");
+}
+
+#[test]
+fn test_tool_availability_explain_unknown_tool() {
+    let resp = call_tool_response(
+        "tool_availability_explain",
+        json!({"tool": "nonexistent_tool_xyz"}),
+    );
+    assert!(resp.ok);
+    let result = resp.result.as_ref().unwrap();
+    assert_eq!(result["exists"], false);
+    assert_eq!(result["available_in_profile"], false);
+    assert_eq!(result["callable_by_audience"], false);
+}
+
+#[test]
+fn test_tool_availability_explain_tool_not_in_profile() {
+    let resp = call_tool_response(
+        "tool_availability_explain",
+        json!({"tool": "text_equal", "profile": "human_math"}),
+    );
+    assert!(resp.ok);
+    let result = resp.result.as_ref().unwrap();
+    assert_eq!(result["exists"], true);
+    assert_eq!(result["available_in_profile"], false);
+    assert!(result["suggested_profile"].is_string());
+}
+
+#[test]
+fn test_tool_availability_explain_harness_only_not_listed_to_model() {
+    let model_tools = tools_for_profile_audience("full", ToolListAudience::Model);
+    let has_tool_availability_explain = model_tools
+        .iter()
+        .any(|t| t.name == "tool_availability_explain");
+    assert!(
+        !has_tool_availability_explain,
+        "tool_availability_explain should NOT appear in Model audience listing"
+    );
+}
+
+#[test]
+fn test_tool_availability_explain_missing_tool_arg() {
+    let result = eggsact::tools::tool_availability_explain(&json!({}));
+    assert!(!result.ok, "missing tool arg should fail");
+    assert_eq!(
+        result.machine_code.as_deref(),
+        Some("INVALID_ARGUMENTS"),
+        "should use INVALID_ARGUMENTS machine code"
     );
 }

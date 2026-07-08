@@ -93,7 +93,7 @@ Many tools return a `hints` array with suggestions when validation fails:
 
 ## Tool Categories
 
-Tools are grouped into 19 metadata categories covering math, text, JSON, validation, regex, lists, paths, identifiers, shell, markdown, configuration, patches, TOML, Unicode, versioning, Cargo metadata, dependency, repository, and diagnostics.
+Tools are grouped into 20 metadata categories covering math, text, JSON, validation, regex, lists, paths, identifiers, shell, markdown, configuration, patches, TOML, Unicode, versioning, Cargo metadata, dependency, repository, analysis, and diagnostics.
 
 ---
 
@@ -1205,11 +1205,35 @@ Return structured runtime diagnostics including active profile, tool counts, bud
 |-----------|------|----------|---------|-------------|
 | _(none)_ | -- | -- | -- | No parameters required |
 
-**Return (top-level):** `{"active_profile": <string>, "tool_count": <int>, "route_critical_tools": [<string>], "profile_tool_count": <int>, "compatibility_mode": <string>, "budget_tier_summary": <object>, "known_env_vars": [<string>], "generated_doc_command": <string>, "parity_available": <boolean>}`
+**Return (top-level):** `{"active_profile": <string>, "active_audience": <string>, "tool_count": <int>, "model_visible_tool_count": <int>, "harness_visible_tool_count": <int>, "route_critical_tools": [<string>], "profile_tool_count": <int>, "compatibility_mode": <string>, "budget_tier_summary": <object>, "runtime": <object>, "known_env_vars": [<string>], "generated_doc_command": <string>, "verification_command": <string>, "generated_data": <object>, "parity_available": <boolean>}`
 
 **`runtime` object (nested):** `{"active_profile": <string>, "active_audience": <string>, "schema_detail": <string>, "limits": {"max_requests_per_second": <int>, "max_in_flight_requests": <int>, "max_tool_workers": <int>, "max_request_bytes": <int>, "max_output_bytes": <int>}}`
 
-The `runtime` object reports the current runtime configuration: the active profile, audience, schema detail level, and server-side rate/concurrency limits. The `limits` sub-object exposes the values of `MAX_REQUESTS_PER_SECOND`, `MAX_IN_FLIGHT_REQUESTS`, `MAX_TOOL_WORKERS`, `MAX_REQUEST_BYTES`, and `MAX_OUTPUT_BYTES`.
+**`generated_data` object (nested):** `{"confusables_generated_rs": <boolean>, "tool_cards_md": <boolean>}`
+
+The `runtime` object reports the current runtime configuration: the active profile, audience, schema detail level, and server-side rate/concurrency limits. The `limits` sub-object exposes the values of `MAX_REQUESTS_PER_SECOND`, `MAX_IN_FLIGHT_REQUESTS`, `MAX_TOOL_WORKERS`, `MAX_REQUEST_BYTES`, and `MAX_OUTPUT_BYTES`. The `generated_data` sub-object reports whether key generated asset files exist on disk.
+
+### profile_inspect
+
+Return metadata about a named profile: tool counts, intended audience, whether it contains route-critical or harness-only tools, and representative tool names. For harness/debug audiences only.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `profile` | string | yes | -- | Profile name to inspect |
+
+**Return (top-level):** `{"name": <string>, "tool_count": <int>, "model_visible_tool_count": <int>, "harness_visible_tool_count": <int>, "intended_audience": <string>, "purpose": <string>, "contains_route_critical_tools": <boolean>, "contains_harness_only_tools": <boolean>, "representative_tools": [<string>], "warnings": [<string>]}`
+
+### tool_availability_explain
+
+Explain why a tool is or is not available for a given profile and audience, with suggestions for how to make it available. For harness/debug audiences only.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `tool` | string | yes | -- | Tool name to check |
+| `profile` | string | no | active profile | Profile to check against |
+| `audience` | string | no | active audience | Audience to check against |
+
+**Return (top-level):** `{"exists": <boolean>, "available_in_profile": <boolean>, "callable_by_audience": <boolean>, "exposure": <string>, "profiles": [<string>], "reason": <string>, "suggested_tool": <string|null>, "suggested_profile": <string|null>, "suggested_audience": <string|null>}`
 
 ---
 
@@ -1284,3 +1308,6 @@ The `runtime` object reports the current runtime configuration: the active profi
 | 65 | `dependency_edit_preflight` | Dependency | `file_path`, `old_text`, `new_text` |
 | 66 | `repo_manifest_inspect` | Repo | `paths` |
 | 67 | `config_file_inspect` | Repo | `file_path`, `text` |
+| 68 | `runtime_diagnostics` | Diagnostics | _(none)_ |
+| 69 | `profile_inspect` | Diagnostics | `profile` |
+| 70 | `tool_availability_explain` | Diagnostics | `tool` |

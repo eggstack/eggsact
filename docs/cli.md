@@ -11,7 +11,7 @@ eggsact [--mcp | --diagnostics [--format json|text] | expression]
 ```
 
 - `--mcp` -- Start MCP server mode (reads JSON-RPC from stdin, writes to stdout)
-- `--diagnostics` -- Print diagnostic information (version, tool count, profile, budget tiers, env var names)
+- `--diagnostics` -- Print diagnostic information (version, tool count, profiles, budget tiers, runtime settings, env var names, generated data status)
 - `--format json|text` -- Output format for `--diagnostics` (default: text)
 - `-h`, `--help` -- Print usage information
 - `-V`, `--version` -- Print the installed eggsact version

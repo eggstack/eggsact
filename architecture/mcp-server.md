@@ -40,7 +40,7 @@ Tool implementations live in `src/tools/` (category modules):
 | `version.rs` | version_compare, version_constraint_check |
 | `cargo.rs` | cargo_toml_inspect |
 | `dependency.rs` | dependency_edit_preflight |
-| `diagnostics.rs` | runtime_diagnostics |
+| `diagnostics.rs` | runtime_diagnostics, profile_inspect, tool_availability_explain |
 | `repo.rs` | repo_manifest_inspect, config_file_inspect, repo_tree_summarize |
 
 ## Protocol
@@ -165,7 +165,7 @@ profile at construction time via `with_profile_and_audience`.
 | cargo | 1 | cargo_toml_inspect |
 | dependency | 1 | dependency_edit_preflight |
 | repo | 3 | repo_manifest_inspect, config_file_inspect, repo_tree_summarize |
-| diagnostics | 1 | runtime_diagnostics |
+| diagnostics | 3 | runtime_diagnostics, profile_inspect, tool_availability_explain |
 
 ## Composite Tools
 
@@ -440,7 +440,7 @@ Profiles control which tools are available. The `full` profile includes all non-
 <!-- BEGIN GENERATED: profile reference -->
 | Profile | Model Tools | Harness Tools | Model Tool Names | Harness-Only Tools |
 |---------|-------------|---------------|------------------|--------------------|
-| `full` | 71 | 78 | `argv_compare`, `canonicalize_text`, `cargo_toml_inspect`, `code_block_map`, `code_fence_extract`, `command_preflight`, `config_file_inspect`, `config_preflight`, `constant_lookup`, `dependency_edit_preflight`, `diff_risk_classify`, `dotenv_validate`, `edit_preflight`, `escape_text`, `glob_match`, `identifier_analyze`, `identifier_inspect`, `identifier_table_inspect`, `import_export_inspect`, `ini_validate`, `json_canonicalize`, `json_compare`, `json_extract`, `json_query`, `json_shape`, `line_range_compare`, `line_range_extract`, `list_compare`, `list_dedupe`, `list_sort`, `lockfile_inspect`, `markdown_structure`, `math_eval`, `patch_contract_check`, `patch_summary`, `path_analyze`, `path_compare`, `path_normalize`, `regex_finditer`, `regex_safety_check`, `repo_language_detect`, `repo_manifest_inspect`, `repo_tree_summarize`, `shell_quote_join`, `structured_data_compare`, `symbol_name_diff`, `test_command_suggest`, `text_count`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_hash`, `text_inspect`, `text_measure`, `text_position`, `text_replace_check`, `text_security_inspect`, `text_transform`, `text_truncate`, `text_window`, `toml_shape`, `unescape_text`, `unit_convert`, `unit_info`, `validate_brackets`, `validate_json`, `validate_regex`, `validate_schema_light`, `validate_toml`, `version_compare`, `version_constraint_check` | `patch_apply_check`, `path_batch_scope_check`, `path_scope_check`, `prompt_input_inspect`, `runtime_diagnostics`, `shell_split`, `unicode_policy_check` |
+| `full` | 71 | 80 | `argv_compare`, `canonicalize_text`, `cargo_toml_inspect`, `code_block_map`, `code_fence_extract`, `command_preflight`, `config_file_inspect`, `config_preflight`, `constant_lookup`, `dependency_edit_preflight`, `diff_risk_classify`, `dotenv_validate`, `edit_preflight`, `escape_text`, `glob_match`, `identifier_analyze`, `identifier_inspect`, `identifier_table_inspect`, `import_export_inspect`, `ini_validate`, `json_canonicalize`, `json_compare`, `json_extract`, `json_query`, `json_shape`, `line_range_compare`, `line_range_extract`, `list_compare`, `list_dedupe`, `list_sort`, `lockfile_inspect`, `markdown_structure`, `math_eval`, `patch_contract_check`, `patch_summary`, `path_analyze`, `path_compare`, `path_normalize`, `regex_finditer`, `regex_safety_check`, `repo_language_detect`, `repo_manifest_inspect`, `repo_tree_summarize`, `shell_quote_join`, `structured_data_compare`, `symbol_name_diff`, `test_command_suggest`, `text_count`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_hash`, `text_inspect`, `text_measure`, `text_position`, `text_replace_check`, `text_security_inspect`, `text_transform`, `text_truncate`, `text_window`, `toml_shape`, `unescape_text`, `unit_convert`, `unit_info`, `validate_brackets`, `validate_json`, `validate_regex`, `validate_schema_light`, `validate_toml`, `version_compare`, `version_constraint_check` | `patch_apply_check`, `path_batch_scope_check`, `path_scope_check`, `profile_inspect`, `prompt_input_inspect`, `runtime_diagnostics`, `shell_split`, `tool_availability_explain`, `unicode_policy_check` |
 | `default` | 25 | 25 | `escape_text`, `glob_match`, `identifier_inspect`, `json_canonicalize`, `json_compare`, `line_range_extract`, `list_dedupe`, `list_sort`, `math_eval`, `path_normalize`, `regex_finditer`, `regex_safety_check`, `text_count`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_inspect`, `text_measure`, `text_replace_check`, `text_window`, `unescape_text`, `validate_brackets`, `validate_json`, `validate_regex`, `validate_toml` |  |
 | `codegg_core_min` | 6 | 6 | `command_preflight`, `config_preflight`, `edit_preflight`, `text_replace_check`, `text_security_inspect`, `validate_json` |  |
 | `codegg_core` | 19 | 19 | `cargo_toml_inspect`, `code_block_map`, `command_preflight`, `config_preflight`, `edit_preflight`, `identifier_inspect`, `import_export_inspect`, `path_normalize`, `repo_language_detect`, `structured_data_compare`, `test_command_suggest`, `text_diff_explain`, `text_equal`, `text_fingerprint`, `text_inspect`, `text_replace_check`, `text_security_inspect`, `validate_json`, `validate_toml` |  |
@@ -511,4 +511,4 @@ All wrappers return `Result<Output, PreflightError>`. `PreflightError` distingui
 
 ## CLI Diagnostics
 
-The `--diagnostics` flag prints version, tool count, per-profile tool counts, budget tiers, known environment variable names (no values), and parity-reference availability. Supports `--format json` for structured output. The `runtime_diagnostics` MCP tool provides similar information to harness-only audiences.
+The `--diagnostics` flag prints version, tool count, per-profile tool counts, budget tiers, runtime settings, known environment variable names (no values), generated data status, and parity-reference availability. Supports `--format json` for structured output. The `runtime_diagnostics` MCP tool provides similar information to harness-only audiences. Two additional companion tools — `profile_inspect` (per-profile metadata) and `tool_availability_explain` (why a tool is hidden) — are available as MCP-only tools for harness-side introspection.

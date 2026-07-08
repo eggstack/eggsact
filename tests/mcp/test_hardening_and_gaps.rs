@@ -543,7 +543,11 @@ fn test_every_non_hidden_tool_in_at_least_one_named_profile() {
         if let Some(tools) = result.get("tools").and_then(|t| t.as_array()) {
             let set: std::collections::HashSet<String> = tools
                 .iter()
-                .filter_map(|t| t.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                .filter_map(|t| {
+                    t.get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string())
+                })
                 .collect();
             profile_tool_sets.push(set);
         }
@@ -605,8 +609,7 @@ fn test_no_deprecated_tools_in_codegg_profiles() {
 
 #[test]
 fn test_heavy_cost_tools_are_composite() {
-    let registry =
-        ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Debug);
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Debug);
     let heavy_composite = [
         "text_security_inspect",
         "structured_data_compare",
@@ -615,10 +618,8 @@ fn test_heavy_cost_tools_are_composite() {
         "edit_preflight",
     ];
     let tools = registry.available_tools_model_safe();
-    let tool_map: std::collections::HashMap<String, _> = tools
-        .iter()
-        .map(|t| (t.name.clone(), t))
-        .collect();
+    let tool_map: std::collections::HashMap<String, _> =
+        tools.iter().map(|t| (t.name.clone(), t)).collect();
     for name in &heavy_composite {
         if let Some(tool) = tool_map.get(*name) {
             if tool.cost == "heavy" {

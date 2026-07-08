@@ -9,7 +9,7 @@ tools. Clients do not need to change any code to switch from Python to Rust for
 matching tools.
 
 The Python reference lives in `eggcalc/mcp/` (schemas.py, tools.py, server.py) and
-provides 67 tool definitions. The Rust implementation in `src/mcp/` ships 78 tools
+provides 67 tool definitions. The Rust implementation in `src/mcp/` ships 80 tools
 (see [Known parity gaps](#known-parity-gaps) below); the remaining 3 are planned for
 phase 10 work.
 
@@ -301,7 +301,7 @@ calls a HarnessOnly tool without proper audience setup.
 
 ### Known tool-set gap: 78 vs 67 tools
 
-The Rust `full` profile ships 78 tools; the Python reference defines 67.
+The Rust `full` profile ships 80 tools; the Python reference defines 67.
 Eleven extra Rust tools not in Python: `runtime_diagnostics`,
 `repo_tree_summarize`, `diff_risk_classify`, `path_batch_scope_check`,
 `code_block_map`, `import_export_inspect`, `symbol_name_diff`,
