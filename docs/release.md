@@ -1,35 +1,35 @@
 # Release Checklist
 
+This is the canonical release document for the eggsact crate. Crates.io publishing is a manual maintainer action — GitHub CI verifies release readiness but does not publish.
+
+## Release policy
+
+- GitHub CI verifies release readiness.
+- GitHub CI does not publish to crates.io.
+- The maintainer publishes directly with `cargo publish` from a local authenticated environment.
+- Crates.io tokens must not be placed in GitHub Actions secrets for this release line.
+- Tags are created only after `cargo publish --dry-run` succeeds and the publish decision is made.
+
 ## Pre-release
 
-1. Ensure the working tree is clean (`git status` shows no uncommitted changes).
+1. Working tree clean: `git status` shows no uncommitted changes.
+2. On `main` branch.
+3. Version in `Cargo.toml` matches intended release.
+4. `CHANGELOG.md` entry for the release exists.
+5. Confusables data regenerated:
+   ```bash
+   python3 scripts/generate_confusables.py
+   ```
+6. Generated docs regenerated:
+   ```bash
+   cargo run --bin generate-docs
+   ```
 
-2. Verify the version in `Cargo.toml` matches the intended release version.
+## Canonical release gate
 
-3. Update `CHANGELOG.md` with an entry for the release.
+Run the following commands in order. All must pass before proceeding.
 
-## Verification
-
-Run the full verification pipeline before tagging:
-
-```sh
-./release.sh
-```
-
-This runs, in order:
-
-1. Regenerate confusable-character data
-2. `cargo fmt --all -- --check`
-3. `cargo clippy --all-targets --all-features -- -D warnings`
-4. `cargo test --all-features` (unit + integration tests)
-5. `cargo run --bin generate-docs -- --check` (generated docs freshness)
-6. `cargo package --verbose`
-
-### Verification order (manual)
-
-If you need to run steps individually:
-
-```sh
+```bash
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features --lib
@@ -40,82 +40,93 @@ cargo run --bin generate-docs -- --check
 cargo package --verbose
 ```
 
-### Parity tests (local only)
+`./release.sh` runs the same pipeline (including confusables and docs regeneration) in one step.
 
-Parity tests are excluded from CI (Python `eggcalc` is not available in CI). Run locally after the main suite passes:
+## Optional parity gate
 
-```sh
+Local only. Requires the Python `eggcalc` package at `../eggcalc`.
+
+```bash
 cargo build
 cargo test --test lib parity
 ```
 
-See `docs/parity.md` for the full parity framework, accepted failures, and known gaps.
+As of 2026-07-08, the Rust `full` profile ships 80 tools while Python defines 67. There are 33 accepted parity failures out of 418 tests. These are tracked for follow-up and are not regressions. See `docs/parity.md` for the full breakdown.
 
-## Generated docs
+## Manual crates.io publishing
 
-Regenerate docs from the `ToolSpec` registry after any tool changes:
+Publishing is a direct maintainer action. Do not run from CI for this release line.
 
-```sh
-cargo run --bin generate-docs
-```
+### Prerequisites
 
-This updates:
-- README tool tables (auto-generated section between `<!-- BEGIN GENERATED -->` markers)
-- Architecture profile references
-- `generated/tool-cards.md`
+- Maintainer logged in locally with `cargo login` or has a valid local crates.io token.
+- Do not commit tokens.
+- Do not store the crates.io token in GitHub Actions for this release.
+- Clean working tree on `main` at the verified commit.
+- Local Rust toolchain stable and current.
 
-Verify freshness with:
+### Pre-publish
 
-```sh
-cargo run --bin generate-docs -- --check
-```
-
-## Package content check
-
-Verify the crates.io package contents are correct:
-
-```sh
-cargo package --verbose
-```
-
-This produces a `.crate` file and lists its contents. Verify no unintended files are included and no required files are missing.
-
-## Publish
-
-After all gates pass:
-
-```sh
-cargo publish
-```
-
-For a dry run without publishing:
-
-```sh
+```bash
 cargo publish --dry-run
 ```
 
-## Post-release
+Must succeed before proceeding.
 
-1. Create a git tag for the release version:
-   ```sh
+### Publish
+
+```bash
+cargo publish
+```
+
+Run from a clean worktree on `main` at the verified commit, after the dry run passes.
+
+### Tagging order
+
+Recommended:
+
+1. Ensure version in `Cargo.toml` is final.
+2. Run the full local release gate.
+3. Run `cargo publish --dry-run`.
+4. Publish with `cargo publish`.
+5. On success, create and push the tag:
+   ```bash
    git tag vX.Y.Z
    git push origin vX.Y.Z
    ```
 
-2. Verify the crate appears on [crates.io](https://crates.io/crates/eggsact).
+crates.io releases are immutable. Tagging after publish avoids a tag pointing at a failed attempt.
 
-3. Update `Cargo.toml` version to the next development version if needed.
+Alternative: tag before publish if the maintainer explicitly prefers that convention and is prepared to fix failures with a patch version bump. Document the chosen policy.
+
+## Package contents
+
+`cargo package` excludes: `plans/`, `data/`, `scripts/`, `build.sh`, `release.sh`, `.github/`, `.skills/`, `deny.toml`, `AGENTS.md`.
+
+Verify with:
+
+```bash
+cargo package --list
+```
+
+## Post-release
+
+1. Verify the crate appears on [crates.io](https://crates.io/crates/eggsact).
+2. Bump version to next development version if needed.
 
 ## CI
 
-GitHub Actions runs on push/PR to `main` (plus manual `workflow_dispatch`):
+GitHub Actions runs 8 jobs on push/PR to `main` (plus manual `workflow_dispatch`):
 
-- `cargo fmt --all -- --check`
-- `cargo clippy --all-targets --all-features -- -D warnings`
-- `cargo test --all-features --lib` (unit tests)
-- `cargo test --all-features --bins` (binary tests)
-- `cargo test --all-features --tests -- --skip parity` (integration tests)
-- `cargo run --bin generate-docs -- --check` (generated docs freshness)
-- `cargo package --verbose` (after all checks pass)
+| Job | Command |
+|-----|---------|
+| Check | `cargo fmt --all -- --check` |
+| Generated Docs | `cargo run --bin generate-docs -- --check` |
+| Clippy | `cargo clippy --all-targets --all-features -- -D warnings` |
+| Test (lib) | `cargo test --all-features --lib` |
+| Test (bins) | `cargo test --all-features --bins` |
+| Test (integration) | `cargo test --all-features --tests -- --skip parity` |
+| Test (doc) | `cargo test --doc` |
+| Package | `cargo package --verbose` |
 
-Parity tests are not run in CI. They must be validated locally before release.
+CI mirrors the local release gate except parity. CI is verification only — it does not publish to crates.io.
