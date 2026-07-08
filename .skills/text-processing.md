@@ -2,7 +2,7 @@
 
 Use this when working with text processing functionality in `src/text/`.
 
-## Module List (24 modules)
+## Module List (25 modules)
 
 | Module | File | Purpose |
 |--------|------|---------|
@@ -20,6 +20,7 @@ Use this when working with text processing functionality in `src/text/`.
 | `path` | `path.rs` | Path analysis and normalization |
 | `position` | `position.rs` | Byte/line/column position conversion |
 | `primitives` | `primitives.rs` | UTF-8 encoding, grapheme counting |
+| `regex_engine` | `regex_engine.rs` | Regex backend classifier (rust-regex vs fancy-regex) |
 | `regex_safety` | `regex_safety.rs` | ReDoS detection |
 | `replace` | `replace.rs` | Text replacement with preview |
 | `shell` | `shell.rs` | Shell command parsing and quoting |

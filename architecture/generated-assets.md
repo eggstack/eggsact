@@ -84,7 +84,7 @@ cargo test --all-features
 
 ### Known Failures
 
-As of 2026-07-07, the parity suite has 31 known failures out of 416 tests. These are documented in `docs/parity.md` under "Known parity gaps" and are categorized as accepted behavioral differences, not regressions. The fixture file `tests/fixtures/accepted_parity_failures.txt` lists all 31 names.
+As of 2026-07-08, the parity suite has 33 known failures out of 418 tests. These are documented in `docs/parity.md` under "Known parity gaps" and are categorized as accepted behavioral differences, not regressions. The fixture file `tests/fixtures/accepted_parity_failures.txt` lists all 33 names.
 
 ## Diagnostics
 

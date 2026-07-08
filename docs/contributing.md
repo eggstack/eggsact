@@ -86,7 +86,7 @@ eggsact/
       shell.rs           # Shell tools (4)
       list.rs            # List tools (3)
       markdown.rs        # Markdown tools (2)
-      patch.rs           # Patch tools (4)
+      patch.rs           # Patch tools (5)
       config.rs          # Config tools (4)
       identifier.rs      # Identifier tools (3)
       unicode.rs         # Unicode tools (2)
@@ -94,10 +94,10 @@ eggsact/
       cargo.rs           # Cargo tool (1)
       dependency.rs      # Dependency tool (1)
       diagnostics.rs     # Diagnostics tool (1)
-      repo.rs            # Repo tools (3)
+      repo.rs            # Repo tools (5)
     agent/               # In-process agent API (ToolRegistry, Profile, call_json)
     preflight/           # Typed preflight wrappers
-    text/                # Text processing library (24 modules)
+    text/                # Text processing library (25 modules)
   tests/
     lib.rs               # Test entry point
     parity/              # Python/Rust comparison tests

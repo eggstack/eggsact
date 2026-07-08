@@ -1,6 +1,6 @@
 # Text Processing Library
 
-The `src/text/` module provides 24 text processing modules used by MCP tools and available as a library API.
+The `src/text/` module provides 25 text processing modules used by MCP tools and available as a library API.
 
 ## Module Index
 

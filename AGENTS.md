@@ -95,7 +95,7 @@ src/
     diagnostics.rs  # runtime_diagnostics, profile_inspect, tool_availability_explain
     repo.rs         # repo_manifest_inspect, config_file_inspect, repo_tree_summarize, test_command_suggest, repo_language_detect
     analysis.rs     # import_export_inspect, code_block_map, symbol_name_diff, lockfile_inspect
-  text/             # text processing library (24 modules)
+  text/             # text processing library (25 modules)
     regex_engine.rs # regex backend classifier (classify_pattern, RegexEngineUsed, RegexFeature)
   agent/            # in-process agent API (ToolRegistry, Profile, call_json)
   preflight/        # typed preflight wrappers (EditPreflight, CommandPreflight, ConfigPreflight, PatchApplyCheck, TextSecurityInspect), strict finding parsing, structured RecommendedNextTool
@@ -104,7 +104,7 @@ tests/
   calc/             # calculator tests (4 files)
   mcp/              # MCP protocol + tool tests (28 files)
   parity/           # Python/Rust parity tests (12 files)
-  text/             # text processing tests (24 files)
+  text/             # text processing tests (25 files)
 scripts/
   generate_confusables.py  # regenerates src/text/confusables_generated.rs from unicode.org
 generated/
@@ -119,7 +119,7 @@ Detailed architecture documentation is in `architecture/`:
 - `architecture/calculator.md` — calculator core, NL pipeline, units, constants, EvalContext
 - `architecture/mcp-server.md` — MCP protocol, tool registration, categories, error handling, ExecutionContext
 - `architecture/machine-codes.md` — machine-readable response codes, finding helpers, severity/disposition/verdict constants, composite tool verdicts
-- `architecture/text-library.md` — all 24 text modules, public API, code patterns
+- `architecture/text-library.md` — all 25 text modules, public API, code patterns
 - `architecture/compatibility.md` — compatibility mode (EggcalcPython vs StrictNative), behavior differences
 - `architecture/coding-agent-integration.md` — MCP stdio and in-process integration, profiles, audiences, concurrency contract
 - `architecture/generated-assets.md` — generated doc files, confusables data, parity workflow, diagnostics

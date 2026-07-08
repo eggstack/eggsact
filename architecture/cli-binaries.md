@@ -58,8 +58,8 @@ JSON output example:
 ```json
 {
   "version": "1.1.3",
-  "tool_count": 71,
-  "profiles": { "full": 71, "default": 25, ... },
+  "tool_count": 80,
+  "profiles": { "full": 80, "default": 25, ... },
   "compatibility_mode": { "mcp_server": "EggcalcPython", "in_process_api": "StrictNative" },
   "budget_tiers": { "cheap": "...", "moderate": "...", "heavy": "..." },
   "env_var_names": ["EGGCALC_NO_CONFIG", "EGGCALC_MCP_PROFILE", ...],

@@ -519,16 +519,16 @@ eggsact/
 │   │   ├── shell.rs         # shell_split, shell_quote_join, argv_compare, command_preflight
 │   │   ├── list.rs          # list_compare, list_dedupe, list_sort
 │   │   ├── markdown.rs      # markdown_structure, code_fence_extract
-│   │   ├── patch.rs         # patch_apply_check, patch_summary, edit_preflight, diff_risk_classify
+│   │   ├── patch.rs         # patch_apply_check, patch_summary, edit_preflight, diff_risk_classify, patch_contract_check
 │   │   ├── config.rs        # dotenv_validate, ini_validate, config_preflight, toml_shape_tool
 │   │   ├── identifier.rs    # identifier_analyze, identifier_inspect, identifier_table_inspect
 │   │   ├── unicode.rs       # unicode_policy_check, canonicalize_text
 │   │   ├── version.rs       # version_compare, version_constraint_check
 │   │   ├── cargo.rs         # cargo_toml_inspect
 │   │   ├── dependency.rs    # dependency_edit_preflight
-│   │   ├── diagnostics.rs   # runtime_diagnostics
-│   │   └── repo.rs          # repo_manifest_inspect, config_file_inspect, repo_tree_summarize
-│   └── text/                # Text processing library (24 modules)
+│   │   ├── diagnostics.rs   # runtime_diagnostics, profile_inspect, tool_availability_explain
+│   │   └── repo.rs          # repo_manifest_inspect, config_file_inspect, repo_tree_summarize, test_command_suggest, repo_language_detect
+│   └── text/                # Text processing library (25 modules)
 │       ├── mod.rs           # Module re-exports
 │       ├── primitives.rs    # UTF-8 encoding, codepoint iteration
 │       ├── confusables.rs   # Unicode confusable character lookup

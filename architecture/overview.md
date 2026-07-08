@@ -49,9 +49,9 @@ eggsact is a deterministic MCP (Model Context Protocol) server and in-process ut
 │                                                                   │
 │  80 tools across 20 categories:                                   │
 │  math(4) text(18) json(6) regex(3) validation(4) path(6)        │
-│  shell(4) list(3) markdown(2) patch(4) config(4) identifier(3)  │
+│  shell(4) list(3) markdown(2) patch(5) config(4) identifier(3)  │
 │  unicode(2) version(2) toml(1) cargo(1) dependency(1)           │
-│  repo(3) diagnostics(3)                                          │
+│  repo(5) diagnostics(3)                                          │
 │                                                                   │
 │  helpers.rs — shared constants, utilities, spawn semaphore        │
 └─────────────────────────────┬───────────────────────────────────┘
@@ -60,7 +60,7 @@ eggsact is a deterministic MCP (Model Context Protocol) server and in-process ut
 ┌─────────────────────────────────────────────────────────────────┐
 │                     text/ — Text Processing Library               │
 │                                                                   │
-│  24 modules providing the core text operations:                   │
+│  25 modules providing the core text operations:                   │
 │  primitives, confusables, diff, measure, validate, transform,   │
 │  position, regex_safety, regex_engine, replace, path,           │
 │  identifier, shell, markdown, glob, config, toml, patch,        │
@@ -82,7 +82,7 @@ Each major component has a dedicated architecture doc:
 | **Calculator Core** | [calculator.md](calculator.md) | Natural language normalization, AST evaluator, units, constants, EvalContext |
 | **MCP Server** | [mcp-server.md](mcp-server.md) | Protocol, tool registration, profiles, concurrency, budget, response contract |
 | **Machine Codes** | [machine-codes.md](machine-codes.md) | Response codes, severity/disposition/verdict constants, finding helpers |
-| **Text Library** | [text-library.md](text-library.md) | 24 text modules, public API, code patterns |
+| **Text Library** | [text-library.md](text-library.md) | 25 text modules, public API, code patterns |
 | **Compatibility** | [compatibility.md](compatibility.md) | EggcalcPython vs StrictNative validation modes |
 | **Agent API** | [agent-api.md](agent-api.md) | ToolRegistry, Profile, ExecutionContext, in-process dispatch |
 | **Preflight Wrappers** | [preflight.md](preflight.md) | Typed wrappers, PreflightError, verdict enums, finding parsing |

@@ -1,6 +1,6 @@
 # Tool Implementations
 
-The `src/tools/` module contains the actual handler functions for all 78 MCP tools. Each category has its own file, plus a shared helpers module.
+The `src/tools/` module contains the actual handler functions for all 80 MCP tools. Each category has its own file, plus a shared helpers module.
 
 See also: [MCP Server](mcp-server.md), [Text Library](text-library.md)
 
@@ -25,7 +25,7 @@ See also: [MCP Server](mcp-server.md), [Text Library](text-library.md)
 | `version.rs` | version | 2 |
 | `cargo.rs` | cargo | 1 |
 | `dependency.rs` | dependency | 1 |
-| `diagnostics.rs` | diagnostics | 1 |
+| `diagnostics.rs` | diagnostics | 3 |
 | `repo.rs` | repo | 5 |
 | `analysis.rs` | analysis | 4 |
 
@@ -253,8 +253,10 @@ Route-critical tools must always emit `machine_code` and `verdict` in their resp
 | `symbol_name_diff` | Compare old/new source for symbol changes |
 | `lockfile_inspect` | Inspect lockfile diffs for dependency-change signals |
 
-### Diagnostics (1 tool)
+### Diagnostics (3 tools)
 
 | Tool | Description |
 |------|-------------|
 | `runtime_diagnostics` | Print runtime diagnostic info (harness-only) |
+| `profile_inspect` | Inspect active profile and tool counts (harness-only) |
+| `tool_availability_explain` | Explain tool availability per profile/audience (harness-only) |
