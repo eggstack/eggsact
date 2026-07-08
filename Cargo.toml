@@ -16,7 +16,11 @@ exclude = [
     "data/",
     "scripts/",
     "build.sh",
+    "release.sh",
     ".github/",
+    ".skills/",
+    "deny.toml",
+    "AGENTS.md",
 ]
 
 [dependencies]
