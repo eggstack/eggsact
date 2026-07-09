@@ -266,7 +266,7 @@ The `runtime_diagnostics` tool returns a JSON object:
     "schema_detail": "full",
     "limits": {
       "max_requests_per_second": 10,
-      "max_in_flight_requests": 16,
+      "max_in_flight_requests": 32,
       "max_tool_workers": 16,
       "max_request_bytes": 1048576,
       "max_output_bytes": 1048576

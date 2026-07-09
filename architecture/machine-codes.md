@@ -1,6 +1,6 @@
 # Machine Codes Reference
 
-Machine-readable response codes for tool results. Every non-OK `ToolResponse` carries a `machine_code` field so that harnesses, orchestrators, and downstream tooling can route, classify, and act on results without parsing human-readable messages.
+Machine-readable response codes for tool results. Every non-OK `ToolResponse` carries a `machine_code` field so that harnesses, orchestrators, and downstream tooling can route, classify, and act on results without parsing human-readable messages. There are ~125 codes organized by category.
 
 ## Source of Truth
 

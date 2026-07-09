@@ -277,22 +277,6 @@ Compares two structured data inputs (currently JSON only):
 4. **Machine code** — `INVALID_INPUT` > `DATA_EQUAL` > `DATA_DIFF`.
 5. **Sub-results** — includes `validate_a`, `validate_b`, `json_compare`, `shape_a`, `shape_b`.
 
-### cargo_toml_inspect
-
-**File:** `cargo.rs` | **Budget:** none (inline)
-
-Inspects a Cargo.toml for structural issues:
-
-1. **Parse** — delegates to `crate::text::cargo_toml_inspect()` which validates TOML structure, package metadata, workspace config, dependency sections.
-2. **Finding classification** — maps text findings to severity/code:
-   - `"parse error"` / `"not a table"` → HIGH / `CARGO_PARSE_ERROR`
-   - `"missing"` → MEDIUM / `CARGO_MISSING_FIELD`
-   - `"confusable"` → MEDIUM / `CARGO_CONFUSABLE_NAMES`
-   - `"suspicious"` → MEDIUM / `CARGO_SUSPICIOUS_NAME`
-   - `"unrecognized"` → MEDIUM / `CARGO_UNRECOGNIZED_VALUE`
-   - Default → INFO / `CARGO_NOTE`
-3. **Verdict** — `invalid` if parse fails; `review` if findings present; `allow` otherwise.
-
 ## Route-Critical Tools
 
 A subset of tools are classified as **route-critical** — they produce structured verdicts and machine codes that downstream harnesses depend on for routing decisions. The `is_route_critical()` helper and `ROUTE_CRITICAL_TOOLS` constant in `registry/listing.rs` identify these:
@@ -461,13 +445,13 @@ Route-critical tools **must** always emit `machine_code` and `verdict` in their 
 
 | Tool | Description | Notable Details |
 |------|-------------|-----------------|
-| `cargo_toml_inspect` | Inspect Cargo.toml structure (composite) | See [Composite Tools](#composite-tools) section above. Checks workspace, dependencies, path dependencies, suspicious/confusable names. |
+| `cargo_toml_inspect` | Inspect Cargo.toml structure | Checks workspace, dependencies, path dependencies, suspicious/confusable names. |
 
 ### Dependency (1 tool)
 
 | Tool | Description | Notable Details |
 |------|-------------|-----------------|
-| `dependency_edit_preflight` | Pre-check dependency manifest edits | See [Dependency Ecosystem Detection](#dependency-ecosystem-detection) below. |
+| `dependency_edit_preflight` | Pre-check dependency manifest edits (composite) | See [Dependency Ecosystem Detection](#dependency-ecosystem-detection) below. |
 
 ### Diagnostics (3 tools)
 
@@ -482,7 +466,7 @@ Route-critical tools **must** always emit `machine_code` and `verdict` in their 
 | Tool | Description | Notable Details |
 |------|-------------|-----------------|
 | `repo_manifest_inspect` | Inspect repository manifest | Detects Rust/Python/Node/Go/mixed project types. Classifies manifests, configs, lockfiles. Generates tool_hints per ecosystem. |
-| `config_file_inspect` | Inspect config files with secret masking | Detects format (json, toml, yaml, dotenv, ini, cargo_toml, package_json, pyproject). Scans for: secret-like keys (masked via `mask_secret_preview`), insecure URLs (http:// non-localhost), debug flags, command hooks, TLS disabled, wildcard hosts. Policy overrides: allow_debug_flags, allow_insecure_urls, allow_command_hooks. |
+| `config_file_inspect` | Inspect config files with secret masking (composite) | Detects format (json, toml, yaml, dotenv, ini, cargo_toml, package_json, pyproject). Scans for: secret-like keys (masked via `mask_secret_preview`), insecure URLs (http:// non-localhost), debug flags, command hooks, TLS disabled, wildcard hosts. Policy overrides: allow_debug_flags, allow_insecure_urls, allow_command_hooks. |
 | `repo_tree_summarize` | Summarize repository file tree | Uses `classify_paths` to bucket all paths. Reports project_types, entrypoint_candidates, high_leverage_paths, tool_hints. Flags missing lockfiles, high generated/vendor percentages. |
 | `test_command_suggest` | Suggest verification commands from repo paths | Generates commands per ecosystem (cargo check/test/fmt/clippy, pytest/ruff, npm test/lint, go build/test/vet) with confidence scores. |
 | `repo_language_detect` | Detect languages/ecosystems from repo tree | Extension-based detection for 26 language categories. Reports file_count, extensions, confidence per language. Detects ecosystems from manifest files. |
@@ -509,8 +493,8 @@ Budget tiers:
 | Tier | Used By | Max Elapsed |
 |------|---------|-------------|
 | `CHEAP` | repo_language_detect, test_command_suggest, import_export_inspect, code_block_map, symbol_name_diff | Short |
-| `MODERATE` | patch_apply_check, patch_summary, patch_contract_check, dependency_edit_preflight, identifier_table_inspect, text_diff_explain, lockfile_inspect, regex_finditer | Medium |
-| `HEAVY` | edit_preflight, command_preflight, config_preflight, text_security_inspect, structured_data_compare, text_inspect, config_file_inspect, repo_tree_summarize | Long |
+| `MODERATE` | patch_apply_check, patch_summary, patch_contract_check, dependency_edit_preflight, identifier_table_inspect, text_diff_explain, lockfile_inspect, regex_finditer, repo_tree_summarize | Medium |
+| `HEAVY` | edit_preflight, command_preflight, config_preflight, text_security_inspect, structured_data_compare, config_file_inspect | Long |
 
 Handlers call `budget_ctx.should_stop()` at key pipeline stages. If it returns true, they return `budget_ctx.check_should_stop("tool_name").unwrap_err()` which produces a timeout error response with the appropriate machine code.
 

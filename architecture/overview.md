@@ -79,9 +79,9 @@ Each major component has a dedicated architecture doc. The table below serves as
 
 | Component | Doc | What It Covers | Key Files |
 |-----------|-----|----------------|-----------|
-| **Calculator Core** | [calculator.md](calculator.md) | NL normalization pipeline (30-step), AST evaluator (recursive descent, 8 precedence levels), 140+ unit definitions, 50+ physical/math constants, EvalContext for mutable per-call state, big-integer factorial/perm/comb, sentinel-based return protocol | `src/calc/{normalize,evaluator,units,context}.rs` |
+| **Calculator Core** | [calculator.md](calculator.md) | NL normalization pipeline (30-step), AST evaluator (recursive descent, 8 precedence levels), 150+ unit definitions, 50+ physical/math constants, EvalContext for mutable per-call state, big-integer factorial/perm/comb, sentinel-based return protocol | `src/calc/{normalize,evaluator,units,context}.rs` |
 | **MCP Server** | [mcp-server.md](mcp-server.md) | JSON-RPC 2.0 over stdio, tokio concurrent dispatch via JoinSet, tool registration via ToolSpec (single source of truth), profile/audience filtering, schema validation (JSON Schema subset), rate limiting, cancellation model, python-compatible JSON serialization | `src/mcp/{server,protocol,response,runtime,budget,schema_validation,compat,machine_codes}.rs`, `src/mcp/registry/`, `src/mcp/specs/`, `src/mcp/schemas/` |
-| **Machine Codes** | [machine-codes.md](machine-codes.md) | ~100 machine-readable response code constants (UPPER_SNAKE_CASE), severity/disposition/verdict constants, `finding()` helper functions for constructing structured findings, route-critical tool contract | `src/mcp/machine_codes.rs` |
+| **Machine Codes** | [machine-codes.md](machine-codes.md) | ~125 machine-readable response code constants (UPPER_SNAKE_CASE), severity/disposition/verdict constants, `finding()` helper functions for constructing structured findings, route-critical tool contract | `src/mcp/machine_codes.rs` |
 | **Text Library** | [text-library.md](text-library.md) | 25 text processing modules: primitives (grapheme-aware), diff/similarity (Levenshtein, LCS), validation (JSON/brackets/regex/TOML), transforms (case/normalize/escape), shell tokenizer, regex engine auto-selection (rust-regex vs fancy-regex), Unicode policy engine, confusables detection, prompt injection detection, composite tool orchestration | `src/text/*.rs` (25 files) |
 | **Compatibility** | [compatibility.md](compatibility.md) | `EggcalcPython` vs `StrictNative` validation modes — Python-parity error messages vs strict JSON Schema enforcement, how compat mode propagates through MCP server and agent API | `src/mcp/compat.rs` |
 | **Agent API** | [agent-api.md](agent-api.md) | In-process `ToolRegistry` (synchronous dispatch), 11 named `Profile` variants + Custom, `ToolAudience` (Model/Harness/Debug), `ExecutionContext` with builder pattern, 4 dispatch levels (`call_json` → `call_json_with_execution_context`), tool listing methods, `prepare_tool_call()` shared core | `src/agent/mod.rs` |
@@ -269,12 +269,12 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/main.rs` | 220 | CLI entry point, arg parsing, dispatch |
-| `src/lib.rs` | 81 | Library root, re-exports |
+| `src/main.rs` | 268 | CLI entry point, arg parsing, dispatch |
+| `src/lib.rs` | 82 | Library root, re-exports |
 | `src/calc/mod.rs` | — | Calculator module re-exports |
 | `src/calc/normalize.rs` | ~2100 | Natural language tokenization (30-step pipeline) |
 | `src/calc/evaluator.rs` | ~3700 | AST-based expression evaluator (100+ functions) |
-| `src/calc/units.rs` | ~2350 | Unit definitions (140+), aliases (500+), conversions |
+| `src/calc/units.rs` | ~2350 | Unit definitions (150+), aliases (500+), conversions |
 | `src/calc/context.rs` | 77 | EvalContext (mutable per-call state) |
 | `src/mcp/server.rs` | — | Protocol orchestration, stdio loop, concurrent dispatch |
 | `src/mcp/protocol.rs` | — | JSON-RPC types |
@@ -283,13 +283,13 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | `src/mcp/budget.rs` | — | ToolBudget (3 tiers), BudgetContext, composite sub-budgets |
 | `src/mcp/schema_validation.rs` | — | Argument validation against tool schemas |
 | `src/mcp/compat.rs` | — | CompatibilityMode (EggcalcPython vs StrictNative) |
-| `src/mcp/machine_codes.rs` | — | ~100 machine-readable response code constants |
+| `src/mcp/machine_codes.rs` | — | ~125 machine-readable response code constants |
 | `src/mcp/registry/types.rs` | — | ToolDefinition, ToolSpec, enums |
 | `src/mcp/registry/all_tools.rs` | — | ALL_TOOLS aggregation, PROFILE_NAMES |
 | `src/mcp/registry/listing.rs` | — | Filtering, audience, schema compaction, suggestions |
 | `src/mcp/specs/*.rs` | — | ToolSpec declarations (20 files, one per category) |
 | `src/mcp/schemas/*.rs` | — | JSON-schema builders (20 files, one per category) |
-| `src/tools/helpers.rs` | 1766 | Shared constants, utilities, spawn semaphore |
+| `src/tools/helpers.rs` | 1778 | Shared constants, utilities, spawn semaphore |
 | `src/tools/*.rs` | — | Tool implementations (19 files) |
 | `src/text/*.rs` | — | Text processing library (25 files) |
 | `src/agent/mod.rs` | ~1400 | ToolRegistry, Profile, ExecutionContext |
