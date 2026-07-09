@@ -189,13 +189,13 @@ Profile snapshot tests (`tests/mcp/test_hardening_and_gaps.rs`) verify that all 
 
 ## Skills
 
-Agent task skills in `.skills/`:
+Agent task skills in `.opencode/skills/` (symlinked from `.agents/skills/` for Codex compatibility):
 
-- `.skills/mcp-tools.md` — how to add or update MCP tools
-- `.skills/testing.md` — testing patterns, commands, test structure
-- `.skills/debugging.md` — common issues, debugging workflows
-- `.skills/release.md` — release process and checklist
-- `.skills/text-processing.md` — text module conventions and patterns
+- `.opencode/skills/mcp-tools/SKILL.md` — how to add or update MCP tools
+- `.opencode/skills/testing/SKILL.md` — testing patterns, commands, test structure
+- `.opencode/skills/debugging/SKILL.md` — common issues, debugging workflows
+- `.opencode/skills/release/SKILL.md` — release process and checklist
+- `.opencode/skills/text-processing/SKILL.md` — text module conventions and patterns
 
 ## Key gotchas
 

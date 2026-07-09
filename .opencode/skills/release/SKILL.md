@@ -1,6 +1,7 @@
-# Skill: Releasing eggsact
-
-Use this when preparing or performing a release. The canonical release checklist lives in `docs/release.md` — read it first.
+---
+name: release
+description: Use when preparing or performing a release of eggsact, running the release gate, publishing to crates.io, or checking release readiness. The canonical release checklist lives in docs/release.md.
+---
 
 ## Release policy
 

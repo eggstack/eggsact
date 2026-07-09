@@ -1,12 +1,13 @@
-# Skill: Debugging eggsact
-
-Use this when diagnosing issues in the codebase.
+---
+name: debugging
+description: Use when diagnosing issues in the eggsact codebase, troubleshooting build failures, parity test failures, confusables data staleness, MCP server issues, unit conversion problems, or expression evaluation gotchas.
+---
 
 ## Common Issues
 
 ### Tool Registration Drift
 
-If `tool_registration_tables_are_in_sync` fails, you've modified the ToolSpec registry (`src/mcp/specs/<category>.rs`) without running `cargo run --bin generate-docs`. See `.skills/mcp-tools.md` for the complete list.
+If `tool_registration_tables_are_in_sync` fails, you've modified the ToolSpec registry (`src/mcp/specs/<category>.rs`) without running `cargo run --bin generate-docs`. See `.opencode/skills/mcp-tools/SKILL.md` for the complete list.
 
 ### Parity Test Failures
 

@@ -18,7 +18,8 @@ exclude = [
     "build.sh",
     "release.sh",
     ".github/",
-    ".skills/",
+    ".opencode/",
+    ".agents/",
     "deny.toml",
     "AGENTS.md",
 ]

@@ -1,6 +1,7 @@
-# Skill: Adding or Updating MCP Tools
-
-Use this when adding a new MCP tool or modifying an existing one.
+---
+name: mcp-tools
+description: Use when adding a new MCP tool, modifying an existing tool, working with ToolSpec entries, machine codes, preflight wrappers, composite tools, or typed preflight wrappers in the eggsact codebase.
+---
 
 ## Checklist
 

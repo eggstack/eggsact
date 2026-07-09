@@ -1,6 +1,7 @@
-# Skill: Testing eggsact
-
-Use this when writing, running, or debugging tests.
+---
+name: testing
+description: Use when writing, running, or debugging tests in the eggsact codebase, including unit tests, integration tests, parity tests, golden fixtures, context isolation, or determinism/concurrency tests.
+---
 
 ## Test Commands
 

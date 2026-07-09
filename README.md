@@ -558,7 +558,8 @@ eggsact/
 ├── tests/                   # Integration and unit tests
 ├── docs/                    # Detailed documentation
 ├── architecture/            # Architecture documentation
-├── .skills/                 # Agent task skills
+├── .opencode/skills/        # Agent task skills (opencode format)
+├── .agents/skills/          # Agent task skills (symlinks to .opencode/skills/)
 ├── Cargo.toml
 └── README.md
 ```

@@ -386,4 +386,4 @@ cargo run --bin generate-docs -- --check  # verify docs are current
 | Parity status | `docs/parity.md` |
 | Compatibility policy | `docs/compatibility-policy.md` |
 | Release process | `docs/release.md` |
-| Agent skills | `.skills/*.md` |
+| Agent skills | `.opencode/skills/*/SKILL.md` |
