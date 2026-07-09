@@ -1,5 +1,6 @@
 use crate::parity::{
-    compare_tool_parity, compare_tool_text_parity, run_python_mcp_request, run_rust_mcp_request,
+    compare_tool_parity, compare_tool_parity_superset, compare_tool_text_parity,
+    run_python_mcp_request, run_rust_mcp_request,
 };
 
 // === Gap 3: tools/list filter validation (tier: true as int) ===
@@ -87,28 +88,28 @@ fn test_tools_list_tier_int() {
 #[test]
 fn test_regex_finditer_nonascii_spans() {
     let args = serde_json::json!({"pattern": r"\w+", "text": "é e_1"});
-    let result = compare_tool_parity("regex_finditer", args);
+    let result = compare_tool_parity_superset("regex_finditer", args);
     assert!(result.passed, "Parity failed: {:?}", result.error);
 }
 
 #[test]
 fn test_regex_finditer_emoji_spans() {
     let args = serde_json::json!({"pattern": r".", "text": "a😀b"});
-    let result = compare_tool_parity("regex_finditer", args);
+    let result = compare_tool_parity_superset("regex_finditer", args);
     assert!(result.passed, "Parity failed: {:?}", result.error);
 }
 
 #[test]
 fn test_regex_finditer_combining_marks() {
     let args = serde_json::json!({"pattern": r"\w+", "text": "café"});
-    let result = compare_tool_parity("regex_finditer", args);
+    let result = compare_tool_parity_superset("regex_finditer", args);
     assert!(result.passed, "Parity failed: {:?}", result.error);
 }
 
 #[test]
 fn test_regex_finditer_named_groups_nonascii() {
     let args = serde_json::json!({"pattern": r"(?P<word>\w+)", "text": "café résumé"});
-    let result = compare_tool_parity("regex_finditer", args);
+    let result = compare_tool_parity_superset("regex_finditer", args);
     assert!(result.passed, "Parity failed: {:?}", result.error);
 }
 

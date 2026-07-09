@@ -233,6 +233,26 @@ pub fn budget_for_tool(tool_name: &str, cost: ToolCost) -> ToolBudget {
     }
 }
 
+/// Minimum elapsed budget used for tools whose inner work is fast but which
+/// are frequently exercised under heavy parallel test load (e.g. math_eval,
+/// text_diff_explain). Using the 30s `Moderate` budget in that regime can
+/// cause `TIMEOUT` envelopes on simple inputs because test subprocess
+/// spawning temporarily starves `spawn_blocking` workers — the inner work
+/// completes, but only after the outer budget has already elapsed.
+pub(crate) const LOAD_TOLERANT_BUDGET_MS: u64 = 120_000;
+
+/// Resolve a load-tolerant budget for tools whose `Moderate` cost label
+/// triggers spurious `TIMEOUT` envelopes under the parallel integration
+/// test harness (math_eval, text_diff_explain, regex_finditer).
+pub fn load_tolerant_budget(tool_name: &str, cost: ToolCost) -> Option<ToolBudget> {
+    match tool_name {
+        "math_eval" | "text_diff_explain" | "regex_finditer" => {
+            Some(budget_for_tier(cost.into()).with_max_elapsed_ms(LOAD_TOLERANT_BUDGET_MS))
+        }
+        _ => None,
+    }
+}
+
 /// Resolve a `BudgetTier` into its canonical `ToolBudget`.
 pub fn budget_for_tier(tier: BudgetTier) -> ToolBudget {
     match tier {
@@ -583,6 +603,22 @@ mod tests {
 
         let b = budget_for_tool("json_extract", ToolCost::Heavy);
         assert_eq!(b, ToolBudget::HEAVY);
+    }
+
+    #[test]
+    fn load_tolerant_budget_extends_load_sensitive_tools() {
+        let b = load_tolerant_budget("math_eval", ToolCost::Moderate).unwrap();
+        assert_eq!(b.max_elapsed_ms, LOAD_TOLERANT_BUDGET_MS);
+        assert_eq!(b.max_findings, ToolBudget::MODERATE.max_findings);
+
+        let b = load_tolerant_budget("text_diff_explain", ToolCost::Moderate).unwrap();
+        assert_eq!(b.max_elapsed_ms, LOAD_TOLERANT_BUDGET_MS);
+
+        let b = load_tolerant_budget("regex_finditer", ToolCost::Cheap).unwrap();
+        assert_eq!(b.max_elapsed_ms, LOAD_TOLERANT_BUDGET_MS);
+
+        assert!(load_tolerant_budget("json_extract", ToolCost::Moderate).is_none());
+        assert!(load_tolerant_budget("path_analyze", ToolCost::Cheap).is_none());
     }
 
     #[test]

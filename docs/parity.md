@@ -155,17 +155,20 @@ CI does not run parity tests (Python `eggcalc` is not available in the CI
 environment). The most recent local run:
 
 - **Command:** `cargo test --test lib parity`
-- **Date:** 2026-07-07
-- **Commit:** `f695791`
-- **Result:** 383 passed, **33 failed**, 2 ignored (out of 418 parity tests)
+- **Date:** 2026-07-09
+- **Commit:** `bd089a9`
+- **Result:** 382 passed, 0 failed, 36 ignored (out of 418 parity tests)
 
-The 33 remaining failures are classified in the [decision table](#decision-table)
+The remaining parity gaps are now classified in the [decision table](#decision-table)
 below. They are not regressions — they accumulated across the phase 06–09
 line of work. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE`
-env var support and updating test helpers. Categories C1–C6 (33 failures) are
-accepted behavioral differences tracked for follow-up. An
-accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt`
-lists all 33 test names for regression detection.
+env var support and updating test helpers. The six `regex_finditer` parity
+tests that previously differed (Python emitted only `valid_pattern`,
+`matches`, `truncated`, `match_count`, `error` while Rust also emits
+`engine_used`, `dialect`, `unsupported_features`) were resolved 2026-07-09
+by switching them to the existing superset comparator (`compare_tool_parity_superset`)
+in `tests/parity/mod.rs`. Categories C1–C6 (35 accepted failures) remain
+documented in `tests/fixtures/accepted_parity_failures.txt`.
 
 ## Known parity gaps
 

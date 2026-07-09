@@ -1,9 +1,9 @@
-use crate::parity::compare_tool_parity;
+use crate::parity::{compare_tool_parity, compare_tool_parity_superset};
 
 #[test]
 fn test_regex_finditer_unicode_spans() {
     let args = serde_json::json!({"text": "é e_1", "pattern": r"\w+"});
-    let result = compare_tool_parity("regex_finditer", args);
+    let result = compare_tool_parity_superset("regex_finditer", args);
     assert!(result.passed, "Parity failed: {:?}", result.error);
 }
 

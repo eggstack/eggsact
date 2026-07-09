@@ -325,7 +325,13 @@ pub fn path_normalize(
     let mut is_unc_track =
         actual_platform == "windows" && (path.starts_with("\\\\") || path.starts_with("//"));
 
-    for part in path.split(sep) {
+    let split_seps: &[char] = if actual_platform == "windows" {
+        &['/', '\\']
+    } else {
+        &['/']
+    };
+
+    for part in path.split(split_seps) {
         if part.is_empty() {
             continue;
         }

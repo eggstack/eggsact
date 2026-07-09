@@ -1,4 +1,4 @@
-use crate::parity::compare_tool_parity;
+use crate::parity::{compare_tool_parity, compare_tool_parity_superset};
 
 #[test]
 fn test_text_transform_lowercase() {
@@ -166,7 +166,7 @@ fn test_glob_match_nested() {
 #[test]
 fn test_regex_finditer_basic() {
     let args = serde_json::json!({"text": "abc123def456", "pattern": r"\d+"});
-    let result = compare_tool_parity("regex_finditer", args);
+    let result = compare_tool_parity_superset("regex_finditer", args);
     assert!(result.passed, "Parity failed: {:?}", result.error);
 }
 

@@ -159,6 +159,26 @@ fn test_path_normalize_root() {
     assert_eq!(result.normalized, "/");
 }
 
+// ─── path_normalize Windows mixed-separator handling (BUG-004) ───────
+
+#[test]
+fn test_path_normalize_windows_forward_slash_drive_letter() {
+    let result = path_normalize("C:/foo/../bar", "windows", true, false);
+    assert_eq!(result.normalized, "C:\\bar");
+}
+
+#[test]
+fn test_path_normalize_windows_mixed_slashes_drive_letter() {
+    let result = path_normalize("C:\\foo/../bar", "windows", true, false);
+    assert_eq!(result.normalized, "C:\\bar");
+}
+
+#[test]
+fn test_path_normalize_windows_unc_with_forward_slashes() {
+    let result = path_normalize("//server/share/dir/../file", "windows", true, false);
+    assert_eq!(result.normalized, "\\\\server\\share\\file");
+}
+
 // ─── path_scope_check ────────────────────────────────────────────────
 
 #[test]
