@@ -2059,14 +2059,14 @@ fn handle_convert_value(value: f64, from_unit: &str, to_unit: &str) -> Result<Ru
         let converted =
             crate::calc::units::convert_temperature(value, &from_resolved, &to_resolved)?;
         Ok((
-            format!("{} {}", format_numeric_result(converted), &to_resolved),
+            format!("{} {}", format_numeric_result(converted), to_resolved),
             "float".to_string(),
         ))
     } else {
         let factor = crate::calc::units::get_conversion_factor(&from_resolved, &to_resolved)?;
         let converted = value * factor;
         Ok((
-            format!("{} {}", format_numeric_result(converted), &to_resolved),
+            format!("{} {}", format_numeric_result(converted), to_resolved),
             "float".to_string(),
         ))
     }

@@ -53,7 +53,7 @@ fn detect_duplicates(names: &[String]) -> Vec<String> {
         groups.entry(key).or_default().push(name.clone());
     }
     let mut dupes: Vec<String> = Vec::new();
-    for (_, group) in groups.iter() {
+    for group in groups.values() {
         if group.len() > 1 {
             let mut sorted: Vec<String> = group.to_vec();
             sorted.sort();
