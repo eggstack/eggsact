@@ -49,8 +49,8 @@ eggsact is a deterministic MCP (Model Context Protocol) server and in-process ut
 │                                                                   │
 │  80 tools across 20 categories:                                   │
 │  math(4) text(18) json(6) regex(3) validation(4) path(6)        │
-│  shell(4) list(3) markdown(2) patch(5) config(4) identifier(3)  │
-│  unicode(2) version(2) cargo(1) dependency(1)                   │
+│  shell(4) list(3) markdown(2) patch(5) config(3) toml(1)        │
+│  identifier(3) unicode(2) version(2) cargo(1) dependency(1)     │
 │  repo(5) diagnostics(3) analysis(4)                              │
 │                                                                   │
 │  helpers.rs — shared constants, utilities, spawn semaphore        │
@@ -228,7 +228,8 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | **list** | 3 | Compare (ordered/set/multiset), dedupe, sort | [tools.md](tools.md) |
 | **markdown** | 2 | Structure parse, code fence extract | [tools.md](tools.md) |
 | **patch** | 5 | Apply check, summary, edit preflight (composite, route-critical), diff risk, contract check | [tools.md](tools.md) |
-| **config** | 4 | dotenv validate, INI validate, config preflight (composite, route-critical), TOML shape | [tools.md](tools.md) |
+| **config** | 3 | dotenv validate, INI validate, config preflight (composite, route-critical) | [tools.md](tools.md) |
+| **toml** | 1 | TOML structure analysis | [tools.md](tools.md) |
 | **identifier** | 3 | Analyze, inspect, table inspect (collision detection) | [tools.md](tools.md) |
 | **unicode** | 2 | Policy check, canonicalize | [text-library.md](text-library.md) |
 | **version** | 2 | Compare, constraint check (semver/cargo) | [tools.md](tools.md) |

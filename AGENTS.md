@@ -115,27 +115,41 @@ generated/
 
 Detailed architecture documentation is in `architecture/`:
 
-- `architecture/overview.md` — directory layout, dependency flow, constants, context isolation model
-- `architecture/calculator.md` — calculator core, NL pipeline, units, constants, EvalContext
-- `architecture/mcp-server.md` — MCP protocol, tool registration, categories, error handling, ExecutionContext
-- `architecture/machine-codes.md` — machine-readable response codes, finding helpers, severity/disposition/verdict constants, composite tool verdicts
-- `architecture/text-library.md` — all 25 text modules, public API, code patterns
-- `architecture/compatibility.md` — compatibility mode (EggcalcPython vs StrictNative), behavior differences
-- `architecture/coding-agent-integration.md` — MCP stdio and in-process integration, profiles, audiences, concurrency contract
-- `architecture/generated-assets.md` — generated doc files, confusables data, parity workflow, diagnostics
-- `architecture/testing.md` — test structure, CI pipeline, how to add tests
-- `architecture/agent-api.md` — in-process ToolRegistry, call_json variants, preflight wrappers
-- `architecture/preflight.md` — typed preflight wrappers, strict finding parsing, contract enforcement
-- `architecture/tools.md` — tool implementation patterns, handler conventions, budget integration
-- `architecture/cli-binaries.md` — CLI entry points, generate-docs and verify-eggsact binaries
+### Core
+
+- `architecture/overview.md` — directory layout, dependency flow, constants, context isolation
+- `architecture/calculator.md` — NL pipeline (30-step), AST evaluator, 140+ units, 50+ constants, EvalContext
+
+### MCP Server & Tools
+
+- `architecture/mcp-server.md` — JSON-RPC 2.0, tokio dispatch, tool registration, profiles, schemas
+- `architecture/machine-codes.md` — ~100 response codes, finding helpers, severity/disposition/verdict
+- `architecture/tools.md` — 80 tools across 20 categories, handler conventions, budget integration
+- `architecture/compatibility.md` — `EggcalcPython` vs `StrictNative` modes, behavior differences
+
+### Agent Integration
+
+- `architecture/agent-api.md` — in-process ToolRegistry, call_json variants, ExecutionContext
+- `architecture/preflight.md` — typed wrappers (Edit/Command/Config/Patch/TextSecurity), PreflightError taxonomy
+- `architecture/coding-agent-integration.md` — MCP stdio vs in-process, profiles, audiences, concurrency
+
+### Text & Testing
+
+- `architecture/text-library.md` — 25 text modules, public API, regex engine auto-selection
+- `architecture/testing.md` — 70+ test files, parity framework, route-contract fixtures, CI pipeline
+
+### Assets & CLI
+
+- `architecture/generated-assets.md` — doc generation, confusables data, diagnostics
+- `architecture/cli-binaries.md` — generate-docs, verify-eggsact binaries, --diagnostics
 
 Additional docs in `docs/`:
 
-- `docs/compatibility-policy.md` — semantic versioning, breaking changes, tool/schema/machine-code stability, deprecation timelines
-- `docs/contributing.md` — prerequisites, building, testing, parity test setup, adding new tools
-- `docs/parity.md` — Python/Rust parity framework, known gaps, verification status (33 known failures as of 2026-07-08)
-- `docs/release.md` — canonical release checklist, manual crates.io publishing procedure, tagging policy (CI verifies only)
-- `docs/library-api.md` — in-process API usage, ToolRegistry, call_json variants
+- `docs/compatibility-policy.md` — semver, breaking changes, tool/schema/machine-code stability
+- `docs/contributing.md` — prerequisites, building, testing, adding new tools
+- `docs/parity.md` — Python/Rust parity, 33 known failures (categories C1–C6)
+- `docs/release.md` — canonical release checklist, manual crates.io publishing
+- `docs/library-api.md` — in-process API, ToolRegistry, call_json variants
 - `docs/mcp-tools.md` — MCP tool catalog with input/output schemas
 - `docs/cli.md` — CLI flags, subcommands, environment variables
 
@@ -185,42 +199,21 @@ Agent task skills in `.skills/`:
 
 ## Key gotchas
 
-- **`server.rs` was cleaned up**: schema compaction, response wrapping, and profile resolution moved to their respective modules (`registry/listing.rs`, `response.rs`, `runtime.rs`). The stdio read loop remains in `server.rs` but delegates most work. The read loop now spawns each request as a tokio task (via `JoinSet`) for concurrent handling, with responses serialized through an `mpsc` channel and writer task.
-
-- **Tool timeouts are budget-derived**: `tools/call` uses `budget.max_elapsed_ms` from `ToolBudget` (resolved via `budget_for_tool()` from `ToolSpec.cost`), not a fixed 30s constant. Composite tools get sub-budgets via `SubBudget`/`CompositeBudgetAllocator`.
-
-- **Cooperative budget checks in high-risk handlers**: `edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`, `text_security_inspect`, `structured_data_compare`, `text_diff_explain`, `patch_apply_check`, `patch_summary`, `identifier_table_inspect`, `regex_finditer`, and `repo_tree_summarize` create a `BudgetContext` internally (since `ToolHandler` is `fn(&Value) -> ToolResponse` and cannot receive context). They call `should_stop()` at key pipeline stages. The MCP server creates an `Arc<AtomicBool>` cancel flag and attaches it via `with_cancellation()` before dispatch; on timeout, the flag is set but blocking work may continue (cooperative, not forceful).
-
-- **Handler signatures remain `fn(&Value) -> ToolResponse`**: Tool functions do not accept an `ExecutionContext`. Context isolation is applied at the orchestration layer (`call_json_with_execution_context`), not passed into handlers. Calculator-backed handlers (e.g., `math_eval`) retrieve `EvalContext` from a thread-local set by `budget::with_eval_context()`. This preserves compatibility with existing handler code while enabling per-request state isolation.
-
-- **Context-aware APIs vs legacy**: Use `call_json_with_execution_context()` (agent) or `evaluate_with_context()`/`run_with_context()` (calculator) when you need per-call state isolation (e.g., reproducible PRNG, user variables, memory registers). Legacy wrappers (`call_json`, `evaluate`, `run`) are fine for simple cases where default state is acceptable.
-
-- **Agent guidance on which context API to use**:
-  - **`call_json_with_execution_context(&ctx)`** — for per-call profile/audience/compat/budget/cancellation overrides. `ctx.eval_ctx` is **cloned** at dispatch; mutations inside the handler do **not** persist back. Do not assume `ctx.eval_ctx` is mutated persistently.
-  - **`evaluate_with_context(expr, ctx)` / `run_with_context(expr, ctx)`** — for persistent mutable `EvalContext` behavior across multiple calculator calls (PRNG draws accumulate, memory registers persist, user variables accumulate). These operate directly on the caller's `ctx`.
-  - Do not mix the two for the same `EvalContext`: `call_json_with_execution_context` clones `ctx.eval_ctx` so handler mutations are invisible to the caller's `ctx`. Use `evaluate_with_context`/`run_with_context` when you need state to accumulate across calls.
-
-- **MCP wire vs in-process**: `call_json_with_execution_context` is an in-process API. It does not change the MCP JSON-RPC wire protocol. The MCP server resolves its active profile from `EGGCALC_MCP_PROFILE` at startup. Per-request context over the wire would require a future MCP request-level context API.
-
-- **Response truncation is automatic**: `truncate_response()` caps findings/output when a tool exceeds its budget limits. Check `limits_applied` in the response envelope to detect truncation. Findings cap reserves one slot for a synthetic `OUTPUT_TOO_LARGE` notice (so total ≤ `max_findings`); result over-cap is replaced with a summary object preserving `machine_code`/`verdict`/`ok`/caller-`summary`, plus `truncated: true`, `original_size_bytes`, `max_output_bytes`.
-- **MCP response ordering is concurrent**: The stdio server dispatches requests concurrently via `JoinSet`. Responses may arrive in completion order, not request order. **JSON-RPC clients must correlate responses by `id`**, not by arrival position. Test helpers that send multiple requests in one session must correlate by id; the canonical helper `mcp_request_multi()` in `tests/mcp/test_comprehensive_parity.rs` does this and reorders responses to match request slice order so positional assertions remain stable. Notifications (no `id`) produce no response by JSON-RPC contract.
-- **Input pre-check**: `call_json_with_budget()` (in-process) and `tools/call` (MCP) check serialized input against `budget.max_input_bytes` *before* dispatch. Oversized input fails with `INPUT_TOO_LARGE` (high, blocking) instead of wasting compute.
-
-- **Never edit `src/text/confusables_generated.rs`** — auto-generated by `scripts/generate_confusables.py`. Edit the script, not the output.
-- **Never hand-edit generated docs** — README tool tables, architecture profile reference, and `generated/tool-cards.md` are generated by `cargo run --bin generate-docs`. Edit `ToolSpec` entries in `src/mcp/specs/` instead, then re-run the generator.
-- **Adding an MCP tool requires one `ToolSpec` entry** in `src/mcp/specs/<category>.rs`. This is the single source of truth for tool registration. A test (`tool_registration_tables_are_in_sync`) will catch drift.
 - **`^` is XOR, not exponentiation.** Use `**` for power. This matches Python behavior.
 - **`g` means gram** in unit expressions. Use `gravity` or `standardgravity` for standard gravity.
-- **Regex backend auto-selection**: `regex_finditer` and `validate_regex` auto-select between Rust `regex` (fast, linear-time) and `fancy-regex` (lookaround/backreference support) via `classify_pattern()` in `src/text/regex_engine.rs`. Outputs report `engine_used` (`"rust-regex"` or `"fancy-regex"`), `dialect` (`"eggsact-regex"`), and `unsupported_features` for PCRE-only constructs (branch reset `(?|...)`, recursion `(?R)`, `\K`, control verbs like `(*SKIP)`). Unsupported constructs return `REGEX_UNSUPPORTED_FEATURE` machine code. Named captures `(?P<name>...)` work with both engines. This is NOT PCRE2.
-- **Parity tests require `eggcalc`** Python package at `../eggcalc`. They spawn both MCP servers and compare JSON output strictly. As of 2026-07-08, the parity suite has 33 known failures (out of 418 tests) — see `docs/parity.md` `Verification status` and `Known parity gaps` for the breakdown. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE` env var and updating test helpers. Categories C1–C6 (33 failures) are accepted behavioral differences tracked for follow-up. The 3 concurrent-ordering failures from the earlier pass were fixed by switching `mcp_request_multi()` to id-based correlation. The Rust `full` profile ships 80 tools; Python defines 67. An accepted-failures fixture at `tests/fixtures/accepted_parity_failures.txt` lists all 33 names for regression detection. Do not treat these as regressions — they accumulated across the phase 06–09 line of work and are tracked for follow-up.
-- **`mask_secret_preview()` in `src/tools/helpers.rs`** is a UTF-8-safe masking helper that operates on `.chars()` boundaries, never splitting multibyte sequences. Used by `config_file_inspect` and other tools that display secret values in findings. The old byte-slicing code was replaced with this helper to avoid panics on multi-byte Unicode input.
-- **`deny.toml` configures `cargo-deny`** for license/advisory/ban/source checks. Run `cargo deny check` locally. Allowed licenses: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, Unlicense, Unicode-DFS-2016, Unicode-3.0, Zlib.
-- **CI mirrors release gates.** GitHub Actions runs fmt, clippy, tests, generated-docs check, and `cargo package`. GitHub CI does not publish to crates.io. The maintainer publishes manually — see `docs/release.md` for the manual procedure.
-- **`Cargo.lock` is gitignored** but present. This is unusual for a binary crate — don't commit it.
+- **Regex backend auto-selection**: `regex_finditer` and `validate_regex` auto-select between Rust `regex` (fast, linear-time) and `fancy-regex` (lookaround/backreference support) via `classify_pattern()` in `src/text/regex_engine.rs`. Outputs report `engine_used` (`"rust-regex"` or `"fancy-regex"`), `dialect` (`"eggsact-regex"`), and `unsupported_features` for PCRE-only constructs. Unsupported constructs return `REGEX_UNSUPPORTED_FEATURE` machine code. This is NOT PCRE2.
+- **Parity tests require `eggcalc`** Python package at `../eggcalc`. See `docs/parity.md` for the 33 known failures (categories C1–C6, accepted behavioral differences). Do not treat these as regressions.
+- **Never edit `src/text/confusables_generated.rs`** — auto-generated by `scripts/generate_confusables.py`. Edit the script, not the output.
+- **Never hand-edit generated docs** — README tool tables, architecture profile reference, and `generated/tool-cards.md` are generated by `cargo run --bin generate-docs`. Edit `ToolSpec` entries in `src/mcp/specs/` instead.
+- **Adding an MCP tool requires one `ToolSpec` entry** in `src/mcp/specs/<category>.rs`. This is the single source of truth. A test (`tool_registration_tables_are_in_sync`) catches drift.
+- **`deny.toml`** configures `cargo-deny` for license/advisory checks. Allowed licenses: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, Unlicense, Unicode-DFS-2016, Unicode-3.0, Zlib.
+- **`Cargo.lock` is gitignored** but present. Don't commit it.
 - **`serde_json` uses `preserve_order`** feature — key order is intentional in serialized JSON.
-- **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to `Model` on invalid values), `EGGCALC_MCP_SCHEMA_DETAIL` (accepted values: `compact`, `normal`, `full`; defaults to `full` on invalid values with stderr warning).
-- **Platform support**: `command_preflight` recognizes `platform` values `posix`, `windows`, and `auto`. Only `posix` is implemented; `windows` returns `UNSUPPORTED_FEATURE` and `auto` resolves to `posix`.
+- **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to `Model`), `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`; defaults to `full`).
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
-- **`--diagnostics` CLI flag** prints version, tool count, profile summary, budget tiers, runtime settings (active profile, audience, schema detail, limits), generated data status, and env var names (no values). Supports `--format json`. `runtime_diagnostics`, `profile_inspect`, and `tool_availability_explain` MCP tools expose introspection to harness-only audiences.
-- **`cargo run --bin verify-eggsact`** runs a 5-step verification pipeline (fmt, clippy, test, build, package) with optional parity check, and reports results as markdown.
-- **`ToolBudget` / `BudgetContext` compatibility shims**: `max_text_bytes` (formerly `max_text_chars`) is the canonical field name and `check_text_bytes` (formerly `check_text_len`) is the canonical method — enforcement is byte-based (`str::len()`). `BudgetContext::check_text_len` is retained as a `#[deprecated]` alias that forwards to `check_text_bytes` so downstream callers referencing the old name keep compiling. Prefer builders (`ToolBudget::with_max_text_bytes(n)`) over direct struct literals to avoid ABI breaks when fields are renamed.
+- **Context-aware vs legacy APIs**: `call_json_with_execution_context()` clones `eval_ctx` — handler mutations do **not** persist back. Use `evaluate_with_context()`/`run_with_context()` when you need persistent mutable `EvalContext` across calculator calls. Do not mix for the same `EvalContext`.
+- **MCP wire vs in-process**: `call_json_with_execution_context` is in-process only. The MCP server resolves its profile from `EGGCALC_MCP_PROFILE` at startup.
+- **Response truncation is automatic**: `truncate_response()` caps findings/output when a tool exceeds its budget. Check `limits_applied` in the response envelope.
+- **MCP response ordering is concurrent**: Responses may arrive out of request order. **Correlate by JSON-RPC `id`**, not arrival position.
+- **Input pre-check**: Both `call_json_with_budget()` (in-process) and `tools/call` (MCP) check serialized input against `budget.max_input_bytes` before dispatch. Oversized input fails with `INPUT_TOO_LARGE`.
+- **`ToolResponse::error`** has been renamed to `error_without_code_for_legacy_tests_only` (deprecated). Use `error_with_code()` instead.

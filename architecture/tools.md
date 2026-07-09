@@ -29,7 +29,7 @@ Handlers cannot receive an `ExecutionContext` directly. State isolation is appli
 | `list.rs` | list | 3 | List compare, deduplicate, sort |
 | `markdown.rs` | markdown | 2 | Markdown structure extraction, code fence extraction |
 | `patch.rs` | patch | 5 | Patch apply check, summary, edit preflight, diff risk, contract check |
-| `config.rs` | config | 4 | dotenv/INI validation, config preflight, TOML shape |
+| `config.rs` | config | 3 | dotenv/INI validation, config preflight (toml_shape_tool handler lives here but belongs to `toml` category) |
 | `identifier.rs` | identifier | 3 | Identifier analyze, inspect, table inspect with collision detection |
 | `unicode.rs` | unicode | 2 | Unicode policy check, text canonicalization |
 | `version.rs` | version | 2 | Semver comparison, constraint checking |
