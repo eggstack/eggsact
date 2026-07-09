@@ -1039,3 +1039,35 @@ fn every_non_ok_tool_response_has_machine_code() {
         failures.join("\n")
     );
 }
+
+// ─── BUG-210: input_too_large errors must report machine_code INPUT_TOO_LARGE ───
+// Resource-limit rejections across shell/config/path tools previously returned
+// `machine_code: INVALID_ARGUMENTS`. Wire-format parity with the documented
+// machine-code model requires `INPUT_TOO_LARGE` whenever error_type is
+// "input_too_large".
+
+#[test]
+fn bug210_shell_split_input_too_large_uses_correct_machine_code() {
+    let oversized = "a".repeat(100_001);
+    let r = call_tool("shell_split", json!({"command": oversized}));
+    assert!(!r["ok"].as_bool().unwrap_or(true));
+    assert_eq!(
+        r["machine_code"].as_str(),
+        Some("INPUT_TOO_LARGE"),
+        "BUG-210: shell_split input_too_large must use INPUT_TOO_LARGE machine code, got: {:?}",
+        r["machine_code"]
+    );
+}
+
+#[test]
+fn bug210_dotenv_validate_input_too_large_uses_correct_machine_code() {
+    let oversized = "a".repeat(100_001);
+    let r = call_tool("dotenv_validate", json!({"text": oversized}));
+    assert!(!r["ok"].as_bool().unwrap_or(true));
+    assert_eq!(
+        r["machine_code"].as_str(),
+        Some("INPUT_TOO_LARGE"),
+        "BUG-210: dotenv_validate input_too_large must use INPUT_TOO_LARGE machine code, got: {:?}",
+        r["machine_code"]
+    );
+}

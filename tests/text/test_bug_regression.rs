@@ -623,3 +623,41 @@ fn test_bug203_json_compare_object_key_count_changed() {
         "BUG-203: same_type should remain true when both values are objects"
     );
 }
+
+// ─── BUG-208: json_extract / json_query must reject non-RFC-6901 pointers ───
+// RFC 6901 defines a JSON Pointer as either the empty string or a string
+// starting with "/". Pointers without the leading "/" must be rejected with
+// `invalid_pointer_syntax`, not silently treated as a key path.
+
+#[test]
+fn test_bug208_json_extract_rejects_pointer_without_leading_slash() {
+    let result = json_extract(r#"{"a":1}"#, "a", 1000).unwrap();
+    assert_eq!(
+        result.reason.as_deref(),
+        Some("invalid_pointer_syntax"),
+        "BUG-208: bare-key pointer must report invalid_pointer_syntax, got: {:?}",
+        result.reason
+    );
+    assert!(
+        !result.found,
+        "BUG-208: must not match anything as a key path"
+    );
+}
+
+#[test]
+fn test_bug208_json_extract_accepts_empty_pointer() {
+    let result = json_extract(r#"{"a":1}"#, "", 1000).unwrap();
+    assert!(
+        result.found,
+        "BUG-208: empty pointer must still resolve to whole document"
+    );
+}
+
+#[test]
+fn test_bug208_json_extract_accepts_slash_prefixed_pointer() {
+    let result = json_extract(r#"{"a":1}"#, "/a", 1000).unwrap();
+    assert!(
+        result.found,
+        "BUG-208: /-prefixed pointer must resolve normally"
+    );
+}

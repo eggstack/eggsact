@@ -136,6 +136,31 @@ pub fn json_extract(args: &Value) -> ToolResponse {
         }
     };
 
+    if !pointer.is_empty() && !pointer.starts_with('/') {
+        return ToolResponse::success(
+            serde_json::json!({
+                "valid_json": true,
+                "found": false,
+                "pointer": pointer,
+                "value_type": null,
+                "value": null,
+                "preview": null,
+                "child_keys": null,
+                "array_length": null,
+                "truncated": false,
+                "missing_at": pointer,
+                "reason": "invalid_pointer_syntax",
+                "available_keys": null,
+                "error": null,
+                "line": null,
+                "column": null,
+                "summary": format!("Invalid JSON Pointer '{}': must be empty or start with '/'", pointer),
+            }),
+            Some("json_extract"),
+        )
+        .with_tool("json_extract");
+    }
+
     if pointer.is_empty() {
         let full_preview = match &parsed {
             serde_json::Value::String(s) => s.clone(),
@@ -830,6 +855,23 @@ pub fn json_query(args: &Value) -> ToolResponse {
             .with_recommended_next_tool(serde_json::json!("json_extract"));
         }
     };
+
+    if !pointer.is_empty() && !pointer.starts_with('/') {
+        return ToolResponse::success(
+            serde_json::json!({
+                "found": false,
+                "pointer": pointer,
+                "missing_at": pointer,
+                "reason": "invalid_pointer_syntax",
+            }),
+            Some("json_query"),
+        )
+        .with_tool("json_query")
+        .with_warnings(vec![
+            "json_query is deprecated; use json_extract instead".to_string()
+        ])
+        .with_recommended_next_tool(serde_json::json!("json_extract"));
+    }
 
     if pointer.is_empty() {
         return ToolResponse::success(

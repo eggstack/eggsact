@@ -225,8 +225,7 @@ fn posix_shell_split(command: &str) -> (Vec<String>, bool, Option<String>) {
                     continue;
                 }
 
-                if c == '#' {
-                    flush_current(&mut tokens, &mut current, &mut token_started);
+                if c == '#' && !token_started {
                     break;
                 }
 

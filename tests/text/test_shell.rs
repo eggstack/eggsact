@@ -109,6 +109,31 @@ fn test_shell_split_unbalanced_quotes() {
     assert!(result.features.has_unbalanced_quotes);
 }
 
+// ─── BUG-209: shell_split must not treat `#` as comment inside a word ───
+// POSIX §2.3: a word beginning with `#` introduces a comment. A `#` that
+// appears mid-word is a literal character and belongs to the current token.
+
+#[test]
+fn test_bug209_shell_split_hash_inside_word_kept() {
+    let result = shell_split("echo foo#bar", "posix", false);
+    assert!(result.parse_ok);
+    assert_eq!(result.argv, vec!["echo", "foo#bar"]);
+}
+
+#[test]
+fn test_bug209_shell_split_hash_starts_comment_after_whitespace() {
+    let result = shell_split("echo hi # comment", "posix", false);
+    assert!(result.parse_ok);
+    assert_eq!(result.argv, vec!["echo", "hi"]);
+}
+
+#[test]
+fn test_bug209_shell_split_hash_at_start_is_comment() {
+    let result = shell_split("# only a comment", "posix", false);
+    assert!(result.parse_ok);
+    assert!(result.argv.is_empty());
+}
+
 // ─── shell_quote_join ────────────────────────────────────────────────
 
 #[test]

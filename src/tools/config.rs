@@ -33,7 +33,7 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
     if text.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("dotenv_validate"),
@@ -54,7 +54,7 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
     if key_pattern.len() > 1000 {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             "key_pattern exceeds 1000 chars",
             None,
             Some("dotenv_validate"),
@@ -160,7 +160,7 @@ pub fn ini_validate(args: &Value) -> ToolResponse {
     if text.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("ini_validate"),
@@ -222,7 +222,7 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
     if text.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("config_preflight"),
@@ -670,7 +670,7 @@ pub fn toml_shape_tool(args: &Value) -> ToolResponse {
     if text.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("toml_shape"),

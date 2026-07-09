@@ -1905,6 +1905,30 @@ pub fn json_extract(
         }
     };
 
+    if !pointer.is_empty() && !pointer.starts_with('/') {
+        return Ok(JsonExtractResult {
+            valid_json: true,
+            found: false,
+            pointer: pointer.to_string(),
+            value_type: None,
+            value: None,
+            preview: None,
+            child_keys: None,
+            array_length: None,
+            truncated: Some(false),
+            missing_at: Some(pointer.to_string()),
+            reason: Some("invalid_pointer_syntax".to_string()),
+            available_keys: None,
+            error: None,
+            line: None,
+            column: None,
+            summary: format!(
+                "Invalid JSON Pointer '{}': must be empty or start with '/'",
+                pointer
+            ),
+        });
+    }
+
     if pointer.is_empty() {
         return Ok(build_extract_found_result(
             &parsed,

@@ -82,7 +82,7 @@ pub fn path_analyze(args: &Value) -> ToolResponse {
     if path.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Path length {} exceeds MAX_TEXT_LENGTH {}",
                 path.chars().count(),
@@ -239,7 +239,7 @@ pub fn path_compare(args: &Value) -> ToolResponse {
     if left.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             "Left path exceeds MAX_TEXT_LENGTH",
             None,
             Some("path_compare"),
@@ -248,7 +248,7 @@ pub fn path_compare(args: &Value) -> ToolResponse {
     if right.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             "Right path exceeds MAX_TEXT_LENGTH",
             None,
             Some("path_compare"),
@@ -325,7 +325,7 @@ pub fn path_scope_check(args: &Value) -> ToolResponse {
     if root.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             "Root path exceeds MAX_TEXT_LENGTH",
             None,
             Some("path_scope_check"),
@@ -334,7 +334,7 @@ pub fn path_scope_check(args: &Value) -> ToolResponse {
     if target.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             "Target path exceeds MAX_TEXT_LENGTH",
             None,
             Some("path_scope_check"),
@@ -406,7 +406,7 @@ pub fn glob_match_tool(args: &Value) -> ToolResponse {
     if pattern.chars().count() > MAX_TEXT_LENGTH || path.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             "Pattern or path exceeds maximum length",
             None,
             Some("glob_match"),

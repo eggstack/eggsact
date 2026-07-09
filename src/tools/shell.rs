@@ -28,7 +28,7 @@ pub fn shell_split(args: &Value) -> ToolResponse {
     if command.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Command exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("shell_split"),
@@ -91,7 +91,7 @@ pub fn shell_quote_join(args: &Value) -> ToolResponse {
     if argv_raw.len() > MAX_LIST_ITEMS {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             &format!("argv length {} exceeds MAX_LIST_ITEMS", argv_raw.len()),
             None,
             Some("shell_quote_join"),
@@ -128,7 +128,7 @@ pub fn shell_quote_join(args: &Value) -> ToolResponse {
     if !oversized_indices.is_empty() {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             &format!("argv items exceed max length {}", MAX_TEXT_LENGTH),
             Some(vec![format!(
                 "Oversized items at indices: {:?}",
@@ -176,7 +176,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
             if arr.len() > MAX_LIST_ITEMS {
                 return ToolResponse::error_with_code(
                     "input_too_large",
-                    machine_codes::INVALID_ARGUMENTS,
+                    machine_codes::INPUT_TOO_LARGE,
                     &format!("left_argv length {} exceeds {}", arr.len(), MAX_LIST_ITEMS),
                     None,
                     Some("argv_compare"),
@@ -212,7 +212,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
             if !oversized.is_empty() {
                 return ToolResponse::error_with_code(
                     "input_too_large",
-                    machine_codes::INVALID_ARGUMENTS,
+                    machine_codes::INPUT_TOO_LARGE,
                     &format!("left_argv items exceed max length {}", MAX_TEXT_LENGTH),
                     Some(vec![format!(
                         "Oversized items at indices: {:?}",
@@ -234,7 +234,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
             if arr.len() > MAX_LIST_ITEMS {
                 return ToolResponse::error_with_code(
                     "input_too_large",
-                    machine_codes::INVALID_ARGUMENTS,
+                    machine_codes::INPUT_TOO_LARGE,
                     &format!("right_argv length {} exceeds {}", arr.len(), MAX_LIST_ITEMS),
                     None,
                     Some("argv_compare"),
@@ -270,7 +270,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
             if !oversized.is_empty() {
                 return ToolResponse::error_with_code(
                     "input_too_large",
-                    machine_codes::INVALID_ARGUMENTS,
+                    machine_codes::INPUT_TOO_LARGE,
                     &format!("right_argv items exceed max length {}", MAX_TEXT_LENGTH),
                     Some(vec![format!(
                         "Oversized items at indices: {:?}",
@@ -339,7 +339,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
         if cmd.chars().count() > MAX_TEXT_LENGTH {
             return ToolResponse::error_with_code(
                 "input_too_large",
-                machine_codes::INVALID_ARGUMENTS,
+                machine_codes::INPUT_TOO_LARGE,
                 "Left command exceeds MAX_TEXT_LENGTH",
                 None,
                 Some("argv_compare"),
@@ -350,7 +350,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
         if cmd.chars().count() > MAX_TEXT_LENGTH {
             return ToolResponse::error_with_code(
                 "input_too_large",
-                machine_codes::INVALID_ARGUMENTS,
+                machine_codes::INPUT_TOO_LARGE,
                 "Right command exceeds MAX_TEXT_LENGTH",
                 None,
                 Some("argv_compare"),
@@ -811,7 +811,7 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
     if command.chars().count() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Command exceeds {} chars", MAX_TEXT_LENGTH),
             None,
             Some("command_preflight"),
@@ -850,7 +850,7 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
     if command.chars().count() > max_command_length as usize {
         return ToolResponse::error_with_code(
             "input_too_large",
-            machine_codes::INVALID_ARGUMENTS,
+            machine_codes::INPUT_TOO_LARGE,
             &format!("Command exceeds {} chars", max_command_length),
             None,
             Some("command_preflight"),
