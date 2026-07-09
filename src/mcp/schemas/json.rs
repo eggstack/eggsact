@@ -36,9 +36,9 @@ pub fn json_shape_input() -> Value {
         "type": "object",
         "properties": {
             "text": {"type": "string", "description": "JSON document string to analyze"},
-            "max_depth": {"type": "integer", "default": 4, "description": "Maximum depth for nested structure"},
-            "max_keys": {"type": "integer", "default": 100, "description": "Maximum keys to show per object"},
-            "max_array_items": {"type": "integer", "default": 5, "description": "Maximum array item previews"}
+            "max_depth": {"type": "integer", "default": 4, "minimum": 1, "description": "Maximum depth for nested structure"},
+            "max_keys": {"type": "integer", "default": 100, "minimum": 1, "description": "Maximum keys to show per object"},
+            "max_array_items": {"type": "integer", "default": 5, "minimum": 1, "description": "Maximum array item previews"}
         },
         "required": ["text"]
     })
@@ -79,7 +79,7 @@ pub fn structured_data_compare_input() -> Value {
             "format": {"type": "string", "enum": ["json"], "default": "json", "description": "Data format (json only for now)"},
             "ignore_object_order": {"type": "boolean", "default": true, "description": "Ignore object key order"},
             "ignore_array_order": {"type": "boolean", "default": false, "description": "Sort arrays before comparison"},
-            "max_diffs": {"type": "integer", "default": 50, "description": "Maximum differences to report"}
+            "max_diffs": {"type": "integer", "default": 50, "minimum": 0, "description": "Maximum differences to report"}
         },
         "required": ["a", "b"]
     })

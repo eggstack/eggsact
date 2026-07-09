@@ -2879,6 +2879,38 @@ fn test_json_compare_different_values() {
     assert!(!diffs.is_empty());
 }
 
+// BUG-001 regression: max_diffs=0 must still report unequal JSON as not equal.
+#[test]
+fn test_json_compare_max_diffs_zero_reports_unequal() {
+    let r = call_tool(
+        "json_compare",
+        serde_json::json!({"a": "{\"x\": 1}", "b": "{\"x\": 2}", "max_diffs": 0}),
+    );
+    assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
+    assert_eq!(
+        r["result"]["equal"], false,
+        "BUG-001: max_diffs=0 must still mark unequal JSON as not equal"
+    );
+    assert_eq!(r["result"]["truncated"], true);
+    assert_eq!(r["result"]["diff_count"], 0);
+}
+
+// BUG-002 regression: structured_data_compare must not emit DATA_EQUAL for
+// different inputs even when max_diffs=0.
+#[test]
+fn test_structured_data_compare_max_diffs_zero_reports_unequal() {
+    let r = call_tool(
+        "structured_data_compare",
+        serde_json::json!({"a": "{\"x\": 1}", "b": "{\"x\": 2}", "max_diffs": 0}),
+    );
+    assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
+    assert_eq!(
+        r["result"]["equal"], false,
+        "BUG-002: max_diffs=0 must still mark unequal JSON as not equal"
+    );
+    assert_eq!(r["result"]["machine_code"], "DATA_DIFF");
+}
+
 #[test]
 fn test_json_compare_nested() {
     let r = call_tool(
@@ -2984,6 +3016,189 @@ fn test_json_extract_empty_array() {
     );
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     assert_eq!(r["result"]["value_type"], "array");
+}
+
+// BUG-003 regression: missing_at must include the full traversed path on nested misses.
+#[test]
+fn test_json_extract_missing_at_includes_nested_path() {
+    let r = call_tool(
+        "json_extract",
+        serde_json::json!({"text": "{\"a\":{\"b\":1}}", "pointer": "/a/c/d"}),
+    );
+    assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
+    assert_eq!(r["result"]["found"], false);
+    assert_eq!(
+        r["result"]["missing_at"], "/a/c",
+        "BUG-003: missing_at should include the path traversed before the miss"
+    );
+}
+
+// BUG-003 regression: missing_at on a nested array out-of-range miss.
+#[test]
+fn test_json_extract_missing_at_nested_array_out_of_range() {
+    let r = call_tool(
+        "json_extract",
+        serde_json::json!({"text": "{\"a\":[1,2]}", "pointer": "/a/5"}),
+    );
+    assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
+    assert_eq!(r["result"]["found"], false);
+    assert_eq!(
+        r["result"]["missing_at"], "/a/5",
+        "BUG-003: array out-of-range missing_at should include the path"
+    );
+}
+
+// BUG-004 regression: deprecated json_query must report missing_at for nested misses.
+#[test]
+fn test_json_query_missing_at_includes_nested_path() {
+    let r = call_tool(
+        "json_query",
+        serde_json::json!({"text": "{\"a\":{\"b\":1}}", "pointer": "/a/c/d"}),
+    );
+    assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
+    assert_eq!(r["result"]["found"], false);
+    assert_eq!(
+        r["result"]["missing_at"], "/a/c",
+        "BUG-004: json_query missing_at should include the path"
+    );
+}
+
+// BUG-004 regression: json_query must report missing_at on array out-of-range misses.
+#[test]
+fn test_json_query_missing_at_array_out_of_range() {
+    let r = call_tool(
+        "json_query",
+        serde_json::json!({"text": "{\"arr\":[1]}", "pointer": "/arr/2"}),
+    );
+    assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
+    assert_eq!(r["result"]["found"], false);
+    assert_eq!(
+        r["result"]["missing_at"], "/arr/2",
+        "BUG-004: array out-of-range must include missing_at"
+    );
+}
+
+// BUG-005 regression: schema must reject negative limit values for json_compare.max_diffs.
+#[test]
+fn test_schema_rejects_negative_json_compare_max_diffs() {
+    let r = call_tool_full_jsonrpc(
+        "json_compare",
+        serde_json::json!({
+            "a": "{}",
+            "b": "{\"x\":1}",
+            "max_diffs": -1
+        }),
+    );
+    assert!(
+        is_jsonrpc_error(&r),
+        "BUG-005: negative max_diffs must be rejected by schema, got: {}",
+        r
+    );
+}
+
+// BUG-005 regression: schema must reject negative max_depth for json_shape.
+#[test]
+fn test_schema_rejects_negative_json_shape_max_depth() {
+    let r = call_tool_full_jsonrpc(
+        "json_shape",
+        serde_json::json!({
+            "text": "{}",
+            "max_depth": -1
+        }),
+    );
+    assert!(
+        is_jsonrpc_error(&r),
+        "BUG-005: negative max_depth must be rejected by schema, got: {}",
+        r
+    );
+}
+
+// BUG-005 regression: schema must reject negative max_keys for json_shape.
+#[test]
+fn test_schema_rejects_negative_json_shape_max_keys() {
+    let r = call_tool_full_jsonrpc(
+        "json_shape",
+        serde_json::json!({
+            "text": "{}",
+            "max_keys": -1
+        }),
+    );
+    assert!(
+        is_jsonrpc_error(&r),
+        "BUG-005: negative max_keys must be rejected by schema, got: {}",
+        r
+    );
+}
+
+// BUG-005 regression: schema must reject negative max_array_items for json_shape.
+#[test]
+fn test_schema_rejects_negative_json_shape_max_array_items() {
+    let r = call_tool_full_jsonrpc(
+        "json_shape",
+        serde_json::json!({
+            "text": "[]",
+            "max_array_items": -1
+        }),
+    );
+    assert!(
+        is_jsonrpc_error(&r),
+        "BUG-005: negative max_array_items must be rejected by schema, got: {}",
+        r
+    );
+}
+
+// BUG-005 regression: schema must reject negative structured_data_compare.max_diffs.
+#[test]
+fn test_schema_rejects_negative_structured_data_compare_max_diffs() {
+    let r = call_tool_full_jsonrpc(
+        "structured_data_compare",
+        serde_json::json!({
+            "a": "{}",
+            "b": "{\"x\":1}",
+            "max_diffs": -1
+        }),
+    );
+    assert!(
+        is_jsonrpc_error(&r),
+        "BUG-005: negative structured_data_compare max_diffs must be rejected, got: {}",
+        r
+    );
+}
+
+// BUG-005 regression: schema must reject negative regex_finditer.max_matches.
+#[test]
+fn test_schema_rejects_negative_regex_finditer_max_matches() {
+    let r = call_tool_full_jsonrpc(
+        "regex_finditer",
+        serde_json::json!({
+            "pattern": "a",
+            "samples": ["a"],
+            "max_matches": -1
+        }),
+    );
+    assert!(
+        is_jsonrpc_error(&r),
+        "BUG-005: negative regex_finditer max_matches must be rejected, got: {}",
+        r
+    );
+}
+
+// BUG-005 regression: schema must reject negative import_export_inspect.max_statements.
+#[test]
+fn test_schema_rejects_negative_import_export_inspect_max_statements() {
+    let r = call_tool_full_jsonrpc(
+        "import_export_inspect",
+        serde_json::json!({
+            "text": "import a",
+            "language": "python",
+            "max_statements": -1
+        }),
+    );
+    assert!(
+        is_jsonrpc_error(&r),
+        "BUG-005: negative import_export_inspect max_statements must be rejected, got: {}",
+        r
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════

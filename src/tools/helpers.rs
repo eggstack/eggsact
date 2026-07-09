@@ -861,6 +861,7 @@ pub(crate) struct JsonCompareOptions {
 pub(crate) struct JsonCompareState {
     pub(crate) diffs: Vec<JsonDiff>,
     pub(crate) type_match: bool,
+    pub(crate) not_equal: bool,
 }
 
 pub(crate) fn compare_json_values(
@@ -871,6 +872,7 @@ pub(crate) fn compare_json_values(
     let mut state = JsonCompareState {
         diffs: Vec::new(),
         type_match: true,
+        not_equal: false,
     };
 
     fn compare_rec(
@@ -881,6 +883,9 @@ pub(crate) fn compare_json_values(
         state: &mut JsonCompareState,
     ) {
         if state.diffs.len() >= options.max_diffs {
+            if a != b {
+                state.not_equal = true;
+            }
             return;
         }
 
@@ -917,6 +922,7 @@ pub(crate) fn compare_json_values(
 
         if type_a != type_b {
             state.type_match = false;
+            state.not_equal = true;
             state.diffs.push(JsonDiff {
                 path: path.to_string(),
                 kind: "type_changed".to_string(),
@@ -973,6 +979,7 @@ pub(crate) fn compare_json_values(
                             format!("{}/{}", path, orig_key)
                         };
                         let a_val = &obj_a[orig_key];
+                        state.not_equal = true;
                         state.diffs.push(JsonDiff {
                             path: new_path,
                             kind: "key_missing_in_b".to_string(),
@@ -994,6 +1001,7 @@ pub(crate) fn compare_json_values(
                             format!("{}/{}", path, orig_key)
                         };
                         let b_val = &obj_b[orig_key];
+                        state.not_equal = true;
                         state.diffs.push(JsonDiff {
                             path: new_path,
                             kind: "key_missing_in_a".to_string(),
@@ -1067,6 +1075,7 @@ pub(crate) fn compare_json_values(
                                 format!("{}/{}", path, orig_key_a)
                             };
                             let a_val = &obj_a[orig_key_a];
+                            state.not_equal = true;
                             state.diffs.push(JsonDiff {
                                 path: new_path,
                                 kind: "key_missing_in_b".to_string(),
@@ -1100,6 +1109,7 @@ pub(crate) fn compare_json_values(
                             path.to_string()
                         };
                         state.type_match = false;
+                        state.not_equal = true;
                         state.diffs.push(JsonDiff {
                             path: actual_path,
                             kind: "object_length_changed".to_string(),
@@ -1114,6 +1124,7 @@ pub(crate) fn compare_json_values(
             (serde_json::Value::Array(arr_a), serde_json::Value::Array(arr_b)) => {
                 if arr_a.len() != arr_b.len() {
                     state.type_match = false;
+                    state.not_equal = true;
                     state.diffs.push(JsonDiff {
                         path: path.to_string(),
                         kind: "array_length_changed".to_string(),
@@ -1146,6 +1157,7 @@ pub(crate) fn compare_json_values(
             }
             _ => {
                 if a != b {
+                    state.not_equal = true;
                     state.diffs.push(JsonDiff {
                         path: path.to_string(),
                         kind: "value_changed".to_string(),
@@ -1161,7 +1173,7 @@ pub(crate) fn compare_json_values(
 
     compare_rec(a, b, "", options, &mut state);
 
-    let equal = state.diffs.is_empty();
+    let equal = !state.not_equal;
     (equal, state.type_match, state.diffs)
 }
 

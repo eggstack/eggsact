@@ -7,7 +7,7 @@ pub fn import_export_inspect_input() -> Value {
             "source": {"type": "string", "description": "Source text to scan for import/export statements"},
             "language": {"type": "string", "enum": ["rust", "python", "javascript", "typescript", "go", "auto"], "default": "auto", "description": "Source language. Auto-detect if not specified."},
             "include_line_text": {"type": "boolean", "default": false, "description": "Include the raw line text for each statement"},
-            "max_statements": {"type": "integer", "default": 500, "description": "Maximum number of statements to return"}
+            "max_statements": {"type": "integer", "default": 500, "minimum": 0, "description": "Maximum number of statements to return"}
         },
         "required": ["source"]
     })

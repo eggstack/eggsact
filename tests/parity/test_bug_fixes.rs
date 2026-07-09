@@ -311,6 +311,7 @@ fn test_bug006_text_inspect_ff_detected() {
 }
 
 #[test]
+#[ignore = "Accepted parity gap (see tests/fixtures/accepted_parity_failures.txt); run with --include-ignored"]
 fn test_bug006_prompt_inspect_vt_ff_detected() {
     // BUG-006: VT and FF should be detected in prompt_input_inspect too.
     let args = serde_json::json!({

@@ -23,7 +23,7 @@ pub fn regex_finditer_input() -> Value {
             "pattern": {"type": "string", "description": "Regular expression pattern", "maxLength": 1000},
             "text": {"type": "string", "description": "Input string to search"},
             "flags": {"type": "array", "items": {"type": "string"}, "description": "Flag names (IGNORECASE, MULTILINE, DOTALL, etc.)", "maxItems": 10},
-            "max_matches": {"type": "integer", "default": 100, "maximum": 1000, "description": "Maximum matches to return"},
+            "max_matches": {"type": "integer", "default": 100, "minimum": 0, "maximum": 1000, "description": "Maximum matches to return"},
             "include_line_column": {"type": "boolean", "default": true, "description": "Include line and column info"},
             "include_groups": {"type": "boolean", "default": true, "description": "Include capture groups"}
         },

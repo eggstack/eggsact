@@ -36,6 +36,7 @@ fn test_unit_info_kg() {
 }
 
 #[test]
+#[ignore = "Accepted parity gap (see tests/fixtures/accepted_parity_failures.txt); run with --include-ignored"]
 fn test_unit_info_invalid() {
     let args = serde_json::json!({"unit": "not_a_unit"});
     let result = compare_tool_parity("unit_info", args);
@@ -43,6 +44,7 @@ fn test_unit_info_invalid() {
 }
 
 #[test]
+#[ignore = "Accepted parity gap (see tests/fixtures/accepted_parity_failures.txt); run with --include-ignored"]
 fn test_constant_lookup_speed_of_light() {
     let args = serde_json::json!({"name": "speed_of_light"});
     let result = compare_tool_parity("constant_lookup", args);

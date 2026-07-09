@@ -211,14 +211,17 @@ pub fn json_extract(args: &Value) -> ToolResponse {
         raw_tokens
     };
     let mut current = &parsed;
+    let mut acc_path = String::new();
 
     for token in tokens {
         let decoded = token.replace("~1", "/").replace("~0", "~");
+        acc_path.push('/');
+        acc_path.push_str(token);
         match current {
             serde_json::Value::Object(map) => match map.get(&decoded) {
                 Some(v) => current = v,
                 None => {
-                    let missing_at = format!("/{}", token);
+                    let missing_at = acc_path.clone();
                     return ToolResponse::success(
                         serde_json::json!({
                             "valid_json": true,
@@ -236,7 +239,7 @@ pub fn json_extract(args: &Value) -> ToolResponse {
                             "error": null,
                             "line": null,
                             "column": null,
-                            "summary": format!("Key '{}' not found in object at /{}", token, token),
+                            "summary": format!("Key '{}' not found in object at {}", decoded, acc_path),
                         }),
                         Some("json_extract"),
                     )
@@ -246,6 +249,7 @@ pub fn json_extract(args: &Value) -> ToolResponse {
             serde_json::Value::Array(arr) => match decoded.parse::<usize>() {
                 Ok(idx) if idx < arr.len() => current = &arr[idx],
                 _ => {
+                    let missing_at = acc_path.clone();
                     return ToolResponse::success(
                         serde_json::json!({
                             "valid_json": true,
@@ -257,7 +261,7 @@ pub fn json_extract(args: &Value) -> ToolResponse {
                             "child_keys": null,
                             "array_length": arr.len(),
                             "truncated": false,
-                            "missing_at": format!("/{}", token),
+                            "missing_at": missing_at,
                             "reason": "index_out_of_range",
                             "available_keys": null,
                             "error": null,
@@ -892,18 +896,22 @@ pub fn json_query(args: &Value) -> ToolResponse {
 
     let tokens: Vec<&str> = pointer.split('/').filter(|s| !s.is_empty()).collect();
     let mut current = &parsed;
+    let mut acc_path = String::new();
 
     for token in tokens {
         let decoded = token.replace("~1", "/").replace("~0", "~");
+        acc_path.push('/');
+        acc_path.push_str(token);
         match current {
             serde_json::Value::Object(map) => match map.get(&decoded) {
                 Some(v) => current = v,
                 None => {
+                    let missing_at = acc_path.clone();
                     return ToolResponse::success(
                         serde_json::json!({
                             "found": false,
                             "pointer": pointer,
-                            "missing_at": format!("/{}", token),
+                            "missing_at": missing_at,
                             "reason": "key_not_found",
                         }),
                         Some("json_query"),
@@ -918,10 +926,12 @@ pub fn json_query(args: &Value) -> ToolResponse {
             serde_json::Value::Array(arr) => match decoded.parse::<usize>() {
                 Ok(idx) if idx < arr.len() => current = &arr[idx],
                 _ => {
+                    let missing_at = acc_path.clone();
                     return ToolResponse::success(
                         serde_json::json!({
                             "found": false,
                             "pointer": pointer,
+                            "missing_at": missing_at,
                             "reason": "index_out_of_range",
                         }),
                         Some("json_query"),
