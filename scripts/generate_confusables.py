@@ -81,7 +81,7 @@ def parse_confusables(content: str) -> dict[str, str]:
     for line in lines:
         stripped = line.strip()
         if not data_started:
-            if stripped.startswith("0") or stripped.startswith("#"):
+            if stripped.startswith("#") or not stripped:
                 continue
             data_started = True
 

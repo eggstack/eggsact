@@ -5,22 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased — crates.io release polish] - 2026-07-08
-
-### Changed
-- **Canonical release doc**: `docs/release.md` is now the single source of truth for release procedure. Added explicit "Release policy" section stating GitHub CI verifies release readiness but does NOT publish to crates.io; the maintainer publishes manually with `cargo publish` from a local authenticated environment.
-- **Tagging policy**: documented tag-after-publish policy in `docs/release.md` (crates.io releases are immutable; tag after `cargo publish` succeeds).
-- **Crates.io publishing section**: new "Manual crates.io publishing" section in `docs/release.md` with prerequisites, pre-publish (`cargo publish --dry-run`), publish command, and tagging order.
-- **Package excludes tightened**: `Cargo.toml` `exclude` list now also excludes `.skills/`, `release.sh`, `AGENTS.md`, and `deny.toml`. Internal agent skill docs and CI-only config no longer ship in the published crate.
-
-### Added
-- **`docs/release-readiness.md`**: new file documenting the release candidate state (commit SHA, CI result, local gate, package status, known deferred items, publish checklist).
-- **CI policy statement**: AGENTS.md, `.skills/release.md`, and `docs/contributing.md` all now explicitly state that GitHub CI does not publish to crates.io.
-
-### Fixed
-- **Stale `architecture/release.md` reference**: AGENTS.md listed a file at `architecture/release.md` that does not exist. Replaced with a pointer to the canonical `docs/release.md`.
-
-## [Unreleased]
+## [1.1.4] - 2026-07-09
 
 ### Added
 - **ToolAudience enum** in `src/agent/` with `Model`, `Harness`, `Debug` variants.
@@ -41,8 +26,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   HarnessOnly tools.
 - **Accepted parity failures fixture**: `tests/fixtures/accepted_parity_failures.txt`
   lists all 31 accepted parity failure test names for regression detection.
+- **`docs/release-readiness.md`**: new file documenting the release candidate state (commit SHA, CI result, local gate, package status, known deferred items, publish checklist).
+- **CI policy statement**: AGENTS.md, `.skills/release.md`, and `docs/contributing.md` all now explicitly state that GitHub CI does not publish to crates.io.
+- `run_with_registry(&ToolRegistry, &Input)` variants on all five typed
+  preflight wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`,
+  `PatchApplyCheck`, `TextSecurityInspect`). Lets callers override the
+  default profile/audience per call. Existing `run()` API is unchanged.
+- `apply_cancellation(&ActiveRequests, &Value)` testable helper extracted
+  from the MCP server's `notifications/cancelled` handler.
+  `#[doc(hidden)] pub` for tests.
+- `mcp::runtime::test_support::make_active_request(cancel_flag)` helper
+  for tests. `#[doc(hidden)] pub`.
+- `platform` property on `path_batch_scope_check` input schema
+  (`posix` / `windows` / `auto`).
+- 16 new integration tests for `repo_tree_summarize`,
+  `diff_risk_classify`, and `path_batch_scope_check` covering bounds,
+  verdicts, and audience routing (`tests/mcp/test_repo_diff_path_tools.rs`).
+- 15 new tests for typed wrapper correctness including regression test
+  for canonical argument names (`tests/mcp/test_preflight_wrappers.rs`).
+- 14 new tests for `mcp::runtime` cancellation and active-request helpers
+  (`tests/mcp/test_runtime_helpers.rs`).
+- `ToolBudget::with_max_text_bytes(n)` builder for customising the per-call
+  text-length cap. Matches the existing builder pattern for `max_input_bytes`,
+  `max_output_bytes`, `max_findings`, and `max_elapsed_ms`.
+- 3 regression tests for the multi-request MCP correlation helper
+  (`tests/mcp/test_comprehensive_parity.rs`):
+  - `test_correlation_helper_uses_string_ids`
+  - `test_correlation_helper_preserves_request_order_under_concurrency`
+  - `test_correlation_helper_handles_notification_alongside_requests`
+- 1 budget unit test: `with_max_text_bytes_overrides_limit`
+  (`src/mcp/budget.rs`).
+- 1 budget unit test: `check_text_len_shim_forwards_to_check_text_bytes`
+  (`src/mcp/budget.rs`).
 
 ### Changed
+- **Canonical release doc**: `docs/release.md` is now the single source of truth for release procedure. Added explicit "Release policy" section stating GitHub CI verifies release readiness but does NOT publish to crates.io; the maintainer publishes manually with `cargo publish` from a local authenticated environment.
+- **Tagging policy**: documented tag-after-publish policy in `docs/release.md` (crates.io releases are immutable; tag after `cargo publish` succeeds).
+- **Crates.io publishing section**: new "Manual crates.io publishing" section in `docs/release.md` with prerequisites, pre-publish (`cargo publish --dry-run`), publish command, and tagging order.
+- **Package excludes tightened**: `Cargo.toml` `exclude` list now also excludes `.skills/`, `release.sh`, `AGENTS.md`, and `deny.toml`. Internal agent skill docs and CI-only config no longer ship in the published crate.
 - **CI workflow** (`ci.yml`): Split single `test` job into `test-lib`,
   `test-bins`, and `test-integration` (with `--skip parity`). Added
   `workflow_dispatch` trigger. Package job depends on all five check jobs.
@@ -75,8 +96,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated `architecture/mcp-server.md`, `.skills/mcp-tools.md`,
     `.skills/testing.md`, `README.md`, `docs/mcp-tools.md`, and `AGENTS.md`
     to document the new response contract.
+- Centralized MCP server identity and protocol constants in
+  `src/mcp/server.rs`.
+- Added a registration invariant test so MCP tool definitions, handlers,
+  metadata, and the exported tool count cannot drift silently.
+- Added conventional `-h`/`--help` and `-V`/`--version` CLI handling with
+  parser tests, and documented the flag behavior in the CLI guide.
+- Expanded `release.sh` and contributing docs so release builds run formatting,
+  clippy, and the full test suite before `cargo build --release`.
+- Added `cargo package` to the release script and GitHub Actions so crates.io
+  packaging is verified before publishing.
+- GitHub Actions now mirrors the documented release gates: formatting, clippy
+  with warnings denied, build, tests, and package verification.
+- Centralized list-argument validation for `list_compare`, `list_dedupe`, and
+  `list_sort` tool handlers to reduce duplicated MCP boundary checks.
+- Refreshed README and MCP reference examples to match current unit output
+  and MCP `content` response shape.
+- Aligned README, MCP reference, and architecture category counts with the
+  server's `TOOL_METADATA` taxonomy.
+- **PatchApplyCheckInput**: renamed fields `patch` → `patch_text`,
+  `original` → `original_text` to match the canonical MCP tool schema
+  in `src/mcp/schemas/patch.rs`. The old names were wrong (didn't match
+  the wire schema) — this is a bug fix, not a breaking change.
+- `PatchApplyCheck::run()` now uses
+  `ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness)`
+  (previously `ToolRegistry::default()` = Model audience). This was a
+  silent failure: `patch_apply_check` is `HarnessOnly` exposure and
+  could never execute under Model audience. New default actually works.
+- `diff_risk_classify`: `max_patch_chars` default lowered from 200,000
+  to 100,000 to match `ToolBudget::MODERATE.max_text_bytes`. Aligns
+  advertised budget bound with the actual enforced one.
+- `mcp_request_multi()` (`tests/mcp/test_comprehensive_parity.rs`) now
+  correlates responses by JSON-RPC `id` field rather than positional index.
+  The MCP stdio server dispatches requests concurrently via `tokio::JoinSet`,
+  so responses may arrive in completion order. The helper:
+  - parses each request's `id` up front;
+  - indexes responses into a `HashMap<Value, Value>` keyed by id;
+  - returns responses in request-slice order so existing positional
+    assertions remain stable;
+  - skips notifications (no id) silently;
+  - hard-fails on duplicate, missing, or unexpected response ids.
+- `docs/parity.md`: Category D (concurrent ordering) marked Resolved;
+  verification status updated to 362 passed / 54 failed / 2 ignored (out of
+  416 parity tests, post id-correlation fix).
+- `architecture/mcp-server.md`: added explicit "Response ordering contract"
+  section to the concurrency model — clients must correlate responses to
+  requests by JSON-RPC `id`, not by arrival position. Notifications produce
+  no response by JSON-RPC contract.
+- `README.md`: MCP server section now notes concurrent dispatch and the
+  id-correlation requirement.
+- `AGENTS.md`: parity known-failures count updated 56 → 54; added Key
+  gotcha entry on MCP concurrent response ordering.
 
 ### Fixed
+- **Stale `architecture/release.md` reference**: AGENTS.md listed a file at `architecture/release.md` that does not exist. Replaced with a pointer to the canonical `docs/release.md`.
 - **BUG-001 / B1**: Raised `MAX_FACTORIAL` from 170 → 1000 to match
   Python's `math.factorial` upper bound.
 - **BUG-002 / B2**: `factorial()` / `perm()` now use base-1e9
@@ -137,26 +210,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   HarnessOnly tools were rejected by `ToolAudience::Model` in MCP
   subprocess spawns. Added `EGGCALC_MCP_AUDIENCE` env var and updated
   all 9 MCP test helper files.
+- **MCP server panic path**: `server.rs` no longer panics on
+  `expect("tool semaphore unexpectedly closed")`. Replaced with a
+  graceful `INTERNAL_ERROR` tool response when the semaphore is dropped
+  (server shutting down).
+- **Documentation drift**:
+  - `architecture/mcp-server.md`: removed nonexistent `MAX_CANCELLED_REQUESTS`
+    constant; replaced "cancellation set" with the actual `ActiveRequests`
+    map model.
+  - `architecture/overview.md`: corrected "serial at the read-loop level"
+    claim — the read loop is concurrent via `JoinSet` + `mpsc` writer.
+  - `README.md`: corrected `runtime.rs` description from "cancelled
+    requests" to "active request tracking".
+  - `tests/mcp/test_hardening_and_gaps.rs`: updated stale comment header
+    referencing `TestCancelledRequests`.
+  - `docs/parity.md`: removed nonexistent `MAX_TOOL_TIMEOUT_SECONDS`
+    constant; updated verification status (357 passed, 56 failed as of
+    2026-07-06); documented 3 new concurrent-ordering parity failures.
+  - `AGENTS.md`: parity known-failures count updated 53 → 56.
+- 3 parity failures in multi-request MCP sessions resolved by switching
+  `mcp_request_multi()` to id-based correlation. The concurrent server
+  behaviour is correct and intentional; the previous helper was
+  positionally correlating responses, which is not a valid assumption under
+  concurrent dispatch. Affected tests:
+  - `test_sequential_session_multiple_tools`
+  - `test_sequential_session_tool_then_error_then_tool`
+  - `test_correlation_helper_handles_notification_alongside_requests` (new
+    test caught a race condition where the test used
+    `notifications/cancelled` against a live request id, causing that
+    request to actually be cancelled; corrected to target an unused id 999).
+- Verification gates: `cargo fmt --check`, `cargo clippy
+  --all-targets --all-features -- -D warnings`,
+  `cargo run --bin generate-docs -- --check`, and
+  `cargo package --verbose` all pass locally. Full non-parity test suite:
+  2885 passed, 130 failed (130 pre-existing parity/MCP harness failures,
+  unchanged from baseline). Parity test suite: 362 passed, 54 failed
+  (improved from 356 passed / 57 failed baseline by 6 passing and 3 fewer
+  failing).
 
-### Changed
-- Centralized MCP server identity and protocol constants in
-  `src/mcp/server.rs`.
-- Added a registration invariant test so MCP tool definitions, handlers,
-  metadata, and the exported tool count cannot drift silently.
-- Added conventional `-h`/`--help` and `-V`/`--version` CLI handling with
-  parser tests, and documented the flag behavior in the CLI guide.
-- Expanded `release.sh` and contributing docs so release builds run formatting,
-  clippy, and the full test suite before `cargo build --release`.
-- Added `cargo package` to the release script and GitHub Actions so crates.io
-  packaging is verified before publishing.
-- GitHub Actions now mirrors the documented release gates: formatting, clippy
-  with warnings denied, build, tests, and package verification.
-- Centralized list-argument validation for `list_compare`, `list_dedupe`, and
-  `list_sort` tool handlers to reduce duplicated MCP boundary checks.
-- Refreshed README and MCP reference examples to match current unit output
-  and MCP `content` response shape.
-- Aligned README, MCP reference, and architecture category counts with the
-  server's `TOOL_METADATA` taxonomy.
+### Deprecated
+- `BudgetContext::check_text_len(...)` is retained as a `#[deprecated]`
+  alias for `check_text_bytes(...)`. The method was renamed in 1.1.4 because
+  enforcement is byte-based (`str::len()`), not character-based. The shim
+  forwards to the canonical method and emits a deprecation note. Direct
+  struct literals of `ToolBudget` remain valid; prefer builders
+  (`ToolBudget::with_max_text_bytes(n)` etc.) to avoid ABI breaks when
+  fields are renamed.
 
 ### Tests
 - 33 `test_bug00{1..9}_*` regression tests in
@@ -200,131 +299,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `version_constraint_check`.
 - `json_compare` treats `1.0` and `1` as different JSON values, matching
   JSON type-sensitive comparison.
-
-## [Unreleased — corrective verification pass] - 2026-07-06
-
-### Added
-- `run_with_registry(&ToolRegistry, &Input)` variants on all five typed
-  preflight wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`,
-  `PatchApplyCheck`, `TextSecurityInspect`). Lets callers override the
-  default profile/audience per call. Existing `run()` API is unchanged.
-- `apply_cancellation(&ActiveRequests, &Value)` testable helper extracted
-  from the MCP server's `notifications/cancelled` handler.
-  `#[doc(hidden)] pub` for tests.
-- `mcp::runtime::test_support::make_active_request(cancel_flag)` helper
-  for tests. `#[doc(hidden)] pub`.
-- `platform` property on `path_batch_scope_check` input schema
-  (`posix` / `windows` / `auto`).
-- 16 new integration tests for `repo_tree_summarize`,
-  `diff_risk_classify`, and `path_batch_scope_check` covering bounds,
-  verdicts, and audience routing (`tests/mcp/test_repo_diff_path_tools.rs`).
-- 15 new tests for typed wrapper correctness including regression test
-  for canonical argument names (`tests/mcp/test_preflight_wrappers.rs`).
-- 14 new tests for `mcp::runtime` cancellation and active-request helpers
-  (`tests/mcp/test_runtime_helpers.rs`).
-
-### Changed
-- **PatchApplyCheckInput**: renamed fields `patch` → `patch_text`,
-  `original` → `original_text` to match the canonical MCP tool schema
-  in `src/mcp/schemas/patch.rs`. The old names were wrong (didn't match
-  the wire schema) — this is a bug fix, not a breaking change.
-- `PatchApplyCheck::run()` now uses
-  `ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness)`
-  (previously `ToolRegistry::default()` = Model audience). This was a
-  silent failure: `patch_apply_check` is `HarnessOnly` exposure and
-  could never execute under Model audience. New default actually works.
-- `diff_risk_classify`: `max_patch_chars` default lowered from 200,000
-  to 100,000 to match `ToolBudget::MODERATE.max_text_bytes`. Aligns
-  advertised budget bound with the actual enforced one.
-
-### Fixed
-- **MCP server panic path**: `server.rs` no longer panics on
-  `expect("tool semaphore unexpectedly closed")`. Replaced with a
-  graceful `INTERNAL_ERROR` tool response when the semaphore is dropped
-  (server shutting down).
-- **Documentation drift**:
-  - `architecture/mcp-server.md`: removed nonexistent `MAX_CANCELLED_REQUESTS`
-    constant; replaced "cancellation set" with the actual `ActiveRequests`
-    map model.
-  - `architecture/overview.md`: corrected "serial at the read-loop level"
-    claim — the read loop is concurrent via `JoinSet` + `mpsc` writer.
-  - `README.md`: corrected `runtime.rs` description from "cancelled
-    requests" to "active request tracking".
-  - `tests/mcp/test_hardening_and_gaps.rs`: updated stale comment header
-    referencing `TestCancelledRequests`.
-  - `docs/parity.md`: removed nonexistent `MAX_TOOL_TIMEOUT_SECONDS`
-    constant; updated verification status (357 passed, 56 failed as of
-    2026-07-06); documented 3 new concurrent-ordering parity failures.
-  - `AGENTS.md`: parity known-failures count updated 53 → 56.
-
-## [Unreleased — final closure pass] - 2026-07-07
-
-### Added
-- `ToolBudget::with_max_text_bytes(n)` builder for customising the per-call
-  text-length cap. Matches the existing builder pattern for `max_input_bytes`,
-  `max_output_bytes`, `max_findings`, and `max_elapsed_ms`.
-- 3 regression tests for the multi-request MCP correlation helper
-  (`tests/mcp/test_comprehensive_parity.rs`):
-  - `test_correlation_helper_uses_string_ids`
-  - `test_correlation_helper_preserves_request_order_under_concurrency`
-  - `test_correlation_helper_handles_notification_alongside_requests`
-- 1 budget unit test: `with_max_text_bytes_overrides_limit`
-  (`src/mcp/budget.rs`).
-- 1 budget unit test: `check_text_len_shim_forwards_to_check_text_bytes`
-  (`src/mcp/budget.rs`).
-
-### Changed
-- `mcp_request_multi()` (`tests/mcp/test_comprehensive_parity.rs`) now
-  correlates responses by JSON-RPC `id` field rather than positional index.
-  The MCP stdio server dispatches requests concurrently via `tokio::JoinSet`,
-  so responses may arrive in completion order. The helper:
-  - parses each request's `id` up front;
-  - indexes responses into a `HashMap<Value, Value>` keyed by id;
-  - returns responses in request-slice order so existing positional
-    assertions remain stable;
-  - skips notifications (no id) silently;
-  - hard-fails on duplicate, missing, or unexpected response ids.
-- `docs/parity.md`: Category D (concurrent ordering) marked Resolved;
-  verification status updated to 362 passed / 54 failed / 2 ignored (out of
-  416 parity tests, post id-correlation fix).
-- `architecture/mcp-server.md`: added explicit "Response ordering contract"
-  section to the concurrency model — clients must correlate responses to
-  requests by JSON-RPC `id`, not by arrival position. Notifications produce
-  no response by JSON-RPC contract.
-- `README.md`: MCP server section now notes concurrent dispatch and the
-  id-correlation requirement.
-- `AGENTS.md`: parity known-failures count updated 56 → 54; added Key
-  gotcha entry on MCP concurrent response ordering.
-
-### Deprecated
-- `BudgetContext::check_text_len(...)` is retained as a `#[deprecated]`
-  alias for `check_text_bytes(...)`. The method was renamed in 1.1.4 because
-  enforcement is byte-based (`str::len()`), not character-based. The shim
-  forwards to the canonical method and emits a deprecation note. Direct
-  struct literals of `ToolBudget` remain valid; prefer builders
-  (`ToolBudget::with_max_text_bytes(n)` etc.) to avoid ABI breaks when
-  fields are renamed.
-
-### Fixed
-- 3 parity failures in multi-request MCP sessions resolved by switching
-  `mcp_request_multi()` to id-based correlation. The concurrent server
-  behaviour is correct and intentional; the previous helper was
-  positionally correlating responses, which is not a valid assumption under
-  concurrent dispatch. Affected tests:
-  - `test_sequential_session_multiple_tools`
-  - `test_sequential_session_tool_then_error_then_tool`
-  - `test_correlation_helper_handles_notification_alongside_requests` (new
-    test caught a race condition where the test used
-    `notifications/cancelled` against a live request id, causing that
-    request to actually be cancelled; corrected to target an unused id 999).
-- Verification gates: `cargo fmt --check`, `cargo clippy
-  --all-targets --all-features -- -D warnings`,
-  `cargo run --bin generate-docs -- --check`, and
-  `cargo package --verbose` all pass locally. Full non-parity test suite:
-  2885 passed, 130 failed (130 pre-existing parity/MCP harness failures,
-  unchanged from baseline). Parity test suite: 362 passed, 54 failed
-  (improved from 356 passed / 57 failed baseline by 6 passing and 3 fewer
-  failing).
 
 ## [0.1.0] - 2026-05-30
 
