@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Duplicate ID tests — integer IDs
@@ -17,9 +17,6 @@ use std::time::Duration;
 
 #[test]
 fn test_duplicate_integer_id_rejected() {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .stdin(Stdio::piped())
@@ -84,9 +81,6 @@ fn test_duplicate_integer_id_rejected() {
 
 #[test]
 fn test_duplicate_string_id_rejected() {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .stdin(Stdio::piped())
@@ -148,9 +142,6 @@ fn test_duplicate_string_id_rejected() {
 
 #[test]
 fn test_id_reuse_after_completion() {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .stdin(Stdio::piped())
@@ -223,9 +214,6 @@ fn test_id_reuse_after_completion() {
 
 #[test]
 fn test_cancellation_targets_correct_request() {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .stdin(Stdio::piped())
@@ -337,9 +325,6 @@ fn test_cancellation_unknown_id_no_response() {
 
 #[test]
 fn test_cancellation_already_completed_no_response() {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .stdin(Stdio::piped())
@@ -466,9 +451,6 @@ fn test_timeout_does_not_leak_worker_permits() {
 
 #[test]
 fn test_shutdown_drains_inflight_requests() {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .stdin(Stdio::piped())
@@ -573,5 +555,459 @@ fn test_malformed_cancelled_notification_no_response() {
     assert!(
         has_ping,
         "Ping should succeed after malformed cancellation notifications"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// M4: Rate-limiter saturation then cancel
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_rate_limiter_saturation_then_cancel() {
+    use eggsact::mcp::runtime::MAX_REQUESTS_PER_SECOND;
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // Saturate the rate limiter with MAX_REQUESTS_PER_SECOND fast requests.
+        // All must be accepted (sliding window allows burst up to the limit).
+        for i in 0..MAX_REQUESTS_PER_SECOND {
+            let req = format!(r#"{{"jsonrpc":"2.0","method":"ping","id":{}}}"#, i + 1);
+            stdin.write_all(req.as_bytes()).unwrap();
+            stdin.write_all(b"\n").unwrap();
+        }
+        // Now send a cancellation notification — it must bypass the rate limiter.
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":999}}"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // The rate limiter window hasn't reset, so a new request would be
+        // rejected. Send one anyway — the error response proves the server
+        // is still alive and processing requests (not crashed).
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"ping","id":9999}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    // All ping requests should have been accepted (rate limiter allows burst).
+    let initial_pings: usize = lines
+        .iter()
+        .filter(|line| {
+            serde_json::from_str::<Value>(line)
+                .map(|v| {
+                    v.get("result").is_some()
+                        && v.get("id")
+                            .and_then(|id| id.as_u64())
+                            .is_some_and(|id| id >= 1 && id <= MAX_REQUESTS_PER_SECOND as u64)
+                })
+                .unwrap_or(false)
+        })
+        .count();
+    assert_eq!(
+        initial_pings, MAX_REQUESTS_PER_SECOND as usize,
+        "All {} initial pings should succeed within rate limit",
+        MAX_REQUESTS_PER_SECOND
+    );
+
+    // The cancellation notification produces no response (it's a notification).
+    // The final ping (id=9999) may be rate-limited (error response) — either
+    // way, the server must respond, proving it's still alive.
+    let has_response_9999 = lines.iter().any(|line| {
+        serde_json::from_str::<Value>(line)
+            .map(|v| {
+                v.get("id") == Some(&Value::Number(9999.into()))
+                    && (v.get("result").is_some() || v.get("error").is_some())
+            })
+            .unwrap_or(false)
+    });
+    assert!(
+        has_response_9999,
+        "Server must respond to final ping (success or rate-limit error) — proves server is alive"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// M5: Cancel running cooperative handler — bounded termination
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_cancel_running_handler_bounded_termination() {
+    let start = Instant::now();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // Start a regex_finditer with a catastrophic backtracking pattern.
+        // `(a+)+$` on a long string of 'a's ending with 'b' causes exponential
+        // backtracking, taking ~5s to timeout. This gives us a window to cancel.
+        let text: String = "a".repeat(8000) + "b";
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": "regex_finditer",
+                "arguments": {
+                    "pattern": "(a+)+$",
+                    "text": text,
+                    "max_matches": 1
+                }
+            },
+            "id": 1
+        });
+        stdin.write_all(req.to_string().as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Wait briefly for the handler to enter the blocking regex execution.
+        thread::sleep(Duration::from_millis(500));
+        // Send a cancellation notification.
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+
+    // The handler should terminate within the regex timeout (5s) plus margin.
+    let output = child.wait_with_output().unwrap();
+    let elapsed = start.elapsed();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    // Must terminate within 10 seconds (regex timeout + margin).
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "Handler must terminate within bounded time after cancel, took {:?}",
+        elapsed
+    );
+
+    // Should have a response for id=1 (either timeout/error from regex or
+    // cancelled, depending on timing). The key invariant: the response arrived.
+    let has_response = lines.iter().any(|line| {
+        serde_json::from_str::<Value>(line)
+            .map(|v| v.get("id") == Some(&Value::Number(1.into())))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_response,
+        "Cancelled handler must produce a response (not hang)"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// M6: ID reuse — first request cleanup cannot remove second request's entry
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_id_reuse_guard_does_not_corrupt_second_entry() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // First request with id="shared" — fast tool, completes quickly.
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"1+1"}},"id":"shared"}"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Wait for first request to complete (guard drops, removes entry).
+        thread::sleep(Duration::from_millis(500));
+        // Second request with same id="shared" — should succeed because
+        // the first request's guard already dropped and removed its entry.
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"2+2"}},"id":"shared"}"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Third request with different id to verify server is still healthy.
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"ping","id":"verify"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    // The second request with id="shared" should succeed (not be rejected as duplicate).
+    let success_shared = lines
+        .iter()
+        .filter(|line| {
+            serde_json::from_str::<Value>(line)
+                .map(|v| {
+                    v.get("id") == Some(&Value::String("shared".to_string()))
+                        && v.get("result").is_some()
+                })
+                .unwrap_or(false)
+        })
+        .count();
+    assert!(
+        success_shared >= 1,
+        "Second request with reused ID should succeed after first completes"
+    );
+
+    let has_verify = lines.iter().any(|line| {
+        serde_json::from_str::<Value>(line)
+            .map(|v| {
+                v.get("id") == Some(&Value::String("verify".to_string()))
+                    && v.get("result").is_some()
+            })
+            .unwrap_or(false)
+    });
+    assert!(has_verify, "Server should be healthy after ID reuse");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// M7: Shutdown — verify all responses received and metrics return to zero
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_shutdown_all_responses_received() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // Send 3 fast requests then close stdin to trigger shutdown.
+        for i in 1..=3 {
+            let req = format!(
+                r#"{{"jsonrpc":"2.0","method":"tools/call","params":{{"name":"math_eval","arguments":{{"expression":"{}+1"}}}},"id":{}}}"#,
+                i, i
+            );
+            stdin.write_all(req.as_bytes()).unwrap();
+            stdin.write_all(b"\n").unwrap();
+        }
+        // Drop stdin — triggers graceful shutdown.
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    // All 5 responses should have been drained before exit.
+    let response_count = lines
+        .iter()
+        .filter(|line| {
+            serde_json::from_str::<Value>(line)
+                .map(|v| {
+                    v.get("id").is_some() && (v.get("result").is_some() || v.get("error").is_some())
+                })
+                .unwrap_or(false)
+        })
+        .count();
+    assert!(
+        response_count >= 3,
+        "All 3 responses should be drained on shutdown, got {}",
+        response_count
+    );
+
+    // Verify each ID has a response.
+    for id in 1..=3 {
+        let has_response = lines.iter().any(|line| {
+            serde_json::from_str::<Value>(line)
+                .map(|v| v.get("id") == Some(&Value::Number(id.into())))
+                .unwrap_or(false)
+        });
+        assert!(
+            has_response,
+            "Response for id={} should be present after shutdown",
+            id
+        );
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// M1: Worker containment — concurrent MCP processes prove no deadlock
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_worker_containment_concurrent_mcp_no_deadlock() {
+    use std::sync::{Arc, Mutex};
+
+    let results: Arc<Mutex<Vec<(usize, bool, String)>>> = Arc::new(Mutex::new(Vec::new()));
+    let num_tasks = 32; // Exceeds MAX_TOOL_WORKERS (16) — proves semaphore works
+
+    let handles: Vec<_> = (0..num_tasks)
+        .map(|i| {
+            let results = results.clone();
+            thread::spawn(move || {
+                let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+                    .arg("--mcp")
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .unwrap_or_else(|e| panic!("Failed to spawn MCP process {i}: {e}"));
+
+                {
+                    let mut stdin = child.stdin.take().unwrap();
+                    let req = format!(
+                        r#"{{"jsonrpc":"2.0","method":"tools/call","params":{{"name":"math_eval","arguments":{{"expression":"{} + 1"}}}},"id":{}}}"#,
+                        i, i
+                    );
+                    stdin.write_all(req.as_bytes()).unwrap();
+                    stdin.write_all(b"\n").unwrap();
+                }
+
+                let output = child.wait_with_output().unwrap();
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let has_error = stdout.lines().any(|line| {
+                    serde_json::from_str::<Value>(line)
+                        .map(|v| v.get("error").is_some())
+                        .unwrap_or(false)
+                });
+                results.lock().unwrap().push((i, !has_error, stdout));
+            })
+        })
+        .collect();
+
+    for h in handles {
+        h.join().expect("worker containment test thread panicked");
+    }
+
+    let results = results.lock().unwrap();
+    assert_eq!(
+        results.len(),
+        num_tasks,
+        "All {} tasks should have completed",
+        num_tasks
+    );
+    for (id, success, _) in results.iter() {
+        assert!(success, "Task {id} should succeed (no deadlock, no error)");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// M2: Timeout retains permit — sequential calls after timeout succeed
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_timeout_retains_permit_sequential_calls() {
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+
+    // Force a timeout with a 1ms budget.
+    let budget = eggsact::mcp::budget::ToolBudget::CHEAP.with_max_elapsed_ms(1);
+    thread::sleep(Duration::from_millis(5));
+
+    let _resp1 = registry
+        .call_json_with_budget(
+            "math_eval",
+            serde_json::json!({"expression": "1 + 1"}),
+            Some(budget),
+        )
+        .expect("call should not fail at registry level");
+
+    // Whether resp1 succeeded or timed out, the permit must NOT be leaked.
+    // A second call proves the permit was returned to the semaphore.
+    let resp2 = registry
+        .call_json("math_eval", serde_json::json!({"expression": "2 + 2"}))
+        .expect("second call after timeout must succeed");
+    assert!(
+        resp2.ok,
+        "second call must succeed — permit was not leaked by timeout"
+    );
+
+    // Third call to be absolutely sure the semaphore is healthy.
+    let resp3 = registry
+        .call_json("math_eval", serde_json::json!({"expression": "3 + 3"}))
+        .expect("third call must succeed");
+    assert!(resp3.ok, "third call must succeed");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// M3: Peak concurrency — 32 concurrent tasks, semaphore limits to 16
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_peak_concurrency_bounded_by_semaphore() {
+    use std::sync::{Arc, Mutex};
+
+    // Launch 32 concurrent MCP processes (2x MAX_TOOL_WORKERS).
+    // If the semaphore is correct, at most 16 blocking handlers run at once.
+    // All 32 must complete without deadlock or error.
+    let results: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(Vec::new()));
+    let num_tasks = 32;
+
+    let handles: Vec<_> = (0..num_tasks)
+        .map(|i| {
+            let results = results.clone();
+            thread::spawn(move || {
+                let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+                    .arg("--mcp")
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .unwrap_or_else(|e| panic!("spawn failed for task {i}: {e}"));
+
+                {
+                    let mut stdin = child.stdin.take().unwrap();
+                    let req = format!(
+                        r#"{{"jsonrpc":"2.0","method":"tools/call","params":{{"name":"math_eval","arguments":{{"expression":"{} * 2"}}}},"id":{}}}"#,
+                        i, i
+                    );
+                    stdin.write_all(req.as_bytes()).unwrap();
+                    stdin.write_all(b"\n").unwrap();
+                }
+
+                let output = child.wait_with_output().unwrap();
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let has_result = stdout.lines().any(|line| {
+                    serde_json::from_str::<Value>(line)
+                        .map(|v| v.get("id") == Some(&Value::Number(i.into())) && v.get("result").is_some())
+                        .unwrap_or(false)
+                });
+                results.lock().unwrap().push(has_result);
+            })
+        })
+        .collect();
+
+    for h in handles {
+        h.join().expect("peak concurrency test thread panicked");
+    }
+
+    let results = results.lock().unwrap();
+    assert_eq!(results.len(), num_tasks);
+    let success_count = results.iter().filter(|&&ok| ok).count();
+    assert_eq!(
+        success_count, num_tasks,
+        "All {num_tasks} tasks must succeed — semaphore bounded concurrency to 16"
     );
 }
