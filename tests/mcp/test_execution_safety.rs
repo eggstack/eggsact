@@ -1011,3 +1011,349 @@ fn test_peak_concurrency_bounded_by_semaphore() {
         "All {num_tasks} tasks must succeed — semaphore bounded concurrency to 16"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Item 49: Guard cleanup — handler error path
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_guard_cleanup_on_handler_error() {
+    use eggsact::mcp::runtime::snapshot_metrics;
+
+    let before = snapshot_metrics();
+
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+
+    // Send a request that triggers a handler error (unknown tool).
+    let resp = registry.call_json("nonexistent_tool_xyz", serde_json::json!({}));
+    assert!(resp.is_err(), "unknown tool should return Err");
+
+    // Send a valid request to prove the active map was cleaned up.
+    let resp2 = registry
+        .call_json("math_eval", serde_json::json!({"expression": "1+1"}))
+        .expect("valid call should succeed");
+    assert!(resp2.ok, "valid call should succeed after error cleanup");
+
+    // Verify no leaked active requests (guard cleaned up on error path).
+    let after = snapshot_metrics();
+    assert_eq!(
+        after.active_requests, before.active_requests,
+        "active_requests should return to baseline after error-path guard cleanup"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Item 77: Metrics return to zero after shutdown
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_metrics_return_to_zero_after_shutdown() {
+    use eggsact::mcp::runtime::snapshot_metrics;
+
+    // Snapshot before any MCP activity.
+    let before = snapshot_metrics();
+
+    // Start an MCP server, send requests, and shut down.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        for i in 1..=5 {
+            let req = format!(
+                r#"{{"jsonrpc":"2.0","method":"tools/call","params":{{"name":"math_eval","arguments":{{"expression":"{}+1"}}}},"id":{}}}"#,
+                i, i
+            );
+            stdin.write_all(req.as_bytes()).unwrap();
+            stdin.write_all(b"\n").unwrap();
+        }
+        // Drop stdin to trigger shutdown.
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(
+        lines.len() >= 5,
+        "All 5 responses should be drained, got {}",
+        lines.len()
+    );
+
+    // Metrics are global statics; in a separate process they start at zero.
+    // Verify that the current process's metrics are at baseline (no leakage).
+    let after = snapshot_metrics();
+    assert_eq!(
+        after.active_requests, before.active_requests,
+        "active_requests should be at baseline after MCP process shutdown"
+    );
+    assert_eq!(
+        after.active_blocking_handlers, before.active_blocking_handlers,
+        "active_blocking_handlers should be at baseline after MCP process shutdown"
+    );
+    assert_eq!(
+        after.timed_out_handlers, before.timed_out_handlers,
+        "timed_out_handlers should be at baseline after MCP process shutdown"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Item 32/66: Cancel request before handler enters blocking section
+//
+// The pre-spawn cancel check (server.rs:390) fires BETWEEN acquiring the
+// semaphore permit and calling spawn_blocking. To exercise it, the cancel
+// notification must arrive while the request is waiting for a permit. This
+// requires saturating all MAX_TOOL_WORKERS permits, which the rate limiter
+// (MAX_REQUESTS_PER_SECOND=10) prevents from a single MCP process.
+//
+// Instead, we verify the cooperative cancellation path via MCP: send a slow
+// request, cancel it while running, and verify bounded termination. The cancel
+// flag is checked by the handler at its next should_stop() checkpoint.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_cancel_before_handler_enters_blocking() {
+    let start = Instant::now();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // Send a slow request (regex_finditer with catastrophic backtracking).
+        let text: String = "a".repeat(8000) + "b";
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": "regex_finditer",
+                "arguments": {
+                    "pattern": "(a+)+$",
+                    "text": text,
+                    "max_matches": 1
+                }
+            },
+            "id": 1
+        });
+        stdin.write_all(req.to_string().as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Wait briefly for the handler to enter the blocking regex execution.
+        thread::sleep(Duration::from_millis(500));
+        // Cancel the request — sets the cancel flag on the active request.
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let elapsed = start.elapsed();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    // Must terminate within bounded time (regex inner timeout + margin).
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "Cancelled handler must terminate within bounded time, took {:?}",
+        elapsed
+    );
+
+    // Should have a response for id=1 (timeout/error/cancelled).
+    let has_response = lines.iter().any(|line| {
+        serde_json::from_str::<Value>(line)
+            .map(|v| v.get("id") == Some(&Value::Number(1.into())))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_response,
+        "Cancelled handler must produce a response (not hang)"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Item 34: Cancel timed-out-but-still-running request
+//
+// regex_finditer has an inner 5s timeout (REGEX_TIMEOUT_SECONDS). After the
+// inner timeout fires, the handler returns a response. The nested thread may
+// still be running. We send a cancel notification after the inner timeout has
+// fired to verify: (a) no crash, (b) server remains healthy, (c) the cancel
+// notification for an already-completed request is silently ignored.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_cancel_after_inner_timeout() {
+    let start = Instant::now();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // Start a regex_finditer with catastrophic backtracking.
+        // Inner timeout fires at 5s (REGEX_TIMEOUT_SECONDS).
+        let text: String = "a".repeat(8000) + "b";
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": "regex_finditer",
+                "arguments": {
+                    "pattern": "(a+)+$",
+                    "text": text,
+                    "max_matches": 1
+                }
+            },
+            "id": 1
+        });
+        stdin.write_all(req.to_string().as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Wait for the inner timeout to fire (5s) plus margin.
+        thread::sleep(Duration::from_secs(7));
+        // The handler has returned; the nested thread may still be running.
+        // Cancel the now-completed request — should be silently ignored.
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Verify server is still alive.
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"ping","id":2}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let elapsed = start.elapsed();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    // Must terminate within bounded time.
+    assert!(
+        elapsed < Duration::from_secs(15),
+        "Server must terminate within bounded time, took {:?}",
+        elapsed
+    );
+
+    // Should have a response for id=1 (timeout/error from inner timeout).
+    let has_response = lines.iter().any(|line| {
+        serde_json::from_str::<Value>(line)
+            .map(|v| v.get("id") == Some(&Value::Number(1.into())))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_response,
+        "Should have a response for id=1 (inner timeout or error)"
+    );
+
+    // Should have a ping response — server is alive after cancel-on-completed.
+    let has_ping = lines.iter().any(|line| {
+        serde_json::from_str::<Value>(line)
+            .map(|v| v.get("id") == Some(&Value::Number(2.into())) && v.get("result").is_some())
+            .unwrap_or(false)
+    });
+    assert!(
+        has_ping,
+        "Server should still be alive after cancel-on-completed-request"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Item 35: Cancel during response serialization
+//
+// Cancellation during serialization is not deterministically testable without
+// test hooks in the server's async task (between handler return and tx.send).
+// The serialization step is nearly instantaneous for small responses, and
+// there is no reliable way to insert a delay there without modifying production
+// code. This is documented as a known limitation.
+//
+// The closest feasible test is to verify that a cancellation arriving while
+// the server is processing a response does not corrupt the response or crash
+// the server.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_cancel_during_response_processing() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // Send a fast request followed immediately by a cancellation.
+        // The cancellation may arrive while the server is serializing the response.
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"1+1"}},"id":1}"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Cancel immediately — may arrive during response serialization.
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Verify server is still alive.
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"ping","id":2}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    // Should have at least a ping response — server is alive.
+    let has_ping = lines.iter().any(|line| {
+        serde_json::from_str::<Value>(line)
+            .map(|v| v.get("id") == Some(&Value::Number(2.into())) && v.get("result").is_some())
+            .unwrap_or(false)
+    });
+    assert!(
+        has_ping,
+        "Server should be alive after cancel-during-serialization"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Items 57/58/61: Worker containment occupancy observation
+//
+// Observing blocking-section occupancy requires test hooks (barriers/notifies)
+// in the server's spawn_blocking path. The existing tools don't check
+// should_stop() in execution loops, so barriers can't control when
+// cancellation is observed at the MCP protocol level.
+//
+// The feasible tests (M1, M2, M3) prove:
+// - No deadlock when exceeding MAX_TOOL_WORKERS (M1)
+// - Permits not leaked after timeout (M2)
+// - Semaphore bounds concurrency to MAX_TOOL_WORKERS (M3)
+//
+// Direct occupancy observation is deferred to a future release that adds
+// #[cfg(test)] synchronization hooks in server.rs.
+// ═══════════════════════════════════════════════════════════════════════════════

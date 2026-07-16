@@ -413,22 +413,23 @@ pub mod test_support {
 /// it can be unit-tested in isolation without spawning the stdio loop.
 #[doc(hidden)]
 pub async fn apply_cancellation(active: &ActiveRequests, request_id: &Value) -> bool {
-    // Validate ID type and clone the cancel flag Arc while holding the lock.
+    // Validate ID type and size BEFORE acquiring the lock — avoids holding
+    // the lock for obviously-invalid IDs (bools, oversized strings/numbers).
+    let valid = match request_id {
+        Value::Bool(_) => return false,
+        Value::String(s) => s.len() <= MAX_REQUEST_ID_LENGTH,
+        Value::Number(n) => {
+            (n.is_i64() || n.is_u64()) && request_id.to_string().len() <= MAX_REQUEST_ID_LENGTH
+        }
+        _ => return false,
+    };
+    if !valid {
+        return false;
+    }
+    // Clone the cancel flag Arc while holding the lock.
     let maybe_flag: Option<Arc<AtomicBool>> = {
         let map = active.lock().await;
-        match request_id {
-            Value::Bool(_) => None,
-            Value::String(s) if s.len() <= MAX_REQUEST_ID_LENGTH => {
-                map.get(request_id).map(|req| req.cancel_flag.clone())
-            }
-            Value::Number(n)
-                if (n.is_i64() || n.is_u64())
-                    && request_id.to_string().len() <= MAX_REQUEST_ID_LENGTH =>
-            {
-                map.get(request_id).map(|req| req.cancel_flag.clone())
-            }
-            _ => None,
-        }
+        map.get(request_id).map(|req| req.cancel_flag.clone())
     };
     // Set the flag outside the critical section — no lock held.
     if let Some(flag) = maybe_flag {

@@ -35,6 +35,8 @@ pub fn runtime_diagnostics(_args: &Value) -> ToolResponse {
     let confusables_exists = std::path::Path::new("src/text/confusables_generated.rs").exists();
     let tool_cards_exists = std::path::Path::new("generated/tool-cards.md").exists();
 
+    let metrics = runtime::snapshot_metrics();
+
     let result = json!({
         "active_profile": active_profile,
         "active_audience": active_audience,
@@ -59,6 +61,13 @@ pub fn runtime_diagnostics(_args: &Value) -> ToolResponse {
                 "max_tool_workers": runtime::MAX_TOOL_WORKERS,
                 "max_request_bytes": runtime::MAX_REQUEST_BYTES,
                 "max_output_bytes": runtime::MAX_OUTPUT_BYTES,
+            },
+            "live_metrics": {
+                "active_requests": metrics.active_requests,
+                "active_blocking_handlers": metrics.active_blocking_handlers,
+                "timed_out_handlers": metrics.timed_out_handlers,
+                "total_timeouts": metrics.total_timeouts,
+                "peak_blocking_concurrency": metrics.peak_blocking_concurrency,
             },
         },
         "known_env_vars": [
