@@ -6,7 +6,7 @@
 use eggsact::agent::ToolAudience;
 use eggsact::mcp::runtime::{
     apply_cancellation, new_active_requests, parse_audience, parse_schema_detail, RateLimiter,
-    MAX_IN_FLIGHT_REQUESTS, MAX_REQUESTS_PER_SECOND,
+    RequestGuard, MAX_IN_FLIGHT_REQUESTS, MAX_REQUESTS_PER_SECOND,
 };
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -65,7 +65,7 @@ async fn apply_cancellation_string_id_sets_flag() {
         );
     }
 
-    let set = apply_cancellation(&active, &request_id);
+    let set = apply_cancellation(&active, &request_id).await;
     assert!(set, "should report cancel flag was set");
     assert!(flag.load(Ordering::Relaxed), "cancel flag must be true");
 }
@@ -84,7 +84,7 @@ async fn apply_cancellation_integer_id_sets_flag() {
         );
     }
 
-    let set = apply_cancellation(&active, &request_id);
+    let set = apply_cancellation(&active, &request_id).await;
     assert!(set, "should report cancel flag was set");
     assert!(flag.load(Ordering::Relaxed), "cancel flag must be true");
 }
@@ -104,7 +104,7 @@ async fn apply_cancellation_unknown_id_is_harmless() {
         );
     }
 
-    let set = apply_cancellation(&active, &unknown_id);
+    let set = apply_cancellation(&active, &unknown_id).await;
     assert!(!set, "should report no cancel flag was set");
     assert!(!flag.load(Ordering::Relaxed), "flag must remain unset");
 }
@@ -123,7 +123,7 @@ async fn apply_cancellation_bool_id_is_ignored() {
         );
     }
 
-    let set = apply_cancellation(&active, &json!(true));
+    let set = apply_cancellation(&active, &json!(true)).await;
     assert!(!set, "bool must be rejected");
     assert!(!flag.load(Ordering::Relaxed), "flag must remain unset");
 }
@@ -131,21 +131,21 @@ async fn apply_cancellation_bool_id_is_ignored() {
 #[tokio::test]
 async fn apply_cancellation_object_id_is_ignored() {
     let active = new_active_requests();
-    let set = apply_cancellation(&active, &json!({"id": 1}));
+    let set = apply_cancellation(&active, &json!({"id": 1})).await;
     assert!(!set, "object must be rejected");
 }
 
 #[tokio::test]
 async fn apply_cancellation_array_id_is_ignored() {
     let active = new_active_requests();
-    let set = apply_cancellation(&active, &json!([1, 2, 3]));
+    let set = apply_cancellation(&active, &json!([1, 2, 3])).await;
     assert!(!set, "array must be rejected");
 }
 
 #[tokio::test]
 async fn apply_cancellation_null_id_is_ignored() {
     let active = new_active_requests();
-    let set = apply_cancellation(&active, &json!(null));
+    let set = apply_cancellation(&active, &json!(null)).await;
     assert!(!set, "null must be rejected");
 }
 
@@ -153,7 +153,7 @@ async fn apply_cancellation_null_id_is_ignored() {
 async fn apply_cancellation_oversized_string_is_ignored() {
     let active = new_active_requests();
     let oversized = "x".repeat(2000);
-    let set = apply_cancellation(&active, &json!(oversized));
+    let set = apply_cancellation(&active, &json!(oversized)).await;
     assert!(!set, "oversized string must be rejected");
 }
 
@@ -171,8 +171,8 @@ async fn apply_cancellation_is_idempotent() {
         );
     }
 
-    let _ = apply_cancellation(&active, &request_id);
-    let _ = apply_cancellation(&active, &request_id);
+    let _ = apply_cancellation(&active, &request_id).await;
+    let _ = apply_cancellation(&active, &request_id).await;
     assert!(
         flag.load(Ordering::Relaxed),
         "idempotent cancel must leave flag set"
@@ -308,4 +308,127 @@ fn in_flight_limit_is_reasonable() {
     let value = MAX_IN_FLIGHT_REQUESTS;
     assert!(value >= 1);
     assert!(value <= 256);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RequestGuard RAII cleanup
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn request_guard_removes_entry_on_drop() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    let request_id = json!("guard-test-1");
+
+    {
+        let _guard = RequestGuard::new(active.clone(), &flag, request_id.clone());
+        let mut map = active.lock().await;
+        map.insert(
+            request_id.clone(),
+            eggsact::mcp::runtime::test_support::make_active_request(flag.clone()),
+        );
+        assert_eq!(map.len(), 1);
+    }
+    // Guard dropped — entry should be removed
+    let map = active.lock().await;
+    assert_eq!(map.len(), 0, "RequestGuard should remove entry on drop");
+}
+
+#[tokio::test]
+async fn request_guard_does_not_remove_mismatched_entry() {
+    let active = new_active_requests();
+    let flag1 = Arc::new(AtomicBool::new(false));
+    let flag2 = Arc::new(AtomicBool::new(false));
+    let request_id = json!("guard-test-2");
+
+    // Insert with flag1
+    {
+        let mut map = active.lock().await;
+        map.insert(
+            request_id.clone(),
+            eggsact::mcp::runtime::test_support::make_active_request(flag1.clone()),
+        );
+    }
+
+    // Create a guard with flag2 (different cancel flag = different request)
+    {
+        let _guard = RequestGuard::new(active.clone(), &flag2, request_id.clone());
+        drop(_guard);
+    }
+
+    // Entry should still be there because the guard's flag didn't match
+    let map = active.lock().await;
+    assert_eq!(
+        map.len(),
+        1,
+        "RequestGuard should not remove entry with mismatched cancel flag"
+    );
+}
+
+#[tokio::test]
+async fn request_guard_handles_already_removed_entry() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    let request_id = json!("guard-test-3");
+
+    // Insert and immediately remove
+    {
+        let mut map = active.lock().await;
+        map.insert(
+            request_id.clone(),
+            eggsact::mcp::runtime::test_support::make_active_request(flag.clone()),
+        );
+    }
+    {
+        let mut map = active.lock().await;
+        map.remove(&request_id);
+    }
+
+    // Guard drop on a missing entry should be a no-op
+    {
+        let _guard = RequestGuard::new(active.clone(), &flag, request_id);
+    }
+    let map = active.lock().await;
+    assert_eq!(map.len(), 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// apply_cancellation async semantics
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn apply_cancellation_awaits_lock_contention() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    let request_id = json!("contend-1");
+
+    // Hold the lock in a background task
+    let active_clone = active.clone();
+    let lock_handle = tokio::spawn(async move {
+        let _guard = active_clone.lock().await;
+        // Hold the lock briefly
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    });
+
+    // Give the lock holder time to acquire
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    // Insert the request while lock is held
+    {
+        // Wait for lock holder to finish
+        lock_handle.await.unwrap();
+        let mut map = active.lock().await;
+        map.insert(
+            request_id.clone(),
+            eggsact::mcp::runtime::test_support::make_active_request(flag.clone()),
+        );
+    }
+
+    // apply_cancellation should succeed (it awaits the lock)
+    let result = apply_cancellation(&active, &request_id).await;
+    assert!(
+        result,
+        "async cancellation should wait for lock and succeed"
+    );
+    assert!(flag.load(Ordering::Relaxed));
 }

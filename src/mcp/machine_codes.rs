@@ -45,6 +45,8 @@ pub const UNSUPPORTED_FEATURE: &str = "UNSUPPORTED_FEATURE";
 pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
 /// The tool received arguments that do not match its schema.
 pub const INVALID_ARGUMENTS: &str = "INVALID_ARGUMENTS";
+/// A request with a duplicate non-null ID was rejected.
+pub const DUPLICATE_REQUEST_ID: &str = "DUPLICATE_REQUEST_ID";
 
 // ---------------------------------------------------------------------------
 // Category-prefixed aliases for common error codes
@@ -571,6 +573,7 @@ pub const ALL: &[&str] = &[
     COMMON_INPUT_TOO_LARGE,
     COMMON_INTERNAL_ERROR,
     COMMON_INVALID_ARGUMENTS,
+    DUPLICATE_REQUEST_ID,
     EDIT_SAFE_TO_APPLY,
     EDIT_OLD_TEXT_NOT_FOUND,
     EDIT_MULTIPLE_MATCHES,

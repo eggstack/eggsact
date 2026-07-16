@@ -390,6 +390,19 @@ These catch drift when tools are added/removed or profile definitions change.
 
 `test_schema_boundaries.rs` walks every registered tool's input schema and asserts no unsupported JSON Schema keywords are present. This prevents adding keywords (like `$ref`, `oneOf`, `format`) that the custom schema validator in `src/mcp/schema_validation.rs` cannot handle.
 
+### Deterministic Concurrency Harness
+
+Tests for `apply_cancellation` and `RequestGuard` use `#[tokio::test]` and
+`.await` — they exercise async cancellation paths and RAII drop behavior
+deterministically without spawning a full MCP server:
+
+- `apply_cancellation` tests are async (`#[tokio::test]`) and use `.await`
+  on the lock, verifying that cancellation notifications are applied correctly
+  even under contention.
+- `RequestGuard` drop behavior can be tested by creating a guard and dropping
+  it, verifying that the active-request entry is cleaned up and that stale
+  cancel flags do not remove newer entries with the same ID.
+
 ### Context Isolation via ExecutionContext
 
 `test_context_isolation.rs` tests that `call_json_with_execution_context()` properly isolates per-request state:

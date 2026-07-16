@@ -259,7 +259,7 @@ These contracts are verified by fixture-backed tests in `tests/mcp/test_route_co
 
 ## Concurrency Model
 
-The MCP stdio server now supports **concurrent request handling**. The read loop
+The MCP stdio server supports **concurrent request handling**. The read loop
 in `server.rs` reads requests from stdin as lines arrive and spawns each request
 as an independent tokio task via a `JoinSet`. Responses are sent through an
 `mpsc` channel to a dedicated writer task that serializes stdout writes,
@@ -275,6 +275,25 @@ preventing interleaved output from concurrent handlers.
   tools, not a concurrency driver.
 - `MAX_REQUESTS_PER_SECOND` (10): rate limiter on incoming requests.
 
+**Worker containment:** Semaphore permits are acquired via `acquire_owned()`
+and moved into `spawn_blocking` closures. The owned permit is held until the
+handler closure exits, ensuring `MAX_TOOL_WORKERS` is a hard upper bound even
+after client-facing timeouts. The outer `tokio::time::timeout` governs the
+client-facing wait; the spawned blocking task may continue executing after
+the timeout expires.
+
+**Read loop stages:** The read loop processes each incoming line through seven
+stages in order:
+
+1. Frame-size check (rejects lines exceeding `MAX_REQUEST_BYTES`)
+2. JSON parse
+3. Top-level validation (must be an object)
+4. Extract method
+5. Validate ID type (must be string, integer, or absent — null is rejected)
+6. Construct request (or handle notifications)
+7. For notifications: bypass rate limit, dispatch immediately
+8. For requests: reject null IDs → rate limit → in-flight check → duplicate ID check → register + dispatch
+
 **Cancellation model:** Each request gets an `Arc<AtomicBool>` cancel flag at
 dispatch time. When a `notifications/cancelled` notification arrives for an
 active request ID, the flag is set to `true` cooperatively. The flag is shared
@@ -283,6 +302,29 @@ the handler (via `budget::with_cancel_flag()` thread-local), so external
 cancellation and timeout share the same signal. The handler can check
 `BudgetContext::should_stop()` at any pipeline stage to detect cancellation.
 
+`apply_cancellation` is `async` — it uses `.lock().await` on the
+active-request map instead of `.try_lock()`, preventing cancellation loss under
+lock contention. Cancellation notifications bypass the ordinary request rate
+limiter (`MAX_REQUESTS_PER_SECOND`) because they are notifications, not
+requests.
+
+**Duplicate-ID policy:** Non-null duplicate request IDs are rejected atomically
+under a single lock acquisition with a JSON-RPC error (-32600) using the
+`DUPLICATE_REQUEST_ID` machine code. Null IDs (`id: null`) are rejected for
+requests because concurrent tracking and error correlation become ambiguous.
+Notifications use an absent `id` field, not `null`.
+
+**Active-request cleanup:** A `RequestGuard` RAII struct in `runtime.rs`
+provides cleanup for active-request entries. On drop, it removes the entry
+from the active map if the cancel flag still matches, preventing an old task
+from removing a newer request that reused the same ID. The guard ensures
+cleanup on all terminal paths: normal completion, error, panic, timeout,
+writer failure, and graceful shutdown.
+
+**Diagnostics counters:** `RequestGuard` and owned semaphore permits are
+reflected in the diagnostics counter infrastructure — `runtime_diagnostics`
+reports in-flight and active-worker counts.
+
 **Graceful shutdown:** When stdin reaches EOF, the read loop breaks and the
 server drains in-flight requests via `JoinSet::join_next()` before dropping the
 channel sender and waiting for the writer task to flush remaining responses.
@@ -290,11 +332,12 @@ channel sender and waiting for the writer task to flush remaining responses.
 **Response ordering contract (JSON-RPC):** Because requests are dispatched
 concurrently and may complete out of request order, **clients must correlate
 responses to requests by JSON-RPC `id`**, not by arrival position. The `id`
-field on each response echoes the `id` of the originating request (string,
-integer, or null). JSON-RPC clients that implicitly assume ordered responses
-will observe races on multi-request sessions. The server intentionally does
-not serialize dispatch behind a head-of-line lock, because doing so would
-re-introduce the latency bottleneck that the concurrent runtime removed.
+field on each response echoes the `id` of the originating request (string or
+integer only — null is rejected for requests). JSON-RPC clients that implicitly
+assume ordered responses will observe races on multi-request sessions. The
+server intentionally does not serialize dispatch behind a head-of-line lock,
+because doing so would re-introduce the latency bottleneck that the concurrent
+runtime removed.
 
 Notifications (requests without an `id`) produce no response by JSON-RPC
 contract; clients must not expect them in the output stream.

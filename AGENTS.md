@@ -217,3 +217,5 @@ Agent task skills in `.opencode/skills/` (symlinked from `.agents/skills/` for C
 - **MCP response ordering is concurrent**: Responses may arrive out of request order. **Correlate by JSON-RPC `id`**, not arrival position.
 - **Input pre-check**: Both `call_json_with_budget()` (in-process) and `tools/call` (MCP) check serialized input against `budget.max_input_bytes` before dispatch. Oversized input fails with `INPUT_TOO_LARGE`.
 - **`ToolResponse::error`** has been renamed to `error_without_code_for_legacy_tests_only` (deprecated). Use `error_with_code()` instead.
+- **`apply_cancellation` is async** — it uses `.lock().await` instead of `.try_lock()`, so callers must `.await` it. This prevents cancellation loss under active-map lock contention.
+- **Duplicate non-null request IDs are rejected** atomically with a JSON-RPC error using `DUPLICATE_REQUEST_ID`. Null IDs (`id: null`) are also rejected for requests because concurrent tracking and error correlation become ambiguous. Notifications use absent `id`, not `null`.

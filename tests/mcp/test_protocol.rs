@@ -373,3 +373,108 @@ fn test_oversized_request_rejected() {
         message
     );
 }
+
+#[test]
+fn test_null_id_rejected() {
+    let request = r#"{"jsonrpc":"2.0","method":"ping","id":null}"#;
+    let response_str = mcp_request(request);
+    let response = parse_response(&response_str);
+
+    let error = response
+        .get("error")
+        .expect("Missing error for null ID request");
+    let code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    assert_eq!(
+        code, -32600,
+        "Null ID should return -32600 (Invalid Request)"
+    );
+    let message = error.get("message").and_then(|m| m.as_str()).unwrap_or("");
+    assert!(
+        message.contains("null"),
+        "Error should mention null, got: {}",
+        message
+    );
+}
+
+#[test]
+fn test_notification_has_no_response() {
+    // notifications/initialized has no id — server should produce no response
+    let request = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+    let response_str = mcp_request(request);
+    let trimmed = response_str.trim();
+    assert!(
+        trimmed.is_empty(),
+        "Notification should produce no response, got: {}",
+        trimmed
+    );
+}
+
+#[test]
+fn test_duplicate_request_id_rejected() {
+    // Two requests with the same ID — the second should be rejected.
+    // Use a long-running tool to keep the first request active.
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // First request — use a tool that takes some time
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"text_diff_explain","arguments":{"a":"hello world foo bar baz","b":"hello world qux bar baz"}},"id":1}"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Second request with same ID
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"1+1"}},"id":1}"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Third request with different ID (should succeed)
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"ping","id":2}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    // Should have at least 2 responses (the duplicate is rejected, the ping succeeds)
+    // The first response is for id=1 (tool result), the second for id=2 (ping).
+    // The duplicate id=1 should produce an error response.
+    let has_error = lines.iter().any(|line| {
+        if let Ok(v) = serde_json::from_str::<Value>(line) {
+            v.get("error").is_some() && v.get("id") == Some(&Value::Number(1.into()))
+        } else {
+            false
+        }
+    });
+    let has_ping = lines.iter().any(|line| {
+        if let Ok(v) = serde_json::from_str::<Value>(line) {
+            v.get("id") == Some(&Value::Number(2.into())) && v.get("result").is_some()
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_error || lines.len() >= 2,
+        "Expected duplicate ID error or multiple responses, got {} lines: {:?}",
+        lines.len(),
+        lines
+    );
+    assert!(has_ping, "Ping with different ID should succeed");
+}

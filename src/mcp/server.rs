@@ -11,7 +11,7 @@ use crate::mcp::response::{
 };
 use crate::mcp::runtime::{
     self, apply_cancellation, get_active_audience, get_active_profile, get_schema_detail,
-    new_active_requests, RateLimiter, MAX_IN_FLIGHT_REQUESTS, MAX_OUTPUT_BYTES,
+    new_active_requests, RateLimiter, RequestGuard, MAX_IN_FLIGHT_REQUESTS, MAX_OUTPUT_BYTES,
     MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS,
     MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
 };
@@ -24,6 +24,17 @@ use tokio::sync::Mutex;
 
 pub fn mcp_tool_count() -> usize {
     registry::tool_count()
+}
+
+/// Truncate a request ID for display in error messages, avoiding DoS via
+/// oversized IDs in log output.
+fn truncate_id_display(id: &Value) -> String {
+    let s = id.to_string();
+    if s.len() > 128 {
+        format!("{}...", &s[..124])
+    } else {
+        s
+    }
 }
 
 fn write_json_line(value: &Value) {
@@ -349,16 +360,17 @@ async fn handle_request_async(
             // Use budget-derived timeout. The outer tokio::time::timeout
             // governs how long we wait; the spawned blocking task may
             // continue after the timeout fires (Rust cannot kill threads).
+            //
+            // Owned permits ensure the semaphore permit is held until the
+            // blocking handler actually exits — even after a timeout. This
+            // prevents timed-out handlers from releasing their permit while
+            // the blocking closure continues, which would allow more than
+            // MAX_TOOL_WORKERS concurrent blocking computations.
             let timeout_ms = tool_budget.max_elapsed_ms;
             let result = tokio::time::timeout(Duration::from_millis(timeout_ms), async move {
-                let permit_result = sem.acquire().await;
-                let _permit = match permit_result {
-                    Ok(permit) => permit,
+                let permit = match sem.acquire_owned().await {
+                    Ok(p) => p,
                     Err(_) => {
-                        // Semaphore was dropped — server is shutting down.
-                        // Return a synthetic tool response so the dispatch
-                        // path can produce a structured error instead of
-                        // panicking inside the spawned task.
                         return Ok::<_, tokio::task::JoinError>(
                             crate::mcp::response::ToolResponse::error_with_code(
                                 "internal_error",
@@ -370,7 +382,22 @@ async fn handle_request_async(
                         );
                     }
                 };
+                // Check cancellation before spawning blocking work — avoids
+                // consuming a worker permit for an already-cancelled request.
+                if cancel_flag_for_handler.load(Ordering::Relaxed) {
+                    return Ok(crate::mcp::response::ToolResponse::error_with_code(
+                        "cancelled",
+                        machine_codes::CANCELLED,
+                        &format!("Tool '{}' request was cancelled", name),
+                        None,
+                        Some(name),
+                    ));
+                }
                 tokio::task::spawn_blocking(move || {
+                    // Permit is moved into the closure and held until the
+                    // handler exits, ensuring MAX_TOOL_WORKERS is respected
+                    // even after client-facing timeouts.
+                    let _permit = permit;
                     crate::mcp::budget::with_cancel_flag(
                         Some(cancel_flag_for_handler.clone()),
                         || handler(&args_clone),
@@ -630,24 +657,7 @@ pub async fn main() -> ! {
             }
         };
 
-        // Rate limiting
-        {
-            let mut limiter = rate_limiter.lock().await;
-            if !limiter.check() {
-                let _ = tx
-                    .send(invalid_request(
-                        format!(
-                            "Rate limit exceeded: max {} requests per second",
-                            MAX_REQUESTS_PER_SECOND
-                        ),
-                        request_value.get("id").cloned(),
-                    ))
-                    .await;
-                continue;
-            }
-        }
-
-        // Validate request id
+        // Validate request id (before constructing JsonRpcRequest)
         let id = request_value.get("id");
         if let Some(id_val) = id {
             // Reject boolean, array, object, and float ids per JSON-RPC 2.0 spec
@@ -661,8 +671,6 @@ pub async fn main() -> ! {
                 continue;
             }
             // Reject float IDs (JSON numbers that aren't integers)
-            // Use as_i64()/as_u64() for exact integer detection — as_f64() loses
-            // precision for integers >2^53 and would silently accept them.
             if id_val.is_number() && id_val.as_i64().is_none() && id_val.as_u64().is_none() {
                 let _ = tx
                     .send(invalid_request(
@@ -697,24 +705,61 @@ pub async fn main() -> ! {
 
         // Notifications (no id) are handled inline; requests (with id) are
         // spawned as concurrent tasks that send responses through the channel.
+        // Notifications bypass the ordinary request rate limiter.
         if request.id.is_none() {
-            // Handle notifications inline — no response expected.
             match request.method.as_str() {
                 "notifications/initialized" => {}
                 "notifications/cancelled" => {
                     // Set the cancel flag on the active request, if any.
+                    // Uses async lock to avoid losing cancellations under
+                    // contention (the old try_lock approach could silently
+                    // drop valid cancellation notifications).
                     if let Some(params) = &request.params {
                         if let Some(request_id) = params.get("requestId") {
-                            apply_cancellation(&active_requests, request_id);
+                            apply_cancellation(&active_requests, request_id).await;
                         }
                     }
                 }
-                _ => {}
+                _ => {
+                    // Unknown notifications are silently ignored.
+                }
             }
             continue;
         }
 
-        // It's a request (has id) — check in-flight limit
+        // ── Request path (has id) ──────────────────────────────────────
+        // Reject null IDs: concurrent tracking and error correlation
+        // become ambiguous with null, and notifications use absent ID,
+        // not null.
+        if request.id.as_ref().is_some_and(|v| v.is_null()) {
+            let _ = tx
+                .send(json_rpc_error(
+                    -32600,
+                    "Invalid Request: 'id' must not be null",
+                    None,
+                ))
+                .await;
+            continue;
+        }
+
+        // Rate limiting — applies only to requests, not notifications.
+        {
+            let mut limiter = rate_limiter.lock().await;
+            if !limiter.check() {
+                let _ = tx
+                    .send(invalid_request(
+                        format!(
+                            "Rate limit exceeded: max {} requests per second",
+                            MAX_REQUESTS_PER_SECOND
+                        ),
+                        request.id.clone(),
+                    ))
+                    .await;
+                continue;
+            }
+        }
+
+        // Check in-flight limit
         {
             let active = active_requests.lock().await;
             if active.len() >= MAX_IN_FLIGHT_REQUESTS {
@@ -729,15 +774,33 @@ pub async fn main() -> ! {
             }
         }
 
-        // Create a per-request cancel flag shared between the read loop
-        // (via notifications/cancelled) and the task (via timeout + handler).
+        // Reject duplicate non-null IDs atomically under one lock
+        // acquisition. A duplicate ID indicates a protocol error.
         let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        {
+            let active = active_requests.lock().await;
+            if let Some(ref req_id) = request.id {
+                if active.contains_key(req_id) {
+                    let _ = tx
+                        .send(json_rpc_error(
+                            -32600,
+                            format!("Duplicate request id: {:?}", truncate_id_display(req_id)),
+                            request.id.clone(),
+                        ))
+                        .await;
+                    continue;
+                }
+            }
+        }
 
-        // Register the active request so notifications/cancelled can find it.
+        // Register the active request with an RAII guard that ensures
+        // cleanup on all exit paths (normal return, error, panic, timeout).
+        let request_id = request.id.clone().unwrap();
+        let guard = RequestGuard::new(active_requests.clone(), &cancel_flag, request_id.clone());
         {
             let mut active = active_requests.lock().await;
             active.insert(
-                request.id.clone().unwrap(),
+                request_id.clone(),
                 runtime::ActiveRequest {
                     cancel_flag: cancel_flag.clone(),
                     started_at: tokio::time::Instant::now(),
@@ -749,7 +812,6 @@ pub async fn main() -> ! {
         // Spawn the request handler without awaiting — the read loop
         // continues to process the next line immediately.
         let tx = tx.clone();
-        let active_requests = active_requests.clone();
         let semaphore_clone = tool_semaphore.clone();
         let cancel_flag_clone = cancel_flag.clone();
         let request_clone = JsonRpcRequest {
@@ -758,17 +820,14 @@ pub async fn main() -> ! {
             params: request.params.clone(),
             id: request.id.clone(),
         };
-        let request_id = request.id.clone();
+        let request_id_for_response = request_id.clone();
 
         join_set.spawn(async move {
             let maybe_result =
                 handle_request_async(&request_clone, &cancel_flag_clone, &semaphore_clone).await;
 
-            // Clean up active request entry.
-            if let Some(id) = &request_id {
-                let mut active = active_requests.lock().await;
-                active.remove(id);
-            }
+            // RequestGuard handles active-request cleanup on drop.
+            drop(guard);
 
             // Send response through the channel.
             if let Some(result) = maybe_result {
@@ -778,7 +837,7 @@ pub async fn main() -> ! {
                     let response = JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         result,
-                        id: request_id,
+                        id: Some(request_id_for_response),
                     };
                     if let Ok(value) = serde_json::to_value(response) {
                         let _ = tx.send(value).await;

@@ -9,6 +9,43 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
+/// RAII guard for an active request entry. On drop, removes the entry from
+/// the active-request map if the cancel flag still matches (preventing an
+/// old task from removing a newer request that reused the same ID).
+#[doc(hidden)]
+pub struct RequestGuard {
+    active: ActiveRequests,
+    cancel_flag_addr: usize,
+    request_id: Value,
+}
+
+impl RequestGuard {
+    #[doc(hidden)]
+    pub fn new(active: ActiveRequests, cancel_flag: &Arc<AtomicBool>, request_id: Value) -> Self {
+        Self {
+            active,
+            cancel_flag_addr: Arc::as_ptr(cancel_flag) as usize,
+            request_id,
+        }
+    }
+}
+
+impl Drop for RequestGuard {
+    fn drop(&mut self) {
+        // Best-effort removal. Use try_lock to avoid blocking on drop;
+        // if the map is contended, the entry will be cleaned up by
+        // the next operation or shutdown.
+        if let Ok(mut map) = self.active.try_lock() {
+            if let Some(entry) = map.get(&self.request_id) {
+                let entry_addr = Arc::as_ptr(&entry.cancel_flag) as usize;
+                if entry_addr == self.cancel_flag_addr {
+                    map.remove(&self.request_id);
+                }
+            }
+        }
+    }
+}
+
 #[doc(hidden)]
 pub const MAX_REQUESTS_PER_SECOND: u32 = 10;
 #[doc(hidden)]
@@ -241,14 +278,15 @@ pub mod test_support {
 /// looks up the corresponding active request, and sets its cancel flag.
 /// Returns `true` if a cancel flag was actually set.
 ///
+/// This is an async function that properly awaits the active-map lock
+/// rather than using `try_lock()`, which can lose cancellations when
+/// the map is briefly contended.
+///
 /// This function is extracted from the server's notification handler so
 /// it can be unit-tested in isolation without spawning the stdio loop.
 #[doc(hidden)]
-pub fn apply_cancellation(active: &ActiveRequests, request_id: &Value) -> bool {
-    let map = match active.try_lock() {
-        Ok(g) => g,
-        Err(_) => return false,
-    };
+pub async fn apply_cancellation(active: &ActiveRequests, request_id: &Value) -> bool {
+    let map = active.lock().await;
     match request_id {
         Value::Bool(_) => false,
         Value::String(s) if s.len() <= MAX_REQUEST_ID_LENGTH => {
