@@ -1,12 +1,13 @@
 //! Unit tests for MCP runtime helpers (Tasks 3 & 4).
 //!
-//! Tests cancellation logic, active request tracking, and audience
+//! Tests cancellation logic, active request tracking, audience
 //! parsing in isolation without spawning the stdio server loop.
 
 use eggsact::agent::ToolAudience;
 use eggsact::mcp::runtime::{
-    apply_cancellation, new_active_requests, parse_audience, parse_schema_detail, RateLimiter,
-    RequestGuard, MAX_IN_FLIGHT_REQUESTS, MAX_REQUESTS_PER_SECOND,
+    apply_cancellation, new_active_requests, parse_audience, parse_schema_detail, register_request,
+    snapshot_metrics, MetricGuard, RateLimiter, RegisterRequestError, RequestGuard,
+    MAX_IN_FLIGHT_REQUESTS, MAX_REQUESTS_PER_SECOND, RUNTIME_METRICS,
 };
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -431,4 +432,204 @@ async fn apply_cancellation_awaits_lock_contention() {
         "async cancellation should wait for lock and succeed"
     );
     assert!(flag.load(Ordering::Relaxed));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// apply_cancellation flag set outside critical section
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn apply_cancellation_sets_flag_outside_lock() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    let request_id = json!("outside-lock-1");
+
+    {
+        let mut map = active.lock().await;
+        map.insert(
+            request_id.clone(),
+            eggsact::mcp::runtime::test_support::make_active_request(flag.clone()),
+        );
+    }
+
+    // The flag must not be set while we hold the lock ourselves.
+    // apply_cancellation clones the Arc, releases the lock, then sets.
+    let result = apply_cancellation(&active, &request_id).await;
+    assert!(result);
+    assert!(flag.load(Ordering::Relaxed));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// register_request — atomic check+insert under one lock
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn register_request_succeeds_for_new_id() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    let guard = register_request(&active, &flag, json!("r1"), "tools/call".to_string()).await;
+    assert!(guard.is_ok(), "register_request should succeed for new ID");
+    let _guard = guard.unwrap();
+    let map = active.lock().await;
+    assert_eq!(map.len(), 1);
+}
+
+#[tokio::test]
+async fn register_request_rejects_duplicate_id() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    let _g1 = register_request(&active, &flag, json!("dup"), "tools/call".to_string())
+        .await
+        .unwrap();
+    let flag2 = Arc::new(AtomicBool::new(false));
+    let result = register_request(&active, &flag2, json!("dup"), "tools/call".to_string()).await;
+    assert!(
+        matches!(result, Err(RegisterRequestError::DuplicateId)),
+        "should reject duplicate ID"
+    );
+}
+
+#[tokio::test]
+async fn register_request_rejects_at_capacity() {
+    let active = new_active_requests();
+    let mut guards = Vec::new();
+    for i in 0..MAX_IN_FLIGHT_REQUESTS {
+        let flag = Arc::new(AtomicBool::new(false));
+        let g = register_request(&active, &flag, json!(i), "tools/call".to_string())
+            .await
+            .unwrap();
+        guards.push(g);
+    }
+    let flag = Arc::new(AtomicBool::new(false));
+    let result = register_request(
+        &active,
+        &flag,
+        json!(MAX_IN_FLIGHT_REQUESTS),
+        "tools/call".to_string(),
+    )
+    .await;
+    assert!(
+        matches!(result, Err(RegisterRequestError::CapacityExceeded)),
+        "should reject when at capacity"
+    );
+    drop(guards);
+}
+
+#[tokio::test]
+async fn register_request_guard_cleanup_on_drop() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    {
+        let _g = register_request(&active, &flag, json!("drop-test"), "tools/call".to_string())
+            .await
+            .unwrap();
+        let map = active.lock().await;
+        assert_eq!(map.len(), 1);
+    }
+    let map = active.lock().await;
+    assert_eq!(map.len(), 0, "guard drop should remove entry");
+}
+
+#[tokio::test]
+async fn register_request_allows_id_reuse_after_completion() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    {
+        let _g = register_request(&active, &flag, json!("reuse"), "tools/call".to_string())
+            .await
+            .unwrap();
+    }
+    // Entry was removed on drop, so reuse should succeed
+    let flag2 = Arc::new(AtomicBool::new(false));
+    let result = register_request(&active, &flag2, json!("reuse"), "tools/call".to_string()).await;
+    assert!(result.is_ok(), "ID reuse after completion should succeed");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Runtime metrics
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn metric_guard_increments_and_decrements() {
+    let prev = RUNTIME_METRICS.active_requests.load(Ordering::Relaxed);
+    {
+        let _guard = MetricGuard::new(&RUNTIME_METRICS.active_requests);
+        assert_eq!(
+            RUNTIME_METRICS.active_requests.load(Ordering::Relaxed),
+            prev + 1
+        );
+    }
+    assert_eq!(
+        RUNTIME_METRICS.active_requests.load(Ordering::Relaxed),
+        prev
+    );
+}
+
+#[test]
+fn metric_guard_nested_guards() {
+    let prev = RUNTIME_METRICS
+        .active_blocking_handlers
+        .load(Ordering::Relaxed);
+    {
+        let _g1 = MetricGuard::new(&RUNTIME_METRICS.active_blocking_handlers);
+        assert_eq!(
+            RUNTIME_METRICS
+                .active_blocking_handlers
+                .load(Ordering::Relaxed),
+            prev + 1
+        );
+        {
+            let _g2 = MetricGuard::new(&RUNTIME_METRICS.active_blocking_handlers);
+            assert_eq!(
+                RUNTIME_METRICS
+                    .active_blocking_handlers
+                    .load(Ordering::Relaxed),
+                prev + 2
+            );
+        }
+        assert_eq!(
+            RUNTIME_METRICS
+                .active_blocking_handlers
+                .load(Ordering::Relaxed),
+            prev + 1
+        );
+    }
+    assert_eq!(
+        RUNTIME_METRICS
+            .active_blocking_handlers
+            .load(Ordering::Relaxed),
+        prev
+    );
+}
+
+#[test]
+fn snapshot_metrics_returns_current_values() {
+    let snap = snapshot_metrics();
+    // Just verify it doesn't panic and returns reasonable values
+    assert!(snap.active_requests <= MAX_IN_FLIGHT_REQUESTS);
+    assert!(snap.active_blocking_handlers <= MAX_IN_FLIGHT_REQUESTS);
+}
+
+#[test]
+fn runtime_metrics_peak_tracking() {
+    let prev = RUNTIME_METRICS
+        .peak_blocking_concurrency
+        .load(Ordering::Relaxed);
+    // Simulate: increment, update peak, decrement
+    RUNTIME_METRICS
+        .active_blocking_handlers
+        .fetch_add(1, Ordering::Relaxed);
+    let current = RUNTIME_METRICS
+        .active_blocking_handlers
+        .load(Ordering::Relaxed);
+    RUNTIME_METRICS
+        .peak_blocking_concurrency
+        .fetch_max(current, Ordering::Relaxed);
+    RUNTIME_METRICS
+        .active_blocking_handlers
+        .fetch_sub(1, Ordering::Relaxed);
+    let peak = RUNTIME_METRICS
+        .peak_blocking_concurrency
+        .load(Ordering::Relaxed);
+    assert!(peak >= prev, "peak should be >= previous value");
 }

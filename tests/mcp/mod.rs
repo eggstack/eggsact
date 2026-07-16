@@ -10,6 +10,7 @@ pub mod test_diagnostics;
 pub mod test_edge_cases;
 pub mod test_edit_preflight_enhanced;
 pub mod test_error_structure;
+pub mod test_execution_safety;
 pub mod test_golden_fixtures;
 pub mod test_hardening_and_gaps;
 pub mod test_lifecycle_and_gaps;

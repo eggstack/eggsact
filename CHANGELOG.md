@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] - 2026-07-16
+
+### Added
+- **Runtime metrics**: `RUNTIME_METRICS` global provides live atomic counters
+  for `active_requests`, `active_blocking_handlers`, `timed_out_handlers`,
+  `total_timeouts`, and `peak_blocking_concurrency`. RAII `MetricGuard`
+  ensures counters decrement correctly on panic/unwind. Exposed via
+  `snapshot_metrics()` for diagnostics.
+- **`register_request()` API**: atomic check+insert under one lock
+  acquisition. Returns `Result<RequestGuard, RegisterRequestError>` with
+  `DuplicateId` and `CapacityExceeded` error variants. Replaces the previous
+  two-lock-window approach for in-flight and duplicate checks.
+- 10 new execution safety integration tests (`tests/mcp/test_execution_safety.rs`):
+  integer ID duplicates, string ID duplicates, ID reuse after completion,
+  cancellation targeting, cancellation of unknown/completed requests,
+  worker containment under concurrency, timeout permit leak detection,
+  graceful shutdown drain, malformed cancellation notification handling.
+- 12 new runtime helper tests (`tests/mcp/test_runtime_helpers.rs`):
+  `register_request` success/duplicate/capacity/guard-cleanup/reuse,
+  `MetricGuard` increment/decrement/nesting, `snapshot_metrics`,
+  runtime peak tracking, `apply_cancellation` flag-outside-lock.
+
+### Changed
+- **Two-lock-window violation fixed**: in-flight limit check, duplicate ID
+  check, and active-request insertion now occur under a single lock
+  acquisition via `register_request()`. Previously these were three separate
+  lock windows, creating a race where two requests with the same ID could
+  both pass the duplicate check before either was inserted.
+- **Cancellation flag set outside critical section**: `apply_cancellation`
+  now clones the `Arc<AtomicBool>`, releases the active-map lock, then sets
+  the flag outside the critical section. Previously the flag was set while
+  holding the lock.
+- **Malformed cancellation notifications logged to stderr**: missing
+  `requestId` parameter or missing `params` now emit a diagnostic warning
+  on stderr instead of being silently ignored.
+- **Worker permit tracking**: `spawn_blocking` closures now include
+  `MetricGuard` for active-blocking-handler counting and peak concurrency
+  watermark updates. Timeout path increments `total_timeouts` and
+  `timed_out_handlers` counters; handler exit decrements
+  `timed_out_handlers`.
+- `architecture/mcp-server.md`: documented nested thread lifetimes
+  (`run_with_timeout` inner `std::thread::spawn` that can outlive the
+  handler by 5–30 seconds), `register_request` API, runtime metrics
+  counters, and `MetricGuard` RAII pattern.
+
+### Fixed
+- Duplicate ID check and insertion are now atomic under one lock, closing
+  a race where two concurrent requests with the same ID could both pass
+  validation.
+
 ## [1.1.4] - 2026-07-09
 
 ### Added

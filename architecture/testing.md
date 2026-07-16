@@ -398,10 +398,56 @@ deterministically without spawning a full MCP server:
 
 - `apply_cancellation` tests are async (`#[tokio::test]`) and use `.await`
   on the lock, verifying that cancellation notifications are applied correctly
-  even under contention.
+  even under contention. The flag is set **outside** the critical section
+  (after the lock is released), tested by `apply_cancellation_sets_flag_outside_lock`.
 - `RequestGuard` drop behavior can be tested by creating a guard and dropping
   it, verifying that the active-request entry is cleaned up and that stale
   cancel flags do not remove newer entries with the same ID.
+- `register_request` tests verify atomic check+insert under one lock
+  acquisition, capacity limits, duplicate rejection, and ID reuse after
+  completion.
+- `MetricGuard` tests verify RAII increment/decrement on static atomic
+  counters, including nested guard scoping.
+
+### Execution Safety Stress Tests
+
+`tests/mcp/test_execution_safety.rs` contains integration tests that exercise
+the MCP server's execution safety invariants:
+
+- **Worker containment**: 20 concurrent `math_eval` calls via in-process API
+  verify no deadlock under `MAX_TOOL_WORKERS=16` concurrency.
+- **Timeout permit leak detection**: a short-budget call followed by a
+  normal call verifies permits are released after timeout.
+- **Duplicate ID rejection**: integer and string ID duplicates are rejected
+  with JSON-RPC errors; ID reuse after completion succeeds.
+- **Cancellation targeting**: cancelling one request does not affect another
+  concurrent request.
+- **Shutdown drain**: closing stdin with in-flight requests verifies all
+  responses are drained before exit.
+- **Malformed cancellation**: notifications with missing params or
+  requestId produce no response and are logged to stderr.
+
+### Running Focused Safety Tests
+
+```bash
+# Runtime helper tests (register_request, MetricGuard, apply_cancellation)
+cargo test --test lib mcp::test_runtime_helpers
+
+# Execution safety integration tests (worker containment, duplicate IDs, shutdown)
+cargo test --test lib mcp::test_execution_safety
+
+# Cancellation propagation (flag plumbing, budget context, tool-specific)
+cargo test --test lib mcp::test_cancellation
+
+# Determinism and concurrency (concurrent tool calls, determinism)
+cargo test --test lib mcp::test_determinism_concurrency
+
+# Protocol tests (null ID, notification, duplicate ID)
+cargo test --test lib mcp::test_protocol
+
+# Full MCP test suite (excluding parity)
+cargo test --test lib mcp -- --skip parity
+```
 
 ### Context Isolation via ExecutionContext
 

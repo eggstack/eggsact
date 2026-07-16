@@ -309,10 +309,12 @@ limiter (`MAX_REQUESTS_PER_SECOND`) because they are notifications, not
 requests.
 
 **Duplicate-ID policy:** Non-null duplicate request IDs are rejected atomically
-under a single lock acquisition with a JSON-RPC error (-32600) using the
-`DUPLICATE_REQUEST_ID` machine code. Null IDs (`id: null`) are rejected for
-requests because concurrent tracking and error correlation become ambiguous.
-Notifications use an absent `id` field, not `null`.
+by `register_request()` under a single lock acquisition — in-flight limit check,
+duplicate check, and insertion happen in one lock window. Rejection returns a
+JSON-RPC error (-32600) using the `DUPLICATE_REQUEST_ID` machine code. Null
+IDs (`id: null`) are rejected for requests because concurrent tracking and
+error correlation become ambiguous. Notifications use an absent `id` field,
+not `null`.
 
 **Active-request cleanup:** A `RequestGuard` RAII struct in `runtime.rs`
 provides cleanup for active-request entries. On drop, it removes the entry
@@ -323,11 +325,47 @@ writer failure, and graceful shutdown.
 
 **Diagnostics counters:** `RequestGuard` and owned semaphore permits are
 reflected in the diagnostics counter infrastructure — `runtime_diagnostics`
-reports in-flight and active-worker counts.
+reports in-flight and active-worker counts. Global `RUNTIME_METRICS` provides
+live atomic counters: `active_requests`, `active_blocking_handlers`,
+`timed_out_handlers`, `total_timeouts`, and `peak_blocking_concurrency`.
+RAII `MetricGuard` ensures counters decrement correctly on panic/unwind.
 
 **Graceful shutdown:** When stdin reaches EOF, the read loop breaks and the
 server drains in-flight requests via `JoinSet::join_next()` before dropping the
 channel sender and waiting for the writer task to flush remaining responses.
+
+### Nested thread lifetimes
+
+Some tool handlers spawn additional threads via `run_with_timeout` in
+`src/tools/helpers.rs`. This helper uses `std::thread::spawn` with its own
+`recv_timeout` to implement per-handler timeouts independently of the outer
+tokio timeout. The execution stack is:
+
+```
+tokio::time::timeout (outer, budget-derived)
+  └─ spawn_blocking (holds owned permit)
+       └─ run_with_timeout (std::thread::spawn, own recv_timeout)
+            └─ actual work (math eval / regex / ini parse)
+```
+
+Two threads can outlive the client-facing timeout response:
+
+1. The `spawn_blocking` thread itself — held by the owned permit until the
+   closure exits. This is documented and expected.
+2. The inner `std::thread::spawn` from `run_with_timeout` — up to 5–30 seconds
+   of untracked execution beyond the outer timeout. This thread does **not**
+   participate in the cooperative cancellation system (`cancel_flag` is
+   thread-local to the `spawn_blocking` thread and not visible to the inner
+   `std::thread::spawn`).
+
+Affected tools: `math_eval` (30s inner timeout), `validate_regex` (5s),
+`regex_finditer` (5s), `ini_validate` (5s).
+
+The `SpawnPermit` / `SpawnSemaphore` in `helpers.rs` limits inner thread
+concurrency to `MAX_TOOL_WORKERS` (16) via a `Condvar`-based semaphore, but
+does **not** integrate with cooperative cancellation. Inner threads that exceed
+their `recv_timeout` are abandoned — Rust cannot kill threads. The spawned
+thread continues until its timeout fires or its work completes.
 
 **Response ordering contract (JSON-RPC):** Because requests are dispatched
 concurrently and may complete out of request order, **clients must correlate

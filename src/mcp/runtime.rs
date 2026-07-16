@@ -3,7 +3,7 @@ use crate::calc::set_mcp_mode;
 use crate::mcp::registry;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -253,6 +253,132 @@ pub fn new_active_requests() -> ActiveRequests {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Runtime metrics
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Global runtime metrics for the MCP server. All counters are atomic and
+/// RAII-guarded so they decrement correctly on panic/unwind.
+pub struct RuntimeMetrics {
+    /// Number of currently active request tasks (registered in the active map).
+    pub active_requests: AtomicUsize,
+    /// Number of currently running blocking handler closures (inside spawn_blocking).
+    pub active_blocking_handlers: AtomicUsize,
+    /// Number of handlers that have timed out but whose blocking closure is still running.
+    pub timed_out_handlers: AtomicUsize,
+    /// Total number of timeout responses returned to clients.
+    pub total_timeouts: AtomicUsize,
+    /// Peak number of concurrent blocking handlers observed.
+    pub peak_blocking_concurrency: AtomicUsize,
+}
+
+impl RuntimeMetrics {
+    const fn new() -> Self {
+        Self {
+            active_requests: AtomicUsize::new(0),
+            active_blocking_handlers: AtomicUsize::new(0),
+            timed_out_handlers: AtomicUsize::new(0),
+            total_timeouts: AtomicUsize::new(0),
+            peak_blocking_concurrency: AtomicUsize::new(0),
+        }
+    }
+}
+
+/// Global runtime metrics instance.
+#[doc(hidden)]
+pub static RUNTIME_METRICS: LazyLock<RuntimeMetrics> = LazyLock::new(RuntimeMetrics::new);
+
+/// RAII guard that increments a metric on creation and decrements on drop.
+/// Used for active_requests and active_blocking_handlers counters.
+#[doc(hidden)]
+pub struct MetricGuard {
+    counter: &'static AtomicUsize,
+}
+
+impl MetricGuard {
+    /// Create a new guard that increments the given counter immediately.
+    pub fn new(counter: &'static AtomicUsize) -> Self {
+        counter.fetch_add(1, Ordering::Relaxed);
+        Self { counter }
+    }
+}
+
+impl Drop for MetricGuard {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// Snapshot of runtime metrics for diagnostics.
+#[doc(hidden)]
+pub struct MetricsSnapshot {
+    pub active_requests: usize,
+    pub active_blocking_handlers: usize,
+    pub timed_out_handlers: usize,
+    pub total_timeouts: usize,
+    pub peak_blocking_concurrency: usize,
+}
+
+/// Take a snapshot of current runtime metrics.
+#[doc(hidden)]
+pub fn snapshot_metrics() -> MetricsSnapshot {
+    MetricsSnapshot {
+        active_requests: RUNTIME_METRICS.active_requests.load(Ordering::Relaxed),
+        active_blocking_handlers: RUNTIME_METRICS
+            .active_blocking_handlers
+            .load(Ordering::Relaxed),
+        timed_out_handlers: RUNTIME_METRICS.timed_out_handlers.load(Ordering::Relaxed),
+        total_timeouts: RUNTIME_METRICS.total_timeouts.load(Ordering::Relaxed),
+        peak_blocking_concurrency: RUNTIME_METRICS
+            .peak_blocking_concurrency
+            .load(Ordering::Relaxed),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Request registration
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Errors that can occur when registering a new active request.
+#[derive(Debug)]
+#[doc(hidden)]
+pub enum RegisterRequestError {
+    /// A request with this non-null ID is already active.
+    DuplicateId,
+    /// The in-flight request limit has been reached.
+    CapacityExceeded,
+}
+
+/// Register a new active request under a single lock acquisition.
+///
+/// Checks in-flight limits and duplicate IDs atomically, then inserts the
+/// request into the active map. Returns a `RequestGuard` whose drop removes
+/// the entry (with generation matching to prevent stale cleanup).
+#[doc(hidden)]
+pub async fn register_request(
+    active: &ActiveRequests,
+    cancel_flag: &Arc<AtomicBool>,
+    request_id: Value,
+    method: String,
+) -> Result<RequestGuard, RegisterRequestError> {
+    let mut map = active.lock().await;
+    if map.len() >= MAX_IN_FLIGHT_REQUESTS {
+        return Err(RegisterRequestError::CapacityExceeded);
+    }
+    if map.contains_key(&request_id) {
+        return Err(RegisterRequestError::DuplicateId);
+    }
+    map.insert(
+        request_id.clone(),
+        ActiveRequest {
+            cancel_flag: cancel_flag.clone(),
+            started_at: Instant::now(),
+            method,
+        },
+    );
+    Ok(RequestGuard::new(active.clone(), cancel_flag, request_id))
+}
+
 /// Test-only helpers for constructing runtime state from integration tests.
 ///
 /// This module is `#[doc(hidden)]` and not part of the public API; it is
@@ -275,7 +401,8 @@ pub mod test_support {
 /// Apply a cancellation notification to a single active request ID.
 ///
 /// Validates the request ID type (string or integer within size limits),
-/// looks up the corresponding active request, and sets its cancel flag.
+/// looks up the corresponding active request, clones its cancel flag Arc,
+/// releases the lock, then sets the flag outside the critical section.
 /// Returns `true` if a cancel flag was actually set.
 ///
 /// This is an async function that properly awaits the active-map lock
@@ -286,28 +413,28 @@ pub mod test_support {
 /// it can be unit-tested in isolation without spawning the stdio loop.
 #[doc(hidden)]
 pub async fn apply_cancellation(active: &ActiveRequests, request_id: &Value) -> bool {
-    let map = active.lock().await;
-    match request_id {
-        Value::Bool(_) => false,
-        Value::String(s) if s.len() <= MAX_REQUEST_ID_LENGTH => {
-            if let Some(req) = map.get(request_id) {
-                req.cancel_flag.store(true, Ordering::Relaxed);
-                true
-            } else {
-                false
+    // Validate ID type and clone the cancel flag Arc while holding the lock.
+    let maybe_flag: Option<Arc<AtomicBool>> = {
+        let map = active.lock().await;
+        match request_id {
+            Value::Bool(_) => None,
+            Value::String(s) if s.len() <= MAX_REQUEST_ID_LENGTH => {
+                map.get(request_id).map(|req| req.cancel_flag.clone())
             }
-        }
-        Value::Number(n)
-            if (n.is_i64() || n.is_u64())
-                && request_id.to_string().len() <= MAX_REQUEST_ID_LENGTH =>
-        {
-            if let Some(req) = map.get(request_id) {
-                req.cancel_flag.store(true, Ordering::Relaxed);
-                true
-            } else {
-                false
+            Value::Number(n)
+                if (n.is_i64() || n.is_u64())
+                    && request_id.to_string().len() <= MAX_REQUEST_ID_LENGTH =>
+            {
+                map.get(request_id).map(|req| req.cancel_flag.clone())
             }
+            _ => None,
         }
-        _ => false,
+    };
+    // Set the flag outside the critical section — no lock held.
+    if let Some(flag) = maybe_flag {
+        flag.store(true, Ordering::Relaxed);
+        true
+    } else {
+        false
     }
 }

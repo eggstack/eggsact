@@ -11,9 +11,9 @@ use crate::mcp::response::{
 };
 use crate::mcp::runtime::{
     self, apply_cancellation, get_active_audience, get_active_profile, get_schema_detail,
-    new_active_requests, RateLimiter, RequestGuard, MAX_IN_FLIGHT_REQUESTS, MAX_OUTPUT_BYTES,
-    MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS,
-    MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
+    new_active_requests, register_request, MetricGuard, RateLimiter, RegisterRequestError,
+    MAX_OUTPUT_BYTES, MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH,
+    MAX_TOOL_WORKERS, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME, RUNTIME_METRICS,
 };
 use serde_json::Value;
 use std::sync::atomic::Ordering;
@@ -367,6 +367,9 @@ async fn handle_request_async(
             // the blocking closure continues, which would allow more than
             // MAX_TOOL_WORKERS concurrent blocking computations.
             let timeout_ms = tool_budget.max_elapsed_ms;
+            // Track whether the handler was timed out, for metrics decrement on exit.
+            let timed_out = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let timed_out_for_handler = timed_out.clone();
             let result = tokio::time::timeout(Duration::from_millis(timeout_ms), async move {
                 let permit = match sem.acquire_owned().await {
                     Ok(p) => p,
@@ -398,10 +401,27 @@ async fn handle_request_async(
                     // handler exits, ensuring MAX_TOOL_WORKERS is respected
                     // even after client-facing timeouts.
                     let _permit = permit;
-                    crate::mcp::budget::with_cancel_flag(
+                    // RAII guard tracks active blocking handler count.
+                    let _blocking_guard =
+                        MetricGuard::new(&RUNTIME_METRICS.active_blocking_handlers);
+                    // Update peak concurrency watermark.
+                    let current = RUNTIME_METRICS
+                        .active_blocking_handlers
+                        .load(Ordering::Relaxed);
+                    RUNTIME_METRICS
+                        .peak_blocking_concurrency
+                        .fetch_max(current, Ordering::Relaxed);
+                    let result = crate::mcp::budget::with_cancel_flag(
                         Some(cancel_flag_for_handler.clone()),
                         || handler(&args_clone),
-                    )
+                    );
+                    // If this handler was timed out, decrement the counter.
+                    if timed_out_for_handler.load(Ordering::Relaxed) {
+                        RUNTIME_METRICS
+                            .timed_out_handlers
+                            .fetch_sub(1, Ordering::Relaxed);
+                    }
+                    result
                 })
                 .await
             })
@@ -461,6 +481,13 @@ async fn handle_request_async(
                     // Note: the spawned blocking task may continue running
                     // after this point — we cannot kill threads in Rust.
                     cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                    timed_out.store(true, Ordering::Relaxed);
+                    RUNTIME_METRICS
+                        .total_timeouts
+                        .fetch_add(1, Ordering::Relaxed);
+                    RUNTIME_METRICS
+                        .timed_out_handlers
+                        .fetch_add(1, Ordering::Relaxed);
                     Some(wrap_tool_response(&ToolResponse::error_with_code(
                         "timeout",
                         machine_codes::TIMEOUT,
@@ -717,7 +744,13 @@ pub async fn main() -> ! {
                     if let Some(params) = &request.params {
                         if let Some(request_id) = params.get("requestId") {
                             apply_cancellation(&active_requests, request_id).await;
+                        } else {
+                            eprintln!(
+                                "Warning: notifications/cancelled missing 'requestId' parameter, ignoring"
+                            );
                         }
+                    } else {
+                        eprintln!("Warning: notifications/cancelled missing 'params', ignoring");
                     }
                 }
                 _ => {
@@ -759,10 +792,34 @@ pub async fn main() -> ! {
             }
         }
 
-        // Check in-flight limit
+        // Register the active request atomically under one lock acquisition.
+        // This checks in-flight limits, duplicate IDs, and inserts the entry
+        // in a single lock window — no separate contains_key/insert race.
+        let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let request_id = request.id.clone().unwrap();
+        let guard = match register_request(
+            &active_requests,
+            &cancel_flag,
+            request_id.clone(),
+            request.method.clone(),
+        )
+        .await
         {
-            let active = active_requests.lock().await;
-            if active.len() >= MAX_IN_FLIGHT_REQUESTS {
+            Ok(g) => g,
+            Err(RegisterRequestError::DuplicateId) => {
+                let _ = tx
+                    .send(json_rpc_error(
+                        -32600,
+                        format!(
+                            "Duplicate request id: {:?}",
+                            truncate_id_display(&request_id)
+                        ),
+                        request.id.clone(),
+                    ))
+                    .await;
+                continue;
+            }
+            Err(RegisterRequestError::CapacityExceeded) => {
                 let _ = tx
                     .send(json_rpc_error(
                         -32600,
@@ -772,42 +829,7 @@ pub async fn main() -> ! {
                     .await;
                 continue;
             }
-        }
-
-        // Reject duplicate non-null IDs atomically under one lock
-        // acquisition. A duplicate ID indicates a protocol error.
-        let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        {
-            let active = active_requests.lock().await;
-            if let Some(ref req_id) = request.id {
-                if active.contains_key(req_id) {
-                    let _ = tx
-                        .send(json_rpc_error(
-                            -32600,
-                            format!("Duplicate request id: {:?}", truncate_id_display(req_id)),
-                            request.id.clone(),
-                        ))
-                        .await;
-                    continue;
-                }
-            }
-        }
-
-        // Register the active request with an RAII guard that ensures
-        // cleanup on all exit paths (normal return, error, panic, timeout).
-        let request_id = request.id.clone().unwrap();
-        let guard = RequestGuard::new(active_requests.clone(), &cancel_flag, request_id.clone());
-        {
-            let mut active = active_requests.lock().await;
-            active.insert(
-                request_id.clone(),
-                runtime::ActiveRequest {
-                    cancel_flag: cancel_flag.clone(),
-                    started_at: tokio::time::Instant::now(),
-                    method: request.method.clone(),
-                },
-            );
-        }
+        };
 
         // Spawn the request handler without awaiting — the read loop
         // continues to process the next line immediately.
@@ -823,6 +845,9 @@ pub async fn main() -> ! {
         let request_id_for_response = request_id.clone();
 
         join_set.spawn(async move {
+            // RAII guard tracks active request count for diagnostics.
+            let _active_guard = MetricGuard::new(&RUNTIME_METRICS.active_requests);
+
             let maybe_result =
                 handle_request_async(&request_clone, &cancel_flag_clone, &semaphore_clone).await;
 
