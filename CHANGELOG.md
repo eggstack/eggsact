@@ -47,6 +47,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`set_mcp_mode()`** — use `EvalContext::mcp_mode()` instead. The global
   `AtomicBool` flags remain for legacy `evaluate()`/`run()` callers.
 
+### Semver Analysis: `get_tool` / `has_tool` behavior change
+
+**Decision**: Ship as a MINOR release (1.3.0), not a MAJOR.
+
+**Rationale**: Changing `get_tool`/`has_tool` to also enforce audience/exposure
+restrictions corrects an authorization-policy inconsistency. The old behavior
+was a bug — a Model-audience registry could discover metadata for, and report
+`has_tool` == `true` for, Harness-only tools that it could never execute.
+This is strictly more restrictive: tools that were visible AND executable
+before remain visible and executable. Only tools that were visible but
+NOT executable (due to audience mismatch) are now correctly hidden.
+
+**Compatibility risk**: Low. Callers that relied on the old behavior were
+relying on buggy semantics. The new `get_tool_unfiltered` /
+`has_registered_tool` methods provide administrative access for callers
+that genuinely need to inspect all registered tools regardless of policy.
+
+**Migration path**: No code changes required for correct callers. Callers
+that inspected Harness-only tool metadata via `get_tool` on a Model registry
+should switch to `get_tool_unfiltered` (with awareness that execution will
+still be rejected).
+
 ## [1.2.0] - 2026-07-17
 
 ### Added

@@ -223,6 +223,24 @@ compatible behavioral extension:
   should not assume a specific engine, only that the engine is chosen
   automatically to support the pattern's features.
 
+### Registry Audience Enforcement (v1.3.0)
+
+`get_tool` and `has_tool` now enforce audience/exposure restrictions in
+addition to profile membership. Previously these methods only checked
+profile membership, which was an authorization-policy inconsistency — a
+Model-audience registry could discover metadata for Harness-only tools it
+could never execute.
+
+**Semver classification**: MINOR (non-breaking). The old behavior was a
+bug. The new behavior is strictly more restrictive: tools that were visible
+AND executable before remain visible and executable. Only tools that were
+visible but NOT executable (due to audience mismatch) are now correctly
+hidden.
+
+**Administrative access**: `get_tool_unfiltered` and `has_registered_tool`
+bypass audience/exposure checks for callers that need to inspect all
+registered tools regardless of policy.
+
 ## Versioning Workflow
 
 1. Before release, run the canonical verification gate (see `release.sh`).

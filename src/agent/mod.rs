@@ -536,6 +536,26 @@ impl ToolRegistry {
     /// All dispatch surfaces should use this function to ensure consistent
     /// policy enforcement. The effective profile and audience take precedence
     /// over the registry's stored values.
+    ///
+    /// # Dispatch ordering
+    ///
+    /// All dispatch surfaces follow this consistent ordering:
+    ///
+    /// 1. **Registry lookup** — find the tool handler by name.
+    /// 2. **Profile check** — verify the tool is in the effective profile.
+    /// 3. **Audience/exposure check** — verify the audience can execute the
+    ///    tool's exposure level.
+    /// 4. **Schema validation** — validate arguments against the tool schema.
+    /// 5. **Serialized input-budget check** — (in `call_json_with_*` methods)
+    ///    verify serialized args fit within `max_input_bytes`.
+    /// 6. **Cancellation-before-execution check** — (via `BudgetContext`)
+    ///    check the cancel flag before invoking the handler.
+    /// 7. **Handler execution** — invoke the tool handler.
+    /// 8. **Output truncation and limits metadata** — apply budget-aware
+    ///    truncation to the response.
+    ///
+    /// Steps 5–8 occur in the `call_json_with_*` methods, not in this
+    /// function. This function handles steps 1–4.
     pub fn prepare_tool_call_with_policy(
         &self,
         name: &str,
@@ -752,6 +772,32 @@ impl ToolRegistry {
     ///
     /// Alias for [`call_json_with_execution_context`](Self::call_json_with_execution_context)
     /// with explicit immutable-template semantics.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eggsact::agent::{ToolRegistry, ExecutionContext, Profile, ToolAudience};
+    ///
+    /// let registry = ToolRegistry::default();
+    /// let ctx = ExecutionContext::mcp_default(Profile::Full, ToolAudience::Model);
+    ///
+    /// // Both calls produce the same result — the template is immutable.
+    /// let r1 = registry.call_json_with_execution_template(
+    ///     "math_eval",
+    ///     serde_json::json!({"expression": "2 + 3"}),
+    ///     &ctx,
+    /// ).unwrap();
+    /// let r2 = registry.call_json_with_execution_template(
+    ///     "math_eval",
+    ///     serde_json::json!({"expression": "2 + 3"}),
+    ///     &ctx,
+    /// ).unwrap();
+    /// assert!(r1.ok && r2.ok);
+    /// assert_eq!(
+    ///     r1.result.unwrap()["value"],
+    ///     r2.result.unwrap()["value"],
+    /// );
+    /// ```
     pub fn call_json_with_execution_template(
         &self,
         name: &str,
@@ -767,12 +813,41 @@ impl ToolRegistry {
     /// the handler executes directly against `ctx.eval_ctx` — PRNG draws, memory
     /// mutations, and variable assignments persist after a successful call.
     ///
-    /// On pre-execution policy failure, calculator state remains unchanged.
-    /// If the handler returns a tool-level error after partial calculator
-    /// evaluation, mutations from the evaluation may or may not persist
-    /// depending on the specific operation (calculator evaluation is
-    /// deterministic per-expression — partial failure means the expression
-    /// did not parse or evaluate, so no mutation occurred).
+    /// # Transaction behavior
+    ///
+    /// - **Pre-execution policy failure** (unknown tool, profile mismatch,
+    ///   audience rejection, invalid arguments): calculator state remains unchanged.
+    /// - **Parse or evaluation failure**: calculator state remains unchanged.
+    ///   The evaluator is deterministic — if the expression does not parse or
+    ///   evaluate, no mutation has occurred.
+    /// - **Successful evaluation**: calculator state is mutated in place.
+    ///
+    /// # Limitation: `math_eval` clones the context
+    ///
+    /// `math_eval` internally clones the eval context due to its timeout
+    /// mechanism (`run_with_timeout` requires a `'static + Send` closure).
+    /// PRNG, memory, and variable mutations from `math_eval` therefore do
+    /// **not** persist back into `ctx.eval_ctx`. To persist calculator state,
+    /// use [`evaluate_with_context`](crate::calc::evaluate_with_context) or
+    /// [`run_with_context`](crate::calc::run_with_context) directly.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eggsact::agent::{ToolRegistry, ExecutionContext, Profile, ToolAudience};
+    ///
+    /// let registry = ToolRegistry::default();
+    /// let mut ctx = ExecutionContext::mcp_default(Profile::Full, ToolAudience::Model);
+    ///
+    /// // math_eval clones internally, so PRNG state doesn't persist through it.
+    /// // But the dispatch path itself works correctly:
+    /// let r1 = registry.call_json_with_execution_context_mut(
+    ///     "math_eval",
+    ///     serde_json::json!({"expression": "2 + 3"}),
+    ///     &mut ctx,
+    /// ).unwrap();
+    /// assert!(r1.ok);
+    /// ```
     pub fn call_json_with_execution_context_mut(
         &self,
         name: &str,
