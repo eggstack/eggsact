@@ -424,6 +424,10 @@ let harness_registry = ToolRegistry::with_profile_and_audience(
 > `available_tools_model_safe()`, `available_tools_for_audience()`, or
 > `available_tools_for_current_audience()` instead.
 
+`get_tool(name)` and `has_tool(name)` now check audience/exposure in addition
+to profile membership. Use `get_tool_unfiltered(name)` and
+`has_registered_tool(name)` for administrative use that bypasses these checks.
+
 ### Calling Tools
 
 ```rust
@@ -435,7 +439,7 @@ let registry = ToolRegistry::default();
 let response = registry.call_json("math_eval", serde_json::json!({"expression": "2 + 3"}))?;
 assert!(response.ok);
 
-// Context-aware call (recommended for new code)
+// Context-aware call (recommended for new code, immutable — clones eval_ctx)
 let ctx = ExecutionContext::builder()
     .profile(Profile::Full)
     .audience(ToolAudience::Model)
@@ -445,6 +449,24 @@ let response = registry.call_json_with_execution_context(
     "math_eval",
     serde_json::json!({"expression": "2 + 3"}),
     &ctx,
+)?;
+
+// Immutable alias (explicit intent)
+let response = registry.call_json_with_execution_template(
+    "math_eval",
+    serde_json::json!({"expression": "2 + 3"}),
+    &ctx,
+)?;
+
+// Mutable persistent context — handler state mutations persist back to ctx
+let mut ctx = ExecutionContext::builder()
+    .profile(Profile::Full)
+    .audience(ToolAudience::Model)
+    .build();
+let response = registry.call_json_with_execution_context_mut(
+    "math_eval",
+    serde_json::json!({"expression": "2 + 3"}),
+    &mut ctx,
 )?;
 ```
 
@@ -461,7 +483,7 @@ let response = registry.call_json_with_execution_context(
 | `budget` | `Option<ToolBudget>` | Per-call resource limits |
 | `cancellation` | `Option<Arc<AtomicBool>>` | Cooperative cancellation flag |
 
-Builder methods: `with_eval_context()`, `with_budget()`, `with_cancellation()`, `with_request_id()`.
+Builder methods: `with_eval_context(&EvalContext)`, `with_budget()`, `with_cancellation()`, `with_request_id()`.
 
 ### Typed Preflight Wrappers
 

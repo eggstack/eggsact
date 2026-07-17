@@ -134,6 +134,8 @@ let ctx = EvalContext::mcp_mode()
 
 **Critical**: `evaluate_with_context`/`run_with_context` operate directly on the caller's `ctx` — PRNG draws accumulate, memory mutations persist, user variables persist across calls. This is the correct API for multi-step calculations where state should accumulate.
 
+**MCP dispatch**: The MCP server no longer calls `ensure_mcp_defaults()`/`set_mcp_mode()` globally. Instead, it creates `EvalContext::mcp_mode()` and sets it via `budget::with_eval_context()` thread-local bridge before handler dispatch. This provides state isolation without global side effects.
+
 ### Thread-Local Bridge for MCP Dispatch
 
 When `ToolRegistry::call_json_with_execution_context()` dispatches a tool, `ctx.eval_ctx` is **cloned** before the handler runs. The clone is set as a thread-local via `budget::with_eval_context()`, making it available to calculator-backed handlers (e.g., `math_eval`). Handler signature remains `fn(&Value) -> ToolResponse` — state isolation is achieved at the orchestration layer.
@@ -142,7 +144,7 @@ When `ToolRegistry::call_json_with_execution_context()` dispatches a tool, `ctx.
 
 ### What Remains Global
 
-- `MCP_MODE`, `ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS` — `AtomicBool` flags set once at startup, one-shot idempotent. Read by `EvalContext` constructors.
+- `MCP_MODE`, `ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS` — `AtomicBool` flags set once at startup, one-shot idempotent. Read by `EvalContext` constructors. These remain for legacy library callers; MCP dispatch now uses `EvalContext::mcp_mode()` through the thread-local bridge instead.
 - Legacy mutable globals `MEMORY_REGISTERS`, `USER_VARIABLES`, `PRNG_STATE`, `GAUSS_SPARE` — all `LazyLock<Mutex<...>>` for the legacy `evaluate()`/`run()` path only.
 
 ## Natural Language Pipeline (`normalize.rs`)
@@ -721,11 +723,13 @@ fn is_prime(n: i64) -> bool {
 
 ### MCP-Safe Mode
 
-`set_mcp_mode()` (idempotent) disables:
+`set_mcp_mode()` (legacy, idempotent) disables:
 - **Random functions**: `random`, `randint`, `randrange`, `uniform`, `randn`, `gauss`, `seed`
 - **Side-effect functions**: `store`, `recall`, `mplus`, `mminus`, `mc`, `mr`, `setvar`, `getvar`, `delvar`, `listvars`, `clearvars`
 
 Uses `AtomicBool` flags (`ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS`) checked at dispatch time. The context-aware API (`evaluate_with_context`) reads from `EvalContext` fields instead of the global flags.
+
+**Deprecated for new code**: MCP dispatch now uses `EvalContext::mcp_mode()` through the thread-local bridge instead of calling `set_mcp_mode()` globally. Use `EvalContext::mcp_mode()` for new code that needs MCP-safe calculator behavior.
 
 ## Units (`units.rs`)
 

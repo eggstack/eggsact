@@ -279,6 +279,42 @@ pub fn call_json_with_execution_context(
 
 This is the recommended method for new code. Legacy methods (`call_json`, `call_json_with_budget`, `call_json_with_context`) remain for backward compatibility.
 
+### `call_json_with_execution_template(name, args, ctx)` — Immutable Alias
+
+Explicit immutable alias for `call_json_with_execution_context`. Identical behavior: clones `ctx.eval_ctx` before dispatch, handler mutations do not persist back.
+
+```rust
+pub fn call_json_with_execution_template(
+    &self, name: &str, args: Value, ctx: &ExecutionContext
+) -> Result<ToolResponse, ToolCallError>
+```
+
+Use this when you want to make the immutability intent explicit at the call site. The implementation delegates to `call_json_with_execution_context`.
+
+### `call_json_with_execution_context_mut(name, args, ctx)` — Mutable Persistent Context
+
+The mutable variant that persists handler state mutations back to the caller's `ExecutionContext`.
+
+```rust
+pub fn call_json_with_execution_context_mut(
+    &self, name: &str, args: Value, ctx: &mut ExecutionContext
+) -> Result<ToolResponse, ToolCallError>
+```
+
+**Key difference from `call_json_with_execution_context`:** `ctx.eval_ctx` is **not** cloned — the handler receives a thread-local reference to the caller's `EvalContext` directly. PRNG draws, memory mutations, and variable assignments inside the handler persist back to `ctx.eval_ctx`.
+
+Use this when you need handler state to accumulate across calls (e.g., sequential calculator operations where PRNG state or memory registers should persist). Do not use this when you only need one-shot execution with state isolation.
+
+#### When to Use Each
+
+| Method | `eval_ctx` Behavior | Use When |
+|--------|-------------------|----------|
+| `call_json_with_execution_context` | Cloned (immutable) | Standard tool calls; state isolation between calls |
+| `call_json_with_execution_template` | Cloned (immutable) | Same as above, explicit immutability intent |
+| `call_json_with_execution_context_mut` | Shared (mutable) | Sequential calculator operations; state should accumulate |
+
+**Do not mix** `call_json_with_execution_context_mut` and `evaluate_with_context`/`run_with_context` for the same `EvalContext` — both mutate the context, which can lead to unexpected interleaving.
+
 ### `call_json_value(name, args)` — Convenience
 
 Returns only the `result` Value, or `null` on error.
@@ -299,6 +335,21 @@ pub fn prepare_tool_call(&self, name: &str, args: &Value) -> ToolCallOutcome
 
 This is the shared core used by both the agent API (`call_json` calls it) and the MCP server (`tools/call` dispatch uses the same logic). It ensures consistent validation across both integration paths.
 
+### `prepare_tool_call_with_policy(name, args, effective_profile, effective_audience, effective_compat)` — Policy-Aware Core
+
+Shared policy preparation function that accepts explicit effective profile, audience, and compatibility mode. Used internally by `call_json_with_execution_context` to resolve overrides from the `ExecutionContext` before dispatching.
+
+```rust
+pub fn prepare_tool_call_with_policy(
+    &self, name: &str, args: &Value,
+    effective_profile: &Profile,
+    effective_audience: ToolAudience,
+    effective_compat: CompatibilityMode,
+) -> ToolCallOutcome
+```
+
+This allows callers to override the registry's stored profile/audience/compat on a per-call basis. The MCP server uses the same logic path via `ToolRegistry::prepare_tool_call`.
+
 **Four-step pipeline:**
 
 1. `registry::tool_handler_for(name)` — look up the handler function
@@ -316,10 +367,14 @@ This is the shared core used by both the agent API (`call_json` calls it) and th
 | `available_tools_model_safe()` | Excludes `HarnessOnly` + `Hidden`. | Yes |
 | `available_tools_for_audience(audience)` | Filters by the specified audience. | Depends on audience |
 | `available_tools_for_current_audience()` | Uses the registry's stored audience. | Depends on stored audience |
-| `get_tool(name)` | Returns `Option<ToolSpecView>` with full metadata and schemas. | Profile-gated |
-| `has_tool(name)` | Returns `bool` — whether the tool is in the current profile. | N/A |
+| `get_tool(name)` | Returns `Option<ToolSpecView>` with full metadata and schemas. Audience/exposure-aware. | Profile+audience-gated |
+| `has_tool(name)` | Returns `bool` — whether the tool is in the current profile and audience. | N/A |
+| `get_tool_unfiltered(name)` | Returns `Option<ToolSpecView>` bypassing audience/exposure checks. Administrative use only. | No |
+| `has_registered_tool(name)` | Returns `bool` — whether the tool exists in the registry, ignoring profile/audience. Administrative use only. | No |
 
 **Deprecation note:** `available_tools()` is deprecated because it only filters `Hidden` and is not model-safe — it may expose `HarnessOnly` tools. Use `available_tools_model_safe()` or `available_tools_for_audience(audience)` instead.
+
+**Audience-awareness:** `get_tool` and `has_tool` now check audience/exposure in addition to profile membership. Use `get_tool_unfiltered` and `has_registered_tool` for administrative use that bypasses these checks.
 
 All listing methods delegate to `registry::tools_for_profile()` or `registry::tools_for_profile_audience()` from `src/mcp/registry/listing.rs`.
 
@@ -404,7 +459,7 @@ let ctx = ExecutionContext::test_default()
     .with_budget(ToolBudget::CHEAP)
     .with_cancellation(Arc::new(AtomicBool::new(false)))
     .with_request_id("tracing-id")
-    .with_eval_context(&mut eval_ctx);
+    .with_eval_context(&eval_ctx);
 ```
 
 These clone the input and return `Self` for chaining.
@@ -413,16 +468,16 @@ These clone the input and return `Self` for chaining.
 
 The `eval_ctx` field holds calculator state (PRNG seed, memory registers, user-defined variables). Only calculator-backed tools that opt into the eval-context bridge read from it; the sole current consumer is **`math_eval`**.
 
-**Clone semantics:**
+**Clone semantics (immutable path):**
 1. `with_eval_context()` clones the caller's `EvalContext` into the `ExecutionContext`
 2. `call_json_with_execution_context()` clones `ctx.eval_ctx` before dispatch
 3. The handler receives a thread-local reference to the clone via `budget::with_eval_context()`
 4. PRNG draws, memory mutations, and variable assignments inside the handler are confined to the clone
 5. The caller's `ExecutionContext.eval_ctx` is **never mutated**
 
-Two calls with identical seeds produce the same first random value. For persistent mutable state across calls, use `evaluate_with_context()` / `run_with_context()` directly (which operate on the caller's `EvalContext` without cloning).
+Two calls with identical seeds produce the same first random value. For persistent mutable state across calls, use `evaluate_with_context()` / `run_with_context()` directly (which operate on the caller's `EvalContext` without cloning), or use `call_json_with_execution_context_mut()` which shares the `EvalContext` directly.
 
-**Do not mix** `call_json_with_execution_context` and `evaluate_with_context` for the same `EvalContext` — the former clones and discards mutations, the latter persists them.
+**Do not mix** `call_json_with_execution_context` and `evaluate_with_context` for the same `EvalContext` — the former clones and discards mutations, the latter persists them. Similarly, do not mix `call_json_with_execution_context_mut` and `evaluate_with_context` for the same `EvalContext` without understanding the interleaving semantics.
 
 ---
 

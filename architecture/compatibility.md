@@ -90,7 +90,7 @@ The mode propagates recursively through nested object/array validation — every
 | Feature | Why Independent |
 |---------|----------------|
 | `python_json_dumps()` | Always uses Python-style formatting for MCP responses regardless of compat mode — this is wire format, not validation |
-| Calculator MCP mode (`set_mcp_mode`) | Controls evaluator behavior (random/side-effect functions), not validation |
+| Calculator MCP mode (`set_mcp_mode`) | Controls evaluator behavior (random/side-effect functions), not validation. Deprecated for new code — use `EvalContext::mcp_mode()` through the thread-local bridge instead. |
 | Schema compaction | Controlled by `EGGCALC_MCP_SCHEMA_DETAIL` env var |
 | Error sanitization (`sanitize_error()`) | Always active — redacts paths, addresses, variable assignments |
 | Tool dispatch logic | Profile/audience checks are mode-independent |

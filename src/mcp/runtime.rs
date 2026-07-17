@@ -447,6 +447,10 @@ pub fn get_active_audience() -> ToolAudience {
     *audience
 }
 
+#[deprecated(
+    since = "0.3.0",
+    note = "use EvalContext::mcp_mode() through the thread-local eval context bridge instead"
+)]
 pub fn ensure_mcp_defaults() {
     if !MCP_DEFAULTS_CONFIGURED.swap(true, Ordering::SeqCst) {
         set_mcp_mode();

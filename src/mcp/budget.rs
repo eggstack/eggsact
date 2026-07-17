@@ -9,6 +9,36 @@ use std::time::{Duration, Instant};
 thread_local! {
     static CURRENT_CANCEL_FLAG: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
     static CURRENT_EVAL_CONTEXT: RefCell<Option<*mut EvalContext>> = const { RefCell::new(None) };
+    static PREV_CANCEL_FLAG: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
+    static PREV_EVAL_CONTEXT: RefCell<Option<*mut EvalContext>> = const { RefCell::new(None) };
+}
+
+/// RAII guard that restores the previous cancellation flag on drop.
+///
+/// Even if the enclosing scope panics, `Drop` ensures the thread-local
+/// reverts to its prior value, preventing state leakage to the next
+/// task on the same blocking thread.
+struct CancelFlagGuard;
+
+impl Drop for CancelFlagGuard {
+    fn drop(&mut self) {
+        CURRENT_CANCEL_FLAG.with(|cell| {
+            let prev = PREV_CANCEL_FLAG.with(|p| p.borrow_mut().take());
+            *cell.borrow_mut() = prev;
+        });
+    }
+}
+
+/// RAII guard that restores the previous eval context on drop.
+struct EvalContextGuard;
+
+impl Drop for EvalContextGuard {
+    fn drop(&mut self) {
+        CURRENT_EVAL_CONTEXT.with(|cell| {
+            let prev = PREV_EVAL_CONTEXT.with(|p| p.borrow_mut().take());
+            *cell.borrow_mut() = prev;
+        });
+    }
 }
 
 /// Set the current thread's cancellation flag for the duration of `f`.
@@ -20,9 +50,9 @@ where
 {
     CURRENT_CANCEL_FLAG.with(|cell| {
         let prev = std::mem::replace(&mut *cell.borrow_mut(), flag);
-        let result = f();
-        *cell.borrow_mut() = prev;
-        result
+        PREV_CANCEL_FLAG.with(|p| *p.borrow_mut() = prev);
+        let _guard = CancelFlagGuard;
+        f()
     })
 }
 
@@ -43,9 +73,9 @@ where
 {
     CURRENT_EVAL_CONTEXT.with(|cell| {
         let prev = cell.borrow_mut().replace(ctx as *mut EvalContext);
-        let result = f();
-        *cell.borrow_mut() = prev;
-        result
+        PREV_EVAL_CONTEXT.with(|p| *p.borrow_mut() = prev);
+        let _guard = EvalContextGuard;
+        f()
     })
 }
 

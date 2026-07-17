@@ -67,9 +67,10 @@ async fn handle_request_async(
     tool_semaphore: &Arc<tokio::sync::Semaphore>,
     session_state: &Arc<Mutex<SessionState>>,
 ) -> Option<serde_json::Value> {
-    // Ensure MCP-safe evaluator defaults are in effect. Idempotent: a one-time
-    // check is enough to set mcp_mode and disable random/side-effect functions.
-    runtime::ensure_mcp_defaults();
+    // NOTE: Process-global ensure_mcp_defaults() has been removed.
+    // MCP evaluator defaults are now set per-request via the eval-context
+    // bridge: EvalContext::mcp_mode() is installed as a thread-local in
+    // the tools/call handler before dispatching to the tool.
 
     // ── Lifecycle enforcement ──────────────────────────────────────────
     let method = request.method.as_str();
@@ -524,9 +525,15 @@ async fn handle_request_async(
                                 RUNTIME_METRICS
                                     .peak_blocking_concurrency
                                     .fetch_max(current, Ordering::Relaxed);
+                                let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
                                 let result = crate::mcp::budget::with_cancel_flag(
                                     Some(cancel_flag_for_handler.clone()),
-                                    || handler(&args_clone),
+                                    || {
+                                        crate::mcp::budget::with_eval_context(
+                                            &mut mcp_eval_ctx,
+                                            || handler(&args_clone),
+                                        )
+                                    },
                                 );
                                 // If this handler was timed out, decrement the counter.
                                 if timed_out_for_handler.load(Ordering::Relaxed) {

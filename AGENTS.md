@@ -155,7 +155,7 @@ Additional docs in `docs/`:
 
 ## Agent API
 
-`src/agent/` provides an in-process API for calling tools without MCP. `ToolRegistry` wraps the tool registry with profile filtering and `call_json()` dispatch. `call_json_with_budget()` accepts a custom `ToolBudget` to override default per-tool limits. `call_json_with_execution_context()` accepts an `ExecutionContext` for full per-request state isolation — recommended for new code. `src/preflight/` adds typed wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`) that parse tool responses into structured Rust types with fail-closed contract enforcement.
+`src/agent/` provides an in-process API for calling tools without MCP. `ToolRegistry` wraps the tool registry with profile filtering and `call_json()` dispatch. `call_json_with_budget()` accepts a custom `ToolBudget` to override default per-tool limits. `call_json_with_execution_context()` accepts an `ExecutionContext` for full per-request state isolation — recommended for new code (immutable, clones `eval_ctx`). `call_json_with_execution_template()` is an explicit immutable alias for `call_json_with_execution_context()`. `call_json_with_execution_context_mut()` accepts a `&mut ExecutionContext` and persists handler state mutations back to the caller's context. `src/preflight/` adds typed wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`) that parse tool responses into structured Rust types with fail-closed contract enforcement.
 
 - **`PreflightError`** has three variants: `ToolCall` (registry rejected), `ToolRejected` (tool returned `ok: false`), `ContractViolation` (missing mandatory field in `ok: true` response). Missing fields are hard failures, not silent defaults.
 - **Typed verdict enums**: `EditVerdict`, `CommandVerdict`, `ConfigVerdict` with `Other(String)` variant for forward compatibility. `FindingSeverity` and `FindingDisposition` follow the same pattern.
@@ -164,6 +164,9 @@ Additional docs in `docs/`:
 - **`parse_response()`** is public on each wrapper for testing contract parsing without a full registry call.
 - **`EditPreflightInput`** accepts optional `file_path`/`workspace_root` (triggers `path_scope_check`), `newline_policy` (triggers `text_fingerprint` newline detection), `unicode_policy` (triggers `text_security_inspect`), `expected_fingerprint` (triggers `text_fingerprint` SHA-256 comparison), and `edit_metadata` (passthrough). All sub-tool results appear in `subresults` and structured output fields.
 - **`available_tools()` is deprecated** since 0.3.0 — it only filters `Hidden` and is not model-safe. Use `available_tools_model_safe()`, `available_tools_for_audience(audience)`, or `available_tools_for_current_audience()` instead.
+- **`get_tool`/`has_tool` now check audience/exposure** in addition to profile membership. Use `get_tool_unfiltered` and `has_registered_tool` for administrative use that bypasses audience/exposure checks.
+- **`with_eval_context`** takes `&EvalContext` (shared reference). `CancelFlagGuard` and `EvalContextGuard` RAII guards in `budget.rs` provide panic-safe thread-local restoration.
+- **`prepare_tool_call_with_policy`** accepts explicit effective profile, audience, and compatibility mode. Shared policy preparation function used by `call_json_with_execution_context`.
 
 - **`ToolDefinition`** lives in `src/mcp/registry/types.rs` (not `server.rs`).
 - **`ToolAudience`** enum (`Model`, `Harness`, `Debug`) controls which exposure levels appear in tool listings and which tools may be executed. Use `available_tools_model_safe()` for model-facing integrations. `ToolAudience::can_execute_exposure()` enforces audience at dispatch time.
@@ -211,7 +214,8 @@ Agent task skills in `.opencode/skills/` (symlinked from `.agents/skills/` for C
 - **`serde_json` uses `preserve_order`** feature — key order is intentional in serialized JSON.
 - **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to `Model`), `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`; defaults to `full`).
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
-- **Context-aware vs legacy APIs**: `call_json_with_execution_context()` clones `eval_ctx` — handler mutations do **not** persist back. Use `evaluate_with_context()`/`run_with_context()` when you need persistent mutable `EvalContext` across calculator calls. Do not mix for the same `EvalContext`.
+- **Context-aware vs legacy APIs**: `call_json_with_execution_context()` clones `eval_ctx` — handler mutations do **not** persist back. Use `call_json_with_execution_context_mut()` when you need handler state changes to persist. Use `evaluate_with_context()`/`run_with_context()` when you need persistent mutable `EvalContext` across calculator calls. Do not mix for the same `EvalContext`.
+- **`ensure_mcp_defaults()` is deprecated** — MCP dispatch now creates `EvalContext::mcp_mode()` and sets it via `budget::with_eval_context()` thread-local bridge instead of calling `ensure_mcp_defaults()`/`set_mcp_mode()` globally.
 - **MCP wire vs in-process**: `call_json_with_execution_context` is in-process only. The MCP server resolves its profile from `EGGCALC_MCP_PROFILE` at startup.
 - **Response truncation is automatic**: `truncate_response()` caps findings/output when a tool exceeds its budget. Check `limits_applied` in the response envelope.
 - **MCP response ordering is concurrent**: Responses may arrive out of request order. **Correlate by JSON-RPC `id`**, not arrival position.

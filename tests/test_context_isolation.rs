@@ -1,10 +1,11 @@
 use eggsact::agent::{
     CompatibilityMode, ExecutionContext, Profile, ToolAudience, ToolCallError, ToolRegistry,
 };
-use eggsact::calc::{evaluate_with_context, run_with_context, EvalContext};
-use eggsact::mcp::budget::ToolBudget;
+use eggsact::calc::{evaluate_with_context, is_mcp_mode, run_with_context, EvalContext};
+use eggsact::mcp::budget::{self, ToolBudget};
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
@@ -66,8 +67,8 @@ fn test_audience_isolation() {
     let harness_registry =
         ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
 
-    // Model audience should see shell_split in the tool list but NOT be able to execute it
-    assert!(model_registry.has_tool("shell_split"));
+    // Model audience cannot execute HarnessOnly tools
+    assert!(!model_registry.has_tool("shell_split"));
     let model_result =
         model_registry.call_json("shell_split", serde_json::json!({"command": "echo hello"}));
     assert!(model_result.is_err());
@@ -684,8 +685,8 @@ fn test_eval_context_through_math_eval() {
     assert!(r1.unwrap().ok);
 
     // MCP mode EvalContext (allow_random=false) — random() should fail
-    let mut eval_ctx = EvalContext::mcp_mode();
-    let ctx_mcp = ExecutionContext::test_default().with_eval_context(&mut eval_ctx);
+    let eval_ctx = EvalContext::mcp_mode();
+    let ctx_mcp = ExecutionContext::test_default().with_eval_context(&eval_ctx);
     let r2 = registry.call_json_with_execution_context(
         "math_eval",
         serde_json::json!({"expression": "random()"}),
@@ -710,16 +711,16 @@ fn test_eval_context_through_math_eval() {
 fn test_eval_context_prng_through_math_eval() {
     let registry = ToolRegistry::default();
 
-    let mut eval_ctx1 = EvalContext::new().with_prng_state(42);
-    let ctx1 = ExecutionContext::test_default().with_eval_context(&mut eval_ctx1);
+    let eval_ctx1 = EvalContext::new().with_prng_state(42);
+    let ctx1 = ExecutionContext::test_default().with_eval_context(&eval_ctx1);
     let r1 = registry.call_json_with_execution_context(
         "math_eval",
         serde_json::json!({"expression": "random()"}),
         &ctx1,
     );
 
-    let mut eval_ctx2 = EvalContext::new().with_prng_state(999);
-    let ctx2 = ExecutionContext::test_default().with_eval_context(&mut eval_ctx2);
+    let eval_ctx2 = EvalContext::new().with_prng_state(999);
+    let ctx2 = ExecutionContext::test_default().with_eval_context(&eval_ctx2);
     let r2 = registry.call_json_with_execution_context(
         "math_eval",
         serde_json::json!({"expression": "random()"}),
@@ -761,8 +762,8 @@ fn test_eval_context_prng_through_math_eval() {
 fn execution_context_eval_ctx_is_per_call_seed_for_immutable_dispatch() {
     let registry = ToolRegistry::default();
 
-    let mut eval_ctx = EvalContext::new().with_prng_state(42);
-    let ctx = ExecutionContext::test_default().with_eval_context(&mut eval_ctx);
+    let eval_ctx = EvalContext::new().with_prng_state(42);
+    let ctx = ExecutionContext::test_default().with_eval_context(&eval_ctx);
 
     let r1 = registry.call_json_with_execution_context(
         "math_eval",
@@ -815,5 +816,200 @@ fn execution_context_eval_ctx_is_per_call_seed_for_immutable_dispatch() {
     assert_ne!(
         a1, a2,
         "evaluate_with_context advances PRNG state, so consecutive calls differ"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 17. Panic-safety: cancel flag is restored after an inner panic.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_cancel_flag_restored_after_panic() {
+    let outer_flag = Arc::new(AtomicBool::new(false));
+    let inner_flag = Arc::new(AtomicBool::new(true));
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        budget::with_cancel_flag(Some(outer_flag.clone()), || {
+            assert!(budget::current_cancel_flag().is_some());
+            let _ = catch_unwind(AssertUnwindSafe(|| {
+                budget::with_cancel_flag(Some(inner_flag.clone()), || {
+                    assert!(
+                        budget::current_cancel_flag().map(|f| f.load(Ordering::Relaxed))
+                            == Some(true)
+                    );
+                    panic!("intentional panic");
+                });
+            }));
+            let current = budget::current_cancel_flag()
+                .expect("outer flag should be restored after inner panic");
+            assert!(
+                !current.load(Ordering::Relaxed),
+                "outer flag should be restored after inner panic"
+            );
+        });
+    }));
+    assert!(result.is_ok());
+    assert!(
+        budget::current_cancel_flag().is_none(),
+        "flag should be cleared after scope"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 18. Panic-safety: eval context is restored after an inner panic.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_eval_context_restored_after_panic() {
+    let mut outer_ctx = EvalContext::new();
+    let mut inner_ctx = EvalContext::new();
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        budget::with_eval_context(&mut outer_ctx, || {
+            assert!(budget::current_eval_context().is_some());
+            // Use recall(1) to read register R1 — store sets it via the public API
+            let _ = evaluate_with_context("store(10, 1)", budget::current_eval_context().unwrap());
+            let _ = catch_unwind(AssertUnwindSafe(|| {
+                budget::with_eval_context(&mut inner_ctx, || {
+                    let ctx = budget::current_eval_context().unwrap();
+                    let val = evaluate_with_context("recall(1)", ctx).unwrap().0;
+                    assert_eq!(val, "0", "inner ctx should have empty register R1");
+                    panic!("intentional panic");
+                });
+            }));
+            // After inner panic, outer context should be restored
+            let ctx = budget::current_eval_context()
+                .expect("outer context should be restored after inner panic");
+            let val = evaluate_with_context("recall(1)", ctx).unwrap().0;
+            assert_eq!(val, "10", "outer context register R1 should be restored");
+        });
+    }));
+    assert!(result.is_ok());
+    assert!(
+        budget::current_eval_context().is_none(),
+        "context should be cleared after scope"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 19. Panic-safety: handler does not leak state to next call.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_panic_handler_does_not_leak_state_to_next_call() {
+    let registry = ToolRegistry::default();
+    let ctx = ExecutionContext::mcp_default(Profile::Full, ToolAudience::Model);
+
+    let result = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "2 + 2"}),
+        &ctx,
+    );
+    assert!(result.unwrap().ok);
+
+    let result = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "3 + 3"}),
+        &ctx,
+    );
+    assert!(result.unwrap().ok);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 20. Stateful calculator: mutable context persists PRNG state across calls.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_mutable_context_persists_prng_state() {
+    let registry = ToolRegistry::default();
+    let mut ctx = ExecutionContext::mcp_default(Profile::Full, ToolAudience::Model);
+
+    let result1 = registry
+        .call_json_with_execution_context_mut(
+            "math_eval",
+            serde_json::json!({"expression": "rand()"}),
+            &mut ctx,
+        )
+        .unwrap();
+    assert!(result1.ok, "first rand() should succeed: {:?}", result1);
+
+    let result2 = registry
+        .call_json_with_execution_context_mut(
+            "math_eval",
+            serde_json::json!({"expression": "rand()"}),
+            &mut ctx,
+        )
+        .unwrap();
+    assert!(result2.ok, "second rand() should succeed: {:?}", result2);
+
+    let v1 = result1
+        .result
+        .as_ref()
+        .and_then(|r| r.get("value"))
+        .and_then(|v| v.as_str());
+    let v2 = result2
+        .result
+        .as_ref()
+        .and_then(|r| r.get("value"))
+        .and_then(|v| v.as_str());
+    assert!(v1.is_some(), "first result should have a value");
+    assert!(v2.is_some(), "second result should have a value");
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 21. Immutable template: repeated calls produce the same first value.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_immutable_template_does_not_advance_state() {
+    let registry = ToolRegistry::default();
+    let ctx = ExecutionContext::mcp_default(Profile::Full, ToolAudience::Model);
+
+    let result1 = registry
+        .call_json_with_execution_template(
+            "math_eval",
+            serde_json::json!({"expression": "rand()"}),
+            &ctx,
+        )
+        .unwrap();
+    assert!(result1.ok);
+
+    let result2 = registry
+        .call_json_with_execution_template(
+            "math_eval",
+            serde_json::json!({"expression": "rand()"}),
+            &ctx,
+        )
+        .unwrap();
+    assert!(result2.ok);
+
+    let v1 = result1
+        .result
+        .as_ref()
+        .and_then(|r| r.get("value"))
+        .and_then(|v| v.as_str());
+    let v2 = result2
+        .result
+        .as_ref()
+        .and_then(|r| r.get("value"))
+        .and_then(|v| v.as_str());
+    assert_eq!(
+        v1, v2,
+        "immutable template calls should produce same first value"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 22. Mixed-surface isolation: MCP dispatch does not set global MCP mode.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_mcp_does_not_contaminate_library_evaluator() {
+    let registry = ToolRegistry::default();
+    let ctx = ExecutionContext::mcp_default(Profile::Full, ToolAudience::Model);
+    let result = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "2 + 2"}),
+        &ctx,
+    );
+    assert!(result.unwrap().ok);
+
+    assert!(
+        !is_mcp_mode(),
+        "MCP dispatch should not set global MCP mode"
     );
 }

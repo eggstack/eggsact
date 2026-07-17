@@ -430,20 +430,57 @@ impl ToolRegistry {
     }
 
     /// Get detailed information about a specific tool.
+    ///
+    /// Returns metadata only when the tool is available for the registry's
+    /// current profile **and** audience. Use [`get_tool_unfiltered`](Self::get_tool_unfiltered)
+    /// to bypass audience checks.
     pub fn get_tool(&self, name: &str) -> Option<ToolSpecView> {
         let spec = registry::get_tool(name)?;
-        // Check profile availability
         let profile_tools = registry::tools_for_profile(self.profile.as_str());
         if !profile_tools.iter().any(|s| s.name == name) {
+            return None;
+        }
+        if !self.audience.can_execute_exposure(spec.exposure) {
             return None;
         }
         Some(ToolSpecView::from_spec(spec))
     }
 
-    /// Check if a tool is available in the current profile.
+    /// Check if a tool is available in the current profile and executable
+    /// under the current audience.
+    ///
+    /// Returns true only when the tool passes both profile membership and
+    /// audience/exposure checks. Use [`has_registered_tool`](Self::has_registered_tool)
+    /// to bypass audience checks.
     pub fn has_tool(&self, name: &str) -> bool {
         let profile_tools = registry::tools_for_profile(self.profile.as_str());
-        profile_tools.iter().any(|s| s.name == name)
+        if !profile_tools.iter().any(|s| s.name == name) {
+            return false;
+        }
+        if let Some(spec) = registry::get_tool(name) {
+            self.audience.can_execute_exposure(spec.exposure)
+        } else {
+            false
+        }
+    }
+
+    /// Get tool metadata without profile or audience filtering.
+    ///
+    /// Returns metadata for any registered tool regardless of profile
+    /// membership or audience restrictions. Intended for administrative
+    /// and debugging use only.
+    pub fn get_tool_unfiltered(&self, name: &str) -> Option<ToolSpecView> {
+        let spec = registry::get_tool(name)?;
+        Some(ToolSpecView::from_spec(spec))
+    }
+
+    /// Check if a tool is registered, regardless of profile or audience.
+    ///
+    /// Returns true for any tool in the registry, including hidden and
+    /// harness-only tools. Use [`has_tool`](Self::has_tool) for the
+    /// policy-aware check.
+    pub fn has_registered_tool(&self, name: &str) -> bool {
+        registry::get_tool(name).is_some()
     }
 
     /// Prepare a tool call by performing lookup, profile check, and validation.
@@ -487,6 +524,57 @@ impl ToolRegistry {
 
         // 4. Validate arguments
         if let Some(msg) = schema_validation::validate_arguments(name, args, self.compat_mode) {
+            return ToolCallOutcome::PreExecutionError(ToolCallError::InvalidArguments(msg));
+        }
+
+        ToolCallOutcome::Ready { handler }
+    }
+
+    /// Prepare a tool call with explicit effective policy, performing lookup,
+    /// profile check, audience check, and validation.
+    ///
+    /// All dispatch surfaces should use this function to ensure consistent
+    /// policy enforcement. The effective profile and audience take precedence
+    /// over the registry's stored values.
+    pub fn prepare_tool_call_with_policy(
+        &self,
+        name: &str,
+        args: &Value,
+        effective_profile: &Profile,
+        effective_audience: ToolAudience,
+        effective_compat: CompatibilityMode,
+    ) -> ToolCallOutcome {
+        let handler = match registry::tool_handler_for(name) {
+            Some(h) => h,
+            None => {
+                return ToolCallOutcome::PreExecutionError(ToolCallError::UnknownTool(
+                    name.to_string(),
+                ))
+            }
+        };
+
+        let profile_tools = registry::tools_for_profile(effective_profile.as_str());
+        if !profile_tools.iter().any(|s| s.name == name) {
+            return ToolCallOutcome::PreExecutionError(ToolCallError::ToolUnavailable {
+                tool: name.to_string(),
+                profile: effective_profile.to_string(),
+            });
+        }
+
+        if let Some(spec) = registry::get_tool(name) {
+            if !effective_audience.can_execute_exposure(spec.exposure) {
+                return ToolCallOutcome::PreExecutionError(
+                    ToolCallError::ToolNotAllowedForAudience {
+                        tool: name.to_string(),
+                        profile: effective_profile.to_string(),
+                        audience: format!("{:?}", effective_audience),
+                        exposure: spec.exposure.as_str().to_string(),
+                    },
+                );
+            }
+        }
+
+        if let Some(msg) = schema_validation::validate_arguments(name, args, effective_compat) {
             return ToolCallOutcome::PreExecutionError(ToolCallError::InvalidArguments(msg));
         }
 
@@ -640,35 +728,91 @@ impl ToolRegistry {
         let mut eval_ctx = ctx.eval_ctx.clone();
         let mut response = budget::with_cancel_flag(ctx.cancellation.clone(), || {
             budget::with_eval_context(&mut eval_ctx, || {
-                let handler = match registry::tool_handler_for(name) {
-                    Some(h) => h,
-                    None => {
-                        return Err(ToolCallError::UnknownTool(name.to_string()));
-                    }
-                };
-                let profile_tools = registry::tools_for_profile(effective_profile.as_str());
-                if !profile_tools.iter().any(|s| s.name == name) {
-                    return Err(ToolCallError::ToolUnavailable {
-                        tool: name.to_string(),
-                        profile: effective_profile.to_string(),
-                    });
+                match self.prepare_tool_call_with_policy(
+                    name,
+                    &args,
+                    &effective_profile,
+                    effective_audience,
+                    effective_compat,
+                ) {
+                    ToolCallOutcome::Ready { handler } => Ok(handler(&args)),
+                    ToolCallOutcome::PreExecutionError(e) => Err(e),
                 }
-                if let Some(tool_spec) = registry::get_tool(name) {
-                    if !effective_audience.can_execute_exposure(tool_spec.exposure) {
-                        return Err(ToolCallError::ToolNotAllowedForAudience {
-                            tool: name.to_string(),
-                            profile: effective_profile.to_string(),
-                            audience: format!("{:?}", effective_audience),
-                            exposure: tool_spec.exposure.as_str().to_string(),
-                        });
-                    }
+            })
+        })?;
+        truncate_response(&mut response, &effective_budget);
+        Ok(response)
+    }
+
+    /// Call a tool with an immutable execution template.
+    ///
+    /// `eval_ctx` is cloned before dispatch — handler mutations do not persist.
+    /// Repeated calls with the same template are reproducible.
+    /// This is the preferred entry point for ordinary deterministic agent calls.
+    ///
+    /// Alias for [`call_json_with_execution_context`](Self::call_json_with_execution_context)
+    /// with explicit immutable-template semantics.
+    pub fn call_json_with_execution_template(
+        &self,
+        name: &str,
+        args: Value,
+        template: &ExecutionContext,
+    ) -> Result<ToolResponse, ToolCallError> {
+        self.call_json_with_execution_context(name, args, template)
+    }
+
+    /// Call a tool with a mutable execution context, persisting state changes.
+    ///
+    /// Unlike [`call_json_with_execution_context`](Self::call_json_with_execution_context),
+    /// the handler executes directly against `ctx.eval_ctx` — PRNG draws, memory
+    /// mutations, and variable assignments persist after a successful call.
+    ///
+    /// On pre-execution policy failure, calculator state remains unchanged.
+    /// If the handler returns a tool-level error after partial calculator
+    /// evaluation, mutations from the evaluation may or may not persist
+    /// depending on the specific operation (calculator evaluation is
+    /// deterministic per-expression — partial failure means the expression
+    /// did not parse or evaluate, so no mutation occurred).
+    pub fn call_json_with_execution_context_mut(
+        &self,
+        name: &str,
+        args: Value,
+        ctx: &mut ExecutionContext,
+    ) -> Result<ToolResponse, ToolCallError> {
+        let spec =
+            registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
+        let effective_budget = match ctx.budget {
+            Some(b) => b,
+            None => budget_for_tool_resolved(name, spec),
+        };
+        let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
+        if serialized_len > effective_budget.max_input_bytes {
+            return Ok(ToolResponse::error_with_code(
+                "input_too_large",
+                crate::mcp::machine_codes::INPUT_TOO_LARGE,
+                &format!(
+                    "Serialized arguments ({} bytes) exceed budget max_input_bytes ({} bytes)",
+                    serialized_len, effective_budget.max_input_bytes
+                ),
+                None,
+                Some(name),
+            ));
+        }
+        let effective_profile = ctx.profile.clone().unwrap_or_else(|| self.profile.clone());
+        let effective_audience = ctx.audience.unwrap_or(self.audience);
+        let effective_compat = ctx.compatibility_mode;
+        let mut response = budget::with_cancel_flag(ctx.cancellation.clone(), || {
+            budget::with_eval_context(&mut ctx.eval_ctx, || {
+                match self.prepare_tool_call_with_policy(
+                    name,
+                    &args,
+                    &effective_profile,
+                    effective_audience,
+                    effective_compat,
+                ) {
+                    ToolCallOutcome::Ready { handler } => Ok(handler(&args)),
+                    ToolCallOutcome::PreExecutionError(e) => Err(e),
                 }
-                if let Some(msg) =
-                    schema_validation::validate_arguments(name, &args, effective_compat)
-                {
-                    return Err(ToolCallError::InvalidArguments(msg));
-                }
-                Ok(handler(&args))
             })
         })?;
         truncate_response(&mut response, &effective_budget);
@@ -889,7 +1033,7 @@ impl ExecutionContext {
     /// This lets callers seed repeated calls with identical state and get
     /// reproducible first random values, while retaining full control over the
     /// seed/registers between calls.
-    pub fn with_eval_context(mut self, eval_ctx: &mut EvalContext) -> Self {
+    pub fn with_eval_context(mut self, eval_ctx: &EvalContext) -> Self {
         self.eval_ctx = eval_ctx.clone();
         self
     }

@@ -422,13 +422,24 @@ Call eggsact tools directly from Rust without starting an MCP server. The `ToolR
 ### Calling tools by name
 
 ```rust
-use eggsact::agent::ToolRegistry;
+use eggsact::agent::{ToolRegistry, ExecutionContext, Profile, ToolAudience};
 
 let registry = ToolRegistry::default();
+
+// Simple call
 let response = registry.call_json("text_equal", serde_json::json!({
     "a": "hello",
     "b": "hello",
 })).unwrap();
+assert!(response.ok);
+
+// Context-aware call (recommended for new code — immutable, clones eval_ctx)
+let ctx = ExecutionContext::agent_default(Profile::Full, ToolAudience::Model);
+let response = registry.call_json_with_execution_context(
+    "math_eval",
+    serde_json::json!({"expression": "2 + 3"}),
+    &ctx,
+).unwrap();
 assert!(response.ok);
 ```
 

@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-07-17
+
+### Added
+- **`call_json_with_execution_template`**: explicit immutable alias for
+  `call_json_with_execution_context`. Identical behavior (clones `eval_ctx`);
+  use when you want to make the immutability intent explicit at the call site.
+- **`call_json_with_execution_context_mut`**: mutable persistent-context
+  variant. Accepts `&mut ExecutionContext` and persists handler state
+  mutations (PRNG draws, memory registers, user variables) back to the
+  caller's `EvalContext`. Use for sequential calculator operations where
+  state should accumulate.
+- **`prepare_tool_call_with_policy`**: shared policy preparation method
+  accepting explicit effective profile, audience, and compatibility mode.
+  Used internally by `call_json_with_execution_context` to resolve
+  `ExecutionContext` overrides before dispatch.
+- **`get_tool_unfiltered` / `has_registered_tool`**: administrative
+  tool-lookup methods that bypass audience/exposure checks. `get_tool` and
+  `has_tool` now enforce audience/exposure in addition to profile membership.
+- **RAII guards in `budget.rs`**: `CancelFlagGuard` and `EvalContextGuard`
+  provide panic-safe thread-local restoration for `CURRENT_CANCEL_FLAG` and
+  `CURRENT_EVAL_CONTEXT`.
+
+### Changed
+- **MCP dispatch no longer calls `ensure_mcp_defaults()` / `set_mcp_mode()`**.
+  Instead, MCP dispatch creates `EvalContext::mcp_mode()` and sets it via
+  `budget::with_eval_context()` thread-local bridge before handler dispatch.
+  This provides state isolation without global side effects. The global
+  `MCP_MODE`, `ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS` flags remain for legacy
+  library callers but are no longer set by MCP dispatch.
+- **`with_eval_context` now takes `&EvalContext`** (shared reference) instead
+  of `&mut EvalContext`. This aligns with the clone-on-dispatch semantics of
+  `call_json_with_execution_context`.
+- `set_mcp_mode()` is now deprecated for new code. Use
+  `EvalContext::mcp_mode()` instead.
+
+### Deprecated
+- **`ensure_mcp_defaults()`** — MCP dispatch now creates
+  `EvalContext::mcp_mode()` directly. The function is retained for backward
+  compatibility but should not be called in new code.
+- **`set_mcp_mode()`** — use `EvalContext::mcp_mode()` instead. The global
+  `AtomicBool` flags remain for legacy `evaluate()`/`run()` callers.
+
 ## [1.2.0] - 2026-07-17
 
 ### Added

@@ -483,9 +483,9 @@ Builder methods: `with_eval_context()`, `with_budget()`, `with_cancellation()`, 
 
 `ToolRegistry::call_json_with_execution_context()` accepts an `ExecutionContext` and honors all its fields:
 
-- **Profile/Audience**: Falls back to registry defaults when `None`. When `Some`, uses the context's values for tool filtering and exposure checks.
+- **Profile/Audience**: Falls back to registry defaults when `None`. When `Some`, uses the context's values for tool filtering and exposure checks. Resolved via `prepare_tool_call_with_policy`.
 - **Compatibility mode**: Used for argument schema validation.
-- **EvalContext**: **Cloned** and set as thread-local via `budget::with_eval_context()`, making it available to calculator-backed tools (e.g., `math_eval` uses `run_with_context()` when a thread-local context is present). Mutations inside the handler do not persist back to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value.
+- **EvalContext**: **Cloned** and set as thread-local via `budget::with_eval_context()`, making it available to calculator-backed tools (e.g., `math_eval` uses `run_with_context()` when a thread-local context is present). Mutations inside the handler do not persist back to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value. Use `call_json_with_execution_context_mut()` for the mutable variant where handler state persists.
 - **Budget/Cancellation**: Resource limits and cooperative cancellation flag. The cancellation flag is set as a thread-local during dispatch so that high-risk handlers that create their own `BudgetContext` inherit cancellation.
 
 **MCP wire protocol boundary**: `call_json_with_execution_context` is an **in-process** API. It does not change the MCP JSON-RPC wire protocol. The MCP server still resolves its active profile from `EGGCALC_MCP_PROFILE` at init time. Per-request context overrides over the wire would require a future MCP request-level context API.
@@ -497,7 +497,9 @@ Legacy APIs remain as backward-compatible wrappers:
 | `call_json(name, args)` | Creates a default context internally |
 | `call_json_with_budget(name, args, budget)` | Context with custom budget |
 | `call_json_with_context(name, args, budget, cancel_flag)` | Context with budget and cancellation |
-| `call_json_with_execution_context(name, args, ctx)` | Full context — **recommended for new code** |
+| `call_json_with_execution_context(name, args, ctx)` | Full context (immutable, clones eval_ctx) — **recommended for new code** |
+| `call_json_with_execution_template(name, args, ctx)` | Explicit immutable alias for `call_json_with_execution_context` |
+| `call_json_with_execution_context_mut(name, args, ctx)` | Mutable persistent context — handler state mutations persist back |
 
 ### MCP startup env vars → runtime context
 
@@ -511,7 +513,7 @@ Tool handler functions retain the signature `fn(&Value) -> ToolResponse` for com
 
 | State | Why global |
 |-------|------------|
-| `MCP_MODE`, `ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS` AtomicBool | One-shot startup flags, race-safe. Context-aware APIs bypass these via `EvalContext` fields. |
+| `MCP_MODE`, `ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS` AtomicBool | One-shot startup flags, race-safe. Context-aware APIs bypass these via `EvalContext` fields. MCP dispatch no longer sets these directly — it uses `EvalContext::mcp_mode()` through the thread-local bridge. These remain for legacy library callers. |
 | `ACTIVE_PROFILE`, `ACTIVE_AUDIENCE`, `ACTIVE_SCHEMA_DETAIL` RwLock | Set once at startup, read-only after init |
 | `SPAWN_SEMAPHORE` | Intentional global concurrency limiter |
 | `CURRENT_CANCEL_FLAG` thread-local | Properly scoped per-dispatch |
