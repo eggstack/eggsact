@@ -13,12 +13,19 @@ fn mcp_request(request: &str) -> String {
 
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
         stdin.write_all(request.as_bytes()).unwrap();
         stdin.write_all(b"\n").unwrap();
     }
 
     let output = child.wait_with_output().unwrap();
-    String::from_utf8(output.stdout).unwrap_or_default()
+    let stdout = String::from_utf8(output.stdout).unwrap_or_default();
+    stdout.lines().last().unwrap_or("").to_string()
 }
 
 fn call_tool_and_get_result(request: &str) -> Value {

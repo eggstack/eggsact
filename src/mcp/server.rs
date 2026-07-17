@@ -3,7 +3,9 @@ use crate::mcp::budget::{budget_for_tool, BudgetContext};
 use crate::mcp::compat::CompatibilityMode;
 use crate::mcp::machine_codes;
 use crate::mcp::protocol::{
-    invalid_request, json_rpc_error, method_not_found, JsonRpcRequest, JsonRpcResponse,
+    already_initialized, invalid_request, json_rpc_error, method_not_found, not_initialized,
+    EggsactExtensions, ExperimentalCapabilities, InitializeParams, InitializeResult,
+    JsonRpcRequest, JsonRpcResponse, ServerCapabilities, ServerInfo, ToolsCapability,
 };
 use crate::mcp::registry;
 use crate::mcp::response::{
@@ -11,9 +13,10 @@ use crate::mcp::response::{
 };
 use crate::mcp::runtime::{
     self, apply_cancellation, get_active_audience, get_active_profile, get_schema_detail,
-    new_active_requests, register_request, MetricGuard, RateLimiter, RegisterRequestError,
-    MAX_OUTPUT_BYTES, MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH,
-    MAX_TOOL_WORKERS, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME, RUNTIME_METRICS,
+    negotiate_protocol_version, new_active_requests, register_request, MetricGuard,
+    NegotiatedProtocol, RateLimiter, RegisterRequestError, SessionState, MAX_OUTPUT_BYTES,
+    MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS,
+    MCP_SERVER_NAME, RUNTIME_METRICS,
 };
 use serde_json::Value;
 use std::sync::atomic::Ordering;
@@ -43,192 +46,37 @@ fn write_json_line(value: &Value) {
     }
 }
 
+fn build_server_capabilities() -> ServerCapabilities {
+    ServerCapabilities {
+        tools: ToolsCapability {
+            list_changed: false,
+        },
+        experimental: Some(ExperimentalCapabilities {
+            eggsact: EggsactExtensions {
+                profiles: true,
+                schema_detail: true,
+                audience_filtering: true,
+            },
+        }),
+    }
+}
+
 async fn handle_request_async(
     request: &JsonRpcRequest,
     cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
     tool_semaphore: &Arc<tokio::sync::Semaphore>,
+    session_state: &Arc<Mutex<SessionState>>,
 ) -> Option<serde_json::Value> {
     // Ensure MCP-safe evaluator defaults are in effect. Idempotent: a one-time
     // check is enough to set mcp_mode and disable random/side-effect functions.
     runtime::ensure_mcp_defaults();
 
-    match request.method.as_str() {
-        "initialize" => Some(
-            serde_json::to_value(crate::mcp::protocol::InitializeResult {
-                protocol_version: MCP_PROTOCOL_VERSION.to_string(),
-                capabilities: crate::mcp::protocol::Capabilities {
-                    tools: crate::mcp::protocol::ToolsCapability {
-                        list_changed: false,
-                    },
-                },
-                server_info: crate::mcp::protocol::ServerInfo {
-                    name: MCP_SERVER_NAME.to_string(),
-                    version: env!("CARGO_PKG_VERSION").to_string(),
-                },
-            })
-            .unwrap(),
-        ),
+    // ── Lifecycle enforcement ──────────────────────────────────────────
+    let method = request.method.as_str();
 
-        "tools/list" => {
-            let params = request.params.as_ref();
-            if let Some(p) = params {
-                if !p.is_object() {
-                    return Some(invalid_request(
-                        "Invalid params: expected object",
-                        request.id.clone(),
-                    ));
-                }
-            }
-            // Validate param types (matching Python messages exactly)
-            if let Some(p) = params {
-                if let Some(d) = p.get("schema_detail") {
-                    if !d.is_string() || !matches!(d.as_str(), Some("compact" | "normal" | "full"))
-                    {
-                        return Some(invalid_request(
-                            "Invalid 'schema_detail' parameter: expected compact, normal, or full",
-                            request.id.clone(),
-                        ));
-                    }
-                }
-                if let Some(t) = p.get("tier") {
-                    // Python treats bool as int (isinstance(True, int) == True)
-                    if !t.is_i64() && !t.is_u64() && !t.is_boolean() {
-                        return Some(invalid_request(
-                            "Invalid 'tier' parameter: expected integer",
-                            request.id.clone(),
-                        ));
-                    }
-                }
-                if let Some(t) = p.get("tags") {
-                    match t.as_array() {
-                        Some(tags) if tags.iter().all(|v| v.is_string()) => {}
-                        Some(_) => {
-                            return Some(invalid_request(
-                                "Invalid 'tags' parameter: all items must be strings",
-                                request.id.clone(),
-                            ));
-                        }
-                        None => {
-                            return Some(invalid_request(
-                                "Invalid 'tags' parameter: expected array",
-                                request.id.clone(),
-                            ));
-                        }
-                    }
-                }
-                if let Some(n) = p.get("names") {
-                    match n.as_array() {
-                        Some(names) if names.iter().all(|v| v.is_string()) => {}
-                        Some(_) => {
-                            return Some(invalid_request(
-                                "Invalid 'names' parameter: all items must be strings",
-                                request.id.clone(),
-                            ));
-                        }
-                        None => {
-                            return Some(invalid_request(
-                                "Invalid 'names' parameter: expected array",
-                                request.id.clone(),
-                            ));
-                        }
-                    }
-                }
-                if let Some(pr) = p.get("profile") {
-                    if !pr.is_string() {
-                        return Some(invalid_request(
-                            "Invalid 'profile' parameter: expected string",
-                            request.id.clone(),
-                        ));
-                    }
-                }
-                if let Some(a) = p.get("audience") {
-                    if !a.is_string() || !matches!(a.as_str(), Some("model" | "harness" | "debug"))
-                    {
-                        return Some(invalid_request(
-                            "Invalid 'audience' parameter: expected model, harness, or debug",
-                            request.id.clone(),
-                        ));
-                    }
-                }
-            }
-            let schema_detail = get_schema_detail();
-            let detail = params
-                .and_then(|p| p.get("schema_detail"))
-                .and_then(|d| d.as_str())
-                .unwrap_or(&schema_detail);
-            let names_filter = params
-                .and_then(|p| p.get("names"))
-                .and_then(|n| n.as_array());
-            let profile_filter = params
-                .and_then(|p| p.get("profile"))
-                .and_then(|p| p.as_str());
-            let audience_filter: Option<&str> = params
-                .and_then(|p| p.get("audience"))
-                .and_then(|a| a.as_str());
-            let tier_filter = params.and_then(|p| p.get("tier")).and_then(|t| {
-                // Python treats bool as int (isinstance(True, int) == True)
-                match t {
-                    Value::Number(n) => n.as_u64(),
-                    Value::Bool(b) => Some(if *b { 1 } else { 0 }),
-                    _ => None,
-                }
-            });
-            let tags_filter = params
-                .and_then(|p| p.get("tags"))
-                .and_then(|t| t.as_array());
-
-            let active_profile = get_active_profile();
-            let effective_profile = profile_filter.unwrap_or(&active_profile);
-            // Default to the active audience when no explicit audience is provided,
-            // so harness-only tools are excluded from Model listings and the listing
-            // agrees with what tools/call will dispatch.
-            let effective_audience_str =
-                audience_filter.unwrap_or_else(|| match get_active_audience() {
-                    ToolAudience::Model => "model",
-                    ToolAudience::Harness => "harness",
-                    ToolAudience::Debug => "debug",
-                });
-            if effective_profile != "full" && !registry::PROFILE_NAMES.contains(&effective_profile)
-            {
-                let available = registry::PROFILE_NAMES.join(", ");
-                return Some(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32602,
-                        "message": format!("Unknown MCP profile: '{}'. Available profiles: {}", effective_profile, available)
-                    },
-                    "id": request.id
-                }));
-            }
-            // Build options and delegate to registry
-            let names_vec: Option<Vec<String>> = names_filter.map(|n| {
-                n.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
-            let tags_vec: Option<Vec<String>> = tags_filter.map(|t| {
-                t.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
-            let audience = Some(match effective_audience_str {
-                "harness" => registry::ToolListAudience::Harness,
-                "debug" => registry::ToolListAudience::Debug,
-                _ => registry::ToolListAudience::Model,
-            });
-            let options = registry::ToolListOptions {
-                profile: effective_profile,
-                names: names_vec.as_deref(),
-                tier: tier_filter.map(|t| t as u8),
-                tags: tags_vec.as_deref(),
-                schema_detail: detail,
-                audience,
-            };
-            let tools = registry::list_tool_definitions(options);
-            Some(serde_json::json!({"tools": tools}))
-        }
-
-        "tools/call" => {
+    match method {
+        "initialize" => {
+            // Parse typed initialize parameters.
             let params = match request.params.as_ref() {
                 Some(p) => {
                     if !p.is_object() {
@@ -246,49 +94,313 @@ async fn handle_request_async(
                     ));
                 }
             };
-            let name = match params.get("name").and_then(|v| v.as_str()) {
-                Some(n) => n,
-                None => {
+
+            // Parse typed InitializeParams
+            let init_params: InitializeParams = match serde_json::from_value(params.clone()) {
+                Ok(p) => p,
+                Err(e) => {
                     return Some(invalid_request(
-                        "Invalid params: missing tool name",
+                        format!("Invalid initialize params: {}", e),
                         request.id.clone(),
                     ));
                 }
-            };
-            let arguments_val = match params.get("arguments") {
-                Some(v) if v.is_object() => v.clone(),
-                Some(_) => {
-                    return Some(invalid_request(
-                        "Invalid arguments: expected object",
-                        request.id.clone(),
-                    ));
-                }
-                None => serde_json::Value::Object(serde_json::Map::new()),
             };
 
-            // Check if request was cancelled before execution
-            if cancel_flag.load(Ordering::Relaxed) {
-                return Some(wrap_tool_response(&ToolResponse::error_with_code(
-                    "cancelled",
-                    machine_codes::CANCELLED,
-                    &format!("Tool '{}' request was cancelled by the client", name),
-                    Some(vec![
-                        "The request was cancelled before execution started".to_string()
-                    ]),
-                    Some(name),
-                )));
+            // Validate required fields
+            if init_params.client_info.name.is_empty() {
+                return Some(invalid_request(
+                    "Invalid params: clientInfo.name is required and must not be empty",
+                    request.id.clone(),
+                ));
             }
 
-            // Delegate lookup, profile check, and validation to ToolRegistry
-            let active_profile = get_active_profile();
-            let profile = Profile::from_str_opt(&active_profile)
-                .unwrap_or_else(|| Profile::custom(&active_profile));
-            let registry = ToolRegistry::with_profile_and_audience(profile, get_active_audience())
-                .with_compat_mode(CompatibilityMode::EggcalcPython);
-            let handler = match registry.prepare_tool_call(name, &arguments_val) {
-                ToolCallOutcome::Ready { handler } => handler,
-                ToolCallOutcome::PreExecutionError(e) => {
-                    return match e {
+            // Negotiate protocol version
+            let negotiated_version = negotiate_protocol_version(&init_params.protocol_version);
+
+            // Attempt lifecycle transition
+            let negotiated = NegotiatedProtocol {
+                version: negotiated_version.clone(),
+                client_name: init_params.client_info.name,
+                client_version: init_params.client_info.version,
+            };
+
+            {
+                let mut state = session_state.lock().await;
+                if state.transition_to_awaiting(negotiated).is_err() {
+                    return Some(already_initialized(request.id.clone()));
+                }
+            }
+
+            // Build initialize result
+            let result = InitializeResult {
+                protocol_version: negotiated_version.to_string(),
+                capabilities: build_server_capabilities(),
+                server_info: ServerInfo {
+                    name: MCP_SERVER_NAME.to_string(),
+                    version: env!("CARGO_PKG_VERSION").to_string(),
+                },
+            };
+
+            Some(serde_json::to_value(result).unwrap())
+        }
+
+        "ping" => Some(serde_json::json!({})),
+
+        "notifications/initialized" => {
+            // Lifecycle transition: AwaitingInitialized → Ready
+            let mut state = session_state.lock().await;
+            if let Err(e) = state.transition_to_ready() {
+                eprintln!(
+                    "Warning: notifications/initialized ignored: {} (state: {:?})",
+                    e, &*state
+                );
+            }
+            None
+        }
+
+        // All other methods: enforce Ready state, then dispatch
+        _ => {
+            {
+                let state = session_state.lock().await;
+                if !state.allows_method(method) {
+                    let err = match *state {
+                        SessionState::Uninitialized | SessionState::AwaitingInitialized { .. } => {
+                            not_initialized(method, request.id.clone())
+                        }
+                        SessionState::Ready { .. } => method_not_found(
+                            format!("Method not found: {}", method),
+                            request.id.clone(),
+                        ),
+                    };
+                    return Some(err);
+                }
+            }
+
+            match method {
+                "tools/list" => {
+                    let params = request.params.as_ref();
+                    if let Some(p) = params {
+                        if !p.is_object() {
+                            return Some(invalid_request(
+                                "Invalid params: expected object",
+                                request.id.clone(),
+                            ));
+                        }
+                    }
+                    // Validate param types (matching Python messages exactly)
+                    if let Some(p) = params {
+                        if let Some(d) = p.get("schema_detail") {
+                            if !d.is_string()
+                                || !matches!(d.as_str(), Some("compact" | "normal" | "full"))
+                            {
+                                return Some(invalid_request(
+                            "Invalid 'schema_detail' parameter: expected compact, normal, or full",
+                            request.id.clone(),
+                        ));
+                            }
+                        }
+                        if let Some(t) = p.get("tier") {
+                            // Python treats bool as int (isinstance(True, int) == True)
+                            if !t.is_i64() && !t.is_u64() && !t.is_boolean() {
+                                return Some(invalid_request(
+                                    "Invalid 'tier' parameter: expected integer",
+                                    request.id.clone(),
+                                ));
+                            }
+                        }
+                        if let Some(t) = p.get("tags") {
+                            match t.as_array() {
+                                Some(tags) if tags.iter().all(|v| v.is_string()) => {}
+                                Some(_) => {
+                                    return Some(invalid_request(
+                                        "Invalid 'tags' parameter: all items must be strings",
+                                        request.id.clone(),
+                                    ));
+                                }
+                                None => {
+                                    return Some(invalid_request(
+                                        "Invalid 'tags' parameter: expected array",
+                                        request.id.clone(),
+                                    ));
+                                }
+                            }
+                        }
+                        if let Some(n) = p.get("names") {
+                            match n.as_array() {
+                                Some(names) if names.iter().all(|v| v.is_string()) => {}
+                                Some(_) => {
+                                    return Some(invalid_request(
+                                        "Invalid 'names' parameter: all items must be strings",
+                                        request.id.clone(),
+                                    ));
+                                }
+                                None => {
+                                    return Some(invalid_request(
+                                        "Invalid 'names' parameter: expected array",
+                                        request.id.clone(),
+                                    ));
+                                }
+                            }
+                        }
+                        if let Some(pr) = p.get("profile") {
+                            if !pr.is_string() {
+                                return Some(invalid_request(
+                                    "Invalid 'profile' parameter: expected string",
+                                    request.id.clone(),
+                                ));
+                            }
+                        }
+                        if let Some(a) = p.get("audience") {
+                            if !a.is_string()
+                                || !matches!(a.as_str(), Some("model" | "harness" | "debug"))
+                            {
+                                return Some(invalid_request(
+                            "Invalid 'audience' parameter: expected model, harness, or debug",
+                            request.id.clone(),
+                        ));
+                            }
+                        }
+                    }
+                    let schema_detail = get_schema_detail();
+                    let detail = params
+                        .and_then(|p| p.get("schema_detail"))
+                        .and_then(|d| d.as_str())
+                        .unwrap_or(&schema_detail);
+                    let names_filter = params
+                        .and_then(|p| p.get("names"))
+                        .and_then(|n| n.as_array());
+                    let profile_filter = params
+                        .and_then(|p| p.get("profile"))
+                        .and_then(|p| p.as_str());
+                    let audience_filter: Option<&str> = params
+                        .and_then(|p| p.get("audience"))
+                        .and_then(|a| a.as_str());
+                    let tier_filter = params.and_then(|p| p.get("tier")).and_then(|t| {
+                        // Python treats bool as int (isinstance(True, int) == True)
+                        match t {
+                            Value::Number(n) => n.as_u64(),
+                            Value::Bool(b) => Some(if *b { 1 } else { 0 }),
+                            _ => None,
+                        }
+                    });
+                    let tags_filter = params
+                        .and_then(|p| p.get("tags"))
+                        .and_then(|t| t.as_array());
+
+                    let active_profile = get_active_profile();
+                    let effective_profile = profile_filter.unwrap_or(&active_profile);
+                    // Default to the active audience when no explicit audience is provided,
+                    // so harness-only tools are excluded from Model listings and the listing
+                    // agrees with what tools/call will dispatch.
+                    let effective_audience_str =
+                        audience_filter.unwrap_or_else(|| match get_active_audience() {
+                            ToolAudience::Model => "model",
+                            ToolAudience::Harness => "harness",
+                            ToolAudience::Debug => "debug",
+                        });
+                    if effective_profile != "full"
+                        && !registry::PROFILE_NAMES.contains(&effective_profile)
+                    {
+                        let available = registry::PROFILE_NAMES.join(", ");
+                        return Some(serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "error": {
+                                "code": -32602,
+                                "message": format!("Unknown MCP profile: '{}'. Available profiles: {}", effective_profile, available)
+                            },
+                            "id": request.id
+                        }));
+                    }
+                    // Build options and delegate to registry
+                    let names_vec: Option<Vec<String>> = names_filter.map(|n| {
+                        n.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    });
+                    let tags_vec: Option<Vec<String>> = tags_filter.map(|t| {
+                        t.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    });
+                    let audience = Some(match effective_audience_str {
+                        "harness" => registry::ToolListAudience::Harness,
+                        "debug" => registry::ToolListAudience::Debug,
+                        _ => registry::ToolListAudience::Model,
+                    });
+                    let options = registry::ToolListOptions {
+                        profile: effective_profile,
+                        names: names_vec.as_deref(),
+                        tier: tier_filter.map(|t| t as u8),
+                        tags: tags_vec.as_deref(),
+                        schema_detail: detail,
+                        audience,
+                    };
+                    let tools = registry::list_tool_definitions(options);
+                    Some(serde_json::json!({"tools": tools}))
+                }
+
+                "tools/call" => {
+                    let params = match request.params.as_ref() {
+                        Some(p) => {
+                            if !p.is_object() {
+                                return Some(invalid_request(
+                                    "Invalid params: expected object",
+                                    request.id.clone(),
+                                ));
+                            }
+                            p
+                        }
+                        None => {
+                            return Some(invalid_request(
+                                "Invalid params: expected object",
+                                request.id.clone(),
+                            ));
+                        }
+                    };
+                    let name = match params.get("name").and_then(|v| v.as_str()) {
+                        Some(n) => n,
+                        None => {
+                            return Some(invalid_request(
+                                "Invalid params: missing tool name",
+                                request.id.clone(),
+                            ));
+                        }
+                    };
+                    let arguments_val = match params.get("arguments") {
+                        Some(v) if v.is_object() => v.clone(),
+                        Some(_) => {
+                            return Some(invalid_request(
+                                "Invalid arguments: expected object",
+                                request.id.clone(),
+                            ));
+                        }
+                        None => serde_json::Value::Object(serde_json::Map::new()),
+                    };
+
+                    // Check if request was cancelled before execution
+                    if cancel_flag.load(Ordering::Relaxed) {
+                        return Some(wrap_tool_response(&ToolResponse::error_with_code(
+                            "cancelled",
+                            machine_codes::CANCELLED,
+                            &format!("Tool '{}' request was cancelled by the client", name),
+                            Some(vec![
+                                "The request was cancelled before execution started".to_string()
+                            ]),
+                            Some(name),
+                        )));
+                    }
+
+                    // Delegate lookup, profile check, and validation to ToolRegistry
+                    let active_profile = get_active_profile();
+                    let profile = Profile::from_str_opt(&active_profile)
+                        .unwrap_or_else(|| Profile::custom(&active_profile));
+                    let registry =
+                        ToolRegistry::with_profile_and_audience(profile, get_active_audience())
+                            .with_compat_mode(CompatibilityMode::EggcalcPython);
+                    let handler = match registry.prepare_tool_call(name, &arguments_val) {
+                        ToolCallOutcome::Ready { handler } => handler,
+                        ToolCallOutcome::PreExecutionError(e) => {
+                            return match e {
                         ToolCallError::UnknownTool(tool_name) => {
                             let tool_names = registry::tool_names();
                             let tool_name_refs: Vec<&str> = tool_names.to_vec();
@@ -334,47 +446,48 @@ async fn handle_request_async(
                             Some(json_rpc_error(-32603, msg, request.id.clone()))
                         }
                     };
-                }
-            };
+                        }
+                    };
 
-            let name_owned = name.to_string();
-            let args_clone = arguments_val.clone();
-            let sem = tool_semaphore.clone();
+                    let name_owned = name.to_string();
+                    let args_clone = arguments_val.clone();
+                    let sem = tool_semaphore.clone();
 
-            // Resolve budget for this tool from its declared cost.
-            // Composite tools get HEAVY budgets; others map from ToolCost.
-            // Tools with known load-sensitive dispatch (math_eval,
-            // text_diff_explain, regex_finditer) get a load-tolerant
-            // override so the parallel integration test harness doesn't
-            // surface spurious TIMEOUT envelopes on simple inputs.
-            let tool_budget = registry::get_tool(name)
-                .map(|spec| {
-                    crate::mcp::budget::load_tolerant_budget(name, spec.cost)
-                        .unwrap_or_else(|| budget_for_tool(name, spec.cost))
-                })
-                .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
-            let cancel_flag_for_handler = cancel_flag.clone();
-            let budget_context =
-                BudgetContext::new(tool_budget).with_cancellation(cancel_flag.clone());
+                    // Resolve budget for this tool from its declared cost.
+                    // Composite tools get HEAVY budgets; others map from ToolCost.
+                    // Tools with known load-sensitive dispatch (math_eval,
+                    // text_diff_explain, regex_finditer) get a load-tolerant
+                    // override so the parallel integration test harness doesn't
+                    // surface spurious TIMEOUT envelopes on simple inputs.
+                    let tool_budget = registry::get_tool(name)
+                        .map(|spec| {
+                            crate::mcp::budget::load_tolerant_budget(name, spec.cost)
+                                .unwrap_or_else(|| budget_for_tool(name, spec.cost))
+                        })
+                        .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
+                    let cancel_flag_for_handler = cancel_flag.clone();
+                    let budget_context =
+                        BudgetContext::new(tool_budget).with_cancellation(cancel_flag.clone());
 
-            // Use budget-derived timeout. The outer tokio::time::timeout
-            // governs how long we wait; the spawned blocking task may
-            // continue after the timeout fires (Rust cannot kill threads).
-            //
-            // Owned permits ensure the semaphore permit is held until the
-            // blocking handler actually exits — even after a timeout. This
-            // prevents timed-out handlers from releasing their permit while
-            // the blocking closure continues, which would allow more than
-            // MAX_TOOL_WORKERS concurrent blocking computations.
-            let timeout_ms = tool_budget.max_elapsed_ms;
-            // Track whether the handler was timed out, for metrics decrement on exit.
-            let timed_out = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let timed_out_for_handler = timed_out.clone();
-            let result = tokio::time::timeout(Duration::from_millis(timeout_ms), async move {
-                let permit = match sem.acquire_owned().await {
-                    Ok(p) => p,
-                    Err(_) => {
-                        return Ok::<_, tokio::task::JoinError>(
+                    // Use budget-derived timeout. The outer tokio::time::timeout
+                    // governs how long we wait; the spawned blocking task may
+                    // continue after the timeout fires (Rust cannot kill threads).
+                    //
+                    // Owned permits ensure the semaphore permit is held until the
+                    // blocking handler actually exits — even after a timeout. This
+                    // prevents timed-out handlers from releasing their permit while
+                    // the blocking closure continues, which would allow more than
+                    // MAX_TOOL_WORKERS concurrent blocking computations.
+                    let timeout_ms = tool_budget.max_elapsed_ms;
+                    // Track whether the handler was timed out, for metrics decrement on exit.
+                    let timed_out = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                    let timed_out_for_handler = timed_out.clone();
+                    let result =
+                        tokio::time::timeout(Duration::from_millis(timeout_ms), async move {
+                            let permit = match sem.acquire_owned().await {
+                                Ok(p) => p,
+                                Err(_) => {
+                                    return Ok::<_, tokio::task::JoinError>(
                             crate::mcp::response::ToolResponse::error_with_code(
                                 "internal_error",
                                 "INTERNAL_ERROR",
@@ -383,112 +496,112 @@ async fn handle_request_async(
                                 None,
                             ),
                         );
-                    }
-                };
-                // Check cancellation before spawning blocking work — avoids
-                // consuming a worker permit for an already-cancelled request.
-                if cancel_flag_for_handler.load(Ordering::Relaxed) {
-                    return Ok(crate::mcp::response::ToolResponse::error_with_code(
-                        "cancelled",
-                        machine_codes::CANCELLED,
-                        &format!("Tool '{}' request was cancelled", name),
-                        None,
-                        Some(name),
-                    ));
-                }
-                tokio::task::spawn_blocking(move || {
-                    // Permit is moved into the closure and held until the
-                    // handler exits, ensuring MAX_TOOL_WORKERS is respected
-                    // even after client-facing timeouts.
-                    let _permit = permit;
-                    // RAII guard tracks active blocking handler count.
-                    let _blocking_guard =
-                        MetricGuard::new(&RUNTIME_METRICS.active_blocking_handlers);
-                    // Update peak concurrency watermark.
-                    let current = RUNTIME_METRICS
-                        .active_blocking_handlers
-                        .load(Ordering::Relaxed);
-                    RUNTIME_METRICS
-                        .peak_blocking_concurrency
-                        .fetch_max(current, Ordering::Relaxed);
-                    let result = crate::mcp::budget::with_cancel_flag(
-                        Some(cancel_flag_for_handler.clone()),
-                        || handler(&args_clone),
-                    );
-                    // If this handler was timed out, decrement the counter.
-                    if timed_out_for_handler.load(Ordering::Relaxed) {
-                        RUNTIME_METRICS
-                            .timed_out_handlers
-                            .fetch_sub(1, Ordering::Relaxed);
-                    }
-                    result
-                })
-                .await
-            })
-            .await;
+                                }
+                            };
+                            // Check cancellation before spawning blocking work — avoids
+                            // consuming a worker permit for an already-cancelled request.
+                            if cancel_flag_for_handler.load(Ordering::Relaxed) {
+                                return Ok(crate::mcp::response::ToolResponse::error_with_code(
+                                    "cancelled",
+                                    machine_codes::CANCELLED,
+                                    &format!("Tool '{}' request was cancelled", name),
+                                    None,
+                                    Some(name),
+                                ));
+                            }
+                            tokio::task::spawn_blocking(move || {
+                                // Permit is moved into the closure and held until the
+                                // handler exits, ensuring MAX_TOOL_WORKERS is respected
+                                // even after client-facing timeouts.
+                                let _permit = permit;
+                                // RAII guard tracks active blocking handler count.
+                                let _blocking_guard =
+                                    MetricGuard::new(&RUNTIME_METRICS.active_blocking_handlers);
+                                // Update peak concurrency watermark.
+                                let current = RUNTIME_METRICS
+                                    .active_blocking_handlers
+                                    .load(Ordering::Relaxed);
+                                RUNTIME_METRICS
+                                    .peak_blocking_concurrency
+                                    .fetch_max(current, Ordering::Relaxed);
+                                let result = crate::mcp::budget::with_cancel_flag(
+                                    Some(cancel_flag_for_handler.clone()),
+                                    || handler(&args_clone),
+                                );
+                                // If this handler was timed out, decrement the counter.
+                                if timed_out_for_handler.load(Ordering::Relaxed) {
+                                    RUNTIME_METRICS
+                                        .timed_out_handlers
+                                        .fetch_sub(1, Ordering::Relaxed);
+                                }
+                                result
+                            })
+                            .await
+                        })
+                        .await;
 
-            match result {
-                Ok(Ok(tool_response)) => {
-                    // Apply budget-aware truncation FIRST (findings cap,
-                    // result payload shrinking). This lets per-tool budget
-                    // limits have priority over the absolute MCP hard cap.
-                    let mut response = tool_response;
-                    truncate_response(&mut response, &budget_context.budget);
+                    match result {
+                        Ok(Ok(tool_response)) => {
+                            // Apply budget-aware truncation FIRST (findings cap,
+                            // result payload shrinking). This lets per-tool budget
+                            // limits have priority over the absolute MCP hard cap.
+                            let mut response = tool_response;
+                            truncate_response(&mut response, &budget_context.budget);
 
-                    let output = python_json_dumps(&response);
-                    if output.is_empty() {
-                        Some(wrap_tool_response(&ToolResponse::error_with_code(
-                            "serialization_error",
-                            machine_codes::SERIALIZATION_ERROR,
-                            "Failed to serialize tool response",
-                            None,
-                            Some(&name_owned),
-                        )))
-                    } else if output.len() > MAX_OUTPUT_BYTES {
-                        Some(wrap_tool_response(
-                            &ToolResponse::error_with_code(
-                                "output_too_large",
-                                machine_codes::OUTPUT_TOO_LARGE,
-                                &format!(
-                                    "Output exceeds {} bytes and was truncated",
-                                    MAX_OUTPUT_BYTES
-                                ),
-                                Some(vec![
+                            let output = python_json_dumps(&response);
+                            if output.is_empty() {
+                                Some(wrap_tool_response(&ToolResponse::error_with_code(
+                                    "serialization_error",
+                                    machine_codes::SERIALIZATION_ERROR,
+                                    "Failed to serialize tool response",
+                                    None,
+                                    Some(&name_owned),
+                                )))
+                            } else if output.len() > MAX_OUTPUT_BYTES {
+                                Some(wrap_tool_response(
+                                    &ToolResponse::error_with_code(
+                                        "output_too_large",
+                                        machine_codes::OUTPUT_TOO_LARGE,
+                                        &format!(
+                                            "Output exceeds {} bytes and was truncated",
+                                            MAX_OUTPUT_BYTES
+                                        ),
+                                        Some(vec![
                                     "Try reducing input size or using a summary/detail option"
                                         .to_string(),
                                 ]),
-                                Some(&name_owned),
-                            )
-                            .with_warnings(vec![
-                                "Output was truncated due to size limit".to_string(),
-                            ]),
-                        ))
-                    } else {
-                        Some(wrap_tool_response(&response))
-                    }
-                }
-                Ok(Err(join_err)) => Some(json_rpc_error(
-                    -32000,
-                    format!(
-                        "Tool execution error: {}",
-                        runtime::truncate_2000(&sanitize_error(&join_err.to_string()))
-                    ),
-                    request.id.clone(),
-                )),
-                Err(_timeout) => {
-                    // Signal cancellation to the running handler so it can
-                    // exit cooperatively at the next should_stop() check.
-                    // Note: the spawned blocking task may continue running
-                    // after this point — we cannot kill threads in Rust.
-                    cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-                    timed_out.store(true, Ordering::Relaxed);
-                    RUNTIME_METRICS
-                        .total_timeouts
-                        .fetch_add(1, Ordering::Relaxed);
-                    RUNTIME_METRICS
-                        .timed_out_handlers
-                        .fetch_add(1, Ordering::Relaxed);
-                    Some(wrap_tool_response(&ToolResponse::error_with_code(
+                                        Some(&name_owned),
+                                    )
+                                    .with_warnings(vec![
+                                        "Output was truncated due to size limit".to_string(),
+                                    ]),
+                                ))
+                            } else {
+                                Some(wrap_tool_response(&response))
+                            }
+                        }
+                        Ok(Err(join_err)) => Some(json_rpc_error(
+                            -32000,
+                            format!(
+                                "Tool execution error: {}",
+                                runtime::truncate_2000(&sanitize_error(&join_err.to_string()))
+                            ),
+                            request.id.clone(),
+                        )),
+                        Err(_timeout) => {
+                            // Signal cancellation to the running handler so it can
+                            // exit cooperatively at the next should_stop() check.
+                            // Note: the spawned blocking task may continue running
+                            // after this point — we cannot kill threads in Rust.
+                            cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                            timed_out.store(true, Ordering::Relaxed);
+                            RUNTIME_METRICS
+                                .total_timeouts
+                                .fetch_add(1, Ordering::Relaxed);
+                            RUNTIME_METRICS
+                                .timed_out_handlers
+                                .fetch_add(1, Ordering::Relaxed);
+                            Some(wrap_tool_response(&ToolResponse::error_with_code(
                         "timeout",
                         machine_codes::TIMEOUT,
                         &format!(
@@ -503,64 +616,63 @@ async fn handle_request_async(
                         ]),
                         Some(&name_owned),
                     )))
+                        }
+                    }
                 }
-            }
-        }
 
-        "notifications/initialized" => None,
+                "profiles/list" => {
+                    if let Some(ref params) = request.params {
+                        if !params.is_object() {
+                            return Some(invalid_request(
+                                "Invalid params: expected object",
+                                request.id.clone(),
+                            ));
+                        }
+                    }
+                    let active = get_active_profile();
+                    let mut profiles_info = serde_json::Map::new();
+                    for &name in registry::PROFILE_NAMES {
+                        let tool_specs = registry::tools_for_profile(name);
+                        let mut tool_names: Vec<Value> = tool_specs
+                            .into_iter()
+                            .map(|spec| Value::String(spec.name.to_string()))
+                            .collect();
+                        tool_names
+                            .sort_by(|a, b| a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or("")));
+                        profiles_info.insert(
+                            name.to_string(),
+                            serde_json::json!({
+                                "tools": tool_names,
+                                "tool_count": tool_names.len(),
+                            }),
+                        );
+                    }
+                    Some(serde_json::json!({
+                        "active_profile": active,
+                        "profiles": serde_json::Value::Object(profiles_info),
+                        "available_profiles": registry::PROFILE_NAMES,
+                    }))
+                }
 
-        "ping" => Some(serde_json::json!({})),
-
-        "profiles/list" => {
-            if let Some(ref params) = request.params {
-                if !params.is_object() {
-                    return Some(invalid_request(
-                        "Invalid params: expected object",
+                _ => {
+                    let display_method = if request.method.len() > 100 {
+                        // Python truncates by byte length: method[:100]
+                        let truncated = &request.method.as_bytes()[..100];
+                        // Find a valid UTF-8 boundary
+                        let mut end = truncated.len();
+                        while end > 0 && !request.method.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        format!("{}...", &request.method[..end])
+                    } else {
+                        request.method.clone()
+                    };
+                    Some(method_not_found(
+                        format!("Method not found: {}", display_method),
                         request.id.clone(),
-                    ));
+                    ))
                 }
             }
-            let active = get_active_profile();
-            let mut profiles_info = serde_json::Map::new();
-            for &name in registry::PROFILE_NAMES {
-                let tool_specs = registry::tools_for_profile(name);
-                let mut tool_names: Vec<Value> = tool_specs
-                    .into_iter()
-                    .map(|spec| Value::String(spec.name.to_string()))
-                    .collect();
-                tool_names.sort_by(|a, b| a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or("")));
-                profiles_info.insert(
-                    name.to_string(),
-                    serde_json::json!({
-                        "tools": tool_names,
-                        "tool_count": tool_names.len(),
-                    }),
-                );
-            }
-            Some(serde_json::json!({
-                "active_profile": active,
-                "profiles": serde_json::Value::Object(profiles_info),
-                "available_profiles": registry::PROFILE_NAMES,
-            }))
-        }
-
-        _ => {
-            let display_method = if request.method.len() > 100 {
-                // Python truncates by byte length: method[:100]
-                let truncated = &request.method.as_bytes()[..100];
-                // Find a valid UTF-8 boundary
-                let mut end = truncated.len();
-                while end > 0 && !request.method.is_char_boundary(end) {
-                    end -= 1;
-                }
-                format!("{}...", &request.method[..end])
-            } else {
-                request.method.clone()
-            };
-            Some(method_not_found(
-                format!("Method not found: {}", display_method),
-                request.id.clone(),
-            ))
         }
     }
 }
@@ -573,6 +685,7 @@ pub async fn main() -> ! {
     let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
     let tool_semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_TOOL_WORKERS));
     let active_requests = new_active_requests();
+    let session_state = Arc::new(Mutex::new(SessionState::Uninitialized));
 
     // Dedicated writer task: all stdout writes go through this channel
     // to prevent interleaved output from concurrent request handlers.
@@ -735,7 +848,16 @@ pub async fn main() -> ! {
         // Notifications bypass the ordinary request rate limiter.
         if request.id.is_none() {
             match request.method.as_str() {
-                "notifications/initialized" => {}
+                "notifications/initialized" => {
+                    // Lifecycle transition: AwaitingInitialized → Ready
+                    let mut state = session_state.lock().await;
+                    if let Err(e) = state.transition_to_ready() {
+                        eprintln!(
+                            "Warning: notifications/initialized ignored: {} (state: {:?})",
+                            e, &*state
+                        );
+                    }
+                }
                 "notifications/cancelled" => {
                     // Set the cancel flag on the active request, if any.
                     // Uses async lock to avoid losing cancellations under
@@ -831,11 +953,36 @@ pub async fn main() -> ! {
             }
         };
 
+        // Handle initialize inline (not spawned) to avoid race with
+        // notifications/initialized. The lifecycle state transition must
+        // complete before the next line is read.
+        if request.method == "initialize" {
+            let result =
+                handle_request_async(&request, &cancel_flag, &tool_semaphore, &session_state).await;
+            drop(guard);
+            if let Some(result) = result {
+                if result.get("error").is_some() && result.get("result").is_none() {
+                    let _ = tx.send(result).await;
+                } else {
+                    let response = JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result,
+                        id: Some(request_id),
+                    };
+                    if let Ok(value) = serde_json::to_value(response) {
+                        let _ = tx.send(value).await;
+                    }
+                }
+            }
+            continue;
+        }
+
         // Spawn the request handler without awaiting — the read loop
         // continues to process the next line immediately.
         let tx = tx.clone();
         let semaphore_clone = tool_semaphore.clone();
         let cancel_flag_clone = cancel_flag.clone();
+        let session_state_clone = session_state.clone();
         let request_clone = JsonRpcRequest {
             jsonrpc: request.jsonrpc.clone(),
             method: request.method.clone(),
@@ -848,8 +995,13 @@ pub async fn main() -> ! {
             // RAII guard tracks active request count for diagnostics.
             let _active_guard = MetricGuard::new(&RUNTIME_METRICS.active_requests);
 
-            let maybe_result =
-                handle_request_async(&request_clone, &cancel_flag_clone, &semaphore_clone).await;
+            let maybe_result = handle_request_async(
+                &request_clone,
+                &cancel_flag_clone,
+                &semaphore_clone,
+                &session_state_clone,
+            )
+            .await;
 
             // RequestGuard handles active-request cleanup on drop.
             drop(guard);

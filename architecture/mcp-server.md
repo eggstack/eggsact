@@ -92,7 +92,7 @@ Tool implementations live in `src/tools/` (category modules):
 
 - Transport: stdio (stdin/stdout)
 - Protocol: JSON-RPC 2.0
-- MCP version: `2024-11-05`
+- MCP versions: `2025-11-25` (preferred), `2024-11-05` (legacy)
 - Server identity: `eggsact`
 
 ### Supported Methods
@@ -106,6 +106,63 @@ Tool implementations live in `src/tools/` (category modules):
 | `tools/call` | Executes a tool by name |
 | `profiles/list` | Lists all profiles and their tool counts |
 | `ping` | Returns empty response (health check) |
+
+### Connection Lifecycle
+
+The server enforces a per-connection initialization lifecycle. Clients must
+complete the handshake before calling tools:
+
+1. Client sends `initialize` with `protocolVersion`, `capabilities`, and `clientInfo`
+2. Server responds with negotiated `protocolVersion`, `capabilities`, and `serverInfo`
+3. Client sends `notifications/initialized` (no response)
+4. Server transitions to `Ready` state — all methods now available
+
+#### Session States
+
+| State | Allowed Methods | Notes |
+|-------|----------------|-------|
+| `Uninitialized` | `initialize`, `ping` | Default state at connection start |
+| `AwaitingInitialized` | `notifications/initialized`, `ping` | After `initialize` response sent |
+| `Ready` | All methods | After `notifications/initialized` received |
+
+#### Version Negotiation
+
+The server supports multiple MCP protocol revisions:
+
+| Version | Status | Notes |
+|---------|--------|-------|
+| `2025-11-25` | Preferred | Current eggsact implementation |
+| `2024-11-05` | Legacy | Supported for backward compatibility |
+
+Negotiation rule: if the client's requested version is supported, return it.
+Otherwise return the preferred version (`2025-11-25`).
+
+#### Server Capabilities
+
+The initialize response advertises:
+
+```json
+{
+  "capabilities": {
+    "tools": { "listChanged": false },
+    "experimental": {
+      "eggsact": {
+        "profiles": true,
+        "schemaDetail": true,
+        "audienceFiltering": true
+      }
+    }
+  }
+}
+```
+
+#### Lifecycle Errors
+
+| Error | Code | Data Code | When |
+|-------|------|-----------|------|
+| Not initialized | -32600 | `NOT_INITIALIZED` | Method called before `initialize` |
+| Already initialized | -32600 | `ALREADY_INITIALIZED` | Duplicate `initialize` request |
+| Initialized before initialize | -32600 | `INITIALIZED_BEFORE_INITIALIZE` | `notifications/initialized` received before `initialize` |
 
 ## Tool Registration (Single Registry)
 

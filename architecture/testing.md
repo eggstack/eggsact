@@ -292,6 +292,18 @@ CI mirrors the release verification gates but does **not** publish to crates.io.
 
 ## Adding New Tests
 
+### Multi-Message Session Testing
+
+Tests that need to verify lifecycle behavior or multi-request sessions use
+raw process spawning with explicit initialization handshakes. The standard
+`mcp_request()` helper in each test file automatically includes the
+initialization handshake (initialize + notifications/initialized) before
+the actual request, and returns only the last response line.
+
+For tests that need multiple requests in one session, use
+`mcp_request_multi()` which also includes the initialization handshake and
+correlates responses by JSON-RPC `id`.
+
 ### Calculator Tests
 
 Add to `tests/calc/test_evaluator.rs` or `tests/calc/test_normalize.rs`. Call `eggsact::calc::run()` or `eggsact::calc::evaluate()` directly. No MCP subprocess needed.

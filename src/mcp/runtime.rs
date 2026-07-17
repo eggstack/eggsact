@@ -67,8 +67,270 @@ pub const MAX_OUTPUT_BYTES: usize = 1_000_000;
 
 pub(crate) const SCHEMA_DETAIL_FULL: &str = "full";
 
-pub const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 pub const MCP_SERVER_NAME: &str = "eggsact";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Protocol version table and negotiation (Workstream 2)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Ordered list of supported MCP protocol revisions. The first entry is the
+/// preferred (current) revision. Only revisions that eggsact actually implements
+/// are listed here.
+pub const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-11-25", "2024-11-05"];
+
+/// The preferred (current) protocol revision. Eggsact negotiates to this
+/// when the client's requested revision is not in `SUPPORTED_PROTOCOL_VERSIONS`.
+pub const PREFERRED_PROTOCOL_VERSION: &str = SUPPORTED_PROTOCOL_VERSIONS[0];
+
+/// Legacy single-version constant for backward compatibility with tests and
+/// code that references `MCP_PROTOCOL_VERSION` directly. Prefer
+/// `PREFERRED_PROTOCOL_VERSION` in new code.
+pub const MCP_PROTOCOL_VERSION: &str = PREFERRED_PROTOCOL_VERSION;
+
+/// Check whether a protocol version string is in the supported list.
+pub fn is_supported_protocol_version(version: &str) -> bool {
+    SUPPORTED_PROTOCOL_VERSIONS.contains(&version)
+}
+
+/// Negotiate a protocol version: return the requested version if supported,
+/// otherwise return eggsact's preferred version.
+pub fn negotiate_protocol_version(requested: &str) -> String {
+    if is_supported_protocol_version(requested) {
+        requested.to_string()
+    } else {
+        PREFERRED_PROTOCOL_VERSION.to_string()
+    }
+}
+
+/// Negotiated protocol data stored per-connection.
+#[derive(Debug, Clone)]
+pub struct NegotiatedProtocol {
+    /// The protocol version negotiated for this connection.
+    pub version: String,
+    /// Client implementation name.
+    pub client_name: String,
+    /// Client implementation version (optional).
+    pub client_version: Option<String>,
+}
+
+impl NegotiatedProtocol {
+    /// Whether this revision supports the `notifications/initialized` handshake.
+    pub fn supports_initialized_notification(&self) -> bool {
+        // All supported revisions support this.
+        true
+    }
+
+    /// Whether this revision allows eggsact extension capabilities.
+    pub fn allows_extension_capabilities(&self) -> bool {
+        // Both 2024-11-05 and 2025-11-25 allow extensions via experimental.
+        true
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Connection lifecycle state machine (Workstream 3)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Per-connection lifecycle state for the MCP server.
+///
+/// Each stdio session has its own `SessionState` that tracks initialization
+/// progress. Methods are rejected until the session reaches `Ready`.
+#[derive(Debug, Clone)]
+pub enum SessionState {
+    /// No `initialize` request has been received yet.
+    ///
+    /// Allowed: `initialize`, `ping`.
+    /// Rejected: `tools/list`, `tools/call`, `profiles/list`, extensions.
+    Uninitialized,
+    /// `initialize` has been processed; waiting for `notifications/initialized`.
+    ///
+    /// Allowed: `notifications/initialized`, `ping`.
+    /// Rejected: `tools/list`, `tools/call`, `profiles/list`, extensions.
+    /// Rejected: duplicate `initialize`.
+    AwaitingInitialized { negotiated: NegotiatedProtocol },
+    /// Session is fully initialized and ready for normal operations.
+    ///
+    /// Allowed: all negotiated methods.
+    /// Rejected: duplicate `initialize`.
+    Ready { negotiated: NegotiatedProtocol },
+}
+
+impl SessionState {
+    /// Whether this state allows a given method.
+    pub fn allows_method(&self, method: &str) -> bool {
+        match (self, method) {
+            // Uninitialized: only initialize and ping
+            (SessionState::Uninitialized, "initialize") => true,
+            (SessionState::Uninitialized, "ping") => true,
+            (SessionState::Uninitialized, _) => false,
+            // AwaitingInitialized: only initialized notification and ping
+            (SessionState::AwaitingInitialized { .. }, "notifications/initialized") => true,
+            (SessionState::AwaitingInitialized { .. }, "ping") => true,
+            (SessionState::AwaitingInitialized { .. }, _) => false,
+            // Ready: everything except initialize (rejected as duplicate)
+            (SessionState::Ready { .. }, "initialize") => false,
+            (SessionState::Ready { .. }, _) => true,
+        }
+    }
+
+    /// Attempt to transition from Uninitialized to AwaitingInitialized.
+    /// Returns the negotiated protocol on success.
+    pub fn transition_to_awaiting(
+        &mut self,
+        negotiated: NegotiatedProtocol,
+    ) -> Result<(), &'static str> {
+        match self {
+            SessionState::Uninitialized => {
+                *self = SessionState::AwaitingInitialized { negotiated };
+                Ok(())
+            }
+            _ => Err("already_initialized"),
+        }
+    }
+
+    /// Attempt to transition from AwaitingInitialized to Ready.
+    pub fn transition_to_ready(&mut self) -> Result<(), &'static str> {
+        match self {
+            SessionState::AwaitingInitialized { negotiated } => {
+                let negotiated = negotiated.clone();
+                *self = SessionState::Ready { negotiated };
+                Ok(())
+            }
+            _ => Err("not_awaiting_initialized"),
+        }
+    }
+
+    /// Get a reference to the negotiated protocol if available.
+    pub fn negotiated(&self) -> Option<&NegotiatedProtocol> {
+        match self {
+            SessionState::Uninitialized => None,
+            SessionState::AwaitingInitialized { negotiated } => Some(negotiated),
+            SessionState::Ready { negotiated } => Some(negotiated),
+        }
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn uninitialized_allows_only_initialize_and_ping() {
+        let state = SessionState::Uninitialized;
+        assert!(state.allows_method("initialize"));
+        assert!(state.allows_method("ping"));
+        assert!(!state.allows_method("tools/list"));
+        assert!(!state.allows_method("tools/call"));
+        assert!(!state.allows_method("profiles/list"));
+        assert!(!state.allows_method("notifications/initialized"));
+    }
+
+    #[test]
+    fn awaiting_initialized_allows_only_notification_and_ping() {
+        let negotiated = NegotiatedProtocol {
+            version: "2024-11-05".to_string(),
+            client_name: "test".to_string(),
+            client_version: None,
+        };
+        let state = SessionState::AwaitingInitialized {
+            negotiated: negotiated.clone(),
+        };
+        assert!(state.allows_method("notifications/initialized"));
+        assert!(state.allows_method("ping"));
+        assert!(!state.allows_method("initialize"));
+        assert!(!state.allows_method("tools/list"));
+        assert!(!state.allows_method("tools/call"));
+    }
+
+    #[test]
+    fn ready_allows_all_except_initialize() {
+        let negotiated = NegotiatedProtocol {
+            version: "2024-11-05".to_string(),
+            client_name: "test".to_string(),
+            client_version: None,
+        };
+        let state = SessionState::Ready { negotiated };
+        assert!(!state.allows_method("initialize"));
+        assert!(state.allows_method("tools/list"));
+        assert!(state.allows_method("tools/call"));
+        assert!(state.allows_method("profiles/list"));
+        assert!(state.allows_method("ping"));
+        assert!(state.allows_method("some_extension"));
+    }
+
+    #[test]
+    fn transition_to_awaiting_from_uninitialized() {
+        let negotiated = NegotiatedProtocol {
+            version: "2024-11-05".to_string(),
+            client_name: "test".to_string(),
+            client_version: None,
+        };
+        let mut state = SessionState::Uninitialized;
+        assert!(state.transition_to_awaiting(negotiated).is_ok());
+        assert!(matches!(state, SessionState::AwaitingInitialized { .. }));
+    }
+
+    #[test]
+    fn transition_to_awaiting_from_non_uninitialized_fails() {
+        let negotiated = NegotiatedProtocol {
+            version: "2024-11-05".to_string(),
+            client_name: "test".to_string(),
+            client_version: None,
+        };
+        let mut state = SessionState::AwaitingInitialized {
+            negotiated: negotiated.clone(),
+        };
+        assert_eq!(
+            state.transition_to_awaiting(negotiated).unwrap_err(),
+            "already_initialized"
+        );
+    }
+
+    #[test]
+    fn transition_to_ready_from_awaiting() {
+        let negotiated = NegotiatedProtocol {
+            version: "2024-11-05".to_string(),
+            client_name: "test".to_string(),
+            client_version: None,
+        };
+        let mut state = SessionState::AwaitingInitialized { negotiated };
+        assert!(state.transition_to_ready().is_ok());
+        assert!(matches!(state, SessionState::Ready { .. }));
+    }
+
+    #[test]
+    fn transition_to_ready_from_wrong_state_fails() {
+        let mut state = SessionState::Uninitialized;
+        assert_eq!(
+            state.transition_to_ready().unwrap_err(),
+            "not_awaiting_initialized"
+        );
+    }
+
+    #[test]
+    fn negotiated_version_persists_through_transitions() {
+        let negotiated = NegotiatedProtocol {
+            version: "2025-11-25".to_string(),
+            client_name: "my-client".to_string(),
+            client_version: Some("2.0".to_string()),
+        };
+        let mut state = SessionState::Uninitialized;
+        state.transition_to_awaiting(negotiated).unwrap();
+        assert_eq!(
+            state.negotiated().map(|n| n.version.as_str()),
+            Some("2025-11-25")
+        );
+        state.transition_to_ready().unwrap();
+        assert_eq!(
+            state.negotiated().map(|n| n.version.as_str()),
+            Some("2025-11-25")
+        );
+        assert_eq!(
+            state.negotiated().and_then(|n| n.client_version.as_deref()),
+            Some("2.0")
+        );
+    }
+}
 
 static ACTIVE_PROFILE: LazyLock<RwLock<String>> = LazyLock::new(|| {
     let profile = std::env::var("EGGCALC_MCP_PROFILE").unwrap_or_else(|_| "full".to_string());

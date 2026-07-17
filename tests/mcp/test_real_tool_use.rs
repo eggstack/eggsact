@@ -28,12 +28,19 @@ fn mcp_request(request: &str) -> String {
 
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
         stdin.write_all(request.as_bytes()).unwrap();
         stdin.write_all(b"\n").unwrap();
     }
 
     let output = child.wait_with_output().unwrap();
-    String::from_utf8_lossy(&output.stdout).to_string()
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    stdout.lines().last().unwrap_or("").to_string()
 }
 
 fn call_tool_and_get_result(request: &str) -> Value {
@@ -2000,8 +2007,30 @@ fn test_tools_list_all_have_required_fields() {
 
 #[test]
 fn test_initialize_response() {
-    let response_str = mcp_request(r#"{"jsonrpc":"2.0","method":"initialize","id":1}"#);
-    let response: Value = serde_json::from_str(&response_str).unwrap();
+    // Spawn raw process without mcp_request's init handshake to test the
+    // initialize response directly.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let response_str = stdout.lines().next().unwrap_or("");
+    let response: Value = serde_json::from_str(response_str).unwrap();
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 1);
     let result = response["result"].as_object().unwrap();
@@ -2013,11 +2042,32 @@ fn test_initialize_response() {
 
 #[test]
 fn test_notification_no_response() {
-    let response_str = mcp_request(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#);
-    assert!(
-        response_str.trim().is_empty(),
-        "Notification should produce no response, got: {}",
-        response_str
+    // Use raw process to test notification behavior without mcp_request's init handshake
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "Notification should produce no response, got {} lines",
+        lines.len()
     );
 }
 

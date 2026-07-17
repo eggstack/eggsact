@@ -13,12 +13,19 @@ fn call_tool_and_get_result(request: &str) -> Value {
 
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
         stdin.write_all(request.as_bytes()).unwrap();
         stdin.write_all(b"\n").unwrap();
     }
 
     let output = child.wait_with_output().unwrap();
     let response_str = String::from_utf8_lossy(&output.stdout).to_string();
+    let response_str = response_str.lines().last().unwrap_or("").to_string();
     let response: Value =
         serde_json::from_str(&response_str).expect("Failed to parse JSON-RPC response");
 

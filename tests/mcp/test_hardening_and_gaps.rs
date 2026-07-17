@@ -27,11 +27,18 @@ fn mcp_request(request: &str) -> String {
         .expect("Failed to spawn process");
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
         stdin.write_all(request.as_bytes()).unwrap();
         stdin.write_all(b"\n").unwrap();
     }
     let output = child.wait_with_output().unwrap();
-    String::from_utf8_lossy(&output.stdout).to_string()
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    stdout.lines().last().unwrap_or("").to_string()
 }
 
 fn mcp_request_multi(requests: &[&str]) -> String {
@@ -44,13 +51,21 @@ fn mcp_request_multi(requests: &[&str]) -> String {
         .expect("Failed to spawn process");
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
         for req in requests {
             stdin.write_all(req.as_bytes()).unwrap();
             stdin.write_all(b"\n").unwrap();
         }
     }
     let output = child.wait_with_output().unwrap();
-    String::from_utf8_lossy(&output.stdout).to_string()
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    // Skip the initialization response (first line), return the rest
+    stdout.lines().skip(1).collect::<Vec<_>>().join("\n")
 }
 
 fn call_tool_raw(request: &str) -> Value {
@@ -1820,10 +1835,31 @@ fn test_batch_request_rejected() {
 
 #[test]
 fn test_notification_no_response() {
-    let output = mcp_request(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#);
-    assert!(
-        output.trim().is_empty(),
-        "Notification should not produce response"
+    // Use raw process to test notification behavior without mcp_request's init handshake
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "Notification should not produce response, got {} lines",
+        lines.len()
     );
 }
 
@@ -1946,11 +1982,18 @@ fn mcp_request_with_profile(request: &str, profile: &str) -> String {
         .expect("Failed to spawn process");
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
         stdin.write_all(request.as_bytes()).unwrap();
         stdin.write_all(b"\n").unwrap();
     }
     let output = child.wait_with_output().unwrap();
-    String::from_utf8_lossy(&output.stdout).to_string()
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    stdout.lines().last().unwrap_or("").to_string()
 }
 
 fn call_tool_with_profile(name: &str, args: Value, profile: &str) -> Value {

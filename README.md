@@ -86,10 +86,20 @@ let (result, _typ) = run("30m to ft").unwrap();
 
 ### MCP Server
 
-Start the server and connect via JSON-RPC 2.0 over stdio. The server identifies as `eggsact` with MCP protocol version `2024-11-05`.
+Start the server and connect via JSON-RPC 2.0 over stdio. The server supports MCP protocol versions `2025-11-25` (preferred) and `2024-11-05` (legacy).
 
 ```bash
 eggsact --mcp
+```
+
+**Lifecycle**: Clients must complete the initialization handshake before calling tools:
+
+```json
+→ {"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"my-client"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{...},"serverInfo":{"name":"eggsact","version":"..."}}}
+→ {"jsonrpc":"2.0","method":"notifications/initialized"}
+→ {"jsonrpc":"2.0","method":"tools/list","id":2}
+← {"jsonrpc":"2.0","id":2,"result":{"tools":[...]}}
 ```
 
 The server dispatches requests **concurrently**. Responses may arrive out of request order. **Clients must correlate responses to requests by JSON-RPC `id`**, not by arrival position. See `architecture/mcp-server.md` for the full concurrency and response-ordering contract.

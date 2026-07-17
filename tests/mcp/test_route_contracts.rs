@@ -1469,7 +1469,7 @@ fn make_mcp_request(id: u32, tool: &str, args: Value) -> String {
 }
 
 fn parse_mcp_tool_response(stdout: &str) -> Value {
-    let response_line = stdout.lines().next().expect("No output from MCP server");
+    let response_line = stdout.lines().last().expect("No output from MCP server");
     let rpc: Value =
         serde_json::from_str(response_line).expect("Failed to parse JSON-RPC response");
     rpc.get("result")
@@ -1491,7 +1491,18 @@ fn spawn_mcp_with_audience(audience: &str) -> (std::process::Child, std::process
         .env("EGGCALC_MCP_AUDIENCE", audience);
 
     let mut child = cmd.spawn().expect("Failed to spawn eggsact --mcp");
-    let stdin = child.stdin.take().expect("Failed to take stdin");
+    let mut stdin = child.stdin.take().expect("Failed to take stdin");
+
+    // Send initialization handshake
+    stdin
+        .write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes())
+        .expect("Failed to write initialize");
+    stdin.write_all(b"\n").expect("Failed to write newline");
+    stdin
+        .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+        .expect("Failed to write initialized notification");
+    stdin.write_all(b"\n").expect("Failed to write newline");
+
     (child, stdin)
 }
 

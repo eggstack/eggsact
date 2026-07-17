@@ -28,11 +28,21 @@ fn mcp_request(request: &str) -> String {
         .expect("Failed to spawn process");
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // Initialize handshake
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Actual request
         stdin.write_all(request.as_bytes()).unwrap();
         stdin.write_all(b"\n").unwrap();
     }
     let output = child.wait_with_output().unwrap();
-    String::from_utf8_lossy(&output.stdout).to_string()
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    // Return only the last response (skip initialize response)
+    stdout.lines().last().unwrap_or("").to_string()
 }
 
 fn mcp_request_multi(requests: &[&str]) -> String {
@@ -46,6 +56,13 @@ fn mcp_request_multi(requests: &[&str]) -> String {
         .expect("Failed to spawn process");
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // Initialize handshake first
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
         for req in requests {
             stdin.write_all(req.as_bytes()).unwrap();
             stdin.write_all(b"\n").unwrap();
@@ -101,11 +118,18 @@ fn mcp_request_multi(requests: &[&str]) -> String {
     }
 
     if !by_id.is_empty() {
-        let unexpected: Vec<String> = by_id.keys().map(|k| k.to_string()).collect();
-        panic!(
-            "Unexpected response ids (no matching request): {:?}",
-            unexpected
-        );
+        // Filter out the initialize response (id=0) which we added internally
+        let unexpected: Vec<String> = by_id
+            .keys()
+            .filter(|k| !matches!(k, Value::Number(n) if n.as_i64() == Some(0)))
+            .map(|k| k.to_string())
+            .collect();
+        if !unexpected.is_empty() {
+            panic!(
+                "Unexpected response ids (no matching request): {:?}",
+                unexpected
+            );
+        }
     }
 
     ordered.extend(ordered_responses);
@@ -171,8 +195,64 @@ fn is_tool_error(result: &Value) -> bool {
 
 #[test]
 fn test_full_mcp_lifecycle() {
-    // Step 1: Initialize
-    let init_resp = call_tool_raw(r#"{"jsonrpc":"2.0","method":"initialize","id":1}"#);
+    // Full lifecycle: initialize → initialized → tools/list → tools/call → ping
+    // All in one session to test the state machine transitions.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // Step 1: Initialize
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-lifecycle"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Step 2: Notify initialized
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Step 3: List tools
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"tools/list","id":2}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Step 4: Call a tool
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"2+3"}},"id":3}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Step 5: Ping
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"ping","id":4}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        4,
+        "Should have 4 responses (init, list, call, ping), got {}",
+        lines.len()
+    );
+
+    // Parse all responses and correlate by JSON-RPC id.
+    // Responses may arrive out of order due to concurrent processing.
+    let mut responses: std::collections::HashMap<Value, Value> = std::collections::HashMap::new();
+    for line in &lines {
+        let resp: Value = serde_json::from_str(line).unwrap();
+        if let Some(id) = resp.get("id").cloned() {
+            responses.insert(id, resp);
+        }
+    }
+
+    // Step 1: Initialize response (id:1)
+    let init_resp = responses
+        .get(&Value::Number(1.into()))
+        .expect("Missing init response (id:1)");
     assert_eq!(
         init_resp.get("jsonrpc"),
         Some(&Value::String("2.0".to_string()))
@@ -180,13 +260,15 @@ fn test_full_mcp_lifecycle() {
     let server_info = &init_resp["result"]["serverInfo"];
     assert_eq!(server_info["name"], "eggsact");
     assert_eq!(init_resp["result"]["protocolVersion"], "2024-11-05");
+    // Verify experimental capabilities
+    let caps = &init_resp["result"]["capabilities"];
+    assert!(caps.get("tools").is_some());
+    assert!(caps.get("experimental").is_some());
 
-    // Step 2: Notify initialized
-    let _notif = mcp_request(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#);
-    // No response expected for notification
-
-    // Step 3: List tools
-    let list_resp = call_tool_raw(r#"{"jsonrpc":"2.0","method":"tools/list","id":2}"#);
+    // Step 3: List tools (id:2)
+    let list_resp = responses
+        .get(&Value::Number(2.into()))
+        .expect("Missing list response (id:2)");
     let tools = list_resp["result"]["tools"].as_array().unwrap();
     assert!(
         tools.len() >= 60,
@@ -194,17 +276,19 @@ fn test_full_mcp_lifecycle() {
         tools.len()
     );
 
-    // Step 4: Call a tool
-    let call_resp = call_tool_raw(
-        r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"2+3"}},"id":3}"#,
-    );
+    // Step 4: Call a tool (id:3)
+    let call_resp = responses
+        .get(&Value::Number(3.into()))
+        .expect("Missing call response (id:3)");
     assert!(
         call_resp.get("result").is_some(),
         "Tool call should return result"
     );
 
-    // Step 5: Ping
-    let ping_resp = call_tool_raw(r#"{"jsonrpc":"2.0","method":"ping","id":4}"#);
+    // Step 5: Ping (id:4)
+    let ping_resp = responses
+        .get(&Value::Number(4.into()))
+        .expect("Missing ping response (id:4)");
     assert_eq!(
         ping_resp.get("jsonrpc"),
         Some(&Value::String("2.0".to_string()))

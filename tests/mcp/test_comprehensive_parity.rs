@@ -24,11 +24,18 @@ fn mcp_request(request: &str) -> String {
         .expect("Failed to spawn process");
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
         stdin.write_all(request.as_bytes()).unwrap();
         stdin.write_all(b"\n").unwrap();
     }
     let output = child.wait_with_output().unwrap();
-    String::from_utf8_lossy(&output.stdout).to_string()
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    stdout.lines().last().unwrap_or("").to_string()
 }
 
 /// Send multiple JSON-RPC requests over a single MCP session and correlate
@@ -59,6 +66,12 @@ fn mcp_request_multi(requests: &[&str]) -> Vec<Value> {
         .expect("Failed to spawn process");
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
         for req in requests {
             stdin.write_all(req.as_bytes()).unwrap();
             stdin.write_all(b"\n").unwrap();
@@ -66,6 +79,9 @@ fn mcp_request_multi(requests: &[&str]) -> Vec<Value> {
     }
     let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+
+    // Skip the initialization response (first line), collect the rest
+    let lines: Vec<&str> = stdout.lines().skip(1).collect();
 
     // Parse request IDs up front so we can correlate responses by id.
     let mut request_ids: Vec<Option<Value>> = Vec::with_capacity(requests.len());
@@ -83,7 +99,7 @@ fn mcp_request_multi(requests: &[&str]) -> Vec<Value> {
     // Index responses by their id.
     let mut by_id: HashMap<Value, Value> = HashMap::new();
     let mut ordered_responses: Vec<Value> = Vec::new();
-    for line in stdout.lines().filter(|l| !l.trim().is_empty()) {
+    for line in lines.iter().filter(|l| !l.trim().is_empty()) {
         let resp: Value = match serde_json::from_str(line) {
             Ok(v) => v,
             Err(_) => continue,
@@ -720,15 +736,13 @@ fn test_unicode_policy_multiple_findings() {
 
 #[test]
 fn test_sequential_session_init_then_tool() {
+    // mcp_request_multi already handles initialization
     let responses = mcp_request_multi(&[
-        r#"{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}"#,
         r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"2+2"}},"id":2}"#,
     ]);
-    assert_eq!(responses.len(), 2, "Should get 2 responses");
-    // First response should be initialize result
-    assert!(responses[0].get("result").is_some());
-    // Second response should be tool result
-    let tool_resp = &responses[1];
+    assert_eq!(responses.len(), 1, "Should get 1 response");
+    // First response should be tool result
+    let tool_resp = &responses[0];
     let text = tool_resp["result"]["content"][0]["text"].as_str().unwrap();
     let tool_result: Value = serde_json::from_str(text).unwrap();
     assert_eq!(tool_result["ok"], true);
@@ -737,27 +751,27 @@ fn test_sequential_session_init_then_tool() {
 
 #[test]
 fn test_sequential_session_multiple_tools() {
+    // mcp_request_multi already handles initialization
     let responses = mcp_request_multi(&[
-        r#"{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}"#,
         r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"math_eval","arguments":{"expression":"2+2"}},"id":2}"#,
         r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"text_measure","arguments":{"text":"hello"}},"id":3}"#,
         r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"validate_json","arguments":{"text":"{\"a\":1}"}},"id":4}"#,
     ]);
-    assert_eq!(responses.len(), 4, "Should get 4 responses");
+    assert_eq!(responses.len(), 3, "Should get 3 responses");
     // Check math result
-    let math_text = responses[1]["result"]["content"][0]["text"]
+    let math_text = responses[0]["result"]["content"][0]["text"]
         .as_str()
         .unwrap();
     let math_result: Value = serde_json::from_str(math_text).unwrap();
     assert_eq!(math_result["result"]["value"], "4");
     // Check text_measure result
-    let tm_text = responses[2]["result"]["content"][0]["text"]
+    let tm_text = responses[1]["result"]["content"][0]["text"]
         .as_str()
         .unwrap();
     let tm_result: Value = serde_json::from_str(tm_text).unwrap();
     assert_eq!(tm_result["result"]["bytes_utf8"], 5);
     // Check validate_json result
-    let vj_text = responses[3]["result"]["content"][0]["text"]
+    let vj_text = responses[2]["result"]["content"][0]["text"]
         .as_str()
         .unwrap();
     let vj_result: Value = serde_json::from_str(vj_text).unwrap();
@@ -1955,19 +1969,52 @@ fn test_unescape_text_json() {
 
 #[test]
 fn test_initialize_returns_capabilities() {
-    let r = call_tool_raw(
-        r#"{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}"#,
-    );
+    // Use raw process to send a single initialize request
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let r: Value = serde_json::from_str(stdout.lines().next().unwrap()).unwrap();
     assert!(r.get("result").is_some());
     let caps = r["result"]["capabilities"].as_object().unwrap();
     assert!(caps.contains_key("tools"));
+    // Verify experimental eggsact extensions
+    let experimental = caps.get("experimental").expect("Missing experimental");
+    let eggsact = experimental.get("eggsact").expect("Missing eggsact");
+    assert_eq!(eggsact["profiles"], true);
+    assert_eq!(eggsact["schemaDetail"], true);
+    assert_eq!(eggsact["audienceFiltering"], true);
 }
 
 #[test]
 fn test_initialize_returns_server_info() {
-    let r = call_tool_raw(
-        r#"{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}"#,
-    );
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let r: Value = serde_json::from_str(stdout.lines().next().unwrap()).unwrap();
     let info = r["result"]["serverInfo"].as_object().unwrap();
     assert_eq!(info["name"].as_str().unwrap(), "eggsact");
     assert!(info.get("version").is_some());
@@ -2016,14 +2063,32 @@ fn test_ping_returns_empty() {
 
 #[test]
 fn test_notification_no_response() {
-    let response_str =
-        mcp_request(r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#);
-    let trimmed = response_str.trim();
-    // Notifications should produce no response
-    assert!(
-        trimmed.is_empty(),
-        "Notification should produce no response, got: {}",
-        trimmed
+    // Use raw process to test notification behavior without mcp_request's init handshake
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .env("EGGCALC_MCP_AUDIENCE", "Harness")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        stdin.write_all(r#"{"jsonrpc":"2.0","method":"initialize","id":0,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}"#.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "Notification should produce no response, got {} lines",
+        lines.len()
     );
 }
 

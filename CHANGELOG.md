@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-07-17
+
+### Added
+- **MCP lifecycle enforcement**: The server now requires a proper `initialize` →
+  `notifications/initialized` handshake before accepting `tools/list`,
+  `tools/call`, `profiles/list`, and other extension methods. Methods called
+  before initialization return a structured `-32600` error with
+  `NOT_INITIALIZED` machine code.
+- **Typed initialize parameters**: `InitializeParams` struct validates
+  `protocolVersion`, `capabilities`, and `clientInfo` fields with proper
+  error messages for missing or malformed fields.
+- **Protocol version negotiation**: The server supports multiple MCP protocol
+  revisions (`2025-11-25` preferred, `2024-11-05` legacy). Negotiation
+  returns the requested version if supported, otherwise falls back to the
+  preferred version.
+- **Session state machine**: Per-connection `SessionState` enum tracks
+  `Uninitialized` → `AwaitingInitialized` → `Ready` transitions. Duplicate
+  `initialize` requests are rejected with `ALREADY_INITIALIZED`.
+- **Server capabilities advertisement**: The initialize response now includes
+  `experimental.eggsact` capabilities for `profiles`, `schemaDetail`, and
+  `audienceFiltering`.
+- **Lifecycle-aware request dispatch**: The server handles `initialize`
+  requests inline in the read loop to avoid race conditions with
+  `notifications/initialized`.
+
+### Changed
+- **Breaking**: Clients must now send `initialize` and `notifications/initialized`
+  before calling tools. Previous behavior where tools were available immediately
+  is no longer supported. The `EGGSACT_MCP_LEGACY_NO_INIT` escape hatch is
+  NOT implemented in this release — fix consumers instead.
+- `MCP_PROTOCOL_VERSION` constant now resolves to the preferred version
+  (`2025-11-25`) instead of the legacy `2024-11-05`.
+
 ## [1.1.5] - 2026-07-16
 
 ### Added
