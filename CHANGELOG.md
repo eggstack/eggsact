@@ -5,17 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Eliminated nested timeout workers**: `math_eval`, `validate_regex`,
+  `regex_finditer`, and `dotenv_validate` no longer spawn inner OS threads
+  via `run_with_timeout`. All handlers now execute directly inside the
+  bounded `spawn_blocking` closure with `catch_unwind` for panic safety.
+  The outer tokio semaphore (`MAX_TOOL_WORKERS=16`) is the sole concurrency
+  bound. Removed `run_with_timeout`, `SpawnSemaphore`, `SpawnPermit`, and
+  related infrastructure from `src/tools/helpers.rs`.
+- **Race-free timeout metrics**: The `AtomicBool` `timed_out` flag has been
+  replaced with an `AtomicU8` lifecycle state machine (`HANDLER_RUNNING`,
+  `HANDLER_TIMED_OUT`, `HANDLER_FINISHED`). Timeout path uses
+  `compare_exchange` and handler exit uses `swap` to guarantee exactly one
+  increment and one decrement of `timed_out_handlers` per timeout.
+- **Retained client capabilities**: `NegotiatedProtocol` now includes a
+  `client_capabilities: ClientCapabilities` field. Client capabilities are
+  stored for the entire session lifetime. Not yet used for
+  capability-dependent behavior — just retained.
+- **Removed dead lifecycle helper**: `initialized_before_initialize()`
+  removed from `src/mcp/protocol.rs`. Wrong-state
+  `notifications/initialized` is silently ignored per JSON-RPC 2.0 spec
+  (notifications do not receive responses).
+
+### Changed
+- **Deprecated `call_json_with_execution_context_mut`** (since 0.4.0):
+  Does not persist calculator state through `math_eval`. Use
+  `evaluate_with_context()` or `run_with_context()` directly for persistent
+  calculator sessions. The method remains useful for transaction safety on
+  failure paths.
+
 ## [1.3.0] - 2026-07-17
 
 ### Added
 - **`call_json_with_execution_template`**: explicit immutable alias for
   `call_json_with_execution_context`. Identical behavior (clones `eval_ctx`);
   use when you want to make the immutability intent explicit at the call site.
-- **`call_json_with_execution_context_mut`**: mutable persistent-context
-  variant. Accepts `&mut ExecutionContext` and persists handler state
-  mutations (PRNG draws, memory registers, user variables) back to the
-  caller's `EvalContext`. Use for sequential calculator operations where
-  state should accumulate.
 - **`prepare_tool_call_with_policy`**: shared policy preparation method
   accepting explicit effective profile, audience, and compatibility mode.
   Used internally by `call_json_with_execution_context` to resolve

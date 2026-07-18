@@ -67,7 +67,7 @@ Tool implementations live in `src/tools/` (category modules):
 
 | Module | Tools |
 |--------|-------|
-| `helpers.rs` | Shared constants, utility functions, spawn semaphore |
+| `helpers.rs` | Shared constants, utility functions |
 | `math.rs` | math_eval, unit_convert, unit_info, constant_lookup |
 | `text.rs` | text_measure, text_equal, text_diff_explain, text_inspect, text_count, text_truncate, text_fingerprint, text_hash, text_position, text_window, text_transform, text_replace_check, text_security_inspect, escape_text, unescape_text, prompt_input_inspect, line_range_extract, line_range_compare |
 | `json.rs` | json_extract, json_compare, json_canonicalize, json_query, json_shape, structured_data_compare |
@@ -137,6 +137,10 @@ The server supports multiple MCP protocol revisions:
 Negotiation rule: if the client's requested version is supported, return it.
 Otherwise return the preferred version (`2025-11-25`).
 
+`NegotiatedProtocol` now retains `client_capabilities: ClientCapabilities` for
+the entire session lifetime. Client capabilities are stored but not yet used
+for capability-dependent behavior — they are retained for future use.
+
 #### Server Capabilities
 
 The initialize response advertises:
@@ -162,7 +166,9 @@ The initialize response advertises:
 |-------|------|-----------|------|
 | Not initialized | -32600 | `NOT_INITIALIZED` | Method called before `initialize` |
 | Already initialized | -32600 | `ALREADY_INITIALIZED` | Duplicate `initialize` request |
-| Initialized before initialize | -32600 | `INITIALIZED_BEFORE_INITIALIZE` | `notifications/initialized` received before `initialize` |
+| Initialized before initialize | — | — | `notifications/initialized` received before `initialize` — **silently ignored** (no response), per JSON-RPC notification semantics |
+
+The `initialized_before_initialize` helper (`INITIALIZED_BEFORE_INITIALIZE` data code) has been removed. Wrong-state `notifications/initialized` notifications are silently discarded.
 
 ## Tool Registration (Single Registry)
 
@@ -335,9 +341,9 @@ preventing interleaved output from concurrent handlers.
 **Worker containment:** Semaphore permits are acquired via `acquire_owned()`
 and moved into `spawn_blocking` closures. The owned permit is held until the
 handler closure exits, ensuring `MAX_TOOL_WORKERS` is a hard upper bound even
-after client-facing timeouts. The outer `tokio::time::timeout` governs the
-client-facing wait; the spawned blocking task may continue executing after
-the timeout expires.
+after client-facing timeouts. All handlers execute directly inside the
+`spawn_blocking` closure with `catch_unwind` safety — there are no nested OS
+threads. The outer tokio semaphore provides the sole concurrency bound.
 
 **Read loop stages:** The read loop processes each incoming line through seven
 stages in order:
@@ -387,42 +393,49 @@ live atomic counters: `active_requests`, `active_blocking_handlers`,
 `timed_out_handlers`, `total_timeouts`, and `peak_blocking_concurrency`.
 RAII `MetricGuard` ensures counters decrement correctly on panic/unwind.
 
+**Timeout metrics lifecycle state machine:** `timed_out_handlers` uses an
+`AtomicU8` lifecycle state machine in `server.rs` to eliminate the race
+condition present in the previous `AtomicBool` design. Each handler transitions
+through three states:
+
+| State | Value | Meaning |
+|-------|-------|---------|
+| `HANDLER_RUNNING` | 0 | Handler is actively executing |
+| `HANDLER_TIMED_OUT` | 1 | Timeout fired, awaiting handler exit |
+| `HANDLER_FINISHED` | 2 | Handler has completed |
+
+On timeout, the system uses `compare_exchange(HANDLER_RUNNING, HANDLER_TIMED_OUT)` —
+only increments `timed_out_handlers` on success. On handler exit, `swap(HANDLER_FINISHED)`
+is used — only decrements `timed_out_handlers` if the previous state was
+`HANDLER_TIMED_OUT`. This guarantees exactly one increment and one decrement
+per timeout.
+
 **Graceful shutdown:** When stdin reaches EOF, the read loop breaks and the
 server drains in-flight requests via `JoinSet::join_next()` before dropping the
 channel sender and waiting for the writer task to flush remaining responses.
 
-### Nested thread lifetimes
+### Worker containment — single-layer execution
 
-Some tool handlers spawn additional threads via `run_with_timeout` in
-`src/tools/helpers.rs`. This helper uses `std::thread::spawn` with its own
-`recv_timeout` to implement per-handler timeouts independently of the outer
-tokio timeout. The execution stack is:
+All tool handlers now execute directly inside the bounded `spawn_blocking`
+closure. Each handler wraps its evaluator call in `std::panic::catch_unwind`
+for safety. The execution stack is:
 
 ```
 tokio::time::timeout (outer, budget-derived)
   └─ spawn_blocking (holds owned permit)
-       └─ run_with_timeout (std::thread::spawn, own recv_timeout)
-            └─ actual work (math eval / regex / ini parse)
+       └─ handler work (math_eval / regex / ini parse / etc.)
+            wrapped in std::panic::catch_unwind
 ```
 
-Two threads can outlive the client-facing timeout response:
+The outer tokio semaphore (`MAX_TOOL_WORKERS=16`) is the **sole concurrency
+bound**. There are no nested OS threads — `run_with_timeout`,
+`SpawnSemaphore`, `SpawnPermit`, and related infrastructure have been removed
+from `src/tools/helpers.rs`.
 
-1. The `spawn_blocking` thread itself — held by the owned permit until the
-   closure exits. This is documented and expected.
-2. The inner `std::thread::spawn` from `run_with_timeout` — up to 5–30 seconds
-   of untracked execution beyond the outer timeout. This thread does **not**
-   participate in the cooperative cancellation system (`cancel_flag` is
-   thread-local to the `spawn_blocking` thread and not visible to the inner
-   `std::thread::spawn`).
-
-Affected tools: `math_eval` (30s inner timeout), `validate_regex` (5s),
-`regex_finditer` (5s), `ini_validate` (5s).
-
-The `SpawnPermit` / `SpawnSemaphore` in `helpers.rs` limits inner thread
-concurrency to `MAX_TOOL_WORKERS` (16) via a `Condvar`-based semaphore, but
-does **not** integrate with cooperative cancellation. Inner threads that exceed
-their `recv_timeout` are abandoned — Rust cannot kill threads. The spawned
-thread continues until its timeout fires or its work completes.
+Handlers that previously used `run_with_timeout` (`math_eval`,
+`validate_regex`, `regex_finditer`, `dotenv_validate`) now execute directly
+within the `spawn_blocking` closure. The `catch_unwind` wrapper prevents
+panics from unwinding across the FFI boundary into tokio's thread pool.
 
 **Response ordering contract (JSON-RPC):** Because requests are dispatched
 concurrently and may complete out of request order, **clients must correlate
@@ -485,7 +498,7 @@ Builder methods: `with_eval_context()`, `with_budget()`, `with_cancellation()`, 
 
 - **Profile/Audience**: Falls back to registry defaults when `None`. When `Some`, uses the context's values for tool filtering and exposure checks. Resolved via `prepare_tool_call_with_policy`.
 - **Compatibility mode**: Used for argument schema validation.
-- **EvalContext**: **Cloned** and set as thread-local via `budget::with_eval_context()`, making it available to calculator-backed tools (e.g., `math_eval` uses `run_with_context()` when a thread-local context is present). Mutations inside the handler do not persist back to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value. Use `call_json_with_execution_context_mut()` for the mutable variant where handler state persists.
+- **EvalContext**: **Cloned** and set as thread-local via `budget::with_eval_context()`, making it available to calculator-backed tools (e.g., `math_eval` uses `run_with_context()` when a thread-local context is present). Mutations inside the handler do not persist back to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value. Use `call_json_with_execution_context_mut()` for the mutable variant where handler state persists (deprecated since 0.4.0 — does not persist calculator state through `math_eval`).
 - **Budget/Cancellation**: Resource limits and cooperative cancellation flag. The cancellation flag is set as a thread-local during dispatch so that high-risk handlers that create their own `BudgetContext` inherit cancellation.
 
 **MCP wire protocol boundary**: `call_json_with_execution_context` is an **in-process** API. It does not change the MCP JSON-RPC wire protocol. The MCP server still resolves its active profile from `EGGCALC_MCP_PROFILE` at init time. Per-request context overrides over the wire would require a future MCP request-level context API.
@@ -499,7 +512,7 @@ Legacy APIs remain as backward-compatible wrappers:
 | `call_json_with_context(name, args, budget, cancel_flag)` | Context with budget and cancellation |
 | `call_json_with_execution_context(name, args, ctx)` | Full context (immutable, clones eval_ctx) — **recommended for new code** |
 | `call_json_with_execution_template(name, args, ctx)` | Explicit immutable alias for `call_json_with_execution_context` |
-| `call_json_with_execution_context_mut(name, args, ctx)` | Mutable persistent context — handler state mutations persist back |
+| `call_json_with_execution_context_mut(name, args, ctx)` | Mutable persistent context — **deprecated since 0.4.0**, does not persist calculator state through `math_eval` |
 
 ### MCP startup env vars → runtime context
 
@@ -515,7 +528,6 @@ Tool handler functions retain the signature `fn(&Value) -> ToolResponse` for com
 |-------|------------|
 | `MCP_MODE`, `ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS` AtomicBool | One-shot startup flags, race-safe. Context-aware APIs bypass these via `EvalContext` fields. MCP dispatch no longer sets these directly — it uses `EvalContext::mcp_mode()` through the thread-local bridge. These remain for legacy library callers. |
 | `ACTIVE_PROFILE`, `ACTIVE_AUDIENCE`, `ACTIVE_SCHEMA_DETAIL` RwLock | Set once at startup, read-only after init |
-| `SPAWN_SEMAPHORE` | Intentional global concurrency limiter |
 | `CURRENT_CANCEL_FLAG` thread-local | Properly scoped per-dispatch |
 | `CURRENT_EVAL_CONTEXT` thread-local | Set by `with_eval_context()` during calculator-backed tool dispatch; bypasses legacy globals |
 | 36+ LazyLock immutable caches | Regex, tables, tool definitions — immutable after init |

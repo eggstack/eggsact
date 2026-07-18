@@ -25,6 +25,11 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Mutex;
 
+/// Handler lifecycle states for timeout metric accounting.
+const HANDLER_RUNNING: u8 = 0;
+const HANDLER_TIMED_OUT: u8 = 1;
+const HANDLER_FINISHED: u8 = 2;
+
 pub fn mcp_tool_count() -> usize {
     registry::tool_count()
 }
@@ -123,6 +128,7 @@ async fn handle_request_async(
                 version: negotiated_version.clone(),
                 client_name: init_params.client_info.name,
                 client_version: init_params.client_info.version,
+                client_capabilities: init_params.capabilities,
             };
 
             {
@@ -480,9 +486,10 @@ async fn handle_request_async(
                     // the blocking closure continues, which would allow more than
                     // MAX_TOOL_WORKERS concurrent blocking computations.
                     let timeout_ms = tool_budget.max_elapsed_ms;
-                    // Track whether the handler was timed out, for metrics decrement on exit.
-                    let timed_out = Arc::new(std::sync::atomic::AtomicBool::new(false));
-                    let timed_out_for_handler = timed_out.clone();
+                    // Track handler lifecycle for timeout metric accounting.
+                    let handler_lifecycle =
+                        Arc::new(std::sync::atomic::AtomicU8::new(HANDLER_RUNNING));
+                    let handler_lifecycle_for_handler = handler_lifecycle.clone();
                     let result =
                         tokio::time::timeout(Duration::from_millis(timeout_ms), async move {
                             let permit = match sem.acquire_owned().await {
@@ -535,8 +542,12 @@ async fn handle_request_async(
                                         )
                                     },
                                 );
-                                // If this handler was timed out, decrement the counter.
-                                if timed_out_for_handler.load(Ordering::Relaxed) {
+                                // Atomically transition HANDLER_TIMED_OUT → HANDLER_FINISHED,
+                                // decrementing timed_out_handlers only if we won the race.
+                                // If previous state was HANDLER_RUNNING (no timeout yet), just mark finished.
+                                let prev = handler_lifecycle_for_handler
+                                    .swap(HANDLER_FINISHED, Ordering::AcqRel);
+                                if prev == HANDLER_TIMED_OUT {
                                     RUNTIME_METRICS
                                         .timed_out_handlers
                                         .fetch_sub(1, Ordering::Relaxed);
@@ -601,13 +612,23 @@ async fn handle_request_async(
                             // Note: the spawned blocking task may continue running
                             // after this point — we cannot kill threads in Rust.
                             cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-                            timed_out.store(true, Ordering::Relaxed);
                             RUNTIME_METRICS
                                 .total_timeouts
                                 .fetch_add(1, Ordering::Relaxed);
-                            RUNTIME_METRICS
-                                .timed_out_handlers
-                                .fetch_add(1, Ordering::Relaxed);
+                            // Try to transition HANDLER_RUNNING → HANDLER_TIMED_OUT.
+                            // If the handler already finished (HANDLER_FINISHED), we still count the
+                            // timeout response but don't increment timed_out_handlers.
+                            let prev = handler_lifecycle.compare_exchange(
+                                HANDLER_RUNNING,
+                                HANDLER_TIMED_OUT,
+                                Ordering::AcqRel,
+                                Ordering::Relaxed,
+                            );
+                            if prev.is_ok() {
+                                RUNTIME_METRICS
+                                    .timed_out_handlers
+                                    .fetch_add(1, Ordering::Relaxed);
+                            }
                             Some(wrap_tool_response(&ToolResponse::error_with_code(
                         "timeout",
                         machine_codes::TIMEOUT,

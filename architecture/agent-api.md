@@ -293,17 +293,29 @@ Use this when you want to make the immutability intent explicit at the call site
 
 ### `call_json_with_execution_context_mut(name, args, ctx)` — Mutable Persistent Context
 
-The mutable variant that persists handler state mutations back to the caller's `ExecutionContext`.
+**Deprecated since 0.4.0.** The mutable variant that persists handler state
+mutations back to the caller's `ExecutionContext`.
 
 ```rust
+#[deprecated(since = "0.4.0")]
 pub fn call_json_with_execution_context_mut(
     &self, name: &str, args: Value, ctx: &mut ExecutionContext
 ) -> Result<ToolResponse, ToolCallError>
 ```
 
-**Key difference from `call_json_with_execution_context`:** `ctx.eval_ctx` is **not** cloned — the handler receives a thread-local reference to the caller's `EvalContext` directly. PRNG draws, memory mutations, and variable assignments inside the handler persist back to `ctx.eval_ctx`.
+**Key difference from `call_json_with_execution_context`:** `ctx.eval_ctx` is
+**not** cloned — the handler receives a thread-local reference to the caller's
+`EvalContext` directly. PRNG draws, memory mutations, and variable assignments
+inside the handler persist back to `ctx.eval_ctx`.
 
-Use this when you need handler state to accumulate across calls (e.g., sequential calculator operations where PRNG state or memory registers should persist). Do not use this when you only need one-shot execution with state isolation.
+**Limitation:** Does **not** persist calculator state through `math_eval`.
+The `math_eval` handler runs inside `catch_unwind` and creates a fresh
+`EvalContext` via the MCP dispatch path, so calculator state changes do not
+propagate back through this method.
+
+Use `evaluate_with_context()` or `run_with_context()` directly for persistent
+calculator state across calls. Use this method only when you need non-calculator
+handler state to accumulate across calls.
 
 #### When to Use Each
 
@@ -311,7 +323,7 @@ Use this when you need handler state to accumulate across calls (e.g., sequentia
 |--------|-------------------|----------|
 | `call_json_with_execution_context` | Cloned (immutable) | Standard tool calls; state isolation between calls |
 | `call_json_with_execution_template` | Cloned (immutable) | Same as above, explicit immutability intent |
-| `call_json_with_execution_context_mut` | Shared (mutable) | Sequential calculator operations; state should accumulate |
+| `call_json_with_execution_context_mut` | Shared (mutable) | **Deprecated since 0.4.0.** Does not persist calculator state through `math_eval`. Use `evaluate_with_context()`/`run_with_context()` for persistent calculator state. |
 
 **Do not mix** `call_json_with_execution_context_mut` and `evaluate_with_context`/`run_with_context` for the same `EvalContext` — both mutate the context, which can lead to unexpected interleaving.
 
@@ -477,7 +489,7 @@ The `eval_ctx` field holds calculator state (PRNG seed, memory registers, user-d
 
 Two calls with identical seeds produce the same first random value. For persistent mutable state across calls, use `evaluate_with_context()` / `run_with_context()` directly (which operate on the caller's `EvalContext` without cloning), or use `call_json_with_execution_context_mut()` which shares the `EvalContext` directly.
 
-**Do not mix** `call_json_with_execution_context` and `evaluate_with_context` for the same `EvalContext` — the former clones and discards mutations, the latter persists them. Similarly, do not mix `call_json_with_execution_context_mut` and `evaluate_with_context` for the same `EvalContext` without understanding the interleaving semantics.
+**Do not mix** `call_json_with_execution_context` and `evaluate_with_context` for the same `EvalContext` — the former clones and discards mutations, the latter persists them. Similarly, do not mix `call_json_with_execution_context_mut` (deprecated since 0.4.0) and `evaluate_with_context` for the same `EvalContext` without understanding the interleaving semantics. For persistent calculator state, prefer `evaluate_with_context()` / `run_with_context()` directly.
 
 ---
 

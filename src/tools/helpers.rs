@@ -3,8 +3,6 @@ use crate::mcp::schemas::ToolResponse;
 use crate::text::count_graphemes;
 
 use serde_json::Value;
-use std::sync::{mpsc, Condvar, LazyLock};
-use std::time::Duration;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -23,25 +21,7 @@ pub(crate) const MAX_PATTERN_LENGTH: usize = 1000;
 pub(crate) const MAX_SCHEMA_DEPTH: usize = 32;
 pub(crate) const MAX_SCHEMA_ELEMENTS: usize = 10_000;
 pub(crate) const MAX_METADATA_FIELD_LENGTH: usize = 1_000;
-pub(crate) const REGEX_TIMEOUT_SECONDS: u64 = 5;
-pub(crate) const MAX_CONCURRENT_SPAWNED: usize = 16;
-pub(crate) const SPAWN_ACQUIRE_TIMEOUT: u64 = 10;
 pub(crate) const MAX_EXPRESSION_LENGTH: usize = 10_000;
-
-// ---------------------------------------------------------------------------
-// run_with_timeout
-// ---------------------------------------------------------------------------
-
-pub(crate) fn run_with_timeout<T: Send + 'static>(
-    timeout: Duration,
-    f: impl FnOnce() -> T + Send + 'static,
-) -> Result<T, ()> {
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(f());
-    });
-    rx.recv_timeout(timeout).map_err(|_| ())
-}
 
 // ---------------------------------------------------------------------------
 // split_lines
@@ -79,58 +59,6 @@ pub(crate) fn split_lines(text: &str) -> Vec<String> {
     }
     result.push(current);
     result
-}
-
-// ---------------------------------------------------------------------------
-// SpawnState / SpawnSemaphore / SpawnPermit / try_acquire_spawn_permit
-// ---------------------------------------------------------------------------
-
-pub(crate) struct SpawnState {
-    count: usize,
-}
-
-pub(crate) struct SpawnSemaphore {
-    pub(crate) state: std::sync::Mutex<SpawnState>,
-    pub(crate) cvar: Condvar,
-}
-
-static SPAWN_SEMAPHORE: LazyLock<SpawnSemaphore> = LazyLock::new(|| SpawnSemaphore {
-    state: std::sync::Mutex::new(SpawnState { count: 0 }),
-    cvar: Condvar::new(),
-});
-
-pub(crate) struct SpawnPermit {
-    _private: (),
-}
-
-impl Drop for SpawnPermit {
-    fn drop(&mut self) {
-        if let Ok(mut s) = SPAWN_SEMAPHORE.state.lock() {
-            s.count = s.count.saturating_sub(1);
-        }
-        SPAWN_SEMAPHORE.cvar.notify_one();
-    }
-}
-
-pub(crate) fn try_acquire_spawn_permit() -> Option<SpawnPermit> {
-    let mut state = SPAWN_SEMAPHORE.state.lock().ok()?;
-    let deadline =
-        std::time::Instant::now() + std::time::Duration::from_secs(SPAWN_ACQUIRE_TIMEOUT);
-    loop {
-        if state.count < MAX_CONCURRENT_SPAWNED {
-            state.count += 1;
-            return Some(SpawnPermit { _private: () });
-        }
-        let now = std::time::Instant::now();
-        if now >= deadline {
-            return None;
-        }
-        state = SPAWN_SEMAPHORE
-            .cvar
-            .wait_timeout(state, deadline - now)
-            .ok()?
-            .0;
-    }
 }
 
 // ---------------------------------------------------------------------------

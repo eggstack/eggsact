@@ -65,9 +65,7 @@ Handlers cannot receive an `ExecutionContext` directly. State isolation is appli
 
 | Function | Description |
 |----------|-------------|
-| `run_with_timeout(timeout, f)` | Execute a closure on a new thread with a deadline. Returns `Ok(T)` or `Err(())` on timeout. Used by `math_eval` (30s), `validate_regex` (5s), `regex_finditer` (5s), `dotenv_validate` (5s). |
 | `split_lines(text)` | Split text into lines handling `\n`, `\r\n`, `\r`, `\v`, `\f`, `\x1c`–`\x1e`, NEL (`\u{0085}`), LS (`\u{2028}`), PS (`\u{2029}`). |
-| `try_acquire_spawn_permit()` | Acquire a semaphore permit for thread spawning. Returns `Some(SpawnPermit)` or `None` on timeout. `SpawnPermit` auto-decrements on drop. |
 | `json_type_name(value)` | Returns Python-style type name: `"NoneType"`, `"bool"`, `"int"`, `"float"`, `"str"`, `"list"`, `"dict"`. |
 | `unicode_casefold(s)` | Caseless comparison via `caseless::default_case_fold_str`. |
 | `normalize_text_count_input(text, normalization)` | Apply NFC or NFKC normalization for text_count. |
@@ -295,7 +293,7 @@ Route-critical tools **must** always emit `machine_code` and `verdict` in their 
 
 | Tool | Description | Notable Details |
 |------|-------------|-----------------|
-| `math_eval` | Evaluate natural language or direct math expressions | Uses `run_with_timeout(30s)`. Acquires spawn permit. Detects true division (`/`) to force float output. Returns `{value, type, unit?, display?}`. |
+| `math_eval` | Evaluate natural language or direct math expressions | Executes directly in bounded `spawn_blocking` with `catch_unwind`. Detects true division (`/`) to force float output. Returns `{value, type, unit?, display?}`. |
 | `unit_convert` | Convert between measurement units | Validates unit existence and category compatibility. Special-cases temperature conversions (non-linear). Returns `{value, from_unit, to_unit, factor}`. |
 | `unit_info` | Get information about a unit | Returns canonical name and category. Fails on unknown units. |
 | `constant_lookup` | Look up physical/mathematical constants | Case-insensitive lookup in `PHYSICAL_CONSTANTS` map. Returns `{name, value, symbol, display_name}`. |

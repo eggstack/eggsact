@@ -111,6 +111,8 @@ pub struct NegotiatedProtocol {
     pub client_name: String,
     /// Client implementation version (optional).
     pub client_version: Option<String>,
+    /// Client's declared capabilities.
+    pub client_capabilities: crate::mcp::protocol::ClientCapabilities,
 }
 
 impl NegotiatedProtocol {
@@ -124,6 +126,11 @@ impl NegotiatedProtocol {
     pub fn allows_extension_capabilities(&self) -> bool {
         // Both 2024-11-05 and 2025-11-25 allow extensions via experimental.
         true
+    }
+
+    /// Get a reference to the client's declared capabilities.
+    pub fn client_capabilities(&self) -> &crate::mcp::protocol::ClientCapabilities {
+        &self.client_capabilities
     }
 }
 
@@ -231,6 +238,7 @@ mod lifecycle_tests {
             version: "2024-11-05".to_string(),
             client_name: "test".to_string(),
             client_version: None,
+            client_capabilities: crate::mcp::protocol::ClientCapabilities::default(),
         };
         let state = SessionState::AwaitingInitialized {
             negotiated: negotiated.clone(),
@@ -248,6 +256,7 @@ mod lifecycle_tests {
             version: "2024-11-05".to_string(),
             client_name: "test".to_string(),
             client_version: None,
+            client_capabilities: crate::mcp::protocol::ClientCapabilities::default(),
         };
         let state = SessionState::Ready { negotiated };
         assert!(!state.allows_method("initialize"));
@@ -264,6 +273,7 @@ mod lifecycle_tests {
             version: "2024-11-05".to_string(),
             client_name: "test".to_string(),
             client_version: None,
+            client_capabilities: crate::mcp::protocol::ClientCapabilities::default(),
         };
         let mut state = SessionState::Uninitialized;
         assert!(state.transition_to_awaiting(negotiated).is_ok());
@@ -276,6 +286,7 @@ mod lifecycle_tests {
             version: "2024-11-05".to_string(),
             client_name: "test".to_string(),
             client_version: None,
+            client_capabilities: crate::mcp::protocol::ClientCapabilities::default(),
         };
         let mut state = SessionState::AwaitingInitialized {
             negotiated: negotiated.clone(),
@@ -292,6 +303,7 @@ mod lifecycle_tests {
             version: "2024-11-05".to_string(),
             client_name: "test".to_string(),
             client_version: None,
+            client_capabilities: crate::mcp::protocol::ClientCapabilities::default(),
         };
         let mut state = SessionState::AwaitingInitialized { negotiated };
         assert!(state.transition_to_ready().is_ok());
@@ -313,6 +325,7 @@ mod lifecycle_tests {
             version: "2025-11-25".to_string(),
             client_name: "my-client".to_string(),
             client_version: Some("2.0".to_string()),
+            client_capabilities: crate::mcp::protocol::ClientCapabilities::default(),
         };
         let mut state = SessionState::Uninitialized;
         state.transition_to_awaiting(negotiated).unwrap();

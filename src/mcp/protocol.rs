@@ -85,18 +85,6 @@ pub fn already_initialized(id: Option<Value>) -> Value {
     )
 }
 
-/// Lifecycle error: initialized notification before initialize request.
-pub fn initialized_before_initialize(id: Option<Value>) -> Value {
-    json_rpc_error_with_data(
-        -32600,
-        "Received 'notifications/initialized' before 'initialize' request",
-        Some(serde_json::json!({
-            "code": "INITIALIZED_BEFORE_INITIALIZE",
-        })),
-        id,
-    )
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // JSON-RPC types
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -364,13 +352,5 @@ mod tests {
         let parsed: Value = serde_json::from_str(&err.to_string()).unwrap();
         assert_eq!(parsed["error"]["code"], -32600);
         assert_eq!(parsed["error"]["data"]["code"], "ALREADY_INITIALIZED");
-
-        let err = initialized_before_initialize(None);
-        let parsed: Value = serde_json::from_str(&err.to_string()).unwrap();
-        assert_eq!(parsed["error"]["code"], -32600);
-        assert_eq!(
-            parsed["error"]["data"]["code"],
-            "INITIALIZED_BEFORE_INITIALIZE"
-        );
     }
 }

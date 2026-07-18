@@ -928,14 +928,13 @@ fn test_validate_regex_timeout_message_wording() {
     );
 }
 
-// ── math_eval timeout uses std::thread::spawn + join_timeout (no deadlock) ──
+// ── math_eval uses catch_unwind for panic safety ──
 
 #[test]
-fn test_math_eval_timeout_uses_run_with_timeout() {
-    // Verify the math_eval function uses run_with_timeout (std::thread + mpsc channel)
-    // instead of tokio::task::spawn_blocking + handle.block_on (which deadlocks under
-    // concurrent load). This is a code-level check since triggering an actual 5s timeout
-    // is impractical.
+fn test_math_eval_uses_catch_unwind() {
+    // Verify the math_eval function uses catch_unwind to convert panics
+    // to error responses instead of letting them propagate as JoinErrors.
+    // This is a code-level check since triggering an actual panic is impractical.
     let source = include_str!("../../src/tools/math.rs");
 
     // Find the math_eval function body (between "pub fn math_eval" and the next "pub fn")
@@ -949,10 +948,10 @@ fn test_math_eval_timeout_uses_run_with_timeout() {
         .unwrap_or(after_math_eval.len());
     let math_eval_body = &after_math_eval[..next_pub_fn];
 
-    // Must use run_with_timeout for the evaluation
+    // Must use catch_unwind for the evaluation
     assert!(
-        math_eval_body.contains("run_with_timeout"),
-        "math_eval should use run_with_timeout to avoid deadlocks"
+        math_eval_body.contains("catch_unwind"),
+        "math_eval should use catch_unwind to convert panics to error responses"
     );
     // Must NOT use handle.block_on as code (deadlock-prone pattern).
     // Allow it in comments (the fix description mentions it).
@@ -964,6 +963,11 @@ fn test_math_eval_timeout_uses_run_with_timeout() {
     assert!(
         !non_comment_body.contains("handle.block_on"),
         "math_eval must NOT use handle.block_on as code (deadlocks under concurrent load)"
+    );
+    // Must NOT use run_with_timeout (removed — outer timeout handles deadline)
+    assert!(
+        !non_comment_body.contains("run_with_timeout"),
+        "math_eval must NOT use run_with_timeout (removed — outer timeout handles deadline)"
     );
     // Must NOT use tokio::time::timeout (was the old wrapper around block_on)
     assert!(

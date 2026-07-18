@@ -2,7 +2,6 @@ use crate::mcp::machine_codes;
 use crate::mcp::schemas::ToolResponse;
 use crate::tools::helpers::*;
 use serde_json::Value;
-use std::time::Duration;
 
 pub fn validate_regex(args: &Value) -> ToolResponse {
     let pattern = match args.get("pattern") {
@@ -221,8 +220,8 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
     let flags_clone: Option<Vec<String>> = if flags.is_empty() { None } else { Some(flags) };
     let pattern_owned = pattern.to_string();
     let samples_owned: Vec<String> = sample_strs;
-    let result = match run_with_timeout(Duration::from_secs(REGEX_TIMEOUT_SECONDS), move || {
-        let refs: Vec<&str> = samples_owned.iter().map(|s| s.as_str()).collect();
+    let refs: Vec<&str> = samples_owned.iter().map(|s| s.as_str()).collect();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         crate::text::regex_test(
             &pattern_owned,
             &refs,
@@ -232,18 +231,16 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
             dotall,
             ascii,
         )
-    }) {
-        Ok(r) => r,
-        Err(_timeout) => {
-            return ToolResponse::error_with_code(
-                "timeout",
-                machine_codes::REGEX_UNSAFE,
-                "Regex execution exceeded time limit (possible ReDoS)",
-                Some(vec!["Try a simpler pattern or fewer samples".to_string()]),
-                Some("validate_regex"),
-            )
-        }
-    };
+    }))
+    .unwrap_or_else(|_| crate::text::validate::RegexTestResult {
+        valid_pattern: false,
+        error: Some("Regex evaluation panicked (possible resource limit)".to_string()),
+        results: Vec::new(),
+        flags_used: None,
+        engine_used: None,
+        dialect: None,
+        unsupported_features: None,
+    });
 
     let flags_used = serde_json::json!({
         "ignore_case": ignore_case,
@@ -491,7 +488,7 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
     let pattern_owned = pattern.to_string();
     let text_owned = text.to_string();
     let flags_owned: Option<Vec<String>> = flags;
-    let result = match run_with_timeout(Duration::from_secs(REGEX_TIMEOUT_SECONDS), move || {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         crate::text::validate::regex_finditer(
             &pattern_owned,
             &text_owned,
@@ -500,20 +497,17 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
             include_line_column,
             include_groups,
         )
-    }) {
-        Ok(r) => r,
-        Err(_timeout) => {
-            return ToolResponse::error_with_code(
-                "timeout",
-                machine_codes::REGEX_UNSAFE,
-                "Regex execution exceeded time limit (possible ReDoS)",
-                Some(vec![
-                    "Try a simpler pattern or reduce max_matches".to_string()
-                ]),
-                Some("regex_finditer"),
-            )
-        }
-    };
+    }))
+    .unwrap_or_else(|_| crate::text::validate::RegexFindIterResult {
+        valid_pattern: false,
+        error: Some("Regex evaluation panicked (possible resource limit)".to_string()),
+        matches: Vec::new(),
+        truncated: false,
+        match_count: 0,
+        engine_used: None,
+        dialect: None,
+        unsupported_features: None,
+    });
 
     if budget_ctx.should_stop() {
         return budget_ctx.check_should_stop("regex_finditer").unwrap_err();

@@ -6,11 +6,9 @@ use crate::mcp::budget::current_eval_context;
 use crate::mcp::machine_codes;
 use crate::mcp::response::ToolResponse;
 use crate::tools::helpers::{
-    _require_str, contains_true_division, json_type_name, run_with_timeout,
-    try_acquire_spawn_permit, MAX_CONCURRENT_SPAWNED, MAX_EXPRESSION_LENGTH, SPAWN_ACQUIRE_TIMEOUT,
+    _require_str, contains_true_division, json_type_name, MAX_EXPRESSION_LENGTH,
 };
 use serde_json::Value;
-use std::time::Duration;
 
 pub fn math_eval(args: &Value) -> ToolResponse {
     let expression = match _require_str(args, "expression", "math_eval") {
@@ -34,41 +32,21 @@ pub fn math_eval(args: &Value) -> ToolResponse {
 
     let has_true_division = contains_true_division(expression);
 
-    let _permit = match try_acquire_spawn_permit() {
-        Some(p) => p,
-        None => {
-            return ToolResponse::error_with_code(
-                "timeout",
-                machine_codes::TIMEOUT,
-                &format!(
-                    "Could not acquire spawn slot after {}s (all {} slots busy)",
-                    SPAWN_ACQUIRE_TIMEOUT, MAX_CONCURRENT_SPAWNED
-                ),
-                None,
-                Some("math_eval"),
-            )
-        }
-    };
     let expr_owned = expression.to_string();
     let current_ctx = current_eval_context().map(|ctx| ctx.clone());
-    let eval_result = match run_with_timeout(Duration::from_secs(30), move || {
+    let eval_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         if let Some(mut ctx) = current_ctx {
             run_with_context(&expr_owned, &mut ctx)
         } else {
             run(&expr_owned)
         }
-    }) {
-        Ok(r) => r,
-        Err(_timeout) => {
-            return ToolResponse::error_with_code(
-                "timeout",
-                machine_codes::TIMEOUT,
-                "Expression evaluation timed out after 30 seconds",
-                Some(vec!["Try a simpler expression".to_string()]),
-                Some("math_eval"),
-            )
-        }
-    };
+    }))
+    .unwrap_or_else(|_| {
+        Err(crate::calc::RunError::Evaluation(
+            "Expression evaluation panicked (possible stack overflow or resource limit)"
+                .to_string(),
+        ))
+    });
 
     match eval_result {
         Ok((result, result_type)) => {

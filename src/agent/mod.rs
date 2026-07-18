@@ -807,47 +807,30 @@ impl ToolRegistry {
         self.call_json_with_execution_context(name, args, template)
     }
 
-    /// Call a tool with a mutable execution context, persisting state changes.
+    /// Call a tool with a mutable execution context.
     ///
-    /// Unlike [`call_json_with_execution_context`](Self::call_json_with_execution_context),
-    /// the handler executes directly against `ctx.eval_ctx` — PRNG draws, memory
-    /// mutations, and variable assignments persist after a successful call.
+    /// # Transaction safety
     ///
-    /// # Transaction behavior
+    /// On pre-execution policy failure or parse/evaluation error, `ctx.eval_ctx`
+    /// is unchanged (no partial mutations). On success, `ctx.eval_ctx` may be
+    /// mutated in place.
     ///
-    /// - **Pre-execution policy failure** (unknown tool, profile mismatch,
-    ///   audience rejection, invalid arguments): calculator state remains unchanged.
-    /// - **Parse or evaluation failure**: calculator state remains unchanged.
-    ///   The evaluator is deterministic — if the expression does not parse or
-    ///   evaluate, no mutation has occurred.
-    /// - **Successful evaluation**: calculator state is mutated in place.
+    /// # Limitation: `math_eval` does not persist calculator state
     ///
-    /// # Limitation: `math_eval` clones the context
-    ///
-    /// `math_eval` internally clones the eval context due to its timeout
-    /// mechanism (`run_with_timeout` requires a `'static + Send` closure).
-    /// PRNG, memory, and variable mutations from `math_eval` therefore do
-    /// **not** persist back into `ctx.eval_ctx`. To persist calculator state,
-    /// use [`evaluate_with_context`](crate::calc::evaluate_with_context) or
+    /// `math_eval` internally clones the eval context. PRNG draws, memory
+    /// mutations, and variable assignments from `math_eval` therefore do **not**
+    /// persist back into `ctx.eval_ctx`. To persist calculator state, use
+    /// [`evaluate_with_context`](crate::calc::evaluate_with_context) or
     /// [`run_with_context`](crate::calc::run_with_context) directly.
     ///
-    /// # Examples
+    /// # Note
     ///
-    /// ```
-    /// use eggsact::agent::{ToolRegistry, ExecutionContext, Profile, ToolAudience};
-    ///
-    /// let registry = ToolRegistry::default();
-    /// let mut ctx = ExecutionContext::mcp_default(Profile::Full, ToolAudience::Model);
-    ///
-    /// // math_eval clones internally, so PRNG state doesn't persist through it.
-    /// // But the dispatch path itself works correctly:
-    /// let r1 = registry.call_json_with_execution_context_mut(
-    ///     "math_eval",
-    ///     serde_json::json!({"expression": "2 + 3"}),
-    ///     &mut ctx,
-    /// ).unwrap();
-    /// assert!(r1.ok);
-    /// ```
+    /// This method is **deprecated** as of 0.4.0. Calculator-backed tool
+    /// handlers do not persist state through the `_mut` dispatch path.
+    #[deprecated(
+        since = "0.4.0",
+        note = "Does not persist calculator state through math_eval. Use evaluate_with_context() or run_with_context() directly for persistent calculator sessions."
+    )]
     pub fn call_json_with_execution_context_mut(
         &self,
         name: &str,
@@ -969,15 +952,17 @@ pub enum ExecutionSource {
 /// user-defined variables). Only calculator-backed tools that opt into the
 /// eval-context bridge read from it; the sole current consumer is **`math_eval`**.
 ///
-/// `eval_ctx` is **cloned at dispatch** (`call_json_with_execution_context`
-/// copies the context before entering the handler). All PRNG draws, memory
-/// mutations, and variable assignments inside `math_eval` operate on the
-/// clone and **do not persist back** to the caller's `ExecutionContext`. Two
-/// calls with the same seed produce the same first random value.
+/// `eval_ctx` is **always cloned at dispatch** — both `call_json_with_execution_context`
+/// (explicitly) and `call_json_with_execution_context_mut` (the handler reads
+/// from a thread-local clone). All PRNG draws, memory mutations, and variable
+/// assignments inside `math_eval` operate on the clone and **do not persist
+/// back** to the caller's `ExecutionContext`. Two calls with the same seed
+/// produce the same first random value.
 ///
-/// This immutable-context design means the caller retains full control over
-/// the seed/registers between calls. Future persistent state would require
-/// a mutable-context API or a different handler signature.
+/// To persist calculator state across calls, use
+/// [`evaluate_with_context`](crate::calc::evaluate_with_context) or
+/// [`run_with_context`](crate::calc::run_with_context) directly — they accept
+/// a mutable `&mut EvalContext` reference without cloning.
 ///
 /// # MCP compatibility
 ///

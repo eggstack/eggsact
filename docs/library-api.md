@@ -458,7 +458,12 @@ let response = registry.call_json_with_execution_template(
     &ctx,
 )?;
 
-// Mutable persistent context — handler state mutations persist back to ctx
+// Mutable context (DEPRECATED since 0.4.0 — see note below)
+// Handler state mutations persist back to ctx, but math_eval state
+// (PRNG, registers, variables) is NOT preserved through the evaluator.
+// Use evaluate_with_context() / run_with_context() for persistent
+// calculator sessions. Still useful for transaction safety on failure
+// paths where mutations should not be persisted.
 let mut ctx = ExecutionContext::builder()
     .profile(Profile::Full)
     .audience(ToolAudience::Model)
@@ -469,6 +474,13 @@ let response = registry.call_json_with_execution_context_mut(
     &mut ctx,
 )?;
 ```
+
+> **Deprecated since 0.4.0**: `call_json_with_execution_context_mut` does **not**
+> persist calculator state (PRNG seed, memory registers, variables) through
+> `math_eval` — the sole calculator-backed tool. For persistent calculator
+> sessions, use `evaluate_with_context()` or `run_with_context()` directly. The
+> method is still useful for transaction safety on failure paths where mutations
+> should not be persisted.
 
 ### ExecutionContext
 

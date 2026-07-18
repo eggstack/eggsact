@@ -919,6 +919,7 @@ fn test_panic_handler_does_not_leak_state_to_next_call() {
 //     This documents the known limitation.
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
+#[allow(deprecated)]
 fn test_mutable_context_math_eval_clones_internally() {
     let registry = ToolRegistry::default();
     let mut ctx = ExecutionContext::mcp_default(Profile::Full, ToolAudience::Model);
@@ -1108,6 +1109,7 @@ fn test_successful_evaluation_persists_mutations() {
 //     (unknown tool) does not mutate EvalContext.
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
+#[allow(deprecated)]
 fn test_mutable_dispatch_preexecution_failure_no_mutation() {
     let registry = ToolRegistry::with_profile(Profile::Full);
     let mut ctx = ExecutionContext::test_default();
@@ -1137,6 +1139,7 @@ fn test_mutable_dispatch_preexecution_failure_no_mutation() {
 // 27. Transaction behavior: audience rejection does not mutate EvalContext.
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
+#[allow(deprecated)]
 fn test_mutable_dispatch_audience_rejection_no_mutation() {
     let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
     let mut ctx = ExecutionContext::test_default();
@@ -1308,6 +1311,7 @@ fn test_concurrent_mutable_contexts_are_independent() {
 //     can persist state through call_json_with_execution_context_mut.
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
+#[allow(deprecated)]
 fn test_mutable_dispatch_non_math_tool_persists_state() {
     use eggsact::mcp::budget::ToolBudget;
 

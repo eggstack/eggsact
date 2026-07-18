@@ -2,7 +2,6 @@ use crate::mcp::machine_codes;
 use crate::mcp::schemas::{disposition, finding, severity, verdict, ToolResponse};
 use crate::tools::helpers::*;
 use serde_json::Value;
-use std::time::Duration;
 
 pub fn dotenv_validate(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
@@ -99,30 +98,26 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
 );
     }
 
-    // Run validation on a dedicated thread with timeout to prevent ReDoS from
-    // hanging the server (matching Python's multiprocessing.Process isolation).
     let text_owned = text.to_string();
     let key_pattern_owned = key_pattern.to_string();
     let duplicate_policy_owned = duplicate_policy.to_string();
-    let result = match run_with_timeout(Duration::from_secs(REGEX_TIMEOUT_SECONDS), move || {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         crate::text::dotenv_validate(
             &text_owned,
             allow_export,
             &key_pattern_owned,
             &duplicate_policy_owned,
         )
-    }) {
-        Ok(r) => r,
-        Err(_timeout) => {
-            return ToolResponse::error_with_code(
-                "timeout",
-                machine_codes::UNSUPPORTED_FEATURE,
-                "Regex execution exceeded time limit (possible ReDoS)",
-                Some(vec!["Try a simpler key_pattern or shorter text".to_string()]),
-                Some("dotenv_validate"),
-            )
-        }
-    };
+    }))
+    .unwrap_or_else(|_| crate::text::config::DotenvValidateResult {
+        parse_ok: false,
+        entries: Vec::new(),
+        duplicates: Vec::new(),
+        invalid_lines: Vec::new(),
+        requires_quoting: Vec::new(),
+        contains_expansion_syntax: Vec::new(),
+        findings: vec!["Dotenv validation panicked (possible resource limit)".to_string()],
+    });
 
     ToolResponse::success(
         serde_json::json!({
