@@ -19,6 +19,7 @@ use crate::mcp::runtime::{
     MCP_SERVER_NAME, RUNTIME_METRICS,
 };
 use serde_json::Value;
+use std::io::Write;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -1057,6 +1058,9 @@ pub async fn main() -> ! {
     while join_set.join_next().await.is_some() {}
     drop(tx);
     let _ = writer_handle.await;
+    // Flush stdout before exit — println! buffers when piped, and
+    // std::process::exit does not run destructors or flush stdio.
+    let _ = std::io::stdout().flush();
     std::process::exit(0);
 }
 
