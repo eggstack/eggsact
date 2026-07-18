@@ -1,5 +1,6 @@
 # Parity tests require the Python `eggcalc` package (not available in CI)
 # and are excluded from the integration test step via --skip parity.
+# Python parity is verified by a separate scheduled workflow.
 
 name: CI
 
@@ -10,6 +11,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -17,74 +25,157 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: check-${{ runner.os }}-stable
       - run: cargo fmt --all -- --check
 
   generated-docs:
     name: Generated Docs
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo run --bin generate-docs -- --check
+        with:
+          key: docs-${{ runner.os }}-stable
+      - run: cargo run --locked --bin generate-docs -- --check
 
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+        with:
+          key: clippy-${{ runner.os }}-stable
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
   test-lib:
     name: Test (lib)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features --lib
+        with:
+          key: test-lib-${{ runner.os }}-stable
+      - run: cargo test --locked --all-features --lib
 
   test-bins:
     name: Test (bins)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features --bins
+        with:
+          key: test-bins-${{ runner.os }}-stable
+      - run: cargo test --locked --all-features --bins
 
   test-integration:
     name: Test (integration)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features --tests -- --skip parity
+        with:
+          key: test-int-${{ runner.os }}-stable
+      - run: cargo test --locked --all-features --tests -- --skip parity
 
   test-doc:
     name: Test (doc)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --doc
+        with:
+          key: test-doc-${{ runner.os }}-stable
+      - run: cargo test --locked --doc
+
+  msrv:
+    name: MSRV (1.89.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.89.0"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv-1.89.0
+      - run: cargo check --locked --all-targets --all-features
+      - run: cargo test --locked --all-features --lib
+      - run: cargo test --locked --all-features --bins
+      - run: cargo test --locked --doc
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: check-${{ runner.os }}-stable
+      - run: cargo check --locked --all-targets --all-features
+      - run: cargo test --locked --all-features --lib
+      - run: cargo test --locked --all-features --bins
+      - run: cargo test --locked --all-features --tests -- --skip parity
+      - run: cargo test --locked --doc
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: check-${{ runner.os }}-stable
+      - run: cargo check --locked --all-targets --all-features
+      - run: cargo test --locked --all-features --lib
+      - run: cargo test --locked --all-features --bins
+      - run: cargo test --locked --all-features --tests -- --skip parity
+      - run: cargo test --locked --doc
+
+  cargo-deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v0
+        with:
+          arguments: check advisories bans licenses sources
 
   package:
     name: Package
     runs-on: ubuntu-latest
-    needs: [check, clippy, generated-docs, test-lib, test-bins, test-integration, test-doc]
+    needs: [check, clippy, generated-docs, test-lib, test-bins, test-integration, test-doc, msrv, windows, macos, cargo-deny]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo package --verbose
+        with:
+          key: package-${{ runner.os }}-stable
+      - run: cargo package --locked --verbose

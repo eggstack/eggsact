@@ -1,0 +1,66 @@
+name: Release Verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: Full Release Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Generated docs check
+        run: cargo run --locked --bin generate-docs -- --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Unit tests
+        run: cargo test --locked --all-features --lib
+
+      - name: Binary tests
+        run: cargo test --locked --all-features --bins
+
+      - name: Integration tests
+        run: cargo test --locked --all-features --tests -- --skip parity
+
+      - name: Doc tests
+        run: cargo test --locked --doc
+
+      - name: cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v0
+        with:
+          arguments: check advisories bans licenses sources
+
+      - name: Package contents
+        run: cargo package --locked --list
+
+      - name: Package build
+        run: cargo package --locked --verbose
+
+      - name: Publish dry run
+        run: cargo publish --dry-run --locked
+
+      - name: Provenance
+        if: always()
+        run: |
+          echo "## Release Verification" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: $(git rev-parse HEAD)" >> $GITHUB_STEP_SUMMARY
+          echo "- Rust stable: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- MSRV: 1.89.0" >> $GITHUB_STEP_SUMMARY
+          echo "- Lockfile: $(sha256sum Cargo.lock | cut -d' ' -f1)" >> $GITHUB_STEP_SUMMARY

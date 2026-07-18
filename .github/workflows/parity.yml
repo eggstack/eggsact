@@ -1,0 +1,39 @@
+name: Python Parity
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Weekly on Monday at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  parity:
+    name: Parity (pinned eggcalc)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install eggcalc
+        run: pip install eggcalc
+      - name: Record eggcalc version
+        run: pip show eggcalc | head -5
+      - name: Build eggsact
+        run: cargo build --locked
+      - name: Run parity tests
+        run: cargo test --test lib parity -- --nocapture
+      - name: Generate parity report
+        if: always()
+        run: |
+          echo "eggsact-sha=$(git rev-parse HEAD)" >> $GITHUB_STEP_SUMMARY
+          echo "eggcalc-version=$(pip show eggcalc | grep Version | awk '{print $2}')" >> $GITHUB_STEP_SUMMARY
+          echo "python-version=$(python3 --version)" >> $GITHUB_STEP_SUMMARY

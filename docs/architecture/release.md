@@ -102,4 +102,4 @@ Version is defined in `Cargo.toml` and referenced in:
 
 ## Cargo.lock
 
-`Cargo.lock` is gitignored but present. Do not commit it — this is a binary crate convention.
+`Cargo.lock` is tracked in the repository because eggsact ships binaries and requires reproducible CI and packaging evidence. CI uses `--locked` for reproducible builds.

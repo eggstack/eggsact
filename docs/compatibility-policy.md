@@ -19,6 +19,22 @@ The crate is currently pre-1.0 in spirit (rapid iteration through phases 01–12
 but uses a `1.x.y` version scheme. A future `2.0.0` bump will signal that the
 compatibility policy below is in full effect.
 
+## Minimum Supported Rust Version (MSRV)
+
+eggsact declares `rust-version = "1.89.0"` in `Cargo.toml`. This is tested
+in CI with the exact declared toolchain.
+
+**Policy:**
+- MSRV covers the library, all binaries, and the supported test subset.
+- MSRV may be raised in a MINOR release with a changelog entry.
+- An MSRV increase requires at least Rust 1.89.0+ and must be justified by
+  a dependency requirement or language feature need.
+- The locked dependency graph must resolve on MSRV.
+- CI blocks on MSRV test failures.
+
+**Rationale for 1.89.0**: hashbrown 0.17.1 requires Rust 1.85.0, but test
+code uses temporary lifetime extension that stabilized in Rust 1.89.0.
+
 ## Public Rust API Stability
 
 The public Rust API consists of items re-exported from `src/lib.rs`:

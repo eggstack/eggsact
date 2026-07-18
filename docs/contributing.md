@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Rust toolchain** (stable) -- `rustup` is recommended for installation.
+- **Rust toolchain** (stable, minimum 1.89.0) -- `rustup` is recommended for installation.
 - **Python 3.x** -- required for parity tests only. Install `eggcalc` dependencies from
   the repo root.
 
@@ -28,13 +28,14 @@ path, so run `cargo build` before running parity tests.
 
 ```sh
 cargo fmt --all -- --check     # formatting gate (CI-equivalent)
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features      # all tests (unit, integration, parity)
-cargo run --bin generate-docs -- --check  # generated docs freshness
-cargo package --verbose        # crates.io package verification
-cargo test --lib                # unit tests within src/ only
-cargo test --test lib parity    # parity tests against Python
-cargo test --doc                # doc tests
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features      # all tests (unit, integration, parity)
+cargo run --locked --bin generate-docs -- --check  # generated docs freshness
+cargo package --locked --verbose        # crates.io package verification
+cargo test --locked --lib                # unit tests within src/ only
+cargo test --locked --test lib parity    # parity tests against Python
+cargo test --locked --doc                # doc tests
+cargo deny check advisories bans licenses sources  # supply-chain audit
 ```
 
 Unit tests live inside `src/` files as `#[cfg(test)]` modules. Integration and parity

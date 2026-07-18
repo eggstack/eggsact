@@ -333,14 +333,14 @@ cargo run --bin verify-eggsact -- --report markdown  # explicit format (only mar
 | # | Step | Command | Description |
 |---|------|---------|-------------|
 | 1 | `cargo fmt` | `cargo fmt --all -- --check` | Format check (no modifications) |
-| 2 | `cargo clippy` | `cargo clippy --all-targets --all-features -- -D warnings` | Lint with warnings as errors |
-| 3 | `cargo test --lib` | `cargo test --all-features --lib` | Unit tests in `src/` only |
-| 4 | `cargo test --bins` | `cargo test --all-features --bins` | Binary tests (generate-docs tests, etc.) |
-| 5 | `cargo test --tests` | `cargo test --all-features --tests -- --skip parity` | Integration tests (parity excluded) |
-| 6 | `cargo test --doc` | `cargo test --doc` | Doc tests |
-| 7 | `generate-docs --check` | `cargo run --bin generate-docs -- --check` | Verify generated docs are fresh |
-| 8 | `cargo package` | `cargo package --verbose` | Crates.io packaging dry run |
-| 9 | parity tests | `cargo test --test lib parity --all-features` | Python/Rust parity (skipped if `../eggcalc` missing) |
+| 2 | `cargo clippy` | `cargo clippy --locked --all-targets --all-features -- -D warnings` | Lint with warnings as errors |
+| 3 | `cargo test --lib` | `cargo test --locked --all-features --lib` | Unit tests in `src/` only |
+| 4 | `cargo test --bins` | `cargo test --locked --all-features --bins` | Binary tests (generate-docs tests, etc.) |
+| 5 | `cargo test --tests` | `cargo test --locked --all-features --tests -- --skip parity` | Integration tests (parity excluded) |
+| 6 | `cargo test --doc` | `cargo test --locked --doc` | Doc tests |
+| 7 | `generate-docs --check` | `cargo run --locked --bin generate-docs -- --check` | Verify generated docs are fresh |
+| 8 | `cargo package` | `cargo package --locked --verbose` | Crates.io packaging dry run |
+| 9 | parity tests | `cargo test --locked --test lib parity --all-features` | Python/Rust parity (skipped if `../eggcalc` missing) |
 
 Each step is timed independently. The parity step is automatically skipped when `../eggcalc` does not exist (detected via `fs::metadata()`).
 
@@ -446,7 +446,7 @@ cargo run --bin generate-docs -- --check
 cargo run --bin verify-eggsact
 
 # Run main.rs unit tests
-cargo test --lib main
+cargo test --locked --lib main
 ```
 
 ### Full Verification Pipeline (Manual)
@@ -455,13 +455,14 @@ The recommended verification order before release:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features --lib
-cargo test --all-features --bins
-cargo test --all-features --tests -- --skip parity
-cargo test --doc
-cargo run --bin generate-docs -- --check
-cargo package --verbose
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features --lib
+cargo test --locked --all-features --bins
+cargo test --locked --all-features --tests -- --skip parity
+cargo test --locked --doc
+cargo run --locked --bin generate-docs -- --check
+cargo deny check advisories bans licenses sources
+cargo package --locked --verbose
 ```
 
 Or equivalently:

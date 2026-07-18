@@ -361,13 +361,15 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 ```bash
 cargo build                          # debug build
 cargo build --release                # release build
-cargo test                           # all tests
-cargo test --lib                     # unit tests only
-cargo test --test lib mcp            # MCP tests only
-cargo test --test lib parity         # parity tests only
-cargo test --test lib text           # text tests only
+cargo test --locked                  # all tests
+cargo test --locked --lib            # unit tests only
+cargo test --locked --test lib mcp   # MCP tests only
+cargo test --locked --test lib parity # parity tests only
+cargo test --locked --test lib text  # text tests only
+cargo test --locked --doc            # doc tests
 cargo fmt --all -- --check           # format check
-cargo clippy --all-targets --all-features  # lint
+cargo clippy --locked --all-targets --all-features  # lint
+cargo deny check advisories bans licenses sources  # supply-chain audit
 cargo run --bin generate-docs        # regenerate docs
 cargo run --bin generate-docs -- --check  # verify docs are current
 ./release.sh                         # full release pipeline

@@ -6,22 +6,21 @@ description: Use when writing, running, or debugging tests in the eggsact codeba
 ## Test Commands
 
 ```bash
-cargo test --all-features                # all tests (unit + integration + parity)
-cargo test --all-features --lib          # unit tests in src/ (including agent module)
-cargo test --all-features --lib agent    # agent module tests only
-cargo test --all-features --test lib mcp # MCP tests only
-cargo test --all-features --test lib parity  # parity tests only
-cargo test --all-features --test lib text    # text tests only
-cargo test --doc                         # doc tests
-cargo package --verbose                  # package verification
+cargo test --locked --all-features                # all tests (unit + integration + parity)
+cargo test --locked --all-features --lib          # unit tests in src/ (including agent module)
+cargo test --locked --all-features --lib agent    # agent module tests only
+cargo test --locked --all-features --test lib mcp # MCP tests only
+cargo test --locked --all-features --test lib parity  # parity tests only
+cargo test --locked --all-features --test lib text    # text tests only
+cargo test --locked --doc                         # doc tests
+cargo package --locked --verbose                  # package verification
 ```
 
 ## Verification Order
 
 The canonical release gate (including the full test suite) is defined in `docs/release.md` — do not duplicate it here.
 
-CI runs on push/PR to `main` (plus `workflow_dispatch`) via `.github/workflows/ci.yml`.
-Parity tests require Python `eggcalc` at `../eggcalc` and are local-only.
+CI runs on push/PR to `main` (plus `workflow_dispatch`) via `.github/workflows/ci.yml` on **Linux, Windows, and macOS**. CI also runs an MSRV job on Rust 1.89.0. Parity tests require Python `eggcalc` at `../eggcalc` and are local-only.
 
 ## Test Structure
 
@@ -94,7 +93,7 @@ They require:
 
 Run parity tests:
 ```bash
-cargo test --test lib parity
+cargo test --locked --test lib parity
 ```
 
 ## Machine Code Enforcement

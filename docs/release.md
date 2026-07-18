@@ -31,13 +31,14 @@ Run the following commands in order. All must pass before proceeding.
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features --lib
-cargo test --all-features --bins
-cargo test --all-features --tests -- --skip parity
-cargo test --doc
-cargo run --bin generate-docs -- --check
-cargo package --verbose
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features --lib
+cargo test --locked --all-features --bins
+cargo test --locked --all-features --tests -- --skip parity
+cargo test --locked --doc
+cargo run --locked --bin generate-docs -- --check
+cargo deny check advisories bans licenses sources
+cargo package --locked --verbose
 ```
 
 `./release.sh` runs the same pipeline (including confusables and docs regeneration) in one step.
@@ -68,7 +69,7 @@ Publishing is a direct maintainer action. Do not run from CI for this release li
 ### Pre-publish
 
 ```bash
-cargo publish --dry-run
+cargo publish --dry-run --locked
 ```
 
 Must succeed before proceeding.
@@ -76,7 +77,7 @@ Must succeed before proceeding.
 ### Publish
 
 ```bash
-cargo publish
+cargo publish --locked
 ```
 
 Run from a clean worktree on `main` at the verified commit, after the dry run passes.
@@ -99,14 +100,21 @@ crates.io releases are immutable. Tagging after publish avoids a tag pointing at
 
 Alternative: tag before publish if the maintainer explicitly prefers that convention and is prepared to fix failures with a patch version bump. Document the chosen policy.
 
+## Scheduled workflows
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| Python Parity | Weekly (Monday 06:00 UTC) + manual | Tracks eggcalc drift |
+| Release Verification | Manual only | Full release gate without publish credentials |
+
 ## Package contents
 
-`cargo package` excludes: `plans/`, `data/`, `scripts/`, `build.sh`, `release.sh`, `.github/`, `.skills/`, `deny.toml`, `AGENTS.md`.
+`cargo package --locked` excludes: `plans/`, `data/`, `scripts/`, `build.sh`, `release.sh`, `.github/`, `.skills/`, `deny.toml`, `AGENTS.md`.
 
 Verify with:
 
 ```bash
-cargo package --list
+cargo package --locked --list
 ```
 
 ## Post-release
@@ -116,17 +124,21 @@ cargo package --list
 
 ## CI
 
-GitHub Actions runs 8 jobs on push/PR to `main` (plus manual `workflow_dispatch`):
+GitHub Actions runs 12 jobs on push/PR to `main` (plus manual `workflow_dispatch`):
 
 | Job | Command |
 |-----|---------|
 | Check | `cargo fmt --all -- --check` |
-| Generated Docs | `cargo run --bin generate-docs -- --check` |
-| Clippy | `cargo clippy --all-targets --all-features -- -D warnings` |
-| Test (lib) | `cargo test --all-features --lib` |
-| Test (bins) | `cargo test --all-features --bins` |
-| Test (integration) | `cargo test --all-features --tests -- --skip parity` |
-| Test (doc) | `cargo test --doc` |
-| Package | `cargo package --verbose` |
+| Generated Docs | `cargo run --locked --bin generate-docs -- --check` |
+| Clippy | `cargo clippy --locked --all-targets --all-features -- -D warnings` |
+| Test (lib) | `cargo test --locked --all-features --lib` |
+| Test (bins) | `cargo test --locked --all-features --bins` |
+| Test (integration) | `cargo test --locked --all-features --tests -- --skip parity` |
+| Test (doc) | `cargo test --locked --doc` |
+| MSRV | `cargo check --locked --all-targets --all-features` + tests on Rust 1.89.0 |
+| Windows | build + full non-parity tests |
+| macOS | build + full non-parity tests |
+| cargo-deny | `cargo deny check advisories bans licenses sources` |
+| Package | `cargo package --locked --verbose` |
 
 CI mirrors the local release gate except parity. CI is verification only — it does not publish to crates.io.

@@ -15,19 +15,22 @@ echo "=== Running clippy ==="
 cargo clippy --all-targets --all-features -- -D warnings
 
 echo "=== Running unit tests ==="
-cargo test --all-features --lib
+cargo test --locked --all-features --lib
 
 echo "=== Running binary tests ==="
-cargo test --all-features --bins
+cargo test --locked --all-features --bins
 
 echo "=== Running integration tests (parity excluded) ==="
-cargo test --all-features --tests -- --skip parity
+cargo test --locked --all-features --tests -- --skip parity
 
 echo "=== Running doc tests ==="
-cargo test --doc
+cargo test --locked --doc
 
 echo "=== Checking generated docs freshness ==="
-cargo run --bin generate-docs -- --check
+cargo run --locked --bin generate-docs -- --check
 
 echo "=== Checking crates.io package ==="
-cargo package --verbose
+cargo package --locked --verbose
+
+echo "=== Running cargo-deny checks ==="
+cargo deny check advisories bans licenses sources

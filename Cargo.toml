@@ -2,6 +2,7 @@
 name = "eggsact"
 version = "1.2.0"
 edition = "2021"
+rust-version = "1.89.0"
 description = "Deterministic MCP and in-process utility tools for coding agents"
 license = "MIT"
 readme = "README.md"

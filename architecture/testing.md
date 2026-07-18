@@ -241,52 +241,69 @@ These tests use the in-process agent API (`ToolRegistry`, `call_json_with_execut
 ### All Tests
 
 ```bash
-cargo test                          # unit + integration + doc tests
+cargo test --locked                  # unit + integration + doc tests
 ```
 
 ### By Suite
 
 ```bash
-cargo test --lib                     # unit tests in src/ only
-cargo test --test lib                # all integration tests
-cargo test --test lib calc           # calculator tests only
-cargo test --test lib mcp            # MCP tests only
-cargo test --test lib text           # text tests only
-cargo test --test lib parity         # parity tests (requires ../eggcalc)
-cargo test --doc                     # doc tests only
+cargo test --locked --lib                     # unit tests in src/ only
+cargo test --locked --test lib                # all integration tests
+cargo test --locked --test lib calc           # calculator tests only
+cargo test --locked --test lib mcp            # MCP tests only
+cargo test --locked --test lib text           # text tests only
+cargo test --locked --test lib parity         # parity tests (requires ../eggcalc)
+cargo test --locked --doc                     # doc tests only
 ```
 
 ### Filtering
 
 ```bash
-cargo test --test lib -- test_name           # single test by name
-cargo test --test lib -- --list              # list all tests
-cargo test --test lib -- --nocapture         # show println! output
-cargo test --test lib mcp -- --skip parity   # MCP tests, skip parity
+cargo test --locked --test lib -- test_name           # single test by name
+cargo test --locked --test lib -- --list              # list all tests
+cargo test --locked --test lib -- --nocapture         # show println! output
+cargo test --locked --test lib mcp -- --skip parity   # MCP tests, skip parity
 ```
 
 ### Binary Tests
 
 ```bash
-cargo test --bins                            # tests for bin/ targets
+cargo test --locked --bins                            # tests for bin/ targets
 ```
 
 ## CI Pipeline
 
-GitHub Actions runs on push/PR to `main` (plus manual `workflow_dispatch`):
+GitHub Actions runs on push/PR to `main` (plus manual `workflow_dispatch`) across a **12-job CI matrix**:
+
+| Job | Platform | Steps |
+|-----|----------|-------|
+| Format check | Linux | `cargo fmt --all -- --check` |
+| Clippy | Linux | `cargo clippy --locked --all-targets --all-features -- -D warnings` |
+| Unit tests | Linux | `cargo test --locked --all-features --lib` |
+| Binary tests | Linux | `cargo test --locked --all-features --bins` |
+| Integration tests | Linux | `cargo test --locked --all-features --tests -- --skip parity` |
+| Doc tests | Linux | `cargo test --locked --doc` |
+| Generated docs | Linux | `cargo run --locked --bin generate-docs -- --check` |
+| Package | Linux | `cargo package --locked --verbose` |
+| MSRV | Linux | `cargo check --locked --all-targets --all-features` + tests on Rust 1.89.0 |
+| Windows | Windows | Build + full non-parity tests |
+| macOS | macOS | Build + full non-parity tests |
+| cargo-deny | Linux | `cargo deny check advisories bans licenses sources` |
 
 | Step | Command | What It Checks |
 |------|---------|---------------|
 | 1 | `cargo fmt --all -- --check` | Code formatting |
-| 2 | `cargo clippy --all-targets --all-features -- -D warnings` | Lint warnings as errors |
-| 3 | `cargo test --all-features --lib` | Unit tests in `src/` |
-| 4 | `cargo test --all-features --bins` | Binary target tests |
-| 5 | `cargo test --all-features --tests -- --skip parity` | Integration tests (parity excluded) |
-| 6 | `cargo test --doc` | Doc tests |
-| 7 | `cargo run --bin generate-docs -- --check` | Generated docs freshness |
-| 8 | `cargo package --verbose` | Crates.io packaging dry run |
+| 2 | `cargo clippy --locked --all-targets --all-features -- -D warnings` | Lint warnings as errors |
+| 3 | `cargo test --locked --all-features --lib` | Unit tests in `src/` |
+| 4 | `cargo test --locked --all-features --bins` | Binary target tests |
+| 5 | `cargo test --locked --all-features --tests -- --skip parity` | Integration tests (parity excluded) |
+| 6 | `cargo test --locked --doc` | Doc tests |
+| 7 | `cargo run --locked --bin generate-docs -- --check` | Generated docs freshness |
+| 8 | `cargo package --locked --verbose` | Crates.io packaging dry run |
 
-Parity tests are excluded from CI because Python `eggcalc` is not available in the CI environment. Run locally with `cargo test --test lib parity`.
+Parity tests are excluded from CI because Python `eggcalc` is not available in the CI environment. Run locally with `cargo test --locked --test lib parity`.
+
+A **scheduled parity workflow** runs the full parity suite periodically to detect drift between Rust and Python implementations.
 
 CI mirrors the release verification gates but does **not** publish to crates.io. The maintainer publishes manually per `docs/release.md`.
 
@@ -443,22 +460,22 @@ the MCP server's execution safety invariants:
 
 ```bash
 # Runtime helper tests (register_request, MetricGuard, apply_cancellation)
-cargo test --test lib mcp::test_runtime_helpers
+cargo test --locked --test lib mcp::test_runtime_helpers
 
 # Execution safety integration tests (worker containment, duplicate IDs, shutdown)
-cargo test --test lib mcp::test_execution_safety
+cargo test --locked --test lib mcp::test_execution_safety
 
 # Cancellation propagation (flag plumbing, budget context, tool-specific)
-cargo test --test lib mcp::test_cancellation
+cargo test --locked --test lib mcp::test_cancellation
 
 # Determinism and concurrency (concurrent tool calls, determinism)
-cargo test --test lib mcp::test_determinism_concurrency
+cargo test --locked --test lib mcp::test_determinism_concurrency
 
 # Protocol tests (null ID, notification, duplicate ID)
-cargo test --test lib mcp::test_protocol
+cargo test --locked --test lib mcp::test_protocol
 
 # Full MCP test suite (excluding parity)
-cargo test --test lib mcp -- --skip parity
+cargo test --locked --test lib mcp -- --skip parity
 ```
 
 ### Context Isolation via ExecutionContext

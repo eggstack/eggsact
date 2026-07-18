@@ -5,6 +5,16 @@
 
 Deterministic MCP and in-process utility tools for coding agents. 80 tools across 20 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, and more. Includes a natural language math evaluator that parses expressions like "thirty plus five" or "30m + 100ft".
 
+## Supported Platforms
+
+| Tier | Platform | Status |
+|------|----------|--------|
+| 1 | Ubuntu latest (x86_64) | Full CI gate |
+| 2 | Windows latest (x86_64) | Build + test |
+| 2 | macOS latest (ARM64) | Build + test |
+
+**MSRV**: Rust 1.89.0 (declared in `Cargo.toml`, tested in CI).
+
 ## Key Features
 
 - MCP server with 80 registered tools for AI agents to reduce hallucinations
@@ -30,6 +40,8 @@ git clone https://github.com/eggstack/eggsact
 cd eggsact
 cargo install --path .
 ```
+
+**Minimum Rust version**: 1.89.0. Earlier versions may compile the library but fail tests due to temporary lifetime rules in test code.
 
 ## Quick Start
 

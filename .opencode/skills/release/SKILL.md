@@ -16,10 +16,11 @@ The pipeline is `./release.sh`, which runs the canonical release gate. Steps in 
 1. Regenerate confusables data: `python3 scripts/generate_confusables.py`
 2. Regenerate docs: `cargo run --bin generate-docs`
 3. Check formatting: `cargo fmt --all -- --check`
-4. Run clippy: `cargo clippy --all-targets --all-features -- -D warnings`
-5. Run all tests: `cargo test --all-features`
+4. Run clippy: `cargo clippy --locked --all-targets --all-features -- -D warnings`
+5. Run all tests: `cargo test --locked --all-features`
 6. Check generated docs freshness: `cargo run --bin generate-docs -- --check`
-7. Check crates.io packaging: `cargo package --verbose`
+7. Supply-chain audit: `cargo deny check advisories bans licenses sources`
+8. Check crates.io packaging: `cargo package --locked --verbose`
 
 See `docs/release.md` for the canonical command list and full verification order.
 
@@ -29,33 +30,35 @@ The canonical release gate (used by CI, release.sh, and this document):
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features --lib
-cargo test --all-features --bins
-cargo test --all-features --tests -- --skip parity
-cargo test --doc
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features --lib
+cargo test --locked --all-features --bins
+cargo test --locked --all-features --tests -- --skip parity
+cargo test --locked --doc
 cargo run --bin generate-docs -- --check
-cargo package --verbose
+cargo deny check advisories bans licenses sources
+cargo package --locked --verbose
 ```
 
 Optional, environment-dependent:
 
 ```bash
-cargo test --test lib parity    # requires Python eggcalc at ../eggcalc
+cargo test --locked --test lib parity    # requires Python eggcalc at ../eggcalc
 ```
 
 ## Pre-Release Checklist
 
-- [ ] All tests pass: `cargo test --all-features --lib` and `cargo test --all-features --bins`
-- [ ] Integration tests pass (parity excluded): `cargo test --all-features --tests -- --skip parity`
-- [ ] Doc tests pass: `cargo test --doc`
+- [ ] All tests pass: `cargo test --locked --all-features --lib` and `cargo test --locked --all-features --bins`
+- [ ] Integration tests pass (parity excluded): `cargo test --locked --all-features --tests -- --skip parity`
+- [ ] Doc tests pass: `cargo test --locked --doc`
 - [ ] No formatting issues: `cargo fmt --all -- --check`
-- [ ] No clippy warnings: `cargo clippy --all-targets --all-features -- -D warnings`
+- [ ] No clippy warnings: `cargo clippy --locked --all-targets --all-features -- -D warnings`
 - [ ] Generated docs current: `cargo run --bin generate-docs -- --check`
-- [ ] Parity tests pass (when Python `eggcalc` is available at `../eggcalc`): `cargo test --test lib parity`
+- [ ] Supply-chain audit: `cargo deny check advisories bans licenses sources`
+- [ ] Parity tests pass (when Python `eggcalc` is available at `../eggcalc`): `cargo test --locked --test lib parity`
   - Note: As of 2026-07-08, the Rust parity suite has 33 known failures (out of 418 tests) documented in `docs/parity.md` (`Verification status` and `Known parity gaps` sections). The Rust `full` profile ships 80 tools; Python defines 67. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE` env var and updating test helpers. Categories C1–C6 (33 failures) are accepted behavioral differences tracked for follow-up. Closing these gaps is out of scope for release-polish and is tracked for follow-up work.
 - [ ] Confusables data regenerated: `python3 scripts/generate_confusables.py`
-- [ ] Crate packaging succeeds: `cargo package --verbose`
+- [ ] Crate packaging succeeds: `cargo package --locked --verbose`
 - [ ] Run `cargo publish --dry-run` before any `cargo publish`. Do not publish from CI.
 - [ ] Version bumped in `Cargo.toml`
 - [ ] CHANGELOG.md updated
@@ -80,6 +83,7 @@ This is a manual process from the maintainer's local machine. Do not automate vi
 Pre-requisites:
 - `cargo login` (or a local crates.io token). Do not commit tokens.
 - Clean working tree on `main` at the verified commit.
+- Rust 1.89.0 (MSRV) or later installed.
 
 ```bash
 cargo publish --dry-run    # must succeed before any publish
@@ -104,20 +108,27 @@ Version is defined in `Cargo.toml` and referenced in:
 
 ## CI Pipeline
 
-CI runs on GitHub Actions on push/PR to `main` (plus `workflow_dispatch`):
-- Check formatting
-- Run clippy with warnings denied
-- Run unit tests (`--all-features --lib`)
-- Run binary tests (`--all-features --bins`)
-- Run integration tests (`--all-features --tests -- --skip parity`)
-- Run doc tests (`--doc`)
-- Verify generated docs are current
-- Run `cargo package --verbose`
+CI runs on GitHub Actions on push/PR to `main` (plus `workflow_dispatch`). The CI matrix has **12 jobs**:
 
-Parity tests are not run in CI (Python `eggcalc` is not available in the CI environment) and must be run locally. CI verifies only — it does not publish to crates.io.
+| Job | Platform | What It Runs |
+|-----|----------|-------------|
+| Format check | Linux | `cargo fmt --all -- --check` |
+| Clippy | Linux | `cargo clippy --locked --all-targets --all-features -- -D warnings` |
+| Unit tests | Linux | `cargo test --locked --all-features --lib` |
+| Binary tests | Linux | `cargo test --locked --all-features --bins` |
+| Integration tests | Linux | `cargo test --locked --all-features --tests -- --skip parity` |
+| Doc tests | Linux | `cargo test --locked --doc` |
+| Generated docs | Linux | `cargo run --locked --bin generate-docs -- --check` |
+| Package | Linux | `cargo package --locked --verbose` |
+| MSRV | Linux | `cargo check --locked --all-targets --all-features` + tests on Rust 1.89.0 |
+| Windows | Windows | Build + full non-parity tests |
+| macOS | macOS | Build + full non-parity tests |
+| cargo-deny | Linux | `cargo deny check advisories bans licenses sources` |
+
+Parity tests are excluded from CI (Python `eggcalc` is not available in the CI environment) and must be run locally. CI verifies only — it does not publish to crates.io.
 
 ## Cargo.lock
 
-`Cargo.lock` is gitignored but present. Do not commit it — this is a binary crate convention.
+`Cargo.lock` is tracked because eggsact ships binaries. CI uses `--locked` for reproducible builds.
 
 See also: `docs/release.md` for the full canonical release checklist.
