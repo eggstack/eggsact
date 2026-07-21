@@ -1,0 +1,14 @@
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,8 +1,10 @@
+ fn main() {
+-    println!("hello");
++    println!("hello world");
++    println!("new line");
+ }
+ 
+ fn foo() {
+-    let x = 1;
++    let x = 2;
++    let y = 3;
+ }

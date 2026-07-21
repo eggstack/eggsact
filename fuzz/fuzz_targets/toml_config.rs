@@ -1,3 +1,5 @@
+#![no_main]
+
 //! Fuzz TOML and configuration parsing.
 //!
 //! Asserts: no panic, bounded findings, validation deterministic,

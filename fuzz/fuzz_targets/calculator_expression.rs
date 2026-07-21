@@ -1,3 +1,5 @@
+#![no_main]
+
 //! Fuzz the calculator expression parser/evaluator.
 //!
 //! Feeds bounded arbitrary UTF-8 expressions into `eggsact::evaluate` and

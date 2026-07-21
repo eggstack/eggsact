@@ -1,0 +1,4 @@
+[a]
+key = "value"
+[a.b]
+key2 = "value2"

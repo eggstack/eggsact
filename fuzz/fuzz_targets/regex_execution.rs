@@ -1,3 +1,5 @@
+#![no_main]
+
 //! Fuzz regex compile and bounded execution.
 //!
 //! Asserts: no panic, output bounded, spans within bounds, deterministic.
@@ -29,9 +31,13 @@ fuzz_target!(|data: &[u8]| {
     let result = regex_finditer(pattern, text, None, 100, false, false);
     // All match spans should be within text bounds
     for m in &result.matches {
-        assert!(m.start <= text.len());
-        assert!(m.end <= text.len());
-        assert!(m.start <= m.end);
+        // span is Vec<i32> with [start, end]
+        if m.span.len() >= 2 {
+            assert!(m.span[0] >= 0);
+            assert!(m.span[1] >= 0);
+            assert!(m.span[0] <= m.span[1]);
+            assert!(m.span[1] <= text.len() as i32);
+        }
     }
     let _ = serde_json::to_string(&result);
 });

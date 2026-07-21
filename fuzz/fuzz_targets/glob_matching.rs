@@ -1,10 +1,14 @@
+#![no_main]
+
 //! Fuzz glob parsing and path matching.
 //!
 //! Asserts: no panic, normalization idempotent, matching deterministic,
 //! classification buckets stable.
 
 use libfuzzer_sys::fuzz_target;
-use eggsact::text::{glob_match, path_analyze, path_normalize};
+use eggsact::text::path_analyze;
+use eggsact::text::glob::glob_match;
+use eggsact::text::path::path_normalize;
 
 const MAX_PATH_LEN: usize = 5_000;
 
@@ -28,10 +32,8 @@ fuzz_target!(|data: &[u8]| {
     let _ = path_analyze(path, "posix");
     let _ = path_analyze(path, "windows");
 
-    // Path normalize idempotence
-    if let Ok(norm1) = path_normalize(path, "posix") {
-        if let Ok(norm2) = path_normalize(&norm1, "posix") {
-            assert_eq!(norm1, norm2);
-        }
-    }
+    // Path normalize idempotence (path_normalize returns PathNormalizeResult directly)
+    let norm1 = path_normalize(path, "posix", true, false);
+    let norm2 = path_normalize(&norm1.normalized, "posix", true, false);
+    assert_eq!(norm1.normalized, norm2.normalized);
 });

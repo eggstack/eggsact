@@ -1,3 +1,5 @@
+#![no_main]
+
 //! Fuzz JSON parsing and pointer extraction.
 //!
 //! Asserts: no panic on malformed JSON or pointers, pointer escaping consistent,
@@ -25,8 +27,10 @@ fuzz_target!(|data: &[u8]| {
 
     // Canonicalize and check idempotence
     if let Ok(canon1) = json_canonicalize(json_text, true, Some(2), false, true, false) {
-        if let Ok(canon2) = json_canonicalize(&canon1, true, Some(2), false, true, false) {
-            assert_eq!(canon1, canon2);
+        if let Some(ref canonical) = canon1.canonical {
+            if let Ok(canon2) = json_canonicalize(canonical, true, Some(2), false, true, false) {
+                assert_eq!(canon1.canonical, canon2.canonical);
+            }
         }
     }
 

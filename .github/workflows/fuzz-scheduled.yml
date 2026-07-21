@@ -77,3 +77,56 @@ jobs:
           name: fuzz-crashes-extended
           path: fuzz/artifacts/
           retention-days: 90
+
+  fuzz-sanitizers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Cache cargo-fuzz
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            fuzz/target
+          key: ${{ runner.os }}-fuzz-san-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock') }}
+
+      - name: Build fuzz targets (ASan)
+        run: cargo fuzz build --sanitizer=address
+
+      - name: Fuzz calculator_expression (ASan)
+        run: cargo fuzz run calculator_expression --sanitizer=address -- -max_total_time=120 -timeout=10
+
+      - name: Fuzz unified_diff (ASan)
+        run: cargo fuzz run unified_diff --sanitizer=address -- -max_total_time=120 -timeout=10
+
+      - name: Fuzz shell_tokenization (ASan)
+        run: cargo fuzz run shell_tokenization --sanitizer=address -- -max_total_time=120 -timeout=10
+
+      - name: Fuzz regex_classification (ASan)
+        run: cargo fuzz run regex_classification --sanitizer=address -- -max_total_time=120 -timeout=10
+
+      - name: Fuzz json_pointer (ASan)
+        run: cargo fuzz run json_pointer --sanitizer=address -- -max_total_time=120 -timeout=10
+
+      - name: Fuzz unicode_inspection (ASan)
+        run: cargo fuzz run unicode_inspection --sanitizer=address -- -max_total_time=120 -timeout=10
+
+      - name: Fuzz glob_matching (ASan)
+        run: cargo fuzz run glob_matching --sanitizer=address -- -max_total_time=120 -timeout=10
+
+      - name: Upload sanitizer crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes-sanitizers
+          path: fuzz/artifacts/
+          retention-days: 90

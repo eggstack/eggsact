@@ -1,3 +1,5 @@
+#![no_main]
+
 //! Fuzz regex feature classification.
 //!
 //! Asserts: no panic on arbitrary UTF-8, classification deterministic,

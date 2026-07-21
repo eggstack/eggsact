@@ -1,3 +1,5 @@
+#![no_main]
+
 //! Fuzz Markdown structure extraction and fenced code-block parsing.
 //!
 //! Asserts: no panic, extracted ranges within source bounds, code slices
@@ -23,8 +25,10 @@ fuzz_target!(|data: &[u8]| {
     // Code fence extract
     let fences = code_fence_extract(text, None, true);
     // Check all spans are within source bounds
-    for fence in &fences.fences {
-        assert!(fence.start_line <= fence.end_line);
+    for block in &fences.blocks {
+        if let Some(end) = block.end_line {
+            assert!(block.start_line <= end);
+        }
     }
     let _ = serde_json::to_string(&fences);
 

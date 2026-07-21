@@ -1,3 +1,5 @@
+#![no_main]
+
 //! Fuzz shell quoting and round-trip properties.
 //!
 //! Properties: parse(quote_argv(argv)) == argv for safe argv,

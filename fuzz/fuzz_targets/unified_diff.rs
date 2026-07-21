@@ -1,3 +1,5 @@
+#![no_main]
+
 //! Fuzz unified diff and patch parsing.
 //!
 //! Asserts: no panic, bounded findings, hunk ranges valid, malformed input
