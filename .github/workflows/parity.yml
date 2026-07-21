@@ -13,7 +13,7 @@ env:
 
 jobs:
   parity:
-    name: Parity (pinned eggcalc)
+    name: Parity (latest eggcalc)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

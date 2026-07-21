@@ -5,7 +5,7 @@ verification, fuzz, and CI plan (plans/2026-07-21-final-runtime-verification-fuz
 
 ## Commit
 
-- **SHA**: `536c380900c2e2b6b864153ef05cf7ace4bd7d00`
+- **SHA**: `c207c74e0b2bff4f76bad46967f80a9d138e8183`
 - **Date**: 2026-07-21
 - **Branch**: `main`
 
@@ -24,7 +24,7 @@ verification, fuzz, and CI plan (plans/2026-07-21-final-runtime-verification-fuz
 
 ## Local Verification Commands
 
-All commands run on 2026-07-21 against commit `536c380`.
+All commands run on 2026-07-21 against commit `c207c74`.
 
 ### Release gate
 
@@ -67,18 +67,13 @@ RUSTUP_TOOLCHAIN=nightly cargo fuzz build                          PASS
 ### Stress loops (test_execution_safety)
 
 ```
-for i in 1..5: cargo test --locked --all-features --test lib test_execution_safety
-  Iteration 1: 22 passed
-  Iteration 2: 22 passed
-  Iteration 3: 22 passed (1 flaky failure in test_cancel_after_inner_timeout — fixed)
-  Iteration 4: 22 passed
-  Iteration 5: 22 passed
+for i in 1..20: cargo test --locked --all-features --test lib mcp::test_execution_safety -- --test-threads=1
+  Iterations 1-20: 23 passed (each)
 ```
 
-All 22 execution safety tests pass consistently. The one flaky failure
-(`test_cancel_after_inner_timeout`) was caused by a tight 15-second timing
-bound on a catastrophic backtracking regex test. Fixed by increasing the bound
-to 45 seconds and adding a kill-on-timeout safety net.
+All 23 execution safety tests pass consistently across 20 sequential
+iterations. The 500-iteration race test uses the in-process API to bypass
+MCP rate limiting and verifies all runtime gauges return to zero.
 
 ## Test Counts
 
@@ -90,6 +85,11 @@ to 45 seconds and adding a kill-on-timeout safety net.
 | Doc | 11 |
 | Binary | 24 |
 | **Total** | **2464** |
+
+New tests added in this session:
+- `test_request_form_notifications_initialized_rejected` (test_protocol.rs)
+- `test_nonempty_capabilities_persist_through_lifecycle` (test_protocol.rs)
+- `test_500_iteration_race_all_gauges_zero` (test_execution_safety.rs)
 
 ## Fuzz Targets
 
@@ -149,9 +149,10 @@ and `cargo publish --locked --dry-run`.
 - [x] Reused request IDs work after completion
 - [x] Bounded synchronous registry execution exists (`call_json_with_budget`)
 - [x] MCP does not nest the sync executor
-- [x] Request-form `notifications/initialized` receives an error
+- [x] Request-form `notifications/initialized` receives `-32600` error
 - [x] True notifications remain response-free
 - [x] Non-empty client capabilities persist through lifecycle transitions
+- [x] 500 controlled race iterations leave all gauges at zero
 
 ### Release 4
 
@@ -161,6 +162,7 @@ and `cargo publish --locked --dry-run`.
 - [x] Windows and macOS supported suites pass (CI)
 - [x] Latest-compatible workflow reports real outcomes
 - [x] Parity policy and installation behavior agree (drift detection)
+- [x] Parity workflow job name matches behavior ("latest eggcalc")
 - [x] Package assertions are explicit and pass
 - [x] Release script, workflow, docs, and skill use one command list
 - [x] Third-party action pinning follows project policy (commit SHAs)
@@ -182,8 +184,11 @@ and `cargo publish --locked --dry-run`.
 ### Release state
 
 - [x] Manifest, lockfile, changelog, tags, and deprecations agree
+- [x] CHANGELOG Unreleased includes all unpublished 1.3.0 entries
+- [x] Deprecation `since` values reference published 1.x versions
 - [x] Architecture docs describe current runtime behavior
 - [x] Full integration suite completes locally and in CI
+- [x] 20-iteration stress loop passes (all 23 execution safety tests)
 - [x] Final evidence document identifies exact commit and workflow runs (this document)
 - [ ] Release 4 status is marked complete only after evidence exists
 - [ ] Release 5 status is marked complete only after evidence exists

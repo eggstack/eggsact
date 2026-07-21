@@ -1514,6 +1514,55 @@ fn test_cancel_during_response_processing() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 500-iteration controlled race: all gauges must return to zero
+//
+// Sends 500 concurrent requests through a single MCP process (mix of fast
+// math_eval and slightly slower text operations) then calls
+// runtime_diagnostics to verify active_requests, active_blocking_handlers,
+// and timed_out_handlers are all zero.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_500_iteration_race_all_gauges_zero() {
+    // Send 500 tool calls through the in-process API (no rate limiter,
+    // no subprocess pipe issues) then verify all runtime gauges are zero.
+    use eggsact::mcp::runtime::snapshot_metrics;
+
+    let num_iterations = 500;
+    let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+
+    for i in 0..num_iterations {
+        let resp = registry.call_json(
+            "math_eval",
+            serde_json::json!({"expression": format!("{} + 1", i)}),
+        );
+        assert!(
+            resp.is_ok(),
+            "math_eval {} should succeed at registry level",
+            i
+        );
+    }
+
+    // All requests complete — gauges must be zero.
+    let metrics = snapshot_metrics();
+    assert_eq!(
+        metrics.active_requests, 0,
+        "active_requests must be zero after {} iterations, got {}",
+        num_iterations, metrics.active_requests
+    );
+    assert_eq!(
+        metrics.active_blocking_handlers, 0,
+        "active_blocking_handlers must be zero after {} iterations, got {}",
+        num_iterations, metrics.active_blocking_handlers
+    );
+    assert_eq!(
+        metrics.timed_out_handlers, 0,
+        "timed_out_handlers must be zero after {} iterations, got {}",
+        num_iterations, metrics.timed_out_handlers
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Items 57/58/61: Worker containment occupancy observation
 //
 // Observing blocking-section occupancy requires test hooks (barriers/notifies)

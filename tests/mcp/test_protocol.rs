@@ -750,3 +750,127 @@ fn test_tool_call_after_initialize_but_before_initialized_notification_rejected(
         Some(&Value::String("NOT_INITIALIZED".to_string()))
     );
 }
+
+#[test]
+fn test_request_form_notifications_initialized_rejected() {
+    // A request-form notifications/initialized (with id) must receive a
+    // JSON-RPC error, not be silently consumed.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // Initialize first
+        stdin.write_all(initialize_request(0).as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Send request-form notifications/initialized (has id — protocol violation)
+        stdin
+            .write_all(
+                r#"{"jsonrpc":"2.0","method":"notifications/initialized","id":1}"#.as_bytes(),
+            )
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let responses = parse_responses(&stdout);
+
+    // First response is initialize result (success)
+    assert!(
+        responses[0].get("result").is_some(),
+        "Initialize should succeed"
+    );
+    // Second response must be an error (not silently consumed)
+    assert!(
+        responses.len() >= 2,
+        "Request-form notifications/initialized should produce a response, got {}",
+        responses.len()
+    );
+    let err = responses[1]
+        .get("error")
+        .expect("Request-form notifications/initialized should return an error");
+    let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    assert_eq!(
+        code, -32600,
+        "Error code should be -32600 (Invalid Request), got: {}",
+        code
+    );
+}
+
+#[test]
+fn test_nonempty_capabilities_persist_through_lifecycle() {
+    // Non-empty client capabilities (roots, sampling, experimental) must
+    // survive through Uninitialized → AwaitingInitialized → Ready.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        // Initialize with non-empty capabilities
+        let init = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "initialize",
+            "id": 0,
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "roots": {"listChanged": true},
+                    "sampling": {},
+                    "experimental": {"customFeature": true}
+                },
+                "clientInfo": {"name": "test-caps", "version": "1.0.0"}
+            }
+        });
+        stdin.write_all(init.to_string().as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // Notification form (no id)
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        // tools/list — should succeed (Ready state)
+        stdin
+            .write_all(r#"{"jsonrpc":"2.0","method":"tools/list","id":1}"#.as_bytes())
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let responses = parse_responses(&stdout);
+
+    // Should have 2 responses (initialize, tools/list)
+    assert_eq!(
+        responses.len(),
+        2,
+        "Should have 2 responses, got {}",
+        responses.len()
+    );
+
+    // Initialize should succeed
+    assert!(
+        responses[0].get("result").is_some(),
+        "Initialize should succeed"
+    );
+
+    // tools/list should also succeed (capabilities persisted through lifecycle)
+    let list_resp = &responses[1];
+    assert!(
+        list_resp.get("result").is_some(),
+        "tools/list should succeed after capabilities were set, got: {}",
+        list_resp
+    );
+    let tools = list_resp["result"]["tools"].as_array().unwrap();
+    assert!(!tools.is_empty(), "tools/list should return tools");
+}

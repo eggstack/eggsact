@@ -7,27 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **Fuzz target assertion gaps**: 25 claim-assertion gaps fixed across 12 fuzz
-  targets. Removed vacuous `let _ =` determinism calls, added missing
-  assertions for findings bounds, span validity, serialization success, and
-  determinism. Removed or narrowed module-comment claims that were not
-  backed by code.
-- **Vacuous property tests replaced**: 13 no-panic tests that discarded
-  results were removed. 8 determinism tests that used `let _ =` were fixed
-  to use `assert_eq!`. 3 weak assertions were strengthened. 2 tests were
-  rewritten to assert actual properties.
-
-### Changed
-- **CI workflows corrected**: Added missing step IDs in `latest-compatible.yml`
-  summary. Converted `fuzz-scheduled.yml` to matrix strategy (12 parallel
-  jobs, 240s each, within 15min timeout). Added concurrency group to
-  `fuzz-pr.yml`. Replaced blanket dotfile rejection in
-  `release-verification.yml` with explicit path patterns. Renamed parity
-  workflow job to reflect drift-detection semantics.
-
-## [1.3.0] - 2026-07-17
-
 ### Added
 - **`call_json_with_execution_template`**: explicit immutable alias for
   `call_json_with_execution_context`. Identical behavior (clones `eval_ctx`);
@@ -71,6 +50,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `call_json_with_execution_context`.
 - `set_mcp_mode()` is now deprecated for new code. Use
   `EvalContext::mcp_mode()` instead.
+- **CI workflows corrected**: Added missing step IDs in `latest-compatible.yml`
+  summary. Converted `fuzz-scheduled.yml` to matrix strategy (12 parallel
+  jobs, 240s each, within 15min timeout). Added concurrency group to
+  `fuzz-pr.yml`. Replaced blanket dotfile rejection in
+  `release-verification.yml` with explicit path patterns. Renamed parity
+  workflow job to reflect drift-detection semantics. Pinned all third-party
+  GitHub Actions to commit SHAs.
+- **Fuzz target assertion gaps**: 25 claim-assertion gaps fixed across 12 fuzz
+  targets. Removed vacuous `let _ =` determinism calls, added missing
+  assertions for findings bounds, span validity, serialization success, and
+  determinism. Removed or narrowed module-comment claims that were not
+  backed by code.
+- **Vacuous property tests replaced**: 13 no-panic tests that discarded
+  results were removed. 8 determinism tests that used `let _ =` were fixed
+  to use `assert_eq!`. 3 weak assertions were strengthened. 2 tests were
+  rewritten to assert actual properties.
+- **Request-form `notifications/initialized` now returns `-32600` error**
+  instead of being silently consumed. True notifications (no `id`) remain
+  response-free per JSON-RPC 2.0.
 
 ### Deprecated
 - **`ensure_mcp_defaults()`** — MCP dispatch now creates
@@ -86,31 +84,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Removed dead lifecycle helper**: `initialized_before_initialize()`
-  removed from `src/mcp/protocol.rs`. Wrong-state
-  `notifications/initialized` is silently ignored per JSON-RPC 2.0 spec
-  (notifications do not receive responses).
+  removed from `src/mcp/protocol.rs`.
 
-### Semver Analysis: `get_tool` / `has_tool` behavior change
+### Semver Note: `get_tool` / `has_tool` behavior change
 
-**Decision**: Ship as a MINOR release (1.3.0), not a MAJOR.
-
-**Rationale**: Changing `get_tool`/`has_tool` to also enforce audience/exposure
-restrictions corrects an authorization-policy inconsistency. The old behavior
-was a bug — a Model-audience registry could discover metadata for, and report
-`has_tool` == `true` for, Harness-only tools that it could never execute.
-This is strictly more restrictive: tools that were visible AND executable
-before remain visible and executable. Only tools that were visible but
-NOT executable (due to audience mismatch) are now correctly hidden.
-
-**Compatibility risk**: Low. Callers that relied on the old behavior were
-relying on buggy semantics. The new `get_tool_unfiltered` /
-`has_registered_tool` methods provide administrative access for callers
-that genuinely need to inspect all registered tools regardless of policy.
-
-**Migration path**: No code changes required for correct callers. Callers
-that inspected Harness-only tool metadata via `get_tool` on a Model registry
-should switch to `get_tool_unfiltered` (with awareness that execution will
-still be rejected).
+Changing `get_tool`/`has_tool` to also enforce audience/exposure restrictions
+corrects an authorization-policy inconsistency. The old behavior was a bug.
+This is strictly more restrictive: tools that were visible AND executable before
+remain visible and executable. The new `get_tool_unfiltered` /
+`has_registered_tool` methods provide administrative access.
 
 ## [1.2.0] - 2026-07-17
 

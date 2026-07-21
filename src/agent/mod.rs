@@ -393,7 +393,7 @@ impl ToolRegistry {
     /// integrations, prefer [`ToolRegistry::available_tools_model_safe`] or
     /// [`ToolRegistry::available_tools_for_audience`] to also exclude `HarnessOnly` tools.
     #[deprecated(
-        since = "0.3.0",
+        since = "1.0.0",
         note = "use available_tools_model_safe, available_tools_for_audience, or available_tools_for_current_audience"
     )]
     pub fn available_tools(&self) -> Vec<ToolView> {
@@ -825,10 +825,10 @@ impl ToolRegistry {
     ///
     /// # Note
     ///
-    /// This method is **deprecated** as of 0.4.0. Calculator-backed tool
+    /// This method is **deprecated** as of 1.0.0. Calculator-backed tool
     /// handlers do not persist state through the `_mut` dispatch path.
     #[deprecated(
-        since = "0.4.0",
+        since = "1.0.0",
         note = "Does not persist calculator state through math_eval. Use evaluate_with_context() or run_with_context() directly for persistent calculator sessions."
     )]
     pub fn call_json_with_execution_context_mut(

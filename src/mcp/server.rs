@@ -155,15 +155,14 @@ async fn handle_request_async(
         "ping" => Some(serde_json::json!({})),
 
         "notifications/initialized" => {
-            // Lifecycle transition: AwaitingInitialized → Ready
-            let mut state = session_state.lock().await;
-            if let Err(e) = state.transition_to_ready() {
-                eprintln!(
-                    "Warning: notifications/initialized ignored: {} (state: {:?})",
-                    e, &*state
-                );
-            }
-            None
+            // This branch is only reachable from the request path (with an id),
+            // because the notification path (no id) handles it inline at the
+            // read loop. A request-form notification is a protocol violation:
+            // the client must use the notification form (no id).
+            Some(invalid_request(
+                "notifications/initialized must be sent as a notification (without 'id'), not as a request",
+                request.id.clone(),
+            ))
         }
 
         // All other methods: enforce Ready state, then dispatch

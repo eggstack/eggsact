@@ -461,7 +461,7 @@ pub fn get_active_audience() -> ToolAudience {
 }
 
 #[deprecated(
-    since = "0.3.0",
+    since = "1.0.0",
     note = "use EvalContext::mcp_mode() through the thread-local eval context bridge instead"
 )]
 pub fn ensure_mcp_defaults() {

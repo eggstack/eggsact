@@ -1,7 +1,7 @@
 # Release 5 Status Note
 
 **Date:** 2026-07-21
-**Commit:** `536c380900c2e2b6b864153ef05cf7ace4bd7d00`
+**Commit:** `c207c74e0b2bff4f76bad46967f80a9d138e8183`
 
 ## Fuzz Targets
 
