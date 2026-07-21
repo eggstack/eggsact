@@ -3,14 +3,14 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use unicode_normalization::UnicodeNormalization;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PolicyFinding {
     pub rule: String,
     pub severity: String,
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UnicodePolicyCheckResult {
     pub pass: bool,
     pub policy: String,

@@ -172,7 +172,7 @@ pub fn diff_spans(a: &str, b: &str, max_diffs: usize) -> Vec<DiffSpan> {
     spans
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FirstDiff {
     pub a_index: usize,
     pub b_index: usize,

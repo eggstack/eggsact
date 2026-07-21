@@ -2,8 +2,7 @@
 
 //! Fuzz TOML and configuration parsing.
 //!
-//! Asserts: no panic, bounded findings, validation deterministic,
-//! auto-detection deterministic.
+//! Asserts: no panic, bounded findings, validation deterministic.
 
 use libfuzzer_sys::fuzz_target;
 use eggsact::text::{validate_toml, toml_shape, dotenv_validate, ini_validate};
@@ -21,11 +20,34 @@ fuzz_target!(|data: &[u8]| {
     // Deterministic
     let r1 = validate_toml(text);
     let r2 = validate_toml(text);
-    let _ = (r1, r2);
+    match (&r1, &r2) {
+        (Ok(a), Ok(b)) => {
+            let j1 = serde_json::to_value(a).unwrap();
+            let j2 = serde_json::to_value(b).unwrap();
+            assert_eq!(j1, j2);
+        }
+        (Err(_), Err(_)) => {}
+        _ => panic!("validate_toml determinism violated"),
+    }
+
+    // Bounded findings
+    if let Ok(ref r) = r1 {
+        assert!(r.error.is_none() || !r.error.as_ref().unwrap().is_empty());
+    }
 
     // Dotenv validation
-    let _ = dotenv_validate(text, true, "^[A-Z_][A-Z0-9_]*$", "warn");
+    let dr1 = dotenv_validate(text, true, "^[A-Z_][A-Z0-9_]*$", "warn");
+    let dr2 = dotenv_validate(text, true, "^[A-Z_][A-Z0-9_]*$", "warn");
+    let j1 = serde_json::to_value(&dr1).unwrap();
+    let j2 = serde_json::to_value(&dr2).unwrap();
+    assert_eq!(j1, j2);
+    assert!(dr1.findings.len() <= 100);
 
     // INI validation
-    let _ = ini_validate(text, "warn");
+    let ir1 = ini_validate(text, "warn");
+    let ir2 = ini_validate(text, "warn");
+    let j1 = serde_json::to_value(&ir1).unwrap();
+    let j2 = serde_json::to_value(&ir2).unwrap();
+    assert_eq!(j1, j2);
+    assert!(ir1.findings.len() <= 100);
 });

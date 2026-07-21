@@ -40,4 +40,11 @@ fuzz_target!(|data: &[u8]| {
         }
     }
     let _ = serde_json::to_string(&result);
+
+    // Deterministic
+    let result2 = regex_finditer(pattern, text, None, 100, false, false);
+    assert_eq!(result.matches.len(), result2.matches.len());
+    for (m1, m2) in result.matches.iter().zip(result2.matches.iter()) {
+        assert_eq!(m1.span, m2.span);
+    }
 });

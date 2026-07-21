@@ -111,7 +111,7 @@ tests/
   mcp/              # MCP protocol + tool tests (28 files)
   parity/           # Python/Rust parity tests (12 files)
   text/             # text processing tests (25 files)
-  property/         # property-based tests: round-trip, idempotence, determinism, symmetry (9 files, 60 tests)
+  property/         # property-based tests: round-trip, idempotence, determinism, symmetry (9 files, 47 tests)
 fuzz/
   Cargo.toml        # isolated fuzz workspace (libfuzzer-sys, not in normal deps)
   fuzz_targets/     # 12 fuzz targets covering all parser-heavy surfaces

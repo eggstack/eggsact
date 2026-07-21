@@ -18,7 +18,7 @@ Handlers cannot receive an `ExecutionContext` directly. State isolation is appli
 
 | File | Category | Tool Count | Notes |
 |------|----------|-----------|-------|
-| `helpers.rs` | shared | — | Constants, utilities, spawn semaphore, path classification |
+| `helpers.rs` | shared | — | Constants, utilities, path classification |
 | `math.rs` | math | 4 | Calculator-backed eval, unit conversion, constants |
 | `text.rs` | text | 18 | Unicode-aware text processing, security inspection |
 | `json.rs` | json | 6 | JSON extract, compare, canonicalize, shape, structured comparison |
@@ -57,8 +57,6 @@ Handlers cannot receive an `ExecutionContext` directly. State isolation is appli
 | `MAX_SCHEMA_ELEMENTS` | 10,000 | Max schema elements traversed |
 | `MAX_METADATA_FIELD_LENGTH` | 1,000 | Max metadata field length for edit_preflight |
 | `REGEX_TIMEOUT_SECONDS` | 5 | Timeout for regex execution |
-| `MAX_CONCURRENT_SPAWNED` | 16 | Max concurrent spawned threads |
-| `SPAWN_ACQUIRE_TIMEOUT` | 10 | Seconds to wait for a spawn permit |
 | `MAX_EXPRESSION_LENGTH` | 10,000 | Max math expression length |
 
 ### Utility Functions

@@ -1,12 +1,4 @@
-use eggsact::text::{json_canonicalize, json_compare, json_extract, json_shape, validate_json};
-
-#[test]
-fn validate_json_no_panic() {
-    let inputs = ["", "{}", "[]", "null", "123", "\"hello\"", "{", "[["];
-    for input in &inputs {
-        let _ = validate_json(input);
-    }
-}
+use eggsact::text::{json_canonicalize, json_compare, json_shape};
 
 #[test]
 fn json_canonicalize_deterministic() {
@@ -41,20 +33,6 @@ fn json_canonicalize_idempotent() {
 }
 
 #[test]
-fn json_extract_no_panic() {
-    let cases = [
-        ("{\"a\":1}", "/a"),
-        ("[1,2,3]", "/1"),
-        ("{}", "/missing"),
-        ("", "/"),
-        ("not json", "/x"),
-    ];
-    for (json, pointer) in &cases {
-        let _ = json_extract(json, pointer, 1000);
-    }
-}
-
-#[test]
 fn json_compare_symmetric() {
     let pairs = [
         ("{\"a\":1,\"b\":2}", "{\"b\":2,\"a\":1}"),
@@ -63,7 +41,7 @@ fn json_compare_symmetric() {
     for (a, b) in &pairs {
         let r1 = json_compare(a, b, true, false, false, false, false, 100);
         let r2 = json_compare(b, a, true, false, false, false, false, 100);
-        assert_eq!(r1.is_err(), r2.is_err());
+        assert_eq!(r1, r2);
     }
 }
 
@@ -82,6 +60,6 @@ fn json_shape_deterministic() {
     for input in &inputs {
         let s1 = json_shape(input, 10, 100, 100);
         let s2 = json_shape(input, 10, 100, 100);
-        assert_eq!(s1.is_err(), s2.is_err());
+        assert_eq!(s1, s2);
     }
 }

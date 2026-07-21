@@ -65,7 +65,7 @@ pub struct RegexTestResult {
     pub unsupported_features: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonShapeKey {
     #[serde(rename = "type")]
     pub key_type: String,
@@ -75,7 +75,7 @@ pub struct JsonShapeKey {
     pub item_count: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonShapeResult {
     pub valid: bool,
     pub shape: Option<JsonShapeKey>,
@@ -2087,7 +2087,7 @@ pub fn json_extract(
 
 // ── JSON compare ───────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonCompareDiff {
     pub path: String,
     pub kind: String,
@@ -2101,7 +2101,7 @@ pub struct JsonCompareDiff {
     pub b_preview: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonCompareResult {
     pub valid_json_a: bool,
     pub valid_json_b: bool,

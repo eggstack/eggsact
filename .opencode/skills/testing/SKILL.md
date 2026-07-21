@@ -176,7 +176,7 @@ Verify that:
 
 ## Property Tests
 
-`tests/property/` contains 60 property-based tests across 9 modules. These verify algebraic invariants (round-trip, idempotence, determinism, symmetry, span validity) using a deterministic xorshift64 PRNG for input generation — no external property-test framework required.
+`tests/property/` contains 47 property-based tests across 9 modules. These verify algebraic invariants (round-trip, idempotence, determinism, symmetry, span validity) using a deterministic xorshift64 PRNG for input generation — no external property-test framework required.
 
 ```bash
 cargo test --locked --test lib property              # all property tests

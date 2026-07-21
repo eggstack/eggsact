@@ -2,27 +2,12 @@ use eggsact::text::unicode_tools::{find_invisibles, unicode_casefold};
 use eggsact::text::{canonicalize_text, count_graphemes, has_confusables, unicode_policy_check};
 
 #[test]
-fn unicode_policy_check_no_panic() {
-    let inputs = [
-        "",
-        "hello",
-        "🌍",
-        "\u{202e}test",
-        "\u{200b}zero\u{200c}width",
-    ];
-    for input in &inputs {
-        let _ = unicode_policy_check(input, "permissive", None);
-        let _ = unicode_policy_check(input, "strict", None);
-    }
-}
-
-#[test]
 fn unicode_policy_deterministic() {
     let inputs = ["hello", "🌍", "\u{202e}test"];
     for input in &inputs {
         let r1 = unicode_policy_check(input, "permissive", None);
         let r2 = unicode_policy_check(input, "permissive", None);
-        let _ = (r1, r2);
+        assert_eq!(r1, r2);
     }
 }
 
@@ -55,6 +40,10 @@ fn casefold_preserves_content() {
     for input in &inputs {
         let cf = unicode_casefold(input);
         assert!(!cf.is_empty());
+        assert!(
+            cf.len() >= input.len() / 2,
+            "Casefold drastically reduced content"
+        );
     }
 }
 

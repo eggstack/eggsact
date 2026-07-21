@@ -17,21 +17,6 @@ fn glob_match_deterministic() {
 }
 
 #[test]
-fn glob_match_no_panic() {
-    let cases = [
-        ("", ""),
-        ("*", ""),
-        ("?", ""),
-        ("[", "test"),
-        ("**/**/**", "a/b/c"),
-    ];
-    for (pattern, path) in &cases {
-        let _ = glob_match(pattern, path, "posix", true);
-        let _ = glob_match(pattern, path, "windows", true);
-    }
-}
-
-#[test]
 fn path_analyze_deterministic() {
     let paths = ["/usr/local/bin", "src/main.rs", "../foo", "."];
     for path in &paths {
@@ -62,5 +47,12 @@ fn path_normalize_preserves_content() {
     for path in &paths {
         let result = path_normalize(path, "posix", true, false);
         assert!(!result.normalized.is_empty());
+        let filename = path.rsplit('/').next().unwrap_or(path);
+        assert!(
+            result.normalized.contains(filename),
+            "Normalized path missing original filename '{}' in '{}'",
+            filename,
+            result.normalized
+        );
     }
 }

@@ -60,15 +60,6 @@ fn calculator_context_determinism() {
 }
 
 #[test]
-fn calculator_no_panic_on_fuzz_input() {
-    let mut rng = Rng::new(0xDEAD);
-    for _ in 0..200 {
-        let expr = rng.ascii_string(200);
-        let _ = evaluate(&expr);
-    }
-}
-
-#[test]
 fn calculator_error_structured() {
     let bad = ["", "+++", "(((", "1/0", "unknown_func(1)", "1 2 3"];
     for expr in &bad {
@@ -125,14 +116,18 @@ fn split_at_operators_returns_valid_tokens() {
         let expr = rng.ascii_string(100);
         let tokens = split_at_operators(&expr);
         assert!(!tokens.is_empty());
+        for token in &tokens {
+            assert!(!token.contains('\0'), "Token contains null byte");
+        }
     }
 }
 
 #[test]
 fn mcp_mode_restrictions() {
-    let exprs = ["rand()", "memory(1)", "pi", "e"];
+    let exprs = ["random()", "memory(1)"];
     for expr in &exprs {
         let mut ctx = EvalContext::mcp_mode();
-        let _ = evaluate_with_context(expr, &mut ctx);
+        let result = evaluate_with_context(expr, &mut ctx);
+        assert!(result.is_err(), "MCP mode should reject: {}", expr);
     }
 }

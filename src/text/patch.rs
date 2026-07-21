@@ -60,13 +60,13 @@ pub struct PatchApplyCheckResult {
     pub findings: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct LineRange {
     pub start: usize,
     pub end: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct PatchSummaryResult {
     pub files_changed: usize,
     pub hunks_total: usize,
@@ -78,7 +78,7 @@ pub struct PatchSummaryResult {
     pub findings: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct RenamePair {
     pub from: String,
     pub to: String,

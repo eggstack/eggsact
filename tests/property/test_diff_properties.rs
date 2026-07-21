@@ -1,6 +1,4 @@
-use eggsact::text::{
-    common_prefix_suffix, first_diff, levenshtein_distance, patch_apply_check, patch_summary,
-};
+use eggsact::text::{common_prefix_suffix, first_diff, levenshtein_distance, patch_summary};
 
 #[test]
 fn levenshtein_self_distance_zero() {
@@ -35,7 +33,7 @@ fn first_diff_deterministic() {
     for (a, b) in &pairs {
         let d1 = first_diff(a, b);
         let d2 = first_diff(a, b);
-        assert_eq!(d1.is_some(), d2.is_some());
+        assert_eq!(d1, d2);
     }
 }
 
@@ -70,15 +68,6 @@ fn patch_summary_deterministic() {
     for p in &patches {
         let s1 = patch_summary(p);
         let s2 = patch_summary(p);
-        let _ = (s1, s2);
-    }
-}
-
-#[test]
-fn patch_apply_check_no_panic() {
-    let patches = ["--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new", "", "garbage"];
-    let originals = ["old\n", "", "content\n"];
-    for (o, p) in originals.iter().zip(patches.iter()) {
-        let _ = patch_apply_check(o, p, false, false, false);
+        assert_eq!(s1, s2);
     }
 }

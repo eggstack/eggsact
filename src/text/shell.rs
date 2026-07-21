@@ -34,6 +34,7 @@ pub struct ShellQuoteJoinResult {
     pub findings: Vec<String>,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct ArgvCompareResult {
     pub argv_equal: bool,
     pub left_argv: Vec<String>,

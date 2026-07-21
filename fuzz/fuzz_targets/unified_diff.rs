@@ -23,7 +23,17 @@ fuzz_target!(|data: &[u8]| {
     let result = patch_apply_check("", text, false, false, false);
     let _ = serde_json::to_string(&result);
 
+    // Bounded findings
+    assert!(result.findings.len() <= 100);
+
+    // Hunk ranges valid: affected line ranges are ordered
+    for range in &result.affected_line_ranges {
+        assert!(range.start <= range.end);
+    }
+
     // Deterministic
     let result2 = patch_apply_check("", text, false, false, false);
-    let _ = serde_json::to_string(&result2);
+    let j1 = serde_json::to_value(&result).unwrap();
+    let j2 = serde_json::to_value(&result2).unwrap();
+    assert_eq!(j1, j2);
 });

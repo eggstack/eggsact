@@ -57,7 +57,7 @@ jobs:
             grep -q "^${f}$" package-list.txt || { echo "MISSING: $f"; exit 1; }
           done
           # Must not include excluded paths
-          for pat in '^\.' 'plans/' 'scripts/' '\.github/' 'deny\.toml' 'AGENTS\.md'; do
+          for pat in '^\.(github|opencode|agents)/' '^plans/' '^scripts/' '^fuzz/' '^deny\.toml$' '^AGENTS\.md$'; do
             if grep -qE "$pat" package-list.txt; then
               echo "EXCLUDED PATH LEAKED: $(grep -E "$pat" package-list.txt)"
               exit 1

@@ -5,8 +5,7 @@
 //! Feeds bounded arbitrary UTF-8 expressions into `eggsact::evaluate` and
 //! `eggsact::evaluate_with_context` with deterministic contexts.
 //!
-//! Asserts: no panic, errors are structured, deterministic results, context
-//! not mutated on parse failure.
+//! Asserts: no panic, errors are structured, deterministic results.
 
 use libfuzzer_sys::fuzz_target;
 use eggsact::{evaluate, evaluate_with_context, EvalContext};
@@ -18,11 +17,15 @@ fuzz_target!(|data: &[u8]| {
     if expr.len() > MAX_EXPR_LEN { return; }
 
     // Default context
-    let _ = evaluate(expr);
+    if let Err(e) = evaluate(expr) {
+        assert!(!e.is_empty());
+    }
 
     // MCP-safe context
     let mut ctx = EvalContext::mcp_mode();
-    let _ = evaluate_with_context(expr, &mut ctx);
+    if let Err(e) = evaluate_with_context(expr, &mut ctx) {
+        assert!(!e.is_empty());
+    }
 
     // Seeded deterministic context
     let mut ctx = EvalContext::new().with_prng_state(42);

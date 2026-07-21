@@ -53,7 +53,7 @@ eggsact is a deterministic MCP (Model Context Protocol) server and in-process ut
 │  identifier(3) unicode(2) version(2) cargo(1) dependency(1)     │
 │  repo(5) diagnostics(3) analysis(4)                              │
 │                                                                   │
-│  helpers.rs — shared constants, utilities, spawn semaphore        │
+│  helpers.rs — shared constants, utilities                        │
 └─────────────────────────────┬───────────────────────────────────┘
                               │
                               ▼
@@ -289,7 +289,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | `src/mcp/registry/listing.rs` | — | Filtering, audience, schema compaction, suggestions |
 | `src/mcp/specs/*.rs` | — | ToolSpec declarations (20 files, one per category) |
 | `src/mcp/schemas/*.rs` | — | JSON-schema builders (20 files, one per category) |
-| `src/tools/helpers.rs` | 1778 | Shared constants, utilities, spawn semaphore |
+| `src/tools/helpers.rs` | 1778 | Shared constants, utilities |
 | `src/tools/*.rs` | — | Tool implementations (19 files) |
 | `src/text/*.rs` | — | Text processing library (25 files) |
 | `src/agent/mod.rs` | ~1400 | ToolRegistry, Profile, ExecutionContext |

@@ -14,7 +14,7 @@ tests/
   mcp/                            # MCP protocol + tool tests (27 files)
   text/                           # text processing tests (24 files)
   parity/                         # Python/Rust parity tests (11 files)
-  property/                       # property-based tests (9 files, 60 tests)
+  property/                       # property-based tests (9 files, 47 tests)
   fixtures/
     accepted_parity_failures.txt  # 33 known parity failures for regression detection
 fuzz/
@@ -497,7 +497,7 @@ cargo test --locked --test lib mcp -- --skip parity
 
 ## Property Tests (`tests/property/`)
 
-9 test files containing 60 property-based tests that verify algebraic invariants across all major surfaces. Property tests run in ordinary CI via `cargo test --test lib property`.
+9 test files containing 47 property-based tests that verify algebraic invariants across all major surfaces. Property tests run in ordinary CI via `cargo test --test lib property`.
 
 | File | Tests | Properties Verified |
 |------|-------|-------------------|

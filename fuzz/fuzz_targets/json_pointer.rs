@@ -2,7 +2,7 @@
 
 //! Fuzz JSON parsing and pointer extraction.
 //!
-//! Asserts: no panic on malformed JSON or pointers, pointer escaping consistent,
+//! Asserts: no panic on malformed JSON or pointers,
 //! canonicalization idempotent, serialization succeeds.
 
 use libfuzzer_sys::fuzz_target;
@@ -19,11 +19,15 @@ fuzz_target!(|data: &[u8]| {
     let Ok(other_json) = std::str::from_utf8(&data[split*2..]) else { return };
     if json_text.len() > MAX_TEXT_LEN || other_json.len() > MAX_TEXT_LEN { return; }
 
-    // Validate should not panic
-    let _ = validate_json(json_text);
+    // Validate should not panic, serialization succeeds
+    if let Ok(result) = validate_json(json_text) {
+        assert!(serde_json::to_string(&result).is_ok());
+    }
 
-    // Extract should not panic
-    let _ = json_extract(json_text, pointer, 10_000);
+    // Extract should not panic, serialization succeeds
+    if let Ok(result) = json_extract(json_text, pointer, 10_000) {
+        assert!(serde_json::to_value(&result).is_ok());
+    }
 
     // Canonicalize and check idempotence
     if let Ok(canon1) = json_canonicalize(json_text, true, Some(2), false, true, false) {

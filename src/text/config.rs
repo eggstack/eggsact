@@ -8,7 +8,7 @@ const _DEFAULT_KEY_PATTERN: &str = r"^[A-Za-z_][A-Za-z0-9_]*$";
 static EXPANSION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*").unwrap());
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DotenvEntry {
     pub key: String,
     pub value: String,
@@ -31,7 +31,7 @@ pub enum IniLineKind {
     KeyValue(IniKeyValueEntry),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct DuplicateEntry {
     pub key: String,
     pub first_line: usize,
@@ -39,14 +39,14 @@ pub struct DuplicateEntry {
     pub section: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct InvalidLine {
     pub line: usize,
     pub text: String,
     pub reason: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct DotenvValidateResult {
     pub parse_ok: bool,
     pub entries: Vec<DotenvEntry>,
@@ -57,7 +57,7 @@ pub struct DotenvValidateResult {
     pub findings: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct IniValidateResult {
     pub parse_ok: bool,
     pub sections: Vec<String>,

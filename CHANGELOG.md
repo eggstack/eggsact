@@ -8,33 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Eliminated nested timeout workers**: `math_eval`, `validate_regex`,
-  `regex_finditer`, and `dotenv_validate` no longer spawn inner OS threads
-  via `run_with_timeout`. All handlers now execute directly inside the
-  bounded `spawn_blocking` closure with `catch_unwind` for panic safety.
-  The outer tokio semaphore (`MAX_TOOL_WORKERS=16`) is the sole concurrency
-  bound. Removed `run_with_timeout`, `SpawnSemaphore`, `SpawnPermit`, and
-  related infrastructure from `src/tools/helpers.rs`.
-- **Race-free timeout metrics**: The `AtomicBool` `timed_out` flag has been
-  replaced with an `AtomicU8` lifecycle state machine (`HANDLER_RUNNING`,
-  `HANDLER_TIMED_OUT`, `HANDLER_FINISHED`). Timeout path uses
-  `compare_exchange` and handler exit uses `swap` to guarantee exactly one
-  increment and one decrement of `timed_out_handlers` per timeout.
-- **Retained client capabilities**: `NegotiatedProtocol` now includes a
-  `client_capabilities: ClientCapabilities` field. Client capabilities are
-  stored for the entire session lifetime. Not yet used for
-  capability-dependent behavior — just retained.
-- **Removed dead lifecycle helper**: `initialized_before_initialize()`
-  removed from `src/mcp/protocol.rs`. Wrong-state
-  `notifications/initialized` is silently ignored per JSON-RPC 2.0 spec
-  (notifications do not receive responses).
+- **Fuzz target assertion gaps**: 25 claim-assertion gaps fixed across 12 fuzz
+  targets. Removed vacuous `let _ =` determinism calls, added missing
+  assertions for findings bounds, span validity, serialization success, and
+  determinism. Removed or narrowed module-comment claims that were not
+  backed by code.
+- **Vacuous property tests replaced**: 13 no-panic tests that discarded
+  results were removed. 8 determinism tests that used `let _ =` were fixed
+  to use `assert_eq!`. 3 weak assertions were strengthened. 2 tests were
+  rewritten to assert actual properties.
 
 ### Changed
-- **Deprecated `call_json_with_execution_context_mut`** (since 0.4.0):
-  Does not persist calculator state through `math_eval`. Use
-  `evaluate_with_context()` or `run_with_context()` directly for persistent
-  calculator sessions. The method remains useful for transaction safety on
-  failure paths.
+- **CI workflows corrected**: Added missing step IDs in `latest-compatible.yml`
+  summary. Converted `fuzz-scheduled.yml` to matrix strategy (12 parallel
+  jobs, 240s each, within 15min timeout). Added concurrency group to
+  `fuzz-pr.yml`. Replaced blanket dotfile rejection in
+  `release-verification.yml` with explicit path patterns. Renamed parity
+  workflow job to reflect drift-detection semantics.
 
 ## [1.3.0] - 2026-07-17
 
@@ -52,6 +42,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **RAII guards in `budget.rs`**: `CancelFlagGuard` and `EvalContextGuard`
   provide panic-safe thread-local restoration for `CURRENT_CANCEL_FLAG` and
   `CURRENT_EVAL_CONTEXT`.
+- **Eliminated nested timeout workers**: `math_eval`, `validate_regex`,
+  `regex_finditer`, and `dotenv_validate` no longer spawn inner OS threads
+  via `run_with_timeout`. All handlers now execute directly inside the
+  bounded `spawn_blocking` closure with `catch_unwind` for panic safety.
+  The outer tokio semaphore (`MAX_TOOL_WORKERS=16`) is the sole concurrency
+  bound. Removed `run_with_timeout`, `SpawnSemaphore`, `SpawnPermit`, and
+  related infrastructure from `src/tools/helpers.rs`.
+- **Race-free timeout metrics**: The `AtomicBool` `timed_out` flag has been
+  replaced with an `AtomicU8` lifecycle state machine (`HANDLER_RUNNING`,
+  `HANDLER_TIMED_OUT`, `HANDLER_FINISHED`). Timeout path uses
+  `compare_exchange` and handler exit uses `swap` to guarantee exactly one
+  increment and one decrement of `timed_out_handlers` per timeout.
+- **Retained client capabilities**: `NegotiatedProtocol` now includes a
+  `client_capabilities: ClientCapabilities` field. Client capabilities are
+  stored for the entire session lifetime. Not yet used for
+  capability-dependent behavior — just retained.
 
 ### Changed
 - **MCP dispatch no longer calls `ensure_mcp_defaults()` / `set_mcp_mode()`**.
@@ -72,6 +78,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compatibility but should not be called in new code.
 - **`set_mcp_mode()`** — use `EvalContext::mcp_mode()` instead. The global
   `AtomicBool` flags remain for legacy `evaluate()`/`run()` callers.
+- **`call_json_with_execution_context_mut`** (since 0.4.0):
+  Does not persist calculator state through `math_eval`. Use
+  `evaluate_with_context()` or `run_with_context()` directly for persistent
+  calculator sessions. The method remains useful for transaction safety on
+  failure paths.
+
+### Fixed
+- **Removed dead lifecycle helper**: `initialized_before_initialize()`
+  removed from `src/mcp/protocol.rs`. Wrong-state
+  `notifications/initialized` is silently ignored per JSON-RPC 2.0 spec
+  (notifications do not receive responses).
 
 ### Semver Analysis: `get_tool` / `has_tool` behavior change
 

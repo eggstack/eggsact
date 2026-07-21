@@ -1,14 +1,6 @@
 use eggsact::text::{code_fence_extract, markdown_structure};
 
 #[test]
-fn markdown_structure_no_panic() {
-    let inputs = ["", "# Hello", "```rust\ncode\n```", "text\n\nmore text"];
-    for input in &inputs {
-        let _ = markdown_structure(input, true, true, true, true);
-    }
-}
-
-#[test]
 fn markdown_structure_deterministic() {
     let inputs = ["# Hello\n\n```rust\ncode\n```", "", "plain text"];
     for input in &inputs {
@@ -16,20 +8,6 @@ fn markdown_structure_deterministic() {
         let s2 = markdown_structure(input, true, true, true, true);
         assert_eq!(s1.headings.len(), s2.headings.len());
         assert_eq!(s1.code_fences.len(), s2.code_fences.len());
-    }
-}
-
-#[test]
-fn code_fence_extract_no_panic() {
-    let inputs = [
-        "```rust\ncode\n```",
-        "```\ncode\n```",
-        "unclosed fence",
-        "```python\nprint('hi')",
-    ];
-    for input in &inputs {
-        let _ = code_fence_extract(input, None, true);
-        let _ = code_fence_extract(input, Some("rust"), false);
     }
 }
 

@@ -1,11 +1,11 @@
 # Release 5 Status Note
 
 **Date:** 2026-07-21
-**Commit:** (pending)
+**Commit:** (pending — will be updated after final closure commit)
 
 ## Fuzz Targets
 
-All 12 targets build and are ready for fuzzing:
+All 12 targets build and have substantiated claim-assertion coverage:
 
 | Target | Category | Corpus Seeds |
 |--------|----------|-------------|
@@ -26,7 +26,7 @@ All 12 targets build and are ready for fuzzing:
 
 ## Property Tests
 
-60 property tests across 9 modules:
+47 property tests across 9 modules (13 vacuous no-panic tests removed):
 - test_calculator_properties.rs
 - test_diff_properties.rs
 - test_shell_properties.rs
@@ -37,13 +37,13 @@ All 12 targets build and are ready for fuzzing:
 - test_markdown_properties.rs
 - test_path_glob_properties.rs
 
-All passing (6 suites, 60 tests).
+All passing.
 
 ## CI Configuration
 
-- **PR smoke fuzzing:** `fuzz-pr.yml` — builds all targets, runs 6 high-value targets for 30s each
-- **Scheduled extended fuzzing:** `fuzz-scheduled.yml` — runs all 12 targets for 300s each, weekly Monday 03:00 UTC
-- **Sanitizer runs:** AddressSanitizer job in `fuzz-scheduled.yml` — runs 7 high-value targets for 120s each
+- **PR smoke fuzzing:** `fuzz-pr.yml` — builds all targets, runs 6 high-value targets for 30s each; has concurrency cancellation
+- **Scheduled extended fuzzing:** `fuzz-scheduled.yml` — matrix strategy runs all 12 targets in parallel (240s each), weekly Monday 03:00 UTC
+- **Sanitizer runs:** `fuzz-scheduled.yml` — matrix strategy runs 7 high-value targets with ASan (120s each)
 
 ## Findings Fixed
 
@@ -90,7 +90,7 @@ cargo package --locked --verbose
 | `cargo test --locked --all-features --lib` | PASS (436 tests) |
 | `cargo test --locked --all-features --bins` | PASS (24 tests) |
 | `cargo test --locked --doc` | PASS (11 tests) |
-| `cargo test --locked --all-features property` | PASS (60 tests) |
+| `cargo test --locked --all-features property` | PASS (47 tests) |
 | `cargo run --locked --bin generate-docs -- --check` | PASS |
 | `cargo deny check advisories bans licenses sources` | PASS |
 | `cargo package --locked --verbose` | PASS |
@@ -104,9 +104,11 @@ cargo package --locked --verbose
 - [x] Persistent corpora committed and seeded with historical regressions
 - [x] Calculator, diff, shell, regex, JSON, TOML/config, Unicode, Markdown, and glob/path surfaces have fuzz coverage
 - [x] Core round-trip, idempotence, determinism, symmetry, transaction, and span-validity properties enforced in ordinary tests
+- [x] Fuzz target module comments match implemented assertions (25 gaps fixed)
+- [x] Vacuous property tests removed or rewritten (13 removed, 13 strengthened)
 - [x] No known crash, hang, OOM, stack overflow, or invariant failure remains untriaged
-- [x] PR smoke fuzzing active and bounded
-- [x] Scheduled/manual extended fuzzing covers all targets with recorded toolchain and command metadata
+- [x] PR smoke fuzzing active, bounded, and cancellable
+- [x] Scheduled/manual extended fuzzing uses matrix strategy with per-target timeouts that fit within job limits
 - [x] Fuzz dependencies and artifacts excluded from normal package/runtime dependencies
 - [x] Fuzzing documentation explains reproduce, minimize, fix, promote, and security handling
 - [x] Full ordinary CI, cargo-deny, generated docs, and package gates pass

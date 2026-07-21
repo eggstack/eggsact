@@ -17,7 +17,7 @@ fn shell_split_all_tokens_are_strings() {
     for cmd in &cmds {
         let result = shell_split(cmd, "posix", true);
         for arg in &result.argv {
-            assert!(!arg.is_empty() || result.argv.len() == 1);
+            assert!(!arg.contains('\0'), "Token contains null byte");
         }
     }
 }
@@ -56,6 +56,10 @@ fn shell_split_empty_command() {
 
 #[test]
 fn argv_compare_deterministic() {
-    let _ = argv_compare(Some("ls -la"), Some("ls -la"), None, None, "posix");
-    let _ = argv_compare(Some("cmd a b"), Some("cmd a c"), None, None, "posix");
+    let r1 = argv_compare(Some("ls -la"), Some("ls -la"), None, None, "posix");
+    let r2 = argv_compare(Some("ls -la"), Some("ls -la"), None, None, "posix");
+    assert_eq!(r1, r2);
+    let r3 = argv_compare(Some("cmd a b"), Some("cmd a c"), None, None, "posix");
+    let r4 = argv_compare(Some("cmd a b"), Some("cmd a c"), None, None, "posix");
+    assert_eq!(r3, r4);
 }

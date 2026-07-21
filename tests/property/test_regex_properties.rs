@@ -1,4 +1,4 @@
-use eggsact::text::{classify_pattern, regex_finditer, regex_safety_check, validate_regex};
+use eggsact::text::{classify_pattern, regex_finditer, regex_safety_check};
 
 #[test]
 fn classify_pattern_deterministic() {
@@ -15,14 +15,6 @@ fn classify_pattern_deterministic() {
 }
 
 #[test]
-fn classify_pattern_no_panic_on_fuzz() {
-    let patterns = ["", "((((", "???+++", "\\p{Arabic}", "(?P<name>)", "[["];
-    for p in &patterns {
-        let _ = classify_pattern(p);
-    }
-}
-
-#[test]
 fn regex_safety_check_deterministic() {
     let patterns = ["^[a-z]+$", "(.+)+$", "a{100000}"];
     for p in &patterns {
@@ -30,19 +22,6 @@ fn regex_safety_check_deterministic() {
         let r2 = regex_safety_check(p);
         assert_eq!(r1.valid_pattern, r2.valid_pattern);
         assert_eq!(r1.risk, r2.risk);
-    }
-}
-
-#[test]
-fn validate_regex_no_panic() {
-    let cases = [
-        ("^abc$", "abcdef"),
-        ("\\d+", "12345"),
-        ("", ""),
-        ("[", "text"),
-    ];
-    for (p, t) in &cases {
-        let _ = validate_regex(p, t);
     }
 }
 

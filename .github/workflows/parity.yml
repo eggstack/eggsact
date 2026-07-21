@@ -23,10 +23,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install eggcalc
+      - name: Install eggcalc (latest, drift detection)
         run: pip install eggcalc
       - name: Record eggcalc version
-        run: pip show eggcalc | head -5
+        run: |
+          pip show eggcalc | head -5
+          echo "eggcalc-policy=latest (drift detection)" >> $GITHUB_STEP_SUMMARY
       - name: Build eggsact
         run: cargo build --locked
       - name: Run parity tests

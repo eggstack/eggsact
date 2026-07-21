@@ -2,8 +2,7 @@
 
 //! Fuzz glob parsing and path matching.
 //!
-//! Asserts: no panic, normalization idempotent, matching deterministic,
-//! classification buckets stable.
+//! Asserts: no panic, normalization idempotent, matching deterministic.
 
 use libfuzzer_sys::fuzz_target;
 use eggsact::text::path_analyze;

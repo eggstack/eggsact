@@ -18,8 +18,21 @@ fuzz_target!(|data: &[u8]| {
     if text.len() > MAX_TEXT_LEN { return; }
 
     // Unicode policy check
-    let _ = unicode_policy_check(text, "permissive", None);
-    let _ = unicode_policy_check(text, "strict", None);
+    let permissive = unicode_policy_check(text, "permissive", None);
+    let strict = unicode_policy_check(text, "strict", None);
+    // Bounded findings
+    assert!(permissive.findings.len() <= 100);
+    assert!(strict.findings.len() <= 100);
+
+    // Deterministic
+    let permissive2 = unicode_policy_check(text, "permissive", None);
+    let strict2 = unicode_policy_check(text, "strict", None);
+    let j1 = serde_json::to_value(&permissive).unwrap();
+    let j2 = serde_json::to_value(&permissive2).unwrap();
+    assert_eq!(j1, j2);
+    let j1 = serde_json::to_value(&strict).unwrap();
+    let j2 = serde_json::to_value(&strict2).unwrap();
+    assert_eq!(j1, j2);
 
     // Canonicalize
     let _ = canonicalize_text(text, "nfc", false);
@@ -45,6 +58,9 @@ fuzz_target!(|data: &[u8]| {
     // Safe repr
     let sr = build_safe_repr(text);
     assert!(std::str::from_utf8(sr.as_bytes()).is_ok());
+    // Deterministic
+    let sr2 = build_safe_repr(text);
+    assert_eq!(sr, sr2);
 
     // Confusables
     let _ = has_confusables(text);

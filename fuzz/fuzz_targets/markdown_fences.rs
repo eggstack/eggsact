@@ -2,8 +2,8 @@
 
 //! Fuzz Markdown structure extraction and fenced code-block parsing.
 //!
-//! Asserts: no panic, extracted ranges within source bounds, code slices
-//! match content, unclosed fences deterministic, output ordering deterministic.
+//! Asserts: no panic, extracted ranges within source bounds,
+//! unclosed fences deterministic, output ordering deterministic.
 
 use libfuzzer_sys::fuzz_target;
 use eggsact::text::{markdown_structure, code_fence_extract};
@@ -20,7 +20,9 @@ fuzz_target!(|data: &[u8]| {
 
     // Deterministic
     let s2 = markdown_structure(text, true, true, true, true);
-    let _ = serde_json::to_string(&s2);
+    let j1 = serde_json::to_value(&structure).unwrap();
+    let j2 = serde_json::to_value(&s2).unwrap();
+    assert_eq!(j1, j2);
 
     // Code fence extract
     let fences = code_fence_extract(text, None, true);
@@ -31,6 +33,12 @@ fuzz_target!(|data: &[u8]| {
         }
     }
     let _ = serde_json::to_string(&fences);
+
+    // Code fence extract deterministic
+    let fences2 = code_fence_extract(text, None, true);
+    let j1 = serde_json::to_value(&fences).unwrap();
+    let j2 = serde_json::to_value(&fences2).unwrap();
+    assert_eq!(j1, j2);
 
     // With language filter
     let _ = code_fence_extract(text, Some("rust"), true);

@@ -42,7 +42,7 @@ pub struct ValidateTomlResult {
     pub tables: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TomlShapeResult {
     pub valid: bool,
     pub top_level_keys: Option<Vec<String>>,

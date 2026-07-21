@@ -25,7 +25,7 @@ Deterministic MCP and in-process utility tools for coding agents. 80 tools acros
 - Physical and mathematical constants: `pi`, `c`, `planck`, `avogadro`, `gravity`
 - High-performance Rust implementation with zero required external services
 - 12 fuzz targets via cargo-fuzz covering parser-heavy surfaces
-- 60 property tests verifying round-trip, idempotence, determinism, and symmetry invariants
+- 47 property tests verifying round-trip, idempotence, determinism, and symmetry invariants
 
 ## Installation
 

@@ -25,6 +25,8 @@ fuzz_target!(|data: &[u8]| {
             let resplit = shell_split(&join_result.command, "posix", false);
             if resplit.parse_ok {
                 assert_eq!(split_result.argv, resplit.argv);
+                // Quoting cannot merge arguments
+                assert_eq!(split_result.argv.len(), resplit.argv.len());
             }
         }
 

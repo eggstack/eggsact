@@ -5,14 +5,34 @@ on:
     - cron: '0 3 * * 1'  # Weekly Monday 03:00 UTC
   workflow_dispatch:
 
+concurrency:
+  group: fuzz-extended
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   RUSTUP_TOOLCHAIN: nightly
 
 jobs:
-  fuzz-extended:
+  fuzz-matrix:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - calculator_expression
+          - calculator_normalization
+          - unified_diff
+          - shell_tokenization
+          - shell_quoting
+          - regex_classification
+          - regex_execution
+          - json_pointer
+          - toml_config
+          - unicode_inspection
+          - markdown_fences
+          - glob_matching
     steps:
       - uses: actions/checkout@v4
 
@@ -29,58 +49,49 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             fuzz/target
-          key: ${{ runner.os }}-fuzz-ext-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock') }}
+          key: ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock') }}
 
-      - name: Build fuzz targets
+      - name: Build fuzz target
         run: cargo fuzz build
 
-      - name: Fuzz calculator_expression
-        run: cargo fuzz run calculator_expression -- -max_total_time=300 -timeout=10
+      - name: Fuzz ${{ matrix.target }}
+        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=240 -timeout=10
 
-      - name: Fuzz calculator_normalization
-        run: cargo fuzz run calculator_normalization -- -max_total_time=300 -timeout=10
-
-      - name: Fuzz unified_diff
-        run: cargo fuzz run unified_diff -- -max_total_time=300 -timeout=10
-
-      - name: Fuzz shell_tokenization
-        run: cargo fuzz run shell_tokenization -- -max_total_time=300 -timeout=10
-
-      - name: Fuzz shell_quoting
-        run: cargo fuzz run shell_quoting -- -max_total_time=300 -timeout=10
-
-      - name: Fuzz regex_classification
-        run: cargo fuzz run regex_classification -- -max_total_time=300 -timeout=10
-
-      - name: Fuzz regex_execution
-        run: cargo fuzz run regex_execution -- -max_total_time=300 -timeout=10
-
-      - name: Fuzz json_pointer
-        run: cargo fuzz run json_pointer -- -max_total_time=300 -timeout=10
-
-      - name: Fuzz toml_config
-        run: cargo fuzz run toml_config -- -max_total_time=300 -timeout=10
-
-      - name: Fuzz unicode_inspection
-        run: cargo fuzz run unicode_inspection -- -max_total_time=300 -timeout=10
-
-      - name: Fuzz markdown_fences
-        run: cargo fuzz run markdown_fences -- -max_total_time=300 -timeout=10
-
-      - name: Fuzz glob_matching
-        run: cargo fuzz run glob_matching -- -max_total_time=300 -timeout=10
+      - name: Record fuzz metadata
+        if: always()
+        run: |
+          NIGHTLY_VERSION=$(rustc --version)
+          FUZZ_VERSION=$(cargo fuzz --version || echo "unknown")
+          CORPUS_COUNT=$(find fuzz/corpus/${{ matrix.target }} -type f 2>/dev/null | wc -l || echo 0)
+          echo "## Fuzz: ${{ matrix.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: $(git rev-parse HEAD)" >> $GITHUB_STEP_SUMMARY
+          echo "- Nightly: ${NIGHTLY_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "- cargo-fuzz: ${FUZZ_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "- Corpus seeds: ${CORPUS_COUNT}" >> $GITHUB_STEP_SUMMARY
+          echo "- Duration: 240s" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload crash artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz-crashes-extended
-          path: fuzz/artifacts/
+          name: fuzz-crashes-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
           retention-days: 90
 
   fuzz-sanitizers:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - calculator_expression
+          - unified_diff
+          - shell_tokenization
+          - regex_classification
+          - json_pointer
+          - unicode_inspection
+          - glob_matching
     steps:
       - uses: actions/checkout@v4
 
@@ -97,36 +108,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             fuzz/target
-          key: ${{ runner.os }}-fuzz-san-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock') }}
+          key: ${{ runner.os }}-fuzz-san-${{ matrix.target }}-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock') }}
 
-      - name: Build fuzz targets (ASan)
+      - name: Build fuzz target (ASan)
         run: cargo fuzz build --sanitizer=address
 
-      - name: Fuzz calculator_expression (ASan)
-        run: cargo fuzz run calculator_expression --sanitizer=address -- -max_total_time=120 -timeout=10
-
-      - name: Fuzz unified_diff (ASan)
-        run: cargo fuzz run unified_diff --sanitizer=address -- -max_total_time=120 -timeout=10
-
-      - name: Fuzz shell_tokenization (ASan)
-        run: cargo fuzz run shell_tokenization --sanitizer=address -- -max_total_time=120 -timeout=10
-
-      - name: Fuzz regex_classification (ASan)
-        run: cargo fuzz run regex_classification --sanitizer=address -- -max_total_time=120 -timeout=10
-
-      - name: Fuzz json_pointer (ASan)
-        run: cargo fuzz run json_pointer --sanitizer=address -- -max_total_time=120 -timeout=10
-
-      - name: Fuzz unicode_inspection (ASan)
-        run: cargo fuzz run unicode_inspection --sanitizer=address -- -max_total_time=120 -timeout=10
-
-      - name: Fuzz glob_matching (ASan)
-        run: cargo fuzz run glob_matching --sanitizer=address -- -max_total_time=120 -timeout=10
+      - name: Fuzz ${{ matrix.target }} (ASan)
+        run: cargo fuzz run ${{ matrix.target }} --sanitizer=address -- -max_total_time=120 -timeout=10
 
       - name: Upload sanitizer crash artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz-crashes-sanitizers
-          path: fuzz/artifacts/
+          name: fuzz-crashes-san-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
           retention-days: 90
