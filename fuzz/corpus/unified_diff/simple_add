@@ -1,0 +1,4 @@
+--- a/file.txt
++++ b/file.txt
+@@ -0,0 +1 @@
++hello

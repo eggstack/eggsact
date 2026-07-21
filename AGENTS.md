@@ -106,11 +106,17 @@ src/
   agent/            # in-process agent API (ToolRegistry, Profile, call_json)
   preflight/        # typed preflight wrappers (EditPreflight, CommandPreflight, ConfigPreflight, PatchApplyCheck, TextSecurityInspect), strict finding parsing, structured RecommendedNextTool
 tests/
-  lib.rs            # declares test modules: calc, mcp, parity, text
+  lib.rs            # declares test modules: calc, mcp, parity, text, property
   calc/             # calculator tests (4 files)
   mcp/              # MCP protocol + tool tests (28 files)
   parity/           # Python/Rust parity tests (12 files)
   text/             # text processing tests (25 files)
+  property/         # property-based tests: round-trip, idempotence, determinism, symmetry (9 files, 60 tests)
+fuzz/
+  Cargo.toml        # isolated fuzz workspace (libfuzzer-sys, not in normal deps)
+  fuzz_targets/     # 12 fuzz targets covering all parser-heavy surfaces
+  corpus/           # seed corpus per target (48 seed files from historical tests)
+  artifacts/        # crash artifacts (gitignored, not committed)
 scripts/
   generate_confusables.py  # regenerates src/text/confusables_generated.rs from unicode.org
 generated/
@@ -148,6 +154,10 @@ Detailed architecture documentation is in `architecture/`:
 
 - `architecture/generated-assets.md` — doc generation, confusables data, diagnostics
 - `architecture/cli-binaries.md` — generate-docs, verify-eggsact binaries, --diagnostics
+
+### Fuzzing & Property Testing
+
+- `docs/fuzzing.md` — fuzz targets, corpus policy, crash triage, regression promotion, CI integration
 
 Additional docs in `docs/`:
 
@@ -205,6 +215,25 @@ Agent task skills in `.opencode/skills/` (symlinked from `.agents/skills/` for C
 - `.opencode/skills/debugging/SKILL.md` — common issues, debugging workflows
 - `.opencode/skills/release/SKILL.md` — release process and checklist
 - `.opencode/skills/text-processing/SKILL.md` — text module conventions and patterns
+
+## Fuzzing & Property Testing
+
+12 fuzz targets via `cargo-fuzz` + libFuzzer in `fuzz/`. Requires nightly Rust.
+
+```bash
+cargo install cargo-fuzz --locked    # install (once)
+cargo fuzz build                     # build all targets
+cargo fuzz run calculator_expression -- -max_total_time=60 -timeout=5
+cargo fuzz run unified_diff -- -max_total_time=60 -timeout=5
+cargo fuzz run shell_tokenization -- -max_total_time=60 -timeout=5
+cargo fuzz run regex_classification -- -max_total_time=60 -timeout=5
+cargo fuzz run json_pointer -- -max_total_time=60 -timeout=5
+cargo fuzz run unicode_inspection -- -max_total_time=60 -timeout=5
+```
+
+Property tests run in ordinary CI: `cargo test --locked --all-features property`
+
+See `docs/fuzzing.md` for corpus policy, crash triage, and regression promotion workflow.
 
 ## Key gotchas
 

@@ -1,0 +1,82 @@
+[package]
+name = "eggsact-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+libfuzzer-sys = "0.4"
+eggsact = { path = ".." }
+serde_json = "1.0"
+
+[[bin]]
+name = "calculator_expression"
+path = "fuzz_targets/calculator_expression.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "calculator_normalization"
+path = "fuzz_targets/calculator_normalization.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "unified_diff"
+path = "fuzz_targets/unified_diff.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "shell_tokenization"
+path = "fuzz_targets/shell_tokenization.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "shell_quoting"
+path = "fuzz_targets/shell_quoting.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "regex_classification"
+path = "fuzz_targets/regex_classification.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "regex_execution"
+path = "fuzz_targets/regex_execution.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "json_pointer"
+path = "fuzz_targets/json_pointer.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "toml_config"
+path = "fuzz_targets/toml_config.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "unicode_inspection"
+path = "fuzz_targets/unicode_inspection.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "markdown_fences"
+path = "fuzz_targets/markdown_fences.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "glob_matching"
+path = "fuzz_targets/glob_matching.rs"
+test = false
+bench = false

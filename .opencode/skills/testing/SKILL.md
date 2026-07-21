@@ -26,7 +26,7 @@ CI runs on push/PR to `main` (plus `workflow_dispatch`) via `.github/workflows/c
 
 ```
 tests/
-  lib.rs                     # declares test modules: calc, mcp, parity, text
+  lib.rs                     # declares test modules: calc, mcp, parity, text, property
   test_context_isolation.rs  # standalone: EvalContext PRNG seed, mcp_mode, variable isolation, profile/audience/compat overrides, eval-through-dispatch
   calc/
     mod.rs                   # re-exports 4 modules
@@ -79,6 +79,17 @@ tests/
   text/
     mod.rs                   # re-exports 24 modules
     test_<module>.rs         # one file per text module (24 files)
+  property/
+    mod.rs                   # re-exports 9 property test modules
+    test_calculator_properties.rs
+    test_diff_properties.rs
+    test_shell_properties.rs
+    test_regex_properties.rs
+    test_json_properties.rs
+    test_config_properties.rs
+    test_unicode_properties.rs
+    test_markdown_properties.rs
+    test_path_glob_properties.rs
 ```
 
 Agent module unit tests (`src/agent/mod.rs` inline `#[cfg(test)]`) cover `ToolRegistry` profile filtering, unknown tool errors, argument validation, and `call_json` success paths.
@@ -162,3 +173,35 @@ Verify that:
 - Tool outputs are deterministic across runs
 - Concurrent tool calls produce correct results
 - No race conditions in shared state
+
+## Property Tests
+
+`tests/property/` contains 60 property-based tests across 9 modules. These verify algebraic invariants (round-trip, idempotence, determinism, symmetry, span validity) using a deterministic xorshift64 PRNG for input generation — no external property-test framework required.
+
+```bash
+cargo test --locked --test lib property              # all property tests
+cargo test --locked --test lib property -- calculator # filter by name
+```
+
+Properties verified per module:
+- **Calculator**: determinism, context isolation, normalization idempotence
+- **Diff**: Levenshtein symmetry/triangle-inequality, first_diff determinism
+- **Shell**: `parse(quote(argv)) == argv` round-trip, determinism
+- **Regex**: classification determinism, span bounds, max_matches
+- **JSON**: canonicalization idempotence, compare symmetry, extract bounds
+- **Config**: TOML/dotenv/INI validation determinism
+- **Unicode**: NFC idempotence, grapheme bounds, casefold validity
+- **Markdown**: fence span ordering, extraction determinism
+- **Path/Glob**: normalization idempotence, matching determinism
+
+## Fuzz Testing
+
+12 fuzz targets via `cargo-fuzz` + libFuzzer in `fuzz/`. Requires nightly Rust.
+
+```bash
+cargo install cargo-fuzz --locked
+cargo fuzz build
+cargo fuzz run calculator_expression -- -max_total_time=60 -timeout=5
+```
+
+Fuzz targets are isolated from normal dependencies. Corpus seeds are committed in `fuzz/corpus/`. Crash artifacts are gitignored. See `docs/fuzzing.md` for crash triage and regression promotion.

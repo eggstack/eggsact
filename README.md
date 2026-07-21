@@ -24,6 +24,8 @@ Deterministic MCP and in-process utility tools for coding agents. 80 tools acros
 - Unit conversions: "30m to ft", "100C in F"
 - Physical and mathematical constants: `pi`, `c`, `planck`, `avogadro`, `gravity`
 - High-performance Rust implementation with zero required external services
+- 12 fuzz targets via cargo-fuzz covering parser-heavy surfaces
+- 60 property tests verifying round-trip, idempotence, determinism, and symmetry invariants
 
 ## Installation
 
@@ -589,6 +591,7 @@ eggsact/
 │       ├── version.rs       # Semver constraint checking
 │       └── confusables_generated.rs # Generated confusables data (data file)
 ├── tests/                   # Integration and unit tests
+├── fuzz/                    # Fuzz targets and corpus (cargo-fuzz + libFuzzer)
 ├── docs/                    # Detailed documentation
 ├── architecture/            # Architecture documentation
 ├── .opencode/skills/        # Agent task skills (opencode format)

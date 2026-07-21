@@ -8,23 +8,30 @@ See also: [Calculator](calculator.md), [MCP Server](mcp-server.md), [Agent API](
 
 ```
 tests/
-  lib.rs                          # single test crate root, declares 4 modules
+  lib.rs                          # single test crate root, declares 5 modules
   test_context_isolation.rs       # context isolation integration tests (819 lines)
   calc/                           # calculator tests (4 files)
   mcp/                            # MCP protocol + tool tests (27 files)
   text/                           # text processing tests (24 files)
   parity/                         # Python/Rust parity tests (11 files)
+  property/                       # property-based tests (9 files, 60 tests)
   fixtures/
     accepted_parity_failures.txt  # 33 known parity failures for regression detection
+fuzz/
+  Cargo.toml                      # isolated fuzz workspace (libfuzzer-sys)
+  fuzz_targets/                   # 12 fuzz targets
+  corpus/                         # seed corpus per target
+  artifacts/                      # crash artifacts (gitignored)
 ```
 
-The test crate root (`tests/lib.rs`) declares exactly four modules:
+The test crate root (`tests/lib.rs`) declares exactly five modules:
 
 ```rust
 mod calc;
 mod mcp;
 mod parity;
 mod text;
+mod property;
 ```
 
 All integration tests run via `cargo test --test lib`. Context isolation tests are a standalone integration test (`tests/test_context_isolation.rs`) and run via the default `cargo test`.
@@ -253,6 +260,7 @@ cargo test --locked --test lib calc           # calculator tests only
 cargo test --locked --test lib mcp            # MCP tests only
 cargo test --locked --test lib text           # text tests only
 cargo test --locked --test lib parity         # parity tests (requires ../eggcalc)
+cargo test --locked --test lib property       # property-based tests
 cargo test --locked --doc                     # doc tests only
 ```
 
@@ -486,3 +494,64 @@ cargo test --locked --test lib mcp -- --skip parity
 - Budget overrides are per-call and do not leak.
 - Cancellation flags are per-context and do not poison other registries.
 - Profile and audience enforcement is per-registry, not per-call.
+
+## Property Tests (`tests/property/`)
+
+9 test files containing 60 property-based tests that verify algebraic invariants across all major surfaces. Property tests run in ordinary CI via `cargo test --test lib property`.
+
+| File | Tests | Properties Verified |
+|------|-------|-------------------|
+| `test_calculator_properties.rs` | 8 | Determinism, context isolation, normalization idempotence/determinism, fuzz-no-panic, error structure |
+| `test_diff_properties.rs` | 7 | Levenshtein self=0, symmetry, triangle inequality; first_diff determinism; common_prefix_suffix bounds; patch determinism |
+| `test_shell_properties.rs` | 6 | shell_split determinism/token validity; shell_quote round-trip/stability; empty command handling |
+| `test_regex_properties.rs` | 6 | classify_pattern determinism/fuzz-safety; regex_safety_check determinism; finditer span bounds/max_matches |
+| `test_json_properties.rs` | 6 | validate_json no-panic; canonicalize determinism/idempotence; compare symmetry/self-equal; extract no-panic |
+| `test_config_properties.rs` | 6 | TOML/dotenv/INI validate no-panic and determinism |
+| `test_unicode_properties.rs` | 7 | NFC idempotence, grapheme bounds, casefold validity, invisibles bounds, confusables determinism |
+| `test_markdown_properties.rs` | 5 | markdown_structure no-panic/determinism; code_fence span ordering/determinism |
+| `test_path_glob_properties.rs` | 5 | glob_match determinism/no-panic; path_normalize idempotence; path_analyze determinism |
+
+Properties verified include:
+- **Determinism**: identical inputs produce identical outputs
+- **Idempotence**: `f(f(x)) == f(x)` for normalization/canonicalization
+- **Symmetry**: `f(a,b) == f(b,a)` where applicable (Levenshtein, JSON compare)
+- **Round-trip**: `parse(quote(argv)) == argv` for shell quoting
+- **Span validity**: all match/fence spans are within source bounds
+- **Bounded output**: grapheme counts, invisible char counts, findings counts are ≤ input length
+
+### How to Run Property Tests
+
+```bash
+cargo test --locked --test lib property       # all property tests
+cargo test --locked --test lib property -- calculator  # calculator properties only
+```
+
+## Fuzz Testing (`fuzz/`)
+
+12 fuzz targets via `cargo-fuzz` + libFuzzer, covering all parser-heavy and transformation-heavy surfaces. Fuzz targets require nightly Rust and are isolated from normal dependencies.
+
+| Target | What It Fuzzes |
+|--------|---------------|
+| `calculator_expression` | Expression parser/evaluator with seeded determinism |
+| `calculator_normalization` | Normalization idempotence and bounds |
+| `unified_diff` | Diff/patch parsing, malformed input handling |
+| `shell_tokenization` | Shell command splitting, POSIX/Windows |
+| `shell_quoting` | Quote/parse round-trip stability |
+| `regex_classification` | Regex feature classifier determinism |
+| `regex_execution` | Regex compile, safety check, bounded matching |
+| `json_pointer` | JSON parse/extract/canonicalize/idempotence |
+| `toml_config` | TOML/dotenv/INI validation |
+| `unicode_inspection` | Unicode normalization, policy, confusables |
+| `markdown_fences` | Markdown structure, code fence extraction |
+| `glob_matching` | Glob matching, path normalization idempotence |
+
+### How to Run Fuzz Targets
+
+```bash
+cargo install cargo-fuzz --locked    # install (once)
+rustup toolchain install nightly     # nightly required for libFuzzer
+cargo fuzz build                     # build all targets
+cargo fuzz run calculator_expression -- -max_total_time=60 -timeout=5
+```
+
+See `docs/fuzzing.md` for corpus policy, crash triage, and regression promotion workflow.

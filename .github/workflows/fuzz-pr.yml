@@ -1,0 +1,61 @@
+name: Fuzz Smoke
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: nightly
+
+jobs:
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Cache cargo-fuzz
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            fuzz/target
+          key: ${{ runner.os }}-fuzz-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock') }}
+
+      - name: Build fuzz targets
+        run: cargo fuzz build
+
+      - name: Smoke fuzz calculator_expression
+        run: cargo fuzz run calculator_expression -- -max_total_time=30 -timeout=5
+
+      - name: Smoke fuzz unified_diff
+        run: cargo fuzz run unified_diff -- -max_total_time=30 -timeout=5
+
+      - name: Smoke fuzz shell_tokenization
+        run: cargo fuzz run shell_tokenization -- -max_total_time=30 -timeout=5
+
+      - name: Smoke fuzz regex_classification
+        run: cargo fuzz run regex_classification -- -max_total_time=30 -timeout=5
+
+      - name: Smoke fuzz json_pointer
+        run: cargo fuzz run json_pointer -- -max_total_time=30 -timeout=5
+
+      - name: Smoke fuzz unicode_inspection
+        run: cargo fuzz run unicode_inspection -- -max_total_time=30 -timeout=5
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: fuzz/artifacts/
+          retention-days: 30
