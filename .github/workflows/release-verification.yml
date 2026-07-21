@@ -48,7 +48,22 @@ jobs:
           arguments: check advisories bans licenses sources
 
       - name: Package contents
-        run: cargo package --locked --list
+        run: cargo package --locked --list > package-list.txt
+
+      - name: Assert package contents
+        run: |
+          # Must include core source
+          for f in src/lib.rs src/main.rs Cargo.toml LICENSE README.md; do
+            grep -q "^${f}$" package-list.txt || { echo "MISSING: $f"; exit 1; }
+          done
+          # Must not include excluded paths
+          for pat in '^\.' 'plans/' 'scripts/' '\.github/' 'deny\.toml' 'AGENTS\.md'; do
+            if grep -qE "$pat" package-list.txt; then
+              echo "EXCLUDED PATH LEAKED: $(grep -E "$pat" package-list.txt)"
+              exit 1
+            fi
+          done
+          echo "Package content assertions passed ($(wc -l < package-list.txt) files)"
 
       - name: Package build
         run: cargo package --locked --verbose
@@ -56,11 +71,38 @@ jobs:
       - name: Publish dry run
         run: cargo publish --dry-run --locked
 
-      - name: Provenance
+      - name: Generate provenance
         if: always()
         run: |
+          PACKAGE_SHA=$(sha256sum Cargo.lock | cut -d' ' -f1)
+          RUST_VERSION=$(rustc --version | cut -d' ' -f2)
+          PACKAGE_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          PACKAGE_FILES=$(wc -l < package-list.txt 2>/dev/null || echo 0)
+
+          cat > release-provenance.json <<EOF
+          {
+            "commit_sha": "$(git rev-parse HEAD)",
+            "package_version": "${PACKAGE_VERSION}",
+            "rust_stable": "${RUST_VERSION}",
+            "msrv": "1.89.0",
+            "target_os": "linux",
+            "lockfile_sha256": "${PACKAGE_SHA}",
+            "package_files": ${PACKAGE_FILES}
+          }
+          EOF
+
           echo "## Release Verification" >> $GITHUB_STEP_SUMMARY
           echo "- Commit: $(git rev-parse HEAD)" >> $GITHUB_STEP_SUMMARY
-          echo "- Rust stable: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: ${PACKAGE_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "- Rust stable: ${RUST_VERSION}" >> $GITHUB_STEP_SUMMARY
           echo "- MSRV: 1.89.0" >> $GITHUB_STEP_SUMMARY
-          echo "- Lockfile: $(sha256sum Cargo.lock | cut -d' ' -f1)" >> $GITHUB_STEP_SUMMARY
+          echo "- Lockfile: ${PACKAGE_SHA}" >> $GITHUB_STEP_SUMMARY
+          echo "- Package files: ${PACKAGE_FILES}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload provenance artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-provenance
+          path: release-provenance.json
+          retention-days: 90

@@ -104,18 +104,21 @@ Alternative: tag before publish if the maintainer explicitly prefers that conven
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
+| Latest Compatible | Weekly (Monday 04:00 UTC) + manual | Detects upcoming semver-compatible breakage |
 | Python Parity | Weekly (Monday 06:00 UTC) + manual | Tracks eggcalc drift |
 | Release Verification | Manual only | Full release gate without publish credentials |
 
 ## Package contents
 
-`cargo package --locked` excludes: `plans/`, `data/`, `scripts/`, `build.sh`, `release.sh`, `.github/`, `.skills/`, `deny.toml`, `AGENTS.md`.
+`cargo package --locked` excludes: `plans/`, `data/`, `scripts/`, `build.sh`, `release.sh`, `.github/`, `.opencode/`, `.agents/`, `deny.toml`, `AGENTS.md`.
 
 Verify with:
 
 ```bash
 cargo package --locked --list
 ```
+
+The Release Verification workflow asserts structural package invariants (core source files present, excluded paths absent) and uploads a `release-provenance.json` artifact containing commit SHA, package version, Rust version, MSRV, lockfile checksum, and file count.
 
 ## Post-release
 

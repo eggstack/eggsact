@@ -34,6 +34,29 @@ jobs:
       - name: Generate parity report
         if: always()
         run: |
-          echo "eggsact-sha=$(git rev-parse HEAD)" >> $GITHUB_STEP_SUMMARY
-          echo "eggcalc-version=$(pip show eggcalc | grep Version | awk '{print $2}')" >> $GITHUB_STEP_SUMMARY
-          echo "python-version=$(python3 --version)" >> $GITHUB_STEP_SUMMARY
+          EGGSACT_SHA=$(git rev-parse HEAD)
+          EGGCALC_VERSION=$(pip show eggcalc | grep Version | awk '{print $2}')
+          PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
+          PACKAGE_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+
+          cat > parity-report.json <<EOF
+          {
+            "eggsact_sha": "${EGGSACT_SHA}",
+            "eggsact_version": "${PACKAGE_VERSION}",
+            "eggcalc_version": "${EGGCALC_VERSION}",
+            "python_version": "${PYTHON_VERSION}"
+          }
+          EOF
+
+          echo "eggsact-sha=${EGGSACT_SHA}" >> $GITHUB_STEP_SUMMARY
+          echo "eggsact-version=${PACKAGE_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "eggcalc-version=${EGGCALC_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "python-version=${PYTHON_VERSION}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload parity artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-report
+          path: parity-report.json
+          retention-days: 90

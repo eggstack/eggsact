@@ -1,0 +1,54 @@
+name: Latest Compatible Dependencies
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"  # Weekly on Monday at 04:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: latest-compatible
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Latest Compatible
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: latest-compatible-${{ runner.os }}-stable
+
+      - name: Update within semver-compatible constraints
+        run: cargo update
+
+      - name: Check
+        run: cargo check --all-targets --all-features
+
+      - name: Unit tests
+        run: cargo test --all-features --lib
+
+      - name: Binary tests
+        run: cargo test --all-features --bins
+
+      - name: Integration tests
+        run: cargo test --all-features --tests -- --skip parity
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Latest Compatible Dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: $(git rev-parse HEAD)" >> $GITHUB_STEP_SUMMARY
+          echo "- Rust stable: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- Check: ${{ steps.check.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Lib tests: ${{ steps.test-lib.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Bin tests: ${{ steps.test-bins.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Integration tests: ${{ steps.test-int.outcome }}" >> $GITHUB_STEP_SUMMARY

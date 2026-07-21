@@ -106,6 +106,14 @@ Version is defined in `Cargo.toml` and referenced in:
 - `docs/mcp-tools.md` (overview table)
 - `CHANGELOG.md`
 
+## Scheduled Workflows
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| Latest Compatible | Weekly (Monday 04:00 UTC) + manual | Runs `cargo update` then tests against latest semver-compatible deps |
+| Python Parity | Weekly (Monday 06:00 UTC) + manual | Runs parity tests against pinned eggcalc |
+| Release Verification | Manual only | Full release gate with package assertions and provenance artifact |
+
 ## CI Pipeline
 
 CI runs on GitHub Actions on push/PR to `main` (plus `workflow_dispatch`). The CI matrix has **12 jobs**:
