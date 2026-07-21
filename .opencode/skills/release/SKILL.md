@@ -17,10 +17,15 @@ The pipeline is `./release.sh`, which runs the canonical release gate. Steps in 
 2. Regenerate docs: `cargo run --bin generate-docs`
 3. Check formatting: `cargo fmt --all -- --check`
 4. Run clippy: `cargo clippy --locked --all-targets --all-features -- -D warnings`
-5. Run all tests: `cargo test --locked --all-features`
-6. Check generated docs freshness: `cargo run --bin generate-docs -- --check`
-7. Supply-chain audit: `cargo deny check advisories bans licenses sources`
-8. Check crates.io packaging: `cargo package --locked --verbose`
+5. Run unit tests: `cargo test --locked --all-features --lib`
+6. Run binary tests: `cargo test --locked --all-features --bins`
+7. Run integration tests: `cargo test --locked --all-features --tests -- --skip parity`
+8. Run doc tests: `cargo test --locked --doc`
+9. Check generated docs freshness: `cargo run --bin generate-docs -- --check`
+10. Check crates.io package contents: `cargo package --locked --list`
+11. Build crate package: `cargo package --locked --verbose`
+12. Publish dry run: `cargo publish --locked --dry-run`
+13. Supply-chain audit: `cargo deny check advisories bans licenses sources`
 
 See `docs/release.md` for the canonical command list and full verification order.
 
@@ -37,7 +42,9 @@ cargo test --locked --all-features --tests -- --skip parity
 cargo test --locked --doc
 cargo run --bin generate-docs -- --check
 cargo deny check advisories bans licenses sources
+cargo package --locked --list
 cargo package --locked --verbose
+cargo publish --locked --dry-run
 ```
 
 Optional, environment-dependent:

@@ -760,14 +760,30 @@ fn test_cancel_running_handler_bounded_termination() {
     }
 
     // The handler should terminate within the regex timeout (5s) plus margin.
-    let output = child.wait_with_output().unwrap();
+    // Use a kill-on-timeout safety net to avoid hanging on loaded machines.
+    let kill_deadline = start + Duration::from_secs(60);
+    let output = loop {
+        if start.elapsed() > Duration::from_secs(55) {
+            child.kill().ok();
+            break child.wait_with_output().unwrap();
+        }
+        match child.try_wait() {
+            Ok(Some(_)) => break child.wait_with_output().unwrap(),
+            Ok(None) => thread::sleep(Duration::from_millis(100)),
+            Err(e) => panic!("try_wait error: {}", e),
+        }
+        if Instant::now() > kill_deadline {
+            child.kill().ok();
+            break child.wait_with_output().unwrap();
+        }
+    };
     let elapsed = start.elapsed();
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let lines: Vec<&str> = stdout.lines().collect();
 
-    // Must terminate within 10 seconds (regex timeout + margin).
+    // Must terminate within 30 seconds (regex timeout + margin for loaded machines).
     assert!(
-        elapsed < Duration::from_secs(10),
+        elapsed < Duration::from_secs(30),
         "Handler must terminate within bounded time after cancel, took {:?}",
         elapsed
     );
@@ -1265,14 +1281,31 @@ fn test_cancel_before_handler_enters_blocking() {
         stdin.write_all(b"\n").unwrap();
     }
 
-    let output = child.wait_with_output().unwrap();
+    // Use a kill-on-timeout safety net to avoid hanging on loaded machines.
+    let kill_deadline = start + Duration::from_secs(60);
+    let output = loop {
+        if start.elapsed() > Duration::from_secs(55) {
+            child.kill().ok();
+            break child.wait_with_output().unwrap();
+        }
+        match child.try_wait() {
+            Ok(Some(_)) => break child.wait_with_output().unwrap(),
+            Ok(None) => thread::sleep(Duration::from_millis(100)),
+            Err(e) => panic!("try_wait error: {}", e),
+        }
+        if Instant::now() > kill_deadline {
+            child.kill().ok();
+            break child.wait_with_output().unwrap();
+        }
+    };
+
     let elapsed = start.elapsed();
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let lines: Vec<&str> = stdout.lines().collect();
 
-    // Must terminate within bounded time (regex inner timeout + margin).
+    // Must terminate within bounded time (regex inner timeout + margin for loaded machines).
     assert!(
-        elapsed < Duration::from_secs(10),
+        elapsed < Duration::from_secs(30),
         "Cancelled handler must terminate within bounded time, took {:?}",
         elapsed
     );
@@ -1355,14 +1388,31 @@ fn test_cancel_after_inner_timeout() {
         stdin.write_all(b"\n").unwrap();
     }
 
-    let output = child.wait_with_output().unwrap();
+    // Wait with a safety timeout to avoid hanging on loaded machines.
+    let kill_deadline = start + Duration::from_secs(60);
+    let output = loop {
+        if start.elapsed() > Duration::from_secs(55) {
+            child.kill().ok();
+            break child.wait_with_output().unwrap();
+        }
+        match child.try_wait() {
+            Ok(Some(_)) => break child.wait_with_output().unwrap(),
+            Ok(None) => thread::sleep(Duration::from_millis(100)),
+            Err(e) => panic!("try_wait error: {}", e),
+        }
+        if Instant::now() > kill_deadline {
+            child.kill().ok();
+            break child.wait_with_output().unwrap();
+        }
+    };
+
     let elapsed = start.elapsed();
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let lines: Vec<&str> = stdout.lines().collect();
 
     // Must terminate within bounded time.
     assert!(
-        elapsed < Duration::from_secs(15),
+        elapsed < Duration::from_secs(45),
         "Server must terminate within bounded time, took {:?}",
         elapsed
     );

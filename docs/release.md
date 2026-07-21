@@ -38,7 +38,9 @@ cargo test --locked --all-features --tests -- --skip parity
 cargo test --locked --doc
 cargo run --locked --bin generate-docs -- --check
 cargo deny check advisories bans licenses sources
+cargo package --locked --list
 cargo package --locked --verbose
+cargo publish --locked --dry-run
 ```
 
 `./release.sh` runs the same pipeline (including confusables and docs regeneration) in one step.

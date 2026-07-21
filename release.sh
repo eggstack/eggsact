@@ -30,7 +30,11 @@ echo "=== Checking generated docs freshness ==="
 cargo run --locked --bin generate-docs -- --check
 
 echo "=== Checking crates.io package ==="
+cargo package --locked --list > package-list.txt
 cargo package --locked --verbose
+
+echo "=== Publish dry run ==="
+cargo publish --locked --dry-run
 
 echo "=== Running cargo-deny checks ==="
 cargo deny check advisories bans licenses sources

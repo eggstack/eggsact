@@ -15,11 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -43,7 +43,7 @@ jobs:
         run: cargo test --locked --doc
 
       - name: cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v0
+        uses: EmbarkStudios/cargo-deny-action@b1c5d5c65cb760fdaa88961f436ac60c46d6ba1f # v0
         with:
           arguments: check advisories bans licenses sources
 
@@ -101,7 +101,7 @@ jobs:
 
       - name: Upload provenance artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-provenance
           path: release-provenance.json

@@ -45,7 +45,7 @@ GitHub Actions CI verifies release readiness but does **not** publish to crates.
 
 ## Verification order
 
-`cargo fmt --all -- --check` → `cargo clippy --locked --all-targets --all-features -- -D warnings` → `cargo test --locked --all-features --lib` → `cargo test --locked --all-features --bins` → `cargo test --locked --all-features --tests -- --skip parity` → `cargo test --locked --doc` → `cargo run --locked --bin generate-docs -- --check` → `cargo deny check advisories bans licenses sources` → `cargo package --locked --verbose`
+`cargo fmt --all -- --check` → `cargo clippy --locked --all-targets --all-features -- -D warnings` → `cargo test --locked --all-features --lib` → `cargo test --locked --all-features --bins` → `cargo test --locked --all-features --tests -- --skip parity` → `cargo test --locked --doc` → `cargo run --locked --bin generate-docs -- --check` → `cargo deny check advisories bans licenses sources` → `cargo package --locked --list` → `cargo package --locked --verbose` → `cargo publish --locked --dry-run`
 
 ## Structure
 

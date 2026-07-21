@@ -428,14 +428,13 @@ tokio::time::timeout (outer, budget-derived)
 ```
 
 The outer tokio semaphore (`MAX_TOOL_WORKERS=16`) is the **sole concurrency
-bound**. There are no nested OS threads — `run_with_timeout`,
-`SpawnSemaphore`, `SpawnPermit`, and related infrastructure have been removed
-from `src/tools/helpers.rs`.
+bound**. There are no nested OS threads — `SpawnSemaphore`, `SpawnPermit`,
+and related infrastructure have been removed from `src/tools/helpers.rs`.
 
-Handlers that previously used `run_with_timeout` (`math_eval`,
-`validate_regex`, `regex_finditer`, `dotenv_validate`) now execute directly
-within the `spawn_blocking` closure. The `catch_unwind` wrapper prevents
-panics from unwinding across the FFI boundary into tokio's thread pool.
+Handlers (`math_eval`, `validate_regex`, `regex_finditer`, `dotenv_validate`)
+execute directly within the `spawn_blocking` closure. The `catch_unwind`
+wrapper prevents panics from unwinding across the FFI boundary into tokio's
+thread pool.
 
 **Response ordering contract (JSON-RPC):** Because requests are dispatched
 concurrently and may complete out of request order, **clients must correlate
