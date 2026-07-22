@@ -1,19 +1,18 @@
 # Final Closure Evidence
 
 This document records the exact evidence supporting closure of the runtime
-verification, fuzz, and CI plan (plans/2026-07-21-final-runtime-verification-fuzz-closure-plan.md).
+correctness corrective pass (plans/2026-07-21-runtime-correctness-evidence-corrective-pass.md).
 
 ## Commit
 
-- **SHA**: `c207c74e0b2bff4f76bad46967f80a9d138e8183`
-- **Date**: 2026-07-21
+- **SHA**: `d2e160d7f89d8762991d86dd94631ff439adfd8e`
+- **Date**: 2026-07-22
 - **Branch**: `main`
 
 ## Package
 
 - **Version**: `1.2.0` (last published to crates.io)
 - **Manifest**: `Cargo.toml`
-- **Lockfile SHA-256**: `5dd9396665d264fb406c4e9295f6caae2696916650db33a25e7dd2c31d04cec7`
 
 ## Toolchain
 
@@ -24,31 +23,24 @@ verification, fuzz, and CI plan (plans/2026-07-21-final-runtime-verification-fuz
 
 ## Local Verification Commands
 
-All commands run on 2026-07-21 against commit `c207c74`.
+All commands run on 2026-07-22 against commit `d2e160d`.
 
 ### Release gate
 
 ```
 cargo fmt --all -- --check                                         PASS
 cargo clippy --locked --all-targets --all-features -- -D warnings  PASS
-cargo test --locked --all-features --lib                          PASS (436 tests)
+cargo test --locked --all-features --lib                          PASS (462 tests)
 cargo test --locked --all-features --bins                         PASS (24 tests)
-cargo test --locked --all-features --tests -- --skip parity       PASS (1946 tests)
 cargo test --locked --doc                                         PASS (11 tests)
 cargo run --locked --bin generate-docs -- --check                 PASS
-cargo deny check advisories bans licenses sources                 PASS
-cargo package --locked --list                                     PASS (232 files)
-cargo package --locked --verbose                                  PASS
-cargo publish --locked --dry-run                                  PASS
 ```
 
 ### MSRV gate
 
 ```
 cargo +1.89.0 check --locked --all-targets --all-features         PASS
-cargo +1.89.0 test --locked --all-features --lib                  PASS (436 tests)
-cargo +1.89.0 test --locked --all-features --bins                 PASS (24 tests)
-cargo +1.89.0 test --locked --doc                                 PASS (11 tests)
+cargo +1.89.0 test --locked --all-features --lib                  PASS (462 tests)
 ```
 
 ### Property tests
@@ -60,149 +52,159 @@ cargo test --locked --all-features --tests property               PASS (47 tests
 ### Fuzz build
 
 ```
-RUSTUP_TOOLCHAIN=nightly cargo fuzz list                           12 targets
-RUSTUP_TOOLCHAIN=nightly cargo fuzz build                          PASS
+RUSTUP_TOOLCHAIN=nightly cargo fuzz build                          PASS (12 targets)
 ```
 
-### Stress loops (test_execution_safety)
+### Coordinator stress loop
 
 ```
-for i in 1..20: cargo test --locked --all-features --test lib mcp::test_execution_safety -- --test-threads=1
-  Iterations 1-20: 23 passed (each)
+for i in 1..50: cargo test --locked --all-features --lib mcp::execution::coordinator_tests
+  Iterations 1-50: 9 passed (each)
 ```
 
-All 23 execution safety tests pass consistently across 20 sequential
-iterations. The 500-iteration race test uses the in-process API to bypass
-MCP rate limiting and verifies all runtime gauges return to zero.
+All 9 coordinator tests pass consistently across 50 sequential iterations.
+
+### Execution safety tests
+
+```
+cargo test --locked --all-features --test lib mcp::test_execution_safety
+  26 passed
+```
+
+### Runtime helper tests
+
+```
+cargo test --locked --all-features --test lib mcp::test_runtime_helpers
+  45 passed
+```
 
 ## Test Counts
 
 | Partition | Count |
 |-----------|-------|
-| Unit (lib) | 436 |
-| MCP integration | 1946 |
+| Unit (lib) | 462 |
+| Binary | 24 |
 | Property | 47 |
 | Doc | 11 |
-| Binary | 24 |
-| **Total** | **2464** |
+| Execution safety | 26 |
+| Runtime helpers | 45 |
+| **Total (local)** | **615** |
 
-New tests added in this session:
-- `test_request_form_notifications_initialized_rejected` (test_protocol.rs)
-- `test_nonempty_capabilities_persist_through_lifecycle` (test_protocol.rs)
-- `test_500_iteration_race_all_gauges_zero` (test_execution_safety.rs)
+### New tests added in this session (coordinator_tests in execution.rs)
 
-## Fuzz Targets
+- `queued_timeout_blocks_handler_after_permit_release` — verifies queued timeout prevents handler from running after permit release
+- `completion_races_timeout_before_gauge_accounting` — handler wins race, no gauge increment
+- `completion_after_gauge_accounting_decrements_exactly_once` — timeout fires, handler completes, net zero
+- `handler_panic_after_timeout_corrects_gauges` — panic after timeout, metrics still correct
+- `cooperative_cancellation_after_timeout` — cancel flag respected during timeout
+- `hundreds_of_controlled_timeout_completion_races` — 100 iterations alternating fast/slow handlers
+- `semaphore_never_exceeds_max_workers` — concurrent tasks bounded by semaphore permits
+- `handler_panic_returns_blocking_handler_count_to_baseline` — panic cleanup verified
+- `timeout_response_returns_while_handler_continues` — timeout response while handler still running
 
-| Target | Corpus Seeds |
-|--------|-------------|
-| calculator_expression | 11 |
-| calculator_normalization | 4 |
-| unified_diff | 7 |
-| shell_tokenization | 7 |
-| shell_quoting | 4 |
-| regex_classification | 7 |
-| regex_execution | 5 |
-| json_pointer | 7 |
-| toml_config | 7 |
-| unicode_inspection | 9 |
-| markdown_fences | 7 |
-| glob_matching | 7 |
-| **Total** | **82** |
+### New tests added in sync_pool.rs
 
-All 12 targets build successfully with `cargo +nightly fuzz build`.
+- `panic_in_job_does_not_kill_worker` — worker survives job panic via catch_unwind
+- `eval_context_not_leaked_between_jobs` — thread-local state isolated between jobs
+- `repeated_timeouts_pool_stays_usable` — pool remains functional after timeouts
 
-## CI Workflows
+## Runtime Lifecycle Model
 
-All workflows use pinned commit SHAs for third-party actions:
+The implementation uses a 6-state lifecycle:
 
-| Action | Commit SHA | Tag |
-|--------|-----------|-----|
-| actions/checkout | `11d5960a326750d5838078e36cf38b85af677262` | v4 |
-| actions/upload-artifact | `ea165f8d65b6e75b540449e92b4886f43607fa02` | v4 |
-| actions/cache | `0057852bfaa89a56745cba8c7296529d2fc39830` | v4 |
-| actions/setup-python | `7f4fc3e22c37d6ff65e88745f38bd3157c663f7c` | v5 |
-| dtolnay/rust-toolchain | `2c7215f132e9ebf062739d9130488b56d53c060c` | stable/nightly/master |
-| Swatinem/rust-cache | `42dc69e1aa15d09112580998cf2ef0119e2e91ae` | v2 |
-| EmbarkStudios/cargo-deny-action | `b1c5d5c65cb760fdaa88961f436ac60c46d6ba1f` | v0 |
+```
+HANDLER_QUEUED (0) → HANDLER_RUNNING (1) → HANDLER_TIMEOUT_ACCOUNTING (2)
+  → HANDLER_TIMED_OUT_ACCOUNTED (3) → HANDLER_FINISHED (4)
 
-## Release Gate Alignment
+HANDLER_QUEUED (0) → HANDLER_TIMED_OUT_QUEUED (5)
+```
 
-The canonical release gate is now consistent across:
-- `release.sh`
-- `docs/release.md`
-- `.opencode/skills/release/SKILL.md`
-- `AGENTS.md` (verification order)
+### Invariants enforced
 
-All include: `cargo package --locked --list`, `cargo package --locked --verbose`,
-and `cargo publish --locked --dry-run`.
+- `timed_out_handlers <= active_blocking_handlers` at all stable snapshots
+- No `fetch_sub` runs without a preceding matching `fetch_add`
+- Queued timeout never changes `timed_out_handlers`
+- Every running-timeout increment has exactly one decrement
+- All gauges return to zero after controlled workers finish
+- Handler lifecycle swap executes before blocking counter decrement (catch_unwind)
 
 ## Closure Checklist Items
 
-### Runtime
+### Runtime lifecycle
 
-- [x] Queueing and running states are distinct (3-state lifecycle)
-- [x] Queued timeout cannot start work later
-- [x] Timeout metric accounting cannot underflow
-- [x] Timed-out-running gauges return to zero
-- [x] Worker concurrency is a hard bound
-- [x] Active-request cleanup is guaranteed (generation matching)
-- [x] Reused request IDs work after completion
-- [x] Bounded synchronous registry execution exists (`call_json_with_budget`)
-- [x] MCP does not nest the sync executor
-- [x] Request-form `notifications/initialized` receives `-32600` error
-- [x] True notifications remain response-free
-- [x] Non-empty client capabilities persist through lifecycle transitions
-- [x] 500 controlled race iterations leave all gauges at zero
+- [x] Initial handler state is queued, not running
+- [x] A queued timeout never starts blocking work later
+- [x] Queued timeout increments `total_timeouts` only
+- [x] Running timeout increments `timed_out_handlers` before publishing a decrementable state
+- [x] No handler path can decrement before the matching increment
+- [x] Handler completion decrements the timed-out-running gauge exactly once
+- [x] Panic and cancellation use the same completion accounting
+- [x] Stable snapshots never show unsigned underflow
+- [x] `timed_out_handlers <= active_blocking_handlers` at synchronized snapshots
+- [x] All gauges return to zero after controlled workers exit
 
-### Release 4
+### Active requests
 
-- [x] Exact MSRV is tested and documented with evidence (`docs/msrv.md`)
-- [x] `Cargo.lock` is current and all blocking jobs use `--locked`
-- [x] cargo-deny passes under the documented policy
-- [x] Windows and macOS supported suites pass (CI)
-- [x] Latest-compatible workflow reports real outcomes
-- [x] Parity policy and installation behavior agree (drift detection)
-- [x] Parity workflow job name matches behavior ("latest eggcalc")
-- [x] Package assertions are explicit and pass
-- [x] Release script, workflow, docs, and skill use one command list
-- [x] Third-party action pinning follows project policy (commit SHAs)
-- [ ] Manual release-verification run succeeds (requires CI dispatch)
+- [x] Active-request identity uses an explicit generation/token
+- [x] Completion cleanup uses awaited locking
+- [x] No correctness path relies on `try_lock` in `Drop`
+- [x] Normal return removes the request
+- [x] Timeout removes the request
+- [x] Cancellation removes the request
+- [x] Handler panic removes the request
+- [x] Response serialization failure removes the request
+- [x] A stale generation cannot remove a replacement request
+- [x] Request IDs are reusable immediately after cleanup
 
-### Release 5
+### Synchronous execution
 
-- [x] All fuzz targets build
-- [x] Extended fuzzing uses an executable matrix (12 parallel jobs)
-- [x] Sanitizer jobs fit within configured timeouts
-- [x] PR smoke fuzzing is bounded and cancellable
-- [x] Every property-named test asserts the stated property
-- [x] Principal domains use generated inputs (deterministic PRNG)
-- [x] Fuzz comments match implemented assertions
-- [x] Corpus counts exclude placeholders (82 seeds, .gitkeep excluded)
-- [x] Discovered failures become minimized regression tests
-- [ ] Per-target run evidence is recorded (requires CI dispatch)
+- [x] A fixed worker-count executor exists (8 workers, 32-slot queue)
+- [x] The submission queue is bounded
+- [x] Budget-aware synchronous calls enforce `max_elapsed_ms`
+- [x] Queue saturation returns a structured `RESOURCE_EXHAUSTED` error
+- [x] Timed-out work retains worker occupancy until it exits
+- [x] Repeated timeouts do not create unbounded threads
+- [x] Cancellation and eval-context state are installed and restored per job
+- [x] MCP does not call the synchronous executor from inside `spawn_blocking`
+- [x] Raw `call_json` timeout semantics are documented accurately
+- [x] Worker survives job panic via `catch_unwind`
 
-### Release state
+### Tests
 
-- [x] Manifest, lockfile, changelog, tags, and deprecations agree
-- [x] CHANGELOG Unreleased includes all unpublished 1.3.0 entries
-- [x] Deprecation `since` values reference published 1.x versions
-- [x] Architecture docs describe current runtime behavior
-- [x] Full integration suite completes locally and in CI
-- [x] 20-iteration stress loop passes (all 23 execution safety tests)
-- [x] Final evidence document identifies exact commit and workflow runs (this document)
-- [ ] Release 4 status is marked complete only after evidence exists
-- [ ] Release 5 status is marked complete only after evidence exists
-- [x] No unresolved item is hidden behind a blanket PASS statement
+- [x] Lifecycle races use barriers/channels/hooks rather than timing guesses
+- [x] Queued timeout is tested with a saturated semaphore
+- [x] Pre-accounting and post-accounting completion races are tested
+- [x] Panic-after-timeout is tested
+- [x] Request-map lock contention is tested
+- [x] Synchronous worker saturation and recovery are tested
+- [x] The old sequential "500-iteration race" claim is renamed
+- [x] 100 controlled race iterations pass without gauge leaks (50-iteration stress loop)
+
+### Documentation and evidence
+
+- [x] Changelog describes the implemented lifecycle accurately
+- [x] Deprecation `since` metadata matches actual shipping history
+- [x] Architecture docs distinguish MCP and in-process execution boundaries
+- [x] Closure evidence identifies the exact commit containing all cited changes
+- [x] Local command results were produced from a clean checkout of that commit
+- [x] MSRV gate passes on Rust 1.89.0
+- [x] Fuzz build succeeds
+- [ ] Ordinary CI passed for that commit (requires CI dispatch)
+- [ ] Manual release-verification workflow passed for that commit (requires CI dispatch)
+- [ ] Extended fuzz and sanitizer matrices passed for that commit (requires CI dispatch)
+- [ ] Release 4 and Release 5 remain open until their evidence-dependent items pass
 
 ## Intentionally Deferred Items
 
-1. **Manual release-verification workflow run**: Requires dispatching the
-   `Release Verification` workflow via GitHub Actions. Cannot be run locally
-   without CI credentials.
+1. **GitHub Actions CI**: Requires push to trigger CI workflow. Evidence will be
+   recorded after the commit is pushed and CI completes.
 
-2. **Per-target fuzz run evidence**: Requires the extended fuzz matrix workflow
-   to run on GitHub Actions. Local fuzz runs are not recorded as formal evidence.
+2. **Manual release-verification workflow run**: Requires dispatching the
+   `Release Verification` workflow via GitHub Actions.
 
-3. **Release 4/5 status note closure**: Status notes will be marked complete
+3. **Per-target fuzz run evidence**: Requires the extended fuzz matrix workflow
+   to run on GitHub Actions.
+
+4. **Release 4/5 status closure**: Status notes will be marked complete
    after the manual release-verification workflow succeeds and the maintainer
    confirms the release candidate.
