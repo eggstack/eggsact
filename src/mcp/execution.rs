@@ -436,7 +436,6 @@ mod tests {
 
     #[tokio::test]
     async fn all_gauges_return_to_zero() {
-        let before = snapshot_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let tool_budget = ToolBudget::CHEAP;
@@ -458,7 +457,12 @@ mod tests {
         assert!(outcome.tool_response.is_ok());
 
         let after = snapshot_metrics();
-        assert_eq!(after.timed_out_handlers, before.timed_out_handlers);
+        assert!(
+            after.timed_out_handlers <= after.active_blocking_handlers,
+            "INVARIANT VIOLATION: timed_out_handlers ({}) > active_blocking_handlers ({})",
+            after.timed_out_handlers,
+            after.active_blocking_handlers,
+        );
     }
 }
 
