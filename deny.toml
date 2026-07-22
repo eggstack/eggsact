@@ -2,7 +2,6 @@
 # See: https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
-yanked = "warn"
 ignore = []
 
 [licenses]

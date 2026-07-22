@@ -182,7 +182,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: EmbarkStudios/cargo-deny-action@b1c5d5c65cb760fdaa88961f436ac60c46d6ba1f # v0
         with:
-          arguments: check advisories bans licenses sources
+          args: check advisories bans licenses sources
 
   package:
     name: Package
