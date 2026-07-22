@@ -46,6 +46,7 @@ use serde_json::Value;
 use std::fmt;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::calc::context::EvalContext;
 pub use crate::mcp::compat::CompatibilityMode;
@@ -393,7 +394,7 @@ impl ToolRegistry {
     /// integrations, prefer [`ToolRegistry::available_tools_model_safe`] or
     /// [`ToolRegistry::available_tools_for_audience`] to also exclude `HarnessOnly` tools.
     #[deprecated(
-        since = "1.0.0",
+        since = "1.1.4",
         note = "use available_tools_model_safe, available_tools_for_audience, or available_tools_for_current_audience"
     )]
     pub fn available_tools(&self) -> Vec<ToolView> {
@@ -609,6 +610,11 @@ impl ToolRegistry {
     /// 3. Argument schema validation
     /// 4. Synchronous tool handler execution
     ///
+    /// **Note**: This method executes the handler directly on the calling thread
+    /// with no elapsed-time enforcement or concurrency limiting. For budget-aware
+    /// execution, use [`call_json_with_budget`](Self::call_json_with_budget) or
+    /// [`call_json_with_execution_context`](Self::call_json_with_execution_context).
+    ///
     /// Tool-level failures (e.g., invalid input) return `Ok(response)` with
     /// `response.ok == false`. Registry-level failures return `Err(ToolCallError)`.
     pub fn call_json(&self, name: &str, args: Value) -> Result<ToolResponse, ToolCallError> {
@@ -623,9 +629,10 @@ impl ToolRegistry {
     /// This is the budget-aware entry point for in-process tool execution. It:
     /// 1. Resolves the tool's default budget from its declared `ToolCost`
     /// 2. Merges with any explicit `budget` override
-    /// 3. Executes the handler
-    /// 4. Truncates output findings and result to fit within budget limits
-    /// 5. Populates `limits_applied` on the response
+    /// 3. Validates profile, audience, and arguments on the calling thread
+    /// 4. Executes the handler on a bounded worker pool with elapsed-time enforcement
+    /// 5. Truncates output findings and result to fit within budget limits
+    /// 6. Populates `limits_applied` on the response
     ///
     /// Use this method when the caller needs deterministic resource discipline.
     /// For simple calls without budget enforcement, use [`call_json`](Self::call_json).
@@ -641,9 +648,6 @@ impl ToolRegistry {
             Some(b) => b,
             None => budget_for_tool_resolved(name, spec),
         };
-        // Pre-execution input size check — reject oversized serialized args
-        // before dispatching to the handler. This is a hard limit, not just
-        // a hint.
         let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
         if serialized_len > effective_budget.max_input_bytes {
             return Ok(ToolResponse::error_with_code(
@@ -657,9 +661,35 @@ impl ToolRegistry {
                 Some(name),
             ));
         }
-        let mut response = self.call_json(name, args)?;
-        truncate_response(&mut response, &effective_budget);
-        Ok(response)
+        let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
+        let name_owned = name.to_string();
+        let args_clone = args.clone();
+        let result = crate::mcp::sync_pool::sync_pool().submit(
+            move || {
+                let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
+                crate::mcp::budget::with_eval_context(&mut mcp_eval_ctx, || {
+                    let prepared = Self::prepare_tool_call_static(&name_owned, &args_clone);
+                    match prepared {
+                        ToolCallOutcome::Ready { handler } => handler(&args_clone),
+                        ToolCallOutcome::PreExecutionError(e) => ToolResponse::error_with_code(
+                            "internal_error",
+                            crate::mcp::machine_codes::INTERNAL_ERROR,
+                            &format!("Pre-execution error: {}", e),
+                            None,
+                            Some(&name_owned),
+                        ),
+                    }
+                })
+            },
+            timeout,
+        );
+        match result {
+            Ok(mut response) => {
+                truncate_response(&mut response, &effective_budget);
+                Ok(response)
+            }
+            Err(pool_error) => Ok(pool_error.to_tool_response(name)),
+        }
     }
 
     /// Call a tool with an explicit budget and cancellation flag, applying resource
@@ -695,9 +725,37 @@ impl ToolRegistry {
                 Some(name),
             ));
         }
-        let mut response = budget::with_cancel_flag(cancel_flag, || self.call_json(name, args))?;
-        truncate_response(&mut response, &effective_budget);
-        Ok(response)
+        let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
+        let name_owned = name.to_string();
+        let args_clone = args.clone();
+        let result = crate::mcp::sync_pool::sync_pool().submit(
+            move || {
+                budget::with_cancel_flag(cancel_flag, || {
+                    let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
+                    crate::mcp::budget::with_eval_context(&mut mcp_eval_ctx, || {
+                        let prepared = Self::prepare_tool_call_static(&name_owned, &args_clone);
+                        match prepared {
+                            ToolCallOutcome::Ready { handler } => handler(&args_clone),
+                            ToolCallOutcome::PreExecutionError(e) => ToolResponse::error_with_code(
+                                "internal_error",
+                                crate::mcp::machine_codes::INTERNAL_ERROR,
+                                &format!("Pre-execution error: {}", e),
+                                None,
+                                Some(&name_owned),
+                            ),
+                        }
+                    })
+                })
+            },
+            timeout,
+        );
+        match result {
+            Ok(mut response) => {
+                truncate_response(&mut response, &effective_budget);
+                Ok(response)
+            }
+            Err(pool_error) => Ok(pool_error.to_tool_response(name)),
+        }
     }
 
     /// Call a tool with a full execution context, applying all dispatch-scoped state.
@@ -745,23 +803,44 @@ impl ToolRegistry {
         let effective_profile = ctx.profile.clone().unwrap_or_else(|| self.profile.clone());
         let effective_audience = ctx.audience.unwrap_or(self.audience);
         let effective_compat = ctx.compatibility_mode;
-        let mut eval_ctx = ctx.eval_ctx.clone();
-        let mut response = budget::with_cancel_flag(ctx.cancellation.clone(), || {
-            budget::with_eval_context(&mut eval_ctx, || {
-                match self.prepare_tool_call_with_policy(
-                    name,
-                    &args,
-                    &effective_profile,
-                    effective_audience,
-                    effective_compat,
-                ) {
-                    ToolCallOutcome::Ready { handler } => Ok(handler(&args)),
-                    ToolCallOutcome::PreExecutionError(e) => Err(e),
-                }
-            })
-        })?;
-        truncate_response(&mut response, &effective_budget);
-        Ok(response)
+        let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
+        let name_owned = name.to_string();
+        let args_clone = args.clone();
+        let eval_ctx_clone = ctx.eval_ctx.clone();
+        let cancel_clone = ctx.cancellation.clone();
+        let result = crate::mcp::sync_pool::sync_pool().submit(
+            move || {
+                budget::with_cancel_flag(cancel_clone, || {
+                    let mut eval_ctx = eval_ctx_clone;
+                    crate::mcp::budget::with_eval_context(&mut eval_ctx, || {
+                        match Self::prepare_tool_call_static_with_policy(
+                            &name_owned,
+                            &args_clone,
+                            &effective_profile,
+                            effective_audience,
+                            effective_compat,
+                        ) {
+                            ToolCallOutcome::Ready { handler } => handler(&args_clone),
+                            ToolCallOutcome::PreExecutionError(e) => ToolResponse::error_with_code(
+                                "internal_error",
+                                crate::mcp::machine_codes::INTERNAL_ERROR,
+                                &format!("Pre-execution error: {}", e),
+                                None,
+                                Some(&name_owned),
+                            ),
+                        }
+                    })
+                })
+            },
+            timeout,
+        );
+        match result {
+            Ok(mut response) => {
+                truncate_response(&mut response, &effective_budget);
+                Ok(response)
+            }
+            Err(pool_error) => Ok(pool_error.to_tool_response(name)),
+        }
     }
 
     /// Call a tool with an immutable execution template.
@@ -829,7 +908,7 @@ impl ToolRegistry {
     /// handlers do not persist state through the `_mut` dispatch path.
     #[deprecated(
         since = "1.0.0",
-        note = "Does not persist calculator state through math_eval. Use evaluate_with_context() or run_with_context() directly for persistent calculator sessions."
+        note = "Does not persist calculator state through math_eval. Use evaluate_with_context() or run_with_context() directly for persistent calculator sessions. The method remains useful for transaction safety on failure paths."
     )]
     pub fn call_json_with_execution_context_mut(
         &self,
@@ -886,6 +965,93 @@ impl ToolRegistry {
             Ok(response) => response.result.unwrap_or(Value::Null),
             Err(_) => Value::Null,
         }
+    }
+
+    /// Static tool-call preparation without `&self`.
+    ///
+    /// Used by sync pool closures that cannot borrow `&self` across threads.
+    /// Performs tool lookup, profile check, audience check, and schema validation.
+    fn prepare_tool_call_static(name: &str, args: &Value) -> ToolCallOutcome {
+        let handler = match registry::tool_handler_for(name) {
+            Some(h) => h,
+            None => {
+                return ToolCallOutcome::PreExecutionError(ToolCallError::UnknownTool(
+                    name.to_string(),
+                ))
+            }
+        };
+        // Use default profile (full) and default audience (Model) for the
+        // static path — callers routed through call_json_with_budget which
+        // already validated policy before submitting to the pool.
+        let profile_tools = registry::tools_for_profile("full");
+        if !profile_tools.iter().any(|s| s.name == name) {
+            return ToolCallOutcome::PreExecutionError(ToolCallError::ToolUnavailable {
+                tool: name.to_string(),
+                profile: "full".to_string(),
+            });
+        }
+        if let Some(spec) = registry::get_tool(name) {
+            if !ToolAudience::Model.can_execute_exposure(spec.exposure) {
+                return ToolCallOutcome::PreExecutionError(
+                    ToolCallError::ToolNotAllowedForAudience {
+                        tool: name.to_string(),
+                        profile: "full".to_string(),
+                        audience: "Model".to_string(),
+                        exposure: spec.exposure.as_str().to_string(),
+                    },
+                );
+            }
+        }
+        if let Some(msg) =
+            schema_validation::validate_arguments(name, args, CompatibilityMode::default())
+        {
+            return ToolCallOutcome::PreExecutionError(ToolCallError::InvalidArguments(msg));
+        }
+        ToolCallOutcome::Ready { handler }
+    }
+
+    /// Static tool-call preparation with explicit policy, without `&self`.
+    ///
+    /// Used by `call_json_with_execution_context`'s sync pool closure which
+    /// cannot borrow `&self` across threads.
+    fn prepare_tool_call_static_with_policy(
+        name: &str,
+        args: &Value,
+        effective_profile: &Profile,
+        effective_audience: ToolAudience,
+        effective_compat: CompatibilityMode,
+    ) -> ToolCallOutcome {
+        let handler = match registry::tool_handler_for(name) {
+            Some(h) => h,
+            None => {
+                return ToolCallOutcome::PreExecutionError(ToolCallError::UnknownTool(
+                    name.to_string(),
+                ))
+            }
+        };
+        let profile_tools = registry::tools_for_profile(effective_profile.as_str());
+        if !profile_tools.iter().any(|s| s.name == name) {
+            return ToolCallOutcome::PreExecutionError(ToolCallError::ToolUnavailable {
+                tool: name.to_string(),
+                profile: effective_profile.to_string(),
+            });
+        }
+        if let Some(spec) = registry::get_tool(name) {
+            if !effective_audience.can_execute_exposure(spec.exposure) {
+                return ToolCallOutcome::PreExecutionError(
+                    ToolCallError::ToolNotAllowedForAudience {
+                        tool: name.to_string(),
+                        profile: effective_profile.to_string(),
+                        audience: format!("{:?}", effective_audience),
+                        exposure: spec.exposure.as_str().to_string(),
+                    },
+                );
+            }
+        }
+        if let Some(msg) = schema_validation::validate_arguments(name, args, effective_compat) {
+            return ToolCallOutcome::PreExecutionError(ToolCallError::InvalidArguments(msg));
+        }
+        ToolCallOutcome::Ready { handler }
     }
 }
 

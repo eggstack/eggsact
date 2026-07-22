@@ -1,6 +1,7 @@
 use crate::agent::{Profile, ToolAudience, ToolCallError, ToolCallOutcome, ToolRegistry};
-use crate::mcp::budget::{budget_for_tool, BudgetContext};
+use crate::mcp::budget::budget_for_tool;
 use crate::mcp::compat::CompatibilityMode;
+use crate::mcp::execution;
 use crate::mcp::machine_codes;
 use crate::mcp::protocol::{
     already_initialized, invalid_request, json_rpc_error, method_not_found, not_initialized,
@@ -8,13 +9,11 @@ use crate::mcp::protocol::{
     JsonRpcRequest, JsonRpcResponse, ServerCapabilities, ServerInfo, ToolsCapability,
 };
 use crate::mcp::registry;
-use crate::mcp::response::{
-    python_json_dumps, sanitize_error, truncate_response, wrap_tool_response, ToolResponse,
-};
+use crate::mcp::response::{wrap_tool_response, ToolResponse};
 use crate::mcp::runtime::{
-    self, apply_cancellation, get_active_audience, get_active_profile, get_schema_detail,
-    negotiate_protocol_version, new_active_requests, register_request, MetricGuard,
-    NegotiatedProtocol, RateLimiter, RegisterRequestError, SessionState, MAX_OUTPUT_BYTES,
+    apply_cancellation, complete_request, get_active_audience, get_active_profile,
+    get_schema_detail, negotiate_protocol_version, new_active_requests, register_request,
+    MetricGuard, NegotiatedProtocol, RateLimiter, RegisterRequestError, SessionState,
     MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS,
     MCP_SERVER_NAME, RUNTIME_METRICS,
 };
@@ -22,14 +21,8 @@ use serde_json::Value;
 use std::io::Write;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Mutex;
-
-/// Handler lifecycle states for timeout metric accounting.
-const HANDLER_RUNNING: u8 = 0;
-const HANDLER_TIMED_OUT: u8 = 1;
-const HANDLER_FINISHED: u8 = 2;
 
 pub fn mcp_tool_count() -> usize {
     registry::tool_count()
@@ -472,180 +465,22 @@ async fn handle_request_async(
                                 .unwrap_or_else(|| budget_for_tool(name, spec.cost))
                         })
                         .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
-                    let cancel_flag_for_handler = cancel_flag.clone();
-                    let budget_context =
-                        BudgetContext::new(tool_budget).with_cancellation(cancel_flag.clone());
 
-                    // Use budget-derived timeout. The outer tokio::time::timeout
-                    // governs how long we wait; the spawned blocking task may
-                    // continue after the timeout fires (Rust cannot kill threads).
-                    //
-                    // Owned permits ensure the semaphore permit is held until the
-                    // blocking handler actually exits — even after a timeout. This
-                    // prevents timed-out handlers from releasing their permit while
-                    // the blocking closure continues, which would allow more than
-                    // MAX_TOOL_WORKERS concurrent blocking computations.
-                    let timeout_ms = tool_budget.max_elapsed_ms;
-                    // Track handler lifecycle for timeout metric accounting.
-                    let handler_lifecycle =
-                        Arc::new(std::sync::atomic::AtomicU8::new(HANDLER_RUNNING));
-                    let handler_lifecycle_for_handler = handler_lifecycle.clone();
-                    let result =
-                        tokio::time::timeout(Duration::from_millis(timeout_ms), async move {
-                            let permit = match sem.acquire_owned().await {
-                                Ok(p) => p,
-                                Err(_) => {
-                                    return Ok::<_, tokio::task::JoinError>(
-                            crate::mcp::response::ToolResponse::error_with_code(
-                                "internal_error",
-                                "INTERNAL_ERROR",
-                                "Tool execution semaphore unavailable (server shutting down)",
-                                None,
-                                None,
-                            ),
-                        );
-                                }
-                            };
-                            // Check cancellation before spawning blocking work — avoids
-                            // consuming a worker permit for an already-cancelled request.
-                            if cancel_flag_for_handler.load(Ordering::Relaxed) {
-                                return Ok(crate::mcp::response::ToolResponse::error_with_code(
-                                    "cancelled",
-                                    machine_codes::CANCELLED,
-                                    &format!("Tool '{}' request was cancelled", name),
-                                    None,
-                                    Some(name),
-                                ));
-                            }
-                            tokio::task::spawn_blocking(move || {
-                                // Permit is moved into the closure and held until the
-                                // handler exits, ensuring MAX_TOOL_WORKERS is respected
-                                // even after client-facing timeouts.
-                                let _permit = permit;
-                                // RAII guard tracks active blocking handler count.
-                                let _blocking_guard =
-                                    MetricGuard::new(&RUNTIME_METRICS.active_blocking_handlers);
-                                // Update peak concurrency watermark.
-                                let current = RUNTIME_METRICS
-                                    .active_blocking_handlers
-                                    .load(Ordering::Relaxed);
-                                RUNTIME_METRICS
-                                    .peak_blocking_concurrency
-                                    .fetch_max(current, Ordering::Relaxed);
-                                let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
-                                let result = crate::mcp::budget::with_cancel_flag(
-                                    Some(cancel_flag_for_handler.clone()),
-                                    || {
-                                        crate::mcp::budget::with_eval_context(
-                                            &mut mcp_eval_ctx,
-                                            || handler(&args_clone),
-                                        )
-                                    },
-                                );
-                                // Atomically transition HANDLER_TIMED_OUT → HANDLER_FINISHED,
-                                // decrementing timed_out_handlers only if we won the race.
-                                // If previous state was HANDLER_RUNNING (no timeout yet), just mark finished.
-                                let prev = handler_lifecycle_for_handler
-                                    .swap(HANDLER_FINISHED, Ordering::AcqRel);
-                                if prev == HANDLER_TIMED_OUT {
-                                    RUNTIME_METRICS
-                                        .timed_out_handlers
-                                        .fetch_sub(1, Ordering::Relaxed);
-                                }
-                                result
-                            })
-                            .await
-                        })
-                        .await;
+                    let outcome = execution::execute_tool_bounded(
+                        handler,
+                        args_clone,
+                        name_owned.clone(),
+                        tool_budget,
+                        cancel_flag.clone(),
+                        sem,
+                    )
+                    .await;
 
-                    match result {
-                        Ok(Ok(tool_response)) => {
-                            // Apply budget-aware truncation FIRST (findings cap,
-                            // result payload shrinking). This lets per-tool budget
-                            // limits have priority over the absolute MCP hard cap.
-                            let mut response = tool_response;
-                            truncate_response(&mut response, &budget_context.budget);
-
-                            let output = python_json_dumps(&response);
-                            if output.is_empty() {
-                                Some(wrap_tool_response(&ToolResponse::error_with_code(
-                                    "serialization_error",
-                                    machine_codes::SERIALIZATION_ERROR,
-                                    "Failed to serialize tool response",
-                                    None,
-                                    Some(&name_owned),
-                                )))
-                            } else if output.len() > MAX_OUTPUT_BYTES {
-                                Some(wrap_tool_response(
-                                    &ToolResponse::error_with_code(
-                                        "output_too_large",
-                                        machine_codes::OUTPUT_TOO_LARGE,
-                                        &format!(
-                                            "Output exceeds {} bytes and was truncated",
-                                            MAX_OUTPUT_BYTES
-                                        ),
-                                        Some(vec![
-                                    "Try reducing input size or using a summary/detail option"
-                                        .to_string(),
-                                ]),
-                                        Some(&name_owned),
-                                    )
-                                    .with_warnings(vec![
-                                        "Output was truncated due to size limit".to_string(),
-                                    ]),
-                                ))
-                            } else {
-                                Some(wrap_tool_response(&response))
-                            }
-                        }
-                        Ok(Err(join_err)) => Some(json_rpc_error(
-                            -32000,
-                            format!(
-                                "Tool execution error: {}",
-                                runtime::truncate_2000(&sanitize_error(&join_err.to_string()))
-                            ),
-                            request.id.clone(),
-                        )),
-                        Err(_timeout) => {
-                            // Signal cancellation to the running handler so it can
-                            // exit cooperatively at the next should_stop() check.
-                            // Note: the spawned blocking task may continue running
-                            // after this point — we cannot kill threads in Rust.
-                            cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-                            RUNTIME_METRICS
-                                .total_timeouts
-                                .fetch_add(1, Ordering::Relaxed);
-                            // Try to transition HANDLER_RUNNING → HANDLER_TIMED_OUT.
-                            // If the handler already finished (HANDLER_FINISHED), we still count the
-                            // timeout response but don't increment timed_out_handlers.
-                            let prev = handler_lifecycle.compare_exchange(
-                                HANDLER_RUNNING,
-                                HANDLER_TIMED_OUT,
-                                Ordering::AcqRel,
-                                Ordering::Relaxed,
-                            );
-                            if prev.is_ok() {
-                                RUNTIME_METRICS
-                                    .timed_out_handlers
-                                    .fetch_add(1, Ordering::Relaxed);
-                            }
-                            Some(wrap_tool_response(&ToolResponse::error_with_code(
-                        "timeout",
-                        machine_codes::TIMEOUT,
-                        &format!(
-                            "Tool '{}' execution timed out after {}s (budget: {}ms max). The cancel flag was set cooperatively; the handler may continue briefly.",
-                            name_owned,
-                            timeout_ms / 1000,
-                            timeout_ms
-                        ),
-                        Some(vec![
-                            "Try a simpler input or shorter text".to_string(),
-                            "The tool handler checks cancellation cooperatively and may not stop immediately".to_string(),
-                        ]),
-                        Some(&name_owned),
-                    )))
-                        }
-                    }
+                    Some(execution::build_tool_response(
+                        outcome,
+                        &name_owned,
+                        &tool_budget,
+                    ))
                 }
 
                 "profiles/list" => {
@@ -882,7 +717,7 @@ pub async fn main() -> ! {
                     if let Err(e) = state.transition_to_ready() {
                         eprintln!(
                             "Warning: notifications/initialized ignored: {} (state: {:?})",
-                            e, &*state
+                            e, *state
                         );
                     }
                 }
@@ -947,7 +782,7 @@ pub async fn main() -> ! {
         // in a single lock window — no separate contains_key/insert race.
         let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let request_id = request.id.clone().unwrap();
-        let guard = match register_request(
+        let (guard, registration) = match register_request(
             &active_requests,
             &cancel_flag,
             request_id.clone(),
@@ -955,7 +790,7 @@ pub async fn main() -> ! {
         )
         .await
         {
-            Ok(g) => g,
+            Ok(pair) => pair,
             Err(RegisterRequestError::DuplicateId) => {
                 let _ = tx
                     .send(json_rpc_error(
@@ -987,6 +822,8 @@ pub async fn main() -> ! {
         if request.method == "initialize" {
             let result =
                 handle_request_async(&request, &cancel_flag, &tool_semaphore, &session_state).await;
+            // Awaited cleanup — guaranteed, not best-effort
+            complete_request(&active_requests, &registration).await;
             drop(guard);
             if let Some(result) = result {
                 if result.get("error").is_some() && result.get("result").is_none() {
@@ -1018,23 +855,40 @@ pub async fn main() -> ! {
             id: request.id.clone(),
         };
         let request_id_for_response = request_id.clone();
+        let active_requests_clone = active_requests.clone();
+        let registration_clone = registration.clone();
 
         join_set.spawn(async move {
             // RAII guard tracks active request count for diagnostics.
             let _active_guard = MetricGuard::new(&RUNTIME_METRICS.active_requests);
 
-            let maybe_result = handle_request_async(
-                &request_clone,
-                &cancel_flag_clone,
-                &semaphore_clone,
-                &session_state_clone,
-            )
-            .await;
+            let inner = tokio::spawn(async move {
+                handle_request_async(
+                    &request_clone,
+                    &cancel_flag_clone,
+                    &semaphore_clone,
+                    &session_state_clone,
+                )
+                .await
+            });
 
-            // RequestGuard handles active-request cleanup on drop.
+            let outcome = inner.await;
+
+            // Awaited cleanup — guaranteed, not best-effort
+            complete_request(&active_requests_clone, &registration_clone).await;
+
+            // Debug-only assertion on drop; correctness is via complete_request
             drop(guard);
 
             // Send response through the channel.
+            let maybe_result = outcome.unwrap_or_else(|e| {
+                // JoinError = panic in the handler task
+                Some(json_rpc_error(
+                    -32000,
+                    format!("Handler panic: {}", e),
+                    Some(request_id_for_response.clone()),
+                ))
+            });
             if let Some(result) = maybe_result {
                 if result.get("error").is_some() && result.get("result").is_none() {
                     let _ = tx.send(result).await;

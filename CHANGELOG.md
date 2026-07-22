@@ -21,6 +21,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **RAII guards in `budget.rs`**: `CancelFlagGuard` and `EvalContextGuard`
   provide panic-safe thread-local restoration for `CURRENT_CANCEL_FLAG` and
   `CURRENT_EVAL_CONTEXT`.
+- **6-state handler lifecycle** (`src/mcp/execution.rs`): Handler execution
+  now tracks six lifecycle states (`HANDLER_QUEUED`, `HANDLER_RUNNING`,
+  `HANDLER_TIMEOUT_ACCOUNTING`, `HANDLER_TIMED_OUT_ACCOUNTED`,
+  `HANDLER_FINISHED`, `HANDLER_TIMED_OUT_QUEUED`). Timeouts while queued
+  correctly skip `timed_out_handlers` accounting since the handler never
+  started. Timeouts while running increment before publishing the
+  `TIMED_OUT_ACCOUNTED` state so the handler exit can observe and decrement
+  exactly once.
+- **Generation-aware request cleanup** (`src/mcp/runtime.rs`): Active-request
+  entries now carry a monotonically increasing generation counter.
+  `complete_request` only removes an entry when its stored generation matches
+  the caller's generation token. This prevents stale cleanup of a recycled
+  request ID when two requests share the same ID across the session lifetime.
+- **Bounded synchronous execution pool** (`src/mcp/sync_pool.rs`):
+  `SyncExecutionPool` provides a fixed-worker thread pool with bounded work
+  queue for budget-aware in-process APIs (`call_json_with_budget`,
+  `call_json_with_context`, `call_json_with_execution_context`). Handles
+  timeout, queue saturation (`RESOURCE_EXHAUSTED`), and graceful shutdown.
+  The MCP server continues to use Tokio's `spawn_blocking`.
+- **`RESOURCE_EXHAUSTED` machine code** (`src/mcp/machine_codes.rs`):
+  New machine code for sync pool queue saturation errors. Emitted by
+  `SyncPoolError::QueueFull` when all workers are busy and the queue is full.
 - **Eliminated nested timeout workers**: `math_eval`, `validate_regex`,
   `regex_finditer`, and `dotenv_validate` no longer spawn inner OS threads
   via `run_with_timeout`. All handlers now execute directly inside the
@@ -69,6 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Request-form `notifications/initialized` now returns `-32600` error**
   instead of being silently consumed. True notifications (no `id`) remain
   response-free per JSON-RPC 2.0.
+- **Renamed misleading 500-iteration test**: `test_repeated_direct_math_calls_do_not_modify_mcp_runtime_metrics`
+  (previously named in a way that implied it tested race/timeout/lifecycle
+  properties; it actually verifies that direct registry calls do not affect
+  MCP runtime gauges).
 
 ### Deprecated
 - **`ensure_mcp_defaults()`** — MCP dispatch now creates
@@ -76,7 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compatibility but should not be called in new code.
 - **`set_mcp_mode()`** — use `EvalContext::mcp_mode()` instead. The global
   `AtomicBool` flags remain for legacy `evaluate()`/`run()` callers.
-- **`call_json_with_execution_context_mut`** (since 0.4.0):
+- **`call_json_with_execution_context_mut`** (since 1.0.0):
   Does not persist calculator state through `math_eval`. Use
   `evaluate_with_context()` or `run_with_context()` directly for persistent
   calculator sessions. The method remains useful for transaction safety on

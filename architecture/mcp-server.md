@@ -7,11 +7,13 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | File | Purpose |
 |------|---------|
 | `server.rs` | Protocol orchestration: stdio read loop, request validation, JSON-RPC dispatch |
+| `execution.rs` | Execution coordinator: 6-state handler lifecycle, `SyncExecutionPool`, request timeout accounting |
+| `runtime.rs` | Rate limiter, constants, profile management, generation-aware request tracking |
+| `sync_pool.rs` | Bounded synchronous execution pool (8 workers, 32-slot queue) for budget-aware APIs |
 | `registry/` | Tool registration: aggregation, listing, types |
 | `specs/` | `ToolSpec` declarations per tool category (single source of truth) |
 | `protocol.rs` | JSON-RPC types: `JsonRpcRequest`, `JsonRpcResponse`, `InitializeResult`, error constructors |
 | `response.rs` | `ToolResponse` struct, `sanitize_error`, response builders, `CallMetrics` |
-| `runtime.rs` | Rate limiter, constants, profile management |
 | `schema_validation.rs` | MCP argument validation against tool input schemas |
 | `compat.rs` | `CompatibilityMode` enum (EggcalcPython vs StrictNative) |
 | `machine_codes.rs` | Machine-readable response codes, severity/disposition/verdict constants |
@@ -249,7 +251,7 @@ profile at construction time via `with_profile_and_audience`.
 ### How tools/list and tools/call work
 
 - `tools/list`: Validates MCP parameters in `server.rs`, builds a `ToolListOptions`, and delegates to `registry::list_tool_definitions()` in `registry/listing.rs`. The registry handles profile filtering, name/tier/tag filtering, schema compaction, and deprecated-field normalization. MCP retains parameter validation and profile resolution.
-- `tools/call`: Resolves the active profile from `get_active_profile()` and creates a `ToolRegistry` with `Model` audience and `EggcalcPython` compatibility mode (Python-parity error messages). Delegates tool lookup, profile checking, audience/exposure checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API. The in-process agent API defaults to `StrictNative` mode (standard JSON Schema error messages).
+- `tools/call`: Resolves the active profile from `get_active_profile()` and creates a `ToolRegistry` with `Model` audience and `EggcalcPython` compatibility mode (Python-parity error messages). Delegates tool lookup, profile checking, audience/exposure checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API. The in-process agent API defaults to `StrictNative` mode (standard JSON Schema error messages). For budget-aware in-process APIs (`call_json_with_budget`, `call_json_with_context`, `call_json_with_execution_context`), the handler is dispatched through the `SyncExecutionPool` rather than directly.
 
 ## Tool Categories
 
@@ -379,12 +381,15 @@ IDs (`id: null`) are rejected for requests because concurrent tracking and
 error correlation become ambiguous. Notifications use an absent `id` field,
 not `null`.
 
-**Active-request cleanup:** A `RequestGuard` RAII struct in `runtime.rs`
-provides cleanup for active-request entries. On drop, it removes the entry
-from the active map if the cancel flag still matches, preventing an old task
-from removing a newer request that reused the same ID. The guard ensures
-cleanup on all terminal paths: normal completion, error, panic, timeout,
-writer failure, and graceful shutdown.
+**Generation-aware request cleanup:** `ActiveRequest` in `runtime.rs` carries a
+`generation: u64` field. A global `NEXT_GENERATION` `AtomicU64` counter assigns
+monotonically increasing generations at registration time. `register_request()`
+returns `(RequestGuard, RequestRegistration)`. `complete_request()` is async
+and removes entries only when the generation matches, preventing stale completions
+from evicting newer requests that reused the same ID. `RequestGuard::Drop` is a
+debug-only assertion — it is NOT the correctness mechanism. The server uses an
+outer/inner task pattern: `tokio::spawn` for the inner handler, with an awaited
+`complete_request` after the join completes.
 
 **Diagnostics counters:** `RequestGuard` and owned semaphore permits are
 reflected in the diagnostics counter infrastructure — `runtime_diagnostics`
@@ -392,23 +397,30 @@ reports in-flight and active-worker counts. Global `RUNTIME_METRICS` provides
 live atomic counters: `active_requests`, `active_blocking_handlers`,
 `timed_out_handlers`, `total_timeouts`, and `peak_blocking_concurrency`.
 RAII `MetricGuard` ensures counters decrement correctly on panic/unwind.
+At synchronized snapshots, `timed_out_handlers <= active_blocking_handlers`.
 
 **Timeout metrics lifecycle state machine:** `timed_out_handlers` uses an
-`AtomicU8` lifecycle state machine in `server.rs` to eliminate the race
+`AtomicU8` lifecycle state machine in `execution.rs` to eliminate the race
 condition present in the previous `AtomicBool` design. Each handler transitions
-through three states:
+through five states:
 
 | State | Value | Meaning |
 |-------|-------|---------|
-| `HANDLER_RUNNING` | 0 | Handler is actively executing |
-| `HANDLER_TIMED_OUT` | 1 | Timeout fired, awaiting handler exit |
-| `HANDLER_FINISHED` | 2 | Handler has completed |
+| `HANDLER_QUEUED` | 0 | Request received, awaiting spawn |
+| `HANDLER_RUNNING` | 1 | Handler is actively executing |
+| `HANDLER_TIMEOUT_ACCOUNTING` | 2 | Timeout fired, awaiting state transition |
+| `HANDLER_TIMED_OUT_ACCOUNTED` | 3 | Timeout accounted, awaiting handler exit |
+| `HANDLER_FINISHED` | 4 | Handler has completed |
+| `HANDLER_TIMED_OUT_QUEUED` | 5 | Timeout while still queued (never ran) |
 
-On timeout, the system uses `compare_exchange(HANDLER_RUNNING, HANDLER_TIMED_OUT)` —
-only increments `timed_out_handlers` on success. On handler exit, `swap(HANDLER_FINISHED)`
-is used — only decrements `timed_out_handlers` if the previous state was
-`HANDLER_TIMED_OUT`. This guarantees exactly one increment and one decrement
-per timeout.
+Queued timeouts (state 0) increment only `total_timeouts`, NOT
+`timed_out_handlers`. Running timeouts use
+`compare_exchange(HANDLER_RUNNING, HANDLER_TIMEOUT_ACCOUNTING)` — only
+increments `timed_out_handlers` on success. Handler exit uses
+`swap(HANDLER_FINISHED)` — only decrements `timed_out_handlers` if the
+previous state was `HANDLER_TIMED_OUT_ACCOUNTED`. This guarantees exactly one
+increment and one decrement per running-timeout event, and zero for
+queued-timeout events.
 
 **Graceful shutdown:** When stdin reaches EOF, the read loop breaks and the
 server drains in-flight requests via `JoinSet::join_next()` before dropping the
@@ -435,6 +447,44 @@ Handlers (`math_eval`, `validate_regex`, `regex_finditer`, `dotenv_validate`)
 execute directly within the `spawn_blocking` closure. The `catch_unwind`
 wrapper prevents panics from unwinding across the FFI boundary into tokio's
 thread pool.
+
+### Execution Coordinator (`src/mcp/execution.rs`)
+
+The execution coordinator manages the 6-state handler lifecycle and timeout
+accounting. It owns the `AtomicU8` lifecycle state per handler and provides
+the `SyncExecutionPool` for budget-aware in-process APIs.
+
+#### 6-State Handler Lifecycle
+
+Each request handler progresses through states in `execution.rs`:
+
+```
+HANDLER_QUEUED → HANDLER_RUNNING → HANDLER_TIMEOUT_ACCOUNTING → HANDLER_TIMED_OUT_ACCOUNTED → HANDLER_FINISHED
+                                  ↘ HANDLER_FINISHED (normal exit, no timeout)
+```
+
+Queued handlers that timeout before being spawned transition through
+`HANDLER_TIMED_OUT_QUEUED` and increment only `total_timeouts`.
+
+### Bounded Synchronous Execution Pool (`src/mcp/sync_pool.rs`)
+
+`SyncExecutionPool` provides bounded synchronous execution for budget-aware
+in-process APIs. It has 8 worker threads and a 32-slot queue.
+
+| API | Routes through pool? |
+|-----|---------------------|
+| `call_json_with_budget` | Yes |
+| `call_json_with_context` | Yes |
+| `call_json_with_execution_context` | Yes |
+| `call_json` | No (direct dispatch, no pool) |
+
+Queue saturation returns `RESOURCE_EXHAUSTED`. The MCP server path is **not**
+affected — it uses Tokio `spawn_blocking` with the existing semaphore
+infrastructure.
+
+The pool enforces elapsed-time budgets from `ToolBudget.max_elapsed_ms` by
+running handlers with a timeout, matching the MCP server's cooperative
+cancellation model.
 
 **Response ordering contract (JSON-RPC):** Because requests are dispatched
 concurrently and may complete out of request order, **clients must correlate

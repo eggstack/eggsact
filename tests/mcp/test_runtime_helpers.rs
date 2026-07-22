@@ -5,9 +5,9 @@
 
 use eggsact::agent::ToolAudience;
 use eggsact::mcp::runtime::{
-    apply_cancellation, new_active_requests, parse_audience, parse_schema_detail, register_request,
-    snapshot_metrics, MetricGuard, RateLimiter, RegisterRequestError, RequestGuard,
-    MAX_IN_FLIGHT_REQUESTS, MAX_REQUESTS_PER_SECOND, RUNTIME_METRICS,
+    apply_cancellation, complete_request, new_active_requests, parse_audience, parse_schema_detail,
+    register_request, snapshot_metrics, MetricGuard, RateLimiter, RegisterRequestError,
+    RequestGuard, MAX_IN_FLIGHT_REQUESTS, MAX_REQUESTS_PER_SECOND, RUNTIME_METRICS,
 };
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -312,17 +312,17 @@ fn in_flight_limit_is_reasonable() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// RequestGuard RAII cleanup
+// RequestGuard RAII (debug-only assertions)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn request_guard_removes_entry_on_drop() {
+async fn request_guard_drop_does_not_remove_entry() {
     let active = new_active_requests();
     let flag = Arc::new(AtomicBool::new(false));
     let request_id = json!("guard-test-1");
 
+    // Manually insert an entry
     {
-        let _guard = RequestGuard::new(active.clone(), &flag, request_id.clone());
         let mut map = active.lock().await;
         map.insert(
             request_id.clone(),
@@ -330,39 +330,66 @@ async fn request_guard_removes_entry_on_drop() {
         );
         assert_eq!(map.len(), 1);
     }
-    // Guard dropped — entry should be removed
+
+    // Create a guard, remove the entry manually, then drop the guard.
+    // The guard's drop should be a no-op (entry already gone).
+    {
+        let _guard = RequestGuard::new(active.clone(), &flag, request_id.clone());
+        let mut map = active.lock().await;
+        map.remove(&request_id);
+        assert_eq!(map.len(), 0);
+    }
+    // Guard dropped — entry remains removed (guard does nothing)
     let map = active.lock().await;
-    assert_eq!(map.len(), 0, "RequestGuard should remove entry on drop");
+    assert_eq!(map.len(), 0, "RequestGuard drop should not re-add entry");
 }
 
 #[tokio::test]
-async fn request_guard_does_not_remove_mismatched_entry() {
+async fn request_guard_drop_does_not_affect_other_entries() {
     let active = new_active_requests();
     let flag1 = Arc::new(AtomicBool::new(false));
     let flag2 = Arc::new(AtomicBool::new(false));
     let request_id = json!("guard-test-2");
+    let other_id = json!("guard-test-2-other");
 
-    // Insert with flag1
+    // Insert two entries
     {
         let mut map = active.lock().await;
         map.insert(
             request_id.clone(),
             eggsact::mcp::runtime::test_support::make_active_request(flag1.clone()),
         );
+        map.insert(
+            other_id.clone(),
+            eggsact::mcp::runtime::test_support::make_active_request(flag1.clone()),
+        );
+        assert_eq!(map.len(), 2);
     }
 
-    // Create a guard with flag2 (different cancel flag = different request)
+    // Create a guard for request_id and drop it (entry still present)
+    // The debug assertion will NOT fire because the entry for this guard's
+    // request_id is still in the map — which is the "wrong" state the
+    // assertion catches. But since we're testing the guard's behavior, we
+    // need to accept this. We manually remove the entry first to avoid the
+    // assertion.
     {
         let _guard = RequestGuard::new(active.clone(), &flag2, request_id.clone());
+        let mut map = active.lock().await;
+        map.remove(&request_id);
+        drop(map);
         drop(_guard);
     }
 
-    // Entry should still be there because the guard's flag didn't match
+    // The other entry should still be there
     let map = active.lock().await;
     assert_eq!(
         map.len(),
         1,
-        "RequestGuard should not remove entry with mismatched cancel flag"
+        "RequestGuard drop should not affect other entries"
+    );
+    assert!(
+        map.contains_key(&other_id),
+        "other entry should still exist"
     );
 }
 
@@ -385,7 +412,7 @@ async fn request_guard_handles_already_removed_entry() {
         map.remove(&request_id);
     }
 
-    // Guard drop on a missing entry should be a no-op
+    // Guard drop on a missing entry should be a no-op (no debug assertion fire)
     {
         let _guard = RequestGuard::new(active.clone(), &flag, request_id);
     }
@@ -467,18 +494,20 @@ async fn apply_cancellation_sets_flag_outside_lock() {
 async fn register_request_succeeds_for_new_id() {
     let active = new_active_requests();
     let flag = Arc::new(AtomicBool::new(false));
-    let guard = register_request(&active, &flag, json!("r1"), "tools/call".to_string()).await;
-    assert!(guard.is_ok(), "register_request should succeed for new ID");
-    let _guard = guard.unwrap();
+    let result = register_request(&active, &flag, json!("r1"), "tools/call".to_string()).await;
+    assert!(result.is_ok(), "register_request should succeed for new ID");
+    let (_guard, reg) = result.unwrap();
     let map = active.lock().await;
     assert_eq!(map.len(), 1);
+    drop(map);
+    complete_request(&active, &reg).await;
 }
 
 #[tokio::test]
 async fn register_request_rejects_duplicate_id() {
     let active = new_active_requests();
     let flag = Arc::new(AtomicBool::new(false));
-    let _g1 = register_request(&active, &flag, json!("dup"), "tools/call".to_string())
+    let (_g1, reg1) = register_request(&active, &flag, json!("dup"), "tools/call".to_string())
         .await
         .unwrap();
     let flag2 = Arc::new(AtomicBool::new(false));
@@ -487,18 +516,19 @@ async fn register_request_rejects_duplicate_id() {
         matches!(result, Err(RegisterRequestError::DuplicateId)),
         "should reject duplicate ID"
     );
+    complete_request(&active, &reg1).await;
 }
 
 #[tokio::test]
 async fn register_request_rejects_at_capacity() {
     let active = new_active_requests();
-    let mut guards = Vec::new();
+    let mut items = Vec::new();
     for i in 0..MAX_IN_FLIGHT_REQUESTS {
         let flag = Arc::new(AtomicBool::new(false));
-        let g = register_request(&active, &flag, json!(i), "tools/call".to_string())
+        let (g, reg) = register_request(&active, &flag, json!(i), "tools/call".to_string())
             .await
             .unwrap();
-        guards.push(g);
+        items.push((g, reg));
     }
     let flag = Arc::new(AtomicBool::new(false));
     let result = register_request(
@@ -512,37 +542,139 @@ async fn register_request_rejects_at_capacity() {
         matches!(result, Err(RegisterRequestError::CapacityExceeded)),
         "should reject when at capacity"
     );
-    drop(guards);
+    // Complete all lifecycles to avoid debug assertion fires
+    for (_g, reg) in items.drain(..) {
+        complete_request(&active, &reg).await;
+    }
 }
 
 #[tokio::test]
-async fn register_request_guard_cleanup_on_drop() {
+async fn register_request_complete_request_removes_entry() {
     let active = new_active_requests();
     let flag = Arc::new(AtomicBool::new(false));
-    {
-        let _g = register_request(&active, &flag, json!("drop-test"), "tools/call".to_string())
-            .await
-            .unwrap();
-        let map = active.lock().await;
-        assert_eq!(map.len(), 1);
-    }
+    let (_g, reg) = register_request(&active, &flag, json!("drop-test"), "tools/call".to_string())
+        .await
+        .unwrap();
     let map = active.lock().await;
-    assert_eq!(map.len(), 0, "guard drop should remove entry");
+    assert_eq!(map.len(), 1);
+    drop(map);
+
+    let removed = complete_request(&active, &reg).await;
+    assert!(removed, "complete_request should remove the entry");
+
+    let map = active.lock().await;
+    assert_eq!(map.len(), 0, "entry should be gone after complete_request");
 }
 
 #[tokio::test]
-async fn register_request_allows_id_reuse_after_completion() {
+async fn register_request_allows_id_reuse_after_complete() {
     let active = new_active_requests();
     let flag = Arc::new(AtomicBool::new(false));
-    {
-        let _g = register_request(&active, &flag, json!("reuse"), "tools/call".to_string())
-            .await
-            .unwrap();
-    }
-    // Entry was removed on drop, so reuse should succeed
+    let (_g, reg) = register_request(&active, &flag, json!("reuse"), "tools/call".to_string())
+        .await
+        .unwrap();
+
+    let removed = complete_request(&active, &reg).await;
+    assert!(removed, "complete_request should remove the entry");
+
+    // Entry was removed, so reuse should succeed
     let flag2 = Arc::new(AtomicBool::new(false));
     let result = register_request(&active, &flag2, json!("reuse"), "tools/call".to_string()).await;
-    assert!(result.is_ok(), "ID reuse after completion should succeed");
+    assert!(
+        result.is_ok(),
+        "ID reuse after complete_request should succeed"
+    );
+    let (_g2, reg2) = result.unwrap();
+    complete_request(&active, &reg2).await;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// complete_request — generation-safe cleanup
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn complete_request_removes_entry_when_generation_matches() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    let (_g, reg) = register_request(&active, &flag, json!("gen-match"), "tools/call".to_string())
+        .await
+        .unwrap();
+
+    let map = active.lock().await;
+    assert_eq!(map.len(), 1);
+    drop(map);
+
+    let removed = complete_request(&active, &reg).await;
+    assert!(removed, "should remove entry when generation matches");
+
+    let map = active.lock().await;
+    assert_eq!(map.len(), 0);
+}
+
+#[tokio::test]
+async fn complete_request_does_not_remove_entry_when_generation_mismatched() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    let (_g, reg) = register_request(
+        &active,
+        &flag,
+        json!("gen-mismatch"),
+        "tools/call".to_string(),
+    )
+    .await
+    .unwrap();
+
+    // Simulate a stale registration by tampering with the generation
+    let stale_reg = eggsact::mcp::runtime::RequestRegistration {
+        id: reg.id.clone(),
+        generation: reg.generation + 999,
+    };
+
+    let removed = complete_request(&active, &stale_reg).await;
+    assert!(
+        !removed,
+        "should NOT remove entry when generation mismatches"
+    );
+
+    let map = active.lock().await;
+    assert_eq!(map.len(), 1, "entry should still be present");
+    drop(map);
+
+    // Complete with the correct registration so guard drop assertion passes
+    let removed = complete_request(&active, &reg).await;
+    assert!(removed, "correct generation should remove entry");
+}
+
+#[tokio::test]
+async fn complete_request_allows_immediate_id_reuse() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    let (_g, reg) = register_request(
+        &active,
+        &flag,
+        json!("reuse-after"),
+        "tools/call".to_string(),
+    )
+    .await
+    .unwrap();
+
+    complete_request(&active, &reg).await;
+
+    // Immediately reuse the same ID
+    let flag2 = Arc::new(AtomicBool::new(false));
+    let result = register_request(
+        &active,
+        &flag2,
+        json!("reuse-after"),
+        "tools/call".to_string(),
+    )
+    .await;
+    assert!(
+        result.is_ok(),
+        "same ID should be reusable after complete_request"
+    );
+    let (_g2, reg2) = result.unwrap();
+    complete_request(&active, &reg2).await;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

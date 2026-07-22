@@ -1,46 +1,44 @@
 use crate::agent::ToolAudience;
+#[allow(deprecated)]
 use crate::calc::set_mcp_mode;
 use crate::mcp::registry;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
-/// RAII guard for an active request entry. On drop, removes the entry from
-/// the active-request map if the cancel flag still matches (preventing an
-/// old task from removing a newer request that reused the same ID).
+/// RAII guard for an active request entry. On drop, performs a debug-only
+/// assertion that the entry has already been cleaned up by `complete_request`.
+/// Correctness cleanup is handled by `complete_request()`, not by this guard.
 #[doc(hidden)]
 pub struct RequestGuard {
     active: ActiveRequests,
-    cancel_flag_addr: usize,
     request_id: Value,
 }
 
 impl RequestGuard {
     #[doc(hidden)]
-    pub fn new(active: ActiveRequests, cancel_flag: &Arc<AtomicBool>, request_id: Value) -> Self {
-        Self {
-            active,
-            cancel_flag_addr: Arc::as_ptr(cancel_flag) as usize,
-            request_id,
-        }
+    pub fn new(active: ActiveRequests, _cancel_flag: &Arc<AtomicBool>, request_id: Value) -> Self {
+        Self { active, request_id }
     }
 }
 
 impl Drop for RequestGuard {
     fn drop(&mut self) {
-        // Best-effort removal. Use try_lock to avoid blocking on drop;
-        // if the map is contended, the entry will be cleaned up by
-        // the next operation or shutdown.
-        if let Ok(mut map) = self.active.try_lock() {
-            if let Some(entry) = map.get(&self.request_id) {
-                let entry_addr = Arc::as_ptr(&entry.cancel_flag) as usize;
-                if entry_addr == self.cancel_flag_addr {
-                    map.remove(&self.request_id);
-                }
+        // Debug-only assertion: if the map still has our entry, something
+        // went wrong with the awaited cleanup path. In release builds,
+        // this is a no-op — correctness is via complete_request().
+        #[cfg(debug_assertions)]
+        {
+            if let Ok(map) = self.active.try_lock() {
+                debug_assert!(
+                    !map.contains_key(&self.request_id),
+                    "RequestGuard dropped but entry still active for {:?}",
+                    self.request_id
+                );
             }
         }
     }
@@ -461,9 +459,9 @@ pub fn get_active_audience() -> ToolAudience {
 }
 
 #[deprecated(
-    since = "1.0.0",
     note = "use EvalContext::mcp_mode() through the thread-local eval context bridge instead"
 )]
+#[allow(deprecated)]
 pub fn ensure_mcp_defaults() {
     if !MCP_DEFAULTS_CONFIGURED.swap(true, Ordering::SeqCst) {
         set_mcp_mode();
@@ -513,6 +511,13 @@ impl RateLimiter {
 // Active request tracking
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/// Monotonically increasing generation counter for active-request entries.
+/// Each `register_request` call allocates a new generation, and
+/// `complete_request` only removes an entry when its stored generation
+/// matches the caller's generation — preventing stale cleanup of a
+/// recycled request ID.
+static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+
 /// State for an in-flight MCP request, used for concurrent request handling.
 #[doc(hidden)]
 pub struct ActiveRequest {
@@ -521,6 +526,17 @@ pub struct ActiveRequest {
     pub started_at: Instant,
     #[allow(dead_code)]
     pub method: String,
+    pub generation: u64,
+}
+
+/// Opaque token returned by `register_request` that identifies a specific
+/// registration. Used by `complete_request` to remove the active-request
+/// entry with generation-safe cleanup.
+#[derive(Debug, Clone)]
+#[doc(hidden)]
+pub struct RequestRegistration {
+    pub id: Value,
+    pub generation: u64,
 }
 
 #[doc(hidden)]
@@ -631,15 +647,16 @@ pub enum RegisterRequestError {
 /// Register a new active request under a single lock acquisition.
 ///
 /// Checks in-flight limits and duplicate IDs atomically, then inserts the
-/// request into the active map. Returns a `RequestGuard` whose drop removes
-/// the entry (with generation matching to prevent stale cleanup).
+/// request into the active map. Returns a `RequestGuard` (debug-only
+/// assertion in drop) and a `RequestRegistration` whose generation token
+/// is used by `complete_request` for safe cleanup.
 #[doc(hidden)]
 pub async fn register_request(
     active: &ActiveRequests,
     cancel_flag: &Arc<AtomicBool>,
     request_id: Value,
     method: String,
-) -> Result<RequestGuard, RegisterRequestError> {
+) -> Result<(RequestGuard, RequestRegistration), RegisterRequestError> {
     let mut map = active.lock().await;
     if map.len() >= MAX_IN_FLIGHT_REQUESTS {
         return Err(RegisterRequestError::CapacityExceeded);
@@ -647,15 +664,41 @@ pub async fn register_request(
     if map.contains_key(&request_id) {
         return Err(RegisterRequestError::DuplicateId);
     }
+    let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
     map.insert(
         request_id.clone(),
         ActiveRequest {
             cancel_flag: cancel_flag.clone(),
             started_at: Instant::now(),
             method,
+            generation,
         },
     );
-    Ok(RequestGuard::new(active.clone(), cancel_flag, request_id))
+    Ok((
+        RequestGuard::new(active.clone(), cancel_flag, request_id.clone()),
+        RequestRegistration {
+            id: request_id,
+            generation,
+        },
+    ))
+}
+
+/// Awaited cleanup for an active request entry. Removes the entry from the
+/// active-request map only if the stored generation matches the caller's
+/// generation token. This prevents stale cleanup of a recycled request ID.
+///
+/// Returns `true` if the entry was removed, `false` if it was already gone
+/// or the generation did not match.
+#[doc(hidden)]
+pub async fn complete_request(active: &ActiveRequests, registration: &RequestRegistration) -> bool {
+    let mut map = active.lock().await;
+    if let Some(entry) = map.get(&registration.id) {
+        if entry.generation == registration.generation {
+            map.remove(&registration.id);
+            return true;
+        }
+    }
+    false
 }
 
 /// Test-only helpers for constructing runtime state from integration tests.
@@ -673,6 +716,7 @@ pub mod test_support {
             cancel_flag,
             started_at: Instant::now(),
             method: "test".to_string(),
+            generation: 0,
         }
     }
 }

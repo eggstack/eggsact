@@ -26,6 +26,7 @@ pub use context::EvalContext;
 pub use evaluator::evaluate;
 pub use evaluator::evaluate_with_context;
 pub use evaluator::is_mcp_mode;
+#[allow(deprecated)]
 pub use evaluator::set_mcp_mode;
 pub use evaluator::EvaluateResult;
 pub use normalize::run;

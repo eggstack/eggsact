@@ -243,7 +243,10 @@ fn explicit_budget_overrides_default() {
     if !resp.ok {
         let err = resp.error.as_deref().expect("error must be present");
         assert!(
-            err.contains("budget") || err.contains("expired") || err.contains("timeout"),
+            err.contains("budget")
+                || err.contains("expired")
+                || err.contains("timeout")
+                || err.contains("timed out"),
             "error should indicate budget issue, got: {}",
             err
         );

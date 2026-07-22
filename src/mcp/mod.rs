@@ -1,5 +1,6 @@
 pub mod budget;
 pub mod compat;
+pub(crate) mod execution;
 #[doc(hidden)]
 pub mod machine_codes;
 #[doc(hidden)]
@@ -18,3 +19,4 @@ pub mod schemas;
 pub mod server;
 #[doc(hidden)]
 pub mod specs;
+pub(crate) mod sync_pool;

@@ -92,6 +92,8 @@ See `architecture/machine-codes.md` for the full code table and design rationale
 
 `ToolRegistry` (`src/agent/mod.rs`) provides the core tool execution path. Both the MCP server (`src/mcp/server.rs`) and direct Rust callers use it for tool lookup, profile filtering, argument validation, and dispatch. Tool functions themselves live in `src/tools/*.rs` (by category); `ToolRegistry` orchestrates calling them.
 
+**Execution routing:** Budget-aware APIs (`call_json_with_budget`, `call_json_with_context`, `call_json_with_execution_context`) route through the `SyncExecutionPool` (8 workers, 32-slot queue) in `src/mcp/sync_pool.rs`, which enforces elapsed-time budgets and provides bounded concurrency. `call_json` dispatches directly without a pool. The MCP server path is unaffected — it uses Tokio `spawn_blocking`.
+
 Tool listing and filtering lives in `src/mcp/registry/listing.rs`, including `list_tool_definitions()` (used by the MCP `tools/list` handler), audience-aware listing, and schema compaction.
 
 ### Context-Aware APIs

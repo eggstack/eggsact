@@ -47,6 +47,8 @@ pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
 pub const INVALID_ARGUMENTS: &str = "INVALID_ARGUMENTS";
 /// A request with a duplicate non-null ID was rejected.
 pub const DUPLICATE_REQUEST_ID: &str = "DUPLICATE_REQUEST_ID";
+/// All workers and queue slots are occupied; request was rejected.
+pub const RESOURCE_EXHAUSTED: &str = "RESOURCE_EXHAUSTED";
 
 // ---------------------------------------------------------------------------
 // Category-prefixed aliases for common error codes
@@ -574,6 +576,7 @@ pub const ALL: &[&str] = &[
     COMMON_INTERNAL_ERROR,
     COMMON_INVALID_ARGUMENTS,
     DUPLICATE_REQUEST_ID,
+    RESOURCE_EXHAUSTED,
     EDIT_SAFE_TO_APPLY,
     EDIT_OLD_TEXT_NOT_FOUND,
     EDIT_MULTIPLE_MATCHES,

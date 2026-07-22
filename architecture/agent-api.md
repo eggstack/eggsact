@@ -206,6 +206,8 @@ pub enum ToolCallOutcome {
 
 Methods that accept a budget also perform **input pre-check** (rejects oversized serialized args before dispatch) and **output truncation** (truncates findings and result to fit budget limits).
 
+**Execution routing:** Budget-aware APIs (`call_json_with_budget`, `call_json_with_context`, `call_json_with_execution_context`) route through the `SyncExecutionPool` (8 workers, 32-slot queue) in `src/mcp/sync_pool.rs`, which enforces elapsed-time budgets and provides bounded concurrency. `call_json` dispatches directly without a pool. The MCP server path is unaffected — it uses Tokio `spawn_blocking`.
+
 ### `call_json(name, args)` — Basic
 
 The primary entry point for in-process tool execution.
@@ -269,7 +271,7 @@ pub fn call_json_with_execution_context(
 4. Sets cancellation flag via `budget::with_cancel_flag`
 5. Clones `ctx.eval_ctx` and sets it via `budget::with_eval_context`
 6. Performs lookup, profile check, audience check, schema validation
-7. Executes handler and truncates output
+7. Executes handler through the `SyncExecutionPool` and truncates output
 
 **Key semantics:**
 - `ctx.profile` / `ctx.audience` take precedence over the registry's stored values when `Some`
@@ -507,6 +509,7 @@ The MCP server (`src/mcp/server.rs`) and the in-process agent API share the same
 | Budget | Resolved from `ToolSpec.cost` per tool | Same, or explicit `ToolBudget` parameter |
 | Input pre-check | Yes, `budget.max_input_bytes` | Yes, same check |
 | Output truncation | Yes, via `truncate_response` | Yes, same function |
+| Execution pool | Tokio `spawn_blocking` with semaphore | `SyncExecutionPool` (budget-aware APIs only) |
 
 `call_json_with_execution_context` is an **in-process** API. It does not change the MCP JSON-RPC wire protocol. Per-request context over the wire would require a future MCP request-level context API.
 

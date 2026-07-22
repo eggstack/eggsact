@@ -297,7 +297,7 @@ impl ToolResponse {
 
     #[cfg(test)]
     #[deprecated(
-        since = "1.0.0",
+        since = "1.1.4",
         note = "Use `error_with_code` instead. Non-OK tool responses must carry a machine_code."
     )]
     #[doc(hidden)]

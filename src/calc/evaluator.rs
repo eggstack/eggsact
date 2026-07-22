@@ -213,6 +213,10 @@ static GAUSS_SPARE: LazyLock<std::sync::Mutex<Option<f64>>> =
 
 /// Enter MCP-safe mode. Idempotent: safe to call multiple times.
 /// Sets `_mcp_mode = true` and disables random/side-effect functions.
+#[deprecated(
+    since = "1.0.0",
+    note = "use EvalContext::mcp_mode() instead. The global AtomicBool flags remain for legacy evaluate()/run() callers."
+)]
 pub fn set_mcp_mode() {
     if MCP_MODE.swap(true, Ordering::SeqCst) {
         return; // already configured
@@ -3616,6 +3620,7 @@ mod tests {
     // ── MCP-safe mode tests ──
 
     #[test]
+    #[allow(deprecated)]
     fn test_set_mcp_mode_is_idempotent() {
         // set_mcp_mode() is safe to call multiple times
         set_mcp_mode();
@@ -3624,6 +3629,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_is_mcp_mode_after_set() {
         // Once set, is_mcp_mode() returns true
         set_mcp_mode();
@@ -3631,6 +3637,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_mcp_mode_rejects_random_functions() {
         set_mcp_mode();
         let r = evaluate("random(1)");
@@ -3644,6 +3651,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_mcp_mode_rejects_randint() {
         set_mcp_mode();
         let r = evaluate("randint(1, 10)");
@@ -3657,6 +3665,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_mcp_mode_rejects_gauss() {
         set_mcp_mode();
         let r = evaluate("gauss(0, 1)");
@@ -3670,6 +3679,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_mcp_mode_rejects_side_effect_functions() {
         set_mcp_mode();
         // setvar with numeric args (Rust evaluator doesn't support string literals)
@@ -3684,6 +3694,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_mcp_mode_allows_deterministic_functions() {
         set_mcp_mode();
         // Deterministic functions should still work
