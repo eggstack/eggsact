@@ -103,7 +103,25 @@ fn worker_loop(receiver: Arc<std::sync::Mutex<Receiver<SyncJob>>>) {
                 Err(_) => break,
             }
         };
-        let response = (job.handler)();
+        // Use catch_unwind so a panicking job does not kill the worker thread.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (job.handler)()));
+        let response = match result {
+            Ok(resp) => resp,
+            Err(payload) => {
+                let msg = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "handler panicked".to_string());
+                ToolResponse::error_with_code(
+                    "internal_error",
+                    crate::mcp::machine_codes::INTERNAL_ERROR,
+                    &format!("Tool handler panicked: {}", msg),
+                    None,
+                    None,
+                )
+            }
+        };
         let _ = job.reply.send(response);
     }
 }
@@ -352,5 +370,108 @@ mod tests {
             resp.machine_code.as_deref(),
             Some(crate::mcp::machine_codes::INTERNAL_ERROR)
         );
+    }
+
+    // ── WS4 additional tests ─────────────────────────────────────────────
+
+    // Panic in one job does not kill the worker permanently.
+    #[test]
+    fn panic_in_job_does_not_kill_worker() {
+        let pool = SyncExecutionPool::with_limits(1, 4);
+
+        // Job 1: panics. catch_unwind converts it to an error ToolResponse.
+        let r1 = pool.submit(
+            move || {
+                panic!("intentional worker panic");
+            },
+            Duration::from_secs(5),
+        );
+        let resp1 = r1.expect("channel should not disconnect (catch_unwind handles panic)");
+        assert!(!resp1.ok, "panicking job should return error response");
+
+        // Job 2: should succeed — worker survived the panic.
+        let r2 = pool.submit(
+            move || ToolResponse::success(serde_json::json!("recovered"), Some("test")),
+            Duration::from_secs(5),
+        );
+        let resp2 = r2.unwrap();
+        assert!(resp2.ok, "worker must survive a panic in a previous job");
+    }
+
+    // Eval context thread-local is restored before the next job.
+    #[test]
+    fn eval_context_not_leaked_between_jobs() {
+        let pool = SyncExecutionPool::with_limits(1, 4);
+
+        // Job 1: set a cancel flag in thread-local, then complete.
+        let flag1 = Arc::new(AtomicBool::new(true));
+        let f1 = flag1.clone();
+        let r1 = pool.submit(
+            move || {
+                crate::mcp::budget::with_cancel_flag(Some(f1), || {
+                    // Verify the flag is set inside this job.
+                    let f = crate::mcp::budget::current_cancel_flag();
+                    let is_set = f.is_some_and(|f| f.load(Ordering::Relaxed));
+                    ToolResponse::success(serde_json::json!({"set_in_job1": is_set}), Some("test"))
+                })
+            },
+            Duration::from_secs(5),
+        );
+        let resp = r1.unwrap();
+        assert!(resp.ok);
+        assert!(resp.result.unwrap()["set_in_job1"].as_bool().unwrap());
+
+        // Job 2: verify the cancel flag from job1 is NOT visible.
+        let r2 = pool.submit(
+            move || {
+                let f = crate::mcp::budget::current_cancel_flag();
+                let is_set = f.is_some_and(|f| f.load(Ordering::Relaxed));
+                ToolResponse::success(serde_json::json!({"leaked": is_set}), Some("test"))
+            },
+            Duration::from_secs(5),
+        );
+        let resp = r2.unwrap();
+        assert!(resp.ok);
+        assert!(
+            !resp.result.unwrap()["leaked"].as_bool().unwrap(),
+            "cancel flag from previous job must not leak to next job"
+        );
+    }
+
+    // Repeated timeouts do not increase worker count beyond the fixed pool size.
+    // The pool is constructed with a fixed number of workers; verify the count
+    // is stable and the pool accepts new work after timeouts.
+    #[test]
+    fn repeated_timeouts_pool_stays_usable() {
+        let pool = SyncExecutionPool::with_limits(2, 4);
+        assert_eq!(pool.worker_count(), 2);
+
+        // Submit 3 jobs that time out quickly (handler sleeps 50ms, timeout 10ms).
+        // After timeout, the handler finishes within 50ms, freeing the worker.
+        for _ in 0..3 {
+            let _ = pool.submit(
+                move || {
+                    std::thread::sleep(Duration::from_millis(50));
+                    ToolResponse::success(serde_json::json!({}), Some("test"))
+                },
+                Duration::from_millis(10),
+            );
+            // Small delay so the handler can finish and free the worker.
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        // Wait for all slow handlers to complete.
+        std::thread::sleep(Duration::from_millis(100));
+
+        // Pool should still be usable — submit a fast job.
+        let r = pool.submit(
+            move || ToolResponse::success(serde_json::json!("after_timeouts"), Some("test")),
+            Duration::from_secs(5),
+        );
+        assert!(
+            r.unwrap().ok,
+            "pool must remain usable after repeated timeouts"
+        );
+        assert_eq!(pool.worker_count(), 2, "worker count must not change");
     }
 }
