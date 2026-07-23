@@ -5,7 +5,7 @@ correctness corrective pass (plans/2026-07-22-timeout-sync-policy-final-correcti
 
 ## Code-under-test
 
-- **SHA**: `72a0d92` (plus uncommitted WS5/interleaving/evidence changes)
+- **SHA**: `a3621c3`
 - **Date**: 2026-07-23
 - **Branch**: `main`
 
