@@ -577,6 +577,13 @@ impl RuntimeMetrics {
             peak_blocking_concurrency: AtomicUsize::new(0),
         }
     }
+
+    /// Create a fresh `RuntimeMetrics` instance for tests, independent
+    /// of the global `RUNTIME_METRICS`.
+    #[cfg(test)]
+    pub fn new_for_test() -> Self {
+        Self::new()
+    }
 }
 
 /// Global runtime metrics instance.

@@ -21,14 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **RAII guards in `budget.rs`**: `CancelFlagGuard` and `EvalContextGuard`
   provide panic-safe thread-local restoration for `CURRENT_CANCEL_FLAG` and
   `CURRENT_EVAL_CONTEXT`.
-- **6-state handler lifecycle** (`src/mcp/execution.rs`): Handler execution
-  now tracks six lifecycle states (`HANDLER_QUEUED`, `HANDLER_RUNNING`,
-  `HANDLER_TIMEOUT_ACCOUNTING`, `HANDLER_TIMED_OUT_ACCOUNTED`,
-  `HANDLER_FINISHED`, `HANDLER_TIMED_OUT_QUEUED`). Timeouts while queued
-  correctly skip `timed_out_handlers` accounting since the handler never
-  started. Timeouts while running increment before publishing the
-  `TIMED_OUT_ACCOUNTED` state so the handler exit can observe and decrement
-  exactly once.
+- **Mutex-backed handler lifecycle** (`src/mcp/execution.rs`): Handler
+  execution now uses a `Mutex<HandlerPhase>` with five states (`Queued`,
+  `Running`, `TimedOutQueued`, `TimedOutRunning`, `Finished`). Transitions
+  are linearizable under a single lock acquisition. Timeouts while queued
+  never invoke the handler. Running timeouts increment exactly once;
+  completion after timeout decrements exactly once.
 - **Generation-aware request cleanup** (`src/mcp/runtime.rs`): Active-request
   entries now carry a monotonically increasing generation counter.
   `complete_request` only removes an entry when its stored generation matches
@@ -50,11 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The outer tokio semaphore (`MAX_TOOL_WORKERS=16`) is the sole concurrency
   bound. Removed `run_with_timeout`, `SpawnSemaphore`, `SpawnPermit`, and
   related infrastructure from `src/tools/helpers.rs`.
-- **Race-free timeout metrics**: The `AtomicBool` `timed_out` flag has been
-  replaced with an `AtomicU8` lifecycle state machine (`HANDLER_RUNNING`,
-  `HANDLER_TIMED_OUT`, `HANDLER_FINISHED`). Timeout path uses
-  `compare_exchange` and handler exit uses `swap` to guarantee exactly one
-  increment and one decrement of `timed_out_handlers` per timeout.
 - **Retained client capabilities**: `NegotiatedProtocol` now includes a
   `client_capabilities: ClientCapabilities` field. Client capabilities are
   stored for the entire session lifetime. Not yet used for
@@ -95,6 +88,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (previously named in a way that implied it tested race/timeout/lifecycle
   properties; it actually verifies that direct registry calls do not affect
   MCP runtime gauges).
+
+### Fixed
+- **Timeout lifecycle transitions are now linearizable**: Replaced the
+  `AtomicU8` state machine with a `Mutex<HandlerPhase>` that prevents
+  interleaving races between timeout and completion paths.
+- **Cancellable synchronous pool**: `SyncExecutionPool` now accepts a
+  cancellation flag and deadline per job. Caller timeout sets the flag
+  before returning. Expired queued jobs are discarded.
+- **Budget-aware calls preserve registry policy**: `call_json_with_budget`,
+  `call_json_with_context`, and `call_json_with_execution_context` now
+  call `prepare_tool_call` / `prepare_tool_call_with_policy` on the caller
+  thread, preserving the registry's profile, audience, and compatibility
+  mode. Pre-execution failures return `Err(ToolCallError)` instead of
+  `Ok(ToolResponse)`.
+- **`call_json_with_context` installs cancel flag in thread-local**:
+  Handlers that check `budget::current_cancel_flag()` now observe the
+  caller-provided flag.
+- **Deterministic lifecycle tests**: Coordinator tests use barriers and
+  channels instead of sleep-based races. Isolated `RuntimeMetrics` instances
+  prevent cross-test interference.
 
 ### Deprecated
 - **`ensure_mcp_defaults()`** — MCP dispatch now creates

@@ -110,23 +110,24 @@ cargo test --locked --all-features --test lib mcp::test_runtime_helpers
 
 ## Runtime Lifecycle Model
 
-The implementation uses a 6-state lifecycle:
+The implementation uses a mutex-backed lifecycle with five phases:
 
 ```
-HANDLER_QUEUED (0) → HANDLER_RUNNING (1) → HANDLER_TIMEOUT_ACCOUNTING (2)
-  → HANDLER_TIMED_OUT_ACCOUNTED (3) → HANDLER_FINISHED (4)
-
-HANDLER_QUEUED (0) → HANDLER_TIMED_OUT_QUEUED (5)
+Queued → Running → Finished
+         ↓           ↑
+    TimedOutRunning ─┘
+         ↑
+Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 ```
 
 ### Invariants enforced
 
 - `timed_out_handlers <= active_blocking_handlers` at all stable snapshots
-- No `fetch_sub` runs without a preceding matching `fetch_add`
+- No decrement runs without a preceding matching increment
 - Queued timeout never changes `timed_out_handlers`
 - Every running-timeout increment has exactly one decrement
 - All gauges return to zero after controlled workers finish
-- Handler lifecycle swap executes before blocking counter decrement (catch_unwind)
+- Handler lifecycle completion runs under the same lock as timeout transition
 
 ## Closure Checklist Items
 

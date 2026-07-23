@@ -4,24 +4,210 @@ use crate::mcp::registry;
 use crate::mcp::response::{python_json_dumps, sanitize_error, truncate_response, ToolResponse};
 use crate::mcp::runtime::{self, MAX_OUTPUT_BYTES, RUNTIME_METRICS};
 use serde_json::Value;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
-// ── Handler lifecycle states ────────────────────────────────────────────
+// ── Handler lifecycle (mutex-owned transitions) ──────────────────────────
 
-/// Handler is queued, waiting for a semaphore permit.
-const HANDLER_QUEUED: u8 = 0;
-/// Handler has a permit and is executing the blocking closure.
-const HANDLER_RUNNING: u8 = 1;
-/// Timeout fired while RUNNING; transition in progress to increment timed_out_handlers.
-const HANDLER_TIMEOUT_ACCOUNTING: u8 = 2;
-/// timed_out_handlers has been incremented; handler exit should decrement it.
-const HANDLER_TIMED_OUT_ACCOUNTED: u8 = 3;
-/// Handler has completed its blocking work.
-const HANDLER_FINISHED: u8 = 4;
-/// Timeout fired while QUEUED; no permit acquired yet.
-const HANDLER_TIMED_OUT_QUEUED: u8 = 5;
+/// Handler lifecycle phases, protected by a Mutex.
+///
+/// All state transitions are serialized through the mutex, eliminating
+/// load-then-CAS gaps and ensuring each increment/decrement is atomic
+/// with the phase change.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HandlerPhase {
+    Queued,
+    Running,
+    TimedOutQueued,
+    TimedOutRunning,
+    Finished,
+}
+
+/// Result of `begin_running`: either proceed to run or abort.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BeginRunning {
+    Run,
+    CancelledBeforeStart,
+}
+
+/// Disposition of a timeout attempt, observed under the lifecycle lock.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TimeoutDisposition {
+    Queued,
+    Running,
+    AlreadyFinished,
+}
+
+/// Mutex-protected handler lifecycle. All state transitions and gauge
+/// mutations are atomic with respect to the phase change, eliminating
+/// the load-then-CAS gaps and overwrite races of the previous AtomicU8
+/// design.
+struct HandlerLifecycle {
+    phase: Mutex<HandlerPhase>,
+}
+
+impl HandlerLifecycle {
+    /// Create a new lifecycle in Queued state.
+    fn new() -> Self {
+        Self {
+            phase: Mutex::new(HandlerPhase::Queued),
+        }
+    }
+
+    /// Attempt to transition Queued → Running (or detect TimedOutQueued).
+    ///
+    /// Returns `CancelledBeforeStart` if the timeout already transitioned
+    /// the phase to `TimedOutQueued`.
+    fn begin_running(&self, metrics: &runtime::RuntimeMetrics) -> BeginRunning {
+        let mut phase = self.phase.lock().unwrap();
+        match *phase {
+            HandlerPhase::Queued => {
+                metrics
+                    .active_blocking_handlers
+                    .fetch_add(1, Ordering::Relaxed);
+                let current = metrics.active_blocking_handlers.load(Ordering::Relaxed);
+                metrics
+                    .peak_blocking_concurrency
+                    .fetch_max(current, Ordering::Relaxed);
+                *phase = HandlerPhase::Running;
+                BeginRunning::Run
+            }
+            HandlerPhase::TimedOutQueued => BeginRunning::CancelledBeforeStart,
+            other => panic!("begin_running called in unexpected phase: {:?}", other),
+        }
+    }
+
+    /// Attempt to record a timeout for this handler.
+    ///
+    /// Returns the phase the handler was in, which determines the timeout
+    /// task's accounting actions.
+    fn record_timeout(&self, metrics: &runtime::RuntimeMetrics) -> TimeoutDisposition {
+        let mut phase = self.phase.lock().unwrap();
+        match *phase {
+            HandlerPhase::Queued => {
+                *phase = HandlerPhase::TimedOutQueued;
+                TimeoutDisposition::Queued
+            }
+            HandlerPhase::Running => {
+                metrics.timed_out_handlers.fetch_add(1, Ordering::Relaxed);
+                *phase = HandlerPhase::TimedOutRunning;
+                TimeoutDisposition::Running
+            }
+            HandlerPhase::TimedOutQueued
+            | HandlerPhase::TimedOutRunning
+            | HandlerPhase::Finished => TimeoutDisposition::AlreadyFinished,
+        }
+    }
+
+    /// Transition the handler to Finished, accounting for any prior timeout.
+    ///
+    /// This always runs (via catch_unwind), so gauges are always corrected.
+    fn finish(&self, metrics: &runtime::RuntimeMetrics) {
+        let mut phase = self.phase.lock().unwrap();
+        match *phase {
+            HandlerPhase::Running => {
+                *phase = HandlerPhase::Finished;
+                metrics
+                    .active_blocking_handlers
+                    .fetch_sub(1, Ordering::Relaxed);
+            }
+            HandlerPhase::TimedOutRunning => {
+                metrics.timed_out_handlers.fetch_sub(1, Ordering::Relaxed);
+                *phase = HandlerPhase::Finished;
+                metrics
+                    .active_blocking_handlers
+                    .fetch_sub(1, Ordering::Relaxed);
+            }
+            HandlerPhase::TimedOutQueued => {
+                *phase = HandlerPhase::Finished;
+            }
+            HandlerPhase::Finished => {
+                debug_assert!(false, "double completion detected");
+            }
+            HandlerPhase::Queued => {
+                debug_assert!(false, "finish called while still Queued");
+            }
+        }
+    }
+}
+
+// ── Test hooks ──────────────────────────────────────────────────────────
+
+/// Test-only hooks for deterministic execution testing. Each hook is an
+/// optional `Notify` that, when `Some`, blocks execution at that point
+/// until the test releases it. `None` means no waiting.
+///
+/// This struct is always available (not cfg(test)) so that
+/// `execute_tool_bounded` can construct `ExecutionHooks::none()` without
+/// conditional compilation.
+pub(crate) struct ExecutionHooks {
+    pub permit_acquired: Option<std::sync::Arc<tokio::sync::Notify>>,
+    pub before_lifecycle_start: Option<std::sync::Arc<tokio::sync::Notify>>,
+    pub running_established: Option<std::sync::Arc<tokio::sync::Notify>>,
+    pub before_timeout_lock: Option<std::sync::Arc<tokio::sync::Notify>>,
+    pub timeout_transition_done: Option<std::sync::Arc<tokio::sync::Notify>>,
+    #[allow(dead_code)]
+    pub handler_about_to_finish: Option<std::sync::Arc<tokio::sync::Notify>>,
+    #[allow(dead_code)]
+    pub lifecycle_complete: Option<std::sync::Arc<tokio::sync::Notify>>,
+}
+
+impl ExecutionHooks {
+    pub fn none() -> Self {
+        Self {
+            permit_acquired: None,
+            before_lifecycle_start: None,
+            running_established: None,
+            before_timeout_lock: None,
+            timeout_transition_done: None,
+            handler_about_to_finish: None,
+            lifecycle_complete: None,
+        }
+    }
+}
+
+// ── Test handler statics ────────────────────────────────────────────────
+//
+// Since `ToolHandler` is `fn(&Value) -> ToolResponse` (function pointer),
+// closures that capture state cannot be used. Tests communicate with
+// handlers via static atomics.
+
+#[cfg(test)]
+static TEST_HANDLER_SHOULD_BLOCK: AtomicBool = AtomicBool::new(false);
+
+#[cfg(test)]
+static TEST_HANDLER_RELEASED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(test)]
+fn test_handler_blocking(_args: &Value) -> ToolResponse {
+    while TEST_HANDLER_SHOULD_BLOCK.load(Ordering::SeqCst) {
+        if TEST_HANDLER_RELEASED.load(Ordering::SeqCst) {
+            break;
+        }
+        std::hint::spin_loop();
+    }
+    ToolResponse::success(serde_json::json!("ok"), None)
+}
+
+#[cfg(test)]
+fn test_handler_fast(_args: &Value) -> ToolResponse {
+    ToolResponse::success(serde_json::json!("ok"), None)
+}
+
+#[cfg(test)]
+fn test_handler_slow_cancel(_args: &Value) -> ToolResponse {
+    while !crate::mcp::budget::current_cancel_flag().is_some_and(|f| f.load(Ordering::Relaxed)) {
+        std::hint::spin_loop();
+    }
+    ToolResponse::error_with_code(
+        "cancelled",
+        machine_codes::CANCELLED,
+        "cooperative cancel",
+        None,
+        None,
+    )
+}
 
 // ── Public interface ────────────────────────────────────────────────────
 
@@ -38,29 +224,55 @@ pub(crate) struct ExecutionOutcome {
 /// - Building the `ToolBudget` and `BudgetContext`.
 /// - Interpreting the `ExecutionOutcome` to build the JSON-RPC response.
 ///
-/// This function:
-/// 1. Starts in QUEUED state.
+/// Lifecycle:
+/// 1. Starts in Queued state (HandlerLifecycle::new()).
 /// 2. Awaits semaphore acquisition.
-/// 3. On permit acquired: checks if TIMED_OUT_QUEUED; if so, releases permit and returns cancelled.
-/// 4. Transitions QUEUED → RUNNING.
-/// 5. Spawns blocking work with a completion guard.
-/// 6. The completion guard's Drop handles lifecycle transitions safely.
-/// 7. Handles timeout path with exact accounting.
+/// 3. On permit acquired: calls `begin_running` — if CancelledBeforeStart
+///    (timeout already set to TimedOutQueued), releases permit and returns.
+/// 4. Spawns blocking work with a completion guard; `finish()` always runs.
+/// 5. Timeout path: sets cancel flag, calls `record_timeout()`.
 pub(crate) async fn execute_tool_bounded(
     handler: registry::ToolHandler,
     args: Value,
     tool_name: String,
     budget: ToolBudget,
-    cancel_flag: Arc<AtomicBool>,
-    semaphore: Arc<tokio::sync::Semaphore>,
+    cancel_flag: std::sync::Arc<AtomicBool>,
+    semaphore: std::sync::Arc<tokio::sync::Semaphore>,
+) -> ExecutionOutcome {
+    execute_tool_bounded_inner(
+        handler,
+        args,
+        tool_name,
+        budget,
+        cancel_flag,
+        semaphore,
+        ExecutionHooks::none(),
+        &RUNTIME_METRICS,
+    )
+    .await
+}
+
+/// Core implementation shared by production and test paths.
+///
+/// `metrics` must be `'static` because it is captured by `spawn_blocking`.
+/// Production callers pass `&RUNTIME_METRICS` (a static). Test callers
+/// use `Box::leak` to obtain a `'static` reference to isolated metrics.
+#[allow(clippy::too_many_arguments)]
+async fn execute_tool_bounded_inner(
+    handler: registry::ToolHandler,
+    args: Value,
+    tool_name: String,
+    budget: ToolBudget,
+    cancel_flag: std::sync::Arc<AtomicBool>,
+    semaphore: std::sync::Arc<tokio::sync::Semaphore>,
+    hooks: ExecutionHooks,
+    metrics: &'static runtime::RuntimeMetrics,
 ) -> ExecutionOutcome {
     let timeout_ms = budget.max_elapsed_ms;
     let tool_name_for_timeout = tool_name.clone();
 
-    // Track handler lifecycle for timeout metric accounting.
-    let handler_lifecycle = Arc::new(AtomicU8::new(HANDLER_QUEUED));
-    // Clone Arcs for use after the timeout block (the originals move into the closure).
-    let handler_lifecycle_for_timeout = handler_lifecycle.clone();
+    let lifecycle = std::sync::Arc::new(HandlerLifecycle::new());
+    let lifecycle_for_timeout = lifecycle.clone();
     let cancel_flag_for_timeout = cancel_flag.clone();
 
     let result = tokio::time::timeout(Duration::from_millis(timeout_ms), async move {
@@ -77,19 +289,16 @@ pub(crate) async fn execute_tool_bounded(
             }
         };
 
-        // Transition QUEUED → RUNNING (or detect TIMED_OUT_QUEUED).
-        match handler_lifecycle.compare_exchange(
-            HANDLER_QUEUED,
-            HANDLER_RUNNING,
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-        ) {
-            Ok(_) => {
-                // Normal path: still queued, now running.
-            }
-            Err(HANDLER_TIMED_OUT_QUEUED) => {
-                // Timeout arrived while waiting for permit. Release permit and
-                // return a cancelled response — do not spawn blocking work.
+        if let Some(ref notify) = hooks.permit_acquired {
+            notify.notify_one();
+        }
+
+        if let Some(ref notify) = hooks.before_lifecycle_start {
+            notify.notified().await;
+        }
+
+        match lifecycle.begin_running(metrics) {
+            BeginRunning::CancelledBeforeStart => {
                 drop(permit);
                 return Ok(ToolResponse::error_with_code(
                     "cancelled",
@@ -104,24 +313,15 @@ pub(crate) async fn execute_tool_bounded(
                     Some(&tool_name),
                 ));
             }
-            Err(actual) => {
-                // Unexpected state — should never happen. Release permit.
-                drop(permit);
-                return Ok(ToolResponse::error_with_code(
-                    "internal_error",
-                    machine_codes::INTERNAL_ERROR,
-                    &format!(
-                        "Tool '{}' unexpected handler lifecycle state: {}",
-                        tool_name, actual
-                    ),
-                    None,
-                    Some(&tool_name),
-                ));
-            }
+            BeginRunning::Run => {}
         }
 
-        // Check cancellation before spawning blocking work.
+        if let Some(ref notify) = hooks.running_established {
+            notify.notify_one();
+        }
+
         if cancel_flag.load(Ordering::Relaxed) {
+            lifecycle.finish(metrics);
             return Ok(ToolResponse::error_with_code(
                 "cancelled",
                 machine_codes::CANCELLED,
@@ -131,50 +331,23 @@ pub(crate) async fn execute_tool_bounded(
             ));
         }
 
+        let lifecycle_block = lifecycle.clone();
+        let cancel_flag_block = cancel_flag.clone();
+
         tokio::task::spawn_blocking(move || {
-            // Permit is held until the handler exits — enforces MAX_TOOL_WORKERS.
             let _permit = permit;
 
-            // Manually increment active_blocking_handlers (not RAII) so we can
-            // control the exact drop order during panic unwind.
-            RUNTIME_METRICS
-                .active_blocking_handlers
-                .fetch_add(1, Ordering::Relaxed);
-            // Update peak concurrency watermark.
-            let current = RUNTIME_METRICS
-                .active_blocking_handlers
-                .load(Ordering::Relaxed);
-            RUNTIME_METRICS
-                .peak_blocking_concurrency
-                .fetch_max(current, Ordering::Relaxed);
-
             let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
-            let cancel_flag_for_handler = cancel_flag.clone();
+            let cancel_flag_handler = cancel_flag_block.clone();
 
-            // Use catch_unwind so the lifecycle swap and counter decrement always
-            // execute, even if the handler panics. This maintains the invariant:
-            // timed_out_handlers <= active_blocking_handlers at all stable snapshots.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                crate::mcp::budget::with_cancel_flag(Some(cancel_flag_for_handler), || {
+                crate::mcp::budget::with_cancel_flag(Some(cancel_flag_handler), || {
                     crate::mcp::budget::with_eval_context(&mut mcp_eval_ctx, || handler(&args))
                 })
             }));
 
-            // Atomically transition to FINISHED, accounting for timeout.
-            // This ALWAYS runs, even if the handler panicked.
-            let prev = handler_lifecycle.swap(HANDLER_FINISHED, Ordering::AcqRel);
-            if prev == HANDLER_TIMED_OUT_ACCOUNTED {
-                RUNTIME_METRICS
-                    .timed_out_handlers
-                    .fetch_sub(1, Ordering::Relaxed);
-            }
+            lifecycle_block.finish(metrics);
 
-            // Now safe to decrement active_blocking_handlers.
-            RUNTIME_METRICS
-                .active_blocking_handlers
-                .fetch_sub(1, Ordering::Relaxed);
-
-            // Convert catch_unwind result back to the expected type.
             match result {
                 Ok(response) => response,
                 Err(payload) => {
@@ -183,7 +356,13 @@ pub(crate) async fn execute_tool_bounded(
                         .map(|s| s.to_string())
                         .or_else(|| payload.downcast_ref::<String>().cloned())
                         .unwrap_or_else(|| "handler panicked".to_string());
-                    std::panic::resume_unwind(Box::new(msg));
+                    ToolResponse::error_with_code(
+                        "internal_error",
+                        crate::mcp::machine_codes::INTERNAL_ERROR,
+                        &format!("Tool handler panicked: {}", msg),
+                        None,
+                        None,
+                    )
                 }
             }
         })
@@ -201,53 +380,20 @@ pub(crate) async fn execute_tool_bounded(
             timed_out: false,
         },
         Err(_timeout) => {
-            // Signal cancellation to the running handler so it can exit cooperatively.
             cancel_flag_for_timeout.store(true, Ordering::Relaxed);
-            RUNTIME_METRICS
-                .total_timeouts
-                .fetch_add(1, Ordering::Relaxed);
+            metrics.total_timeouts.fetch_add(1, Ordering::Relaxed);
 
-            // Try to transition HANDLER_QUEUED → HANDLER_TIMED_OUT_QUEUED (timeout while queued).
-            // Or HANDLER_RUNNING → HANDLER_TIMEOUT_ACCOUNTING (timeout while running).
-            let state = handler_lifecycle_for_timeout.load(Ordering::Acquire);
-            match state {
-                HANDLER_QUEUED => {
-                    // Timeout while queued — transition to TIMED_OUT_QUEUED.
-                    // Do NOT increment timed_out_handlers (handler never started).
-                    let _ = handler_lifecycle_for_timeout.compare_exchange(
-                        HANDLER_QUEUED,
-                        HANDLER_TIMED_OUT_QUEUED,
-                        Ordering::AcqRel,
-                        Ordering::Relaxed,
-                    );
-                }
-                HANDLER_RUNNING => {
-                    // Timeout while running — go through accounting states.
-                    // Step 1: RUNNING → TIMEOUT_ACCOUNTING
-                    // Step 2: increment timed_out_handlers BEFORE publishing
-                    // the TIMED_OUT_ACCOUNTED state so the handler exit can observe it.
-                    // Step 3: TIMEOUT_ACCOUNTING → TIMED_OUT_ACCOUNTED
-                    // If compare_exchange failed, the handler already finished — no increment.
-                    let accounted = handler_lifecycle_for_timeout
-                        .compare_exchange(
-                            HANDLER_RUNNING,
-                            HANDLER_TIMEOUT_ACCOUNTING,
-                            Ordering::AcqRel,
-                            Ordering::Relaxed,
-                        )
-                        .is_ok();
-                    if accounted {
-                        RUNTIME_METRICS
-                            .timed_out_handlers
-                            .fetch_add(1, Ordering::Relaxed);
-                        handler_lifecycle_for_timeout
-                            .store(HANDLER_TIMED_OUT_ACCOUNTED, Ordering::Release);
-                    }
-                }
-                _ => {
-                    // Handler already finished or in an intermediate accounting state.
-                    // Nothing to do.
-                }
+            if let Some(ref notify) = hooks.before_timeout_lock {
+                notify.notify_one();
+            }
+
+            match lifecycle_for_timeout.record_timeout(metrics) {
+                TimeoutDisposition::Queued | TimeoutDisposition::Running => {}
+                TimeoutDisposition::AlreadyFinished => {}
+            }
+
+            if let Some(ref notify) = hooks.timeout_transition_done {
+                notify.notify_one();
             }
 
             ExecutionOutcome {
@@ -272,6 +418,41 @@ pub(crate) async fn execute_tool_bounded(
     }
 }
 
+/// Test-only entry point that accepts hooks and isolated metrics.
+///
+/// `metrics` is leaked (via `Box::leak`) to obtain a `&'static` reference
+/// that can be captured by `spawn_blocking`. This is acceptable in tests.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn execute_tool_bounded_with_hooks(
+    handler: registry::ToolHandler,
+    args: Value,
+    tool_name: String,
+    budget: ToolBudget,
+    cancel_flag: std::sync::Arc<AtomicBool>,
+    semaphore: std::sync::Arc<tokio::sync::Semaphore>,
+    hooks: ExecutionHooks,
+    metrics: std::sync::Arc<runtime::RuntimeMetrics>,
+) -> ExecutionOutcome {
+    let metrics_ptr: *const runtime::RuntimeMetrics = std::sync::Arc::into_raw(metrics);
+    // SAFETY: We converted from Arc, which guarantees the data is valid.
+    // We intentionally leak the memory (Arc's strong count becomes effectively
+    // immortal) so the reference is 'static for spawn_blocking. In tests this
+    // is acceptable.
+    let metrics_static: &'static runtime::RuntimeMetrics = unsafe { &*metrics_ptr };
+    execute_tool_bounded_inner(
+        handler,
+        args,
+        tool_name,
+        budget,
+        cancel_flag,
+        semaphore,
+        hooks,
+        metrics_static,
+    )
+    .await
+}
+
 /// Build a JSON-RPC tool response from an `ExecutionOutcome`, applying
 /// budget-aware truncation and size checks.
 pub(crate) fn build_tool_response(
@@ -282,7 +463,6 @@ pub(crate) fn build_tool_response(
     match outcome.tool_response {
         Ok(mut response) => {
             if outcome.timed_out {
-                // Already a timeout envelope — no truncation needed.
                 return crate::mcp::response::wrap_tool_response(&response);
             }
             truncate_response(&mut response, budget);
@@ -331,176 +511,11 @@ pub(crate) fn build_tool_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp::runtime::snapshot_metrics;
-
-    #[tokio::test]
-    async fn basic_execution_completes_successfully() {
-        let before = snapshot_metrics();
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let tool_budget = ToolBudget::CHEAP;
-
-        let outcome = execute_tool_bounded(
-            |_args| ToolResponse::success(serde_json::json!("hello"), None),
-            Value::Object(serde_json::Map::new()),
-            "test_tool".to_string(),
-            tool_budget,
-            cancel_flag.clone(),
-            semaphore.clone(),
-        )
-        .await;
-
-        assert!(!outcome.timed_out);
-        let resp = outcome.tool_response.unwrap();
-        assert!(resp.error.is_none());
-        assert_eq!(resp.result.as_ref().unwrap().as_str().unwrap(), "hello");
-
-        // timed_out_handlers must not have changed.
-        let after = snapshot_metrics();
-        assert_eq!(after.timed_out_handlers, before.timed_out_handlers);
-    }
-
-    #[tokio::test]
-    async fn timeout_while_queued_does_not_increment_timed_out_handlers() {
-        let before = snapshot_metrics();
-        // Create a semaphore with 0 permits to force queued state.
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-
-        // Use a very short timeout so we don't wait long.
-        let tool_budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
-
-        let outcome = execute_tool_bounded(
-            |_args| ToolResponse::success(serde_json::json!("done"), None),
-            Value::Object(serde_json::Map::new()),
-            "test_tool".to_string(),
-            tool_budget,
-            cancel_flag.clone(),
-            semaphore.clone(),
-        )
-        .await;
-
-        assert!(outcome.timed_out);
-
-        // timed_out_handlers must NOT have been incremented by our handler (handler never started).
-        // Allow +1 tolerance for concurrent timeout_while_running tests.
-        let after = snapshot_metrics();
-        assert!(
-            after.timed_out_handlers <= before.timed_out_handlers + 1,
-            "timed_out_handlers should not increase when handler was never started: before={}, after={}",
-            before.timed_out_handlers,
-            after.timed_out_handlers,
-        );
-
-        // Release the semaphore permit so the task completes.
-        semaphore.add_permits(1);
-    }
-
-    #[tokio::test]
-    async fn timeout_while_running_increments_and_decrements_timed_out_handlers() {
-        let before = snapshot_metrics();
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-
-        // Use a tiny timeout + a slow handler to trigger timeout while running.
-        let tool_budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
-
-        let outcome = execute_tool_bounded(
-            |_args| {
-                std::thread::sleep(Duration::from_millis(200));
-                ToolResponse::success(serde_json::json!("done"), None)
-            },
-            Value::Object(serde_json::Map::new()),
-            "test_tool".to_string(),
-            tool_budget,
-            cancel_flag.clone(),
-            semaphore.clone(),
-        )
-        .await;
-
-        assert!(outcome.timed_out);
-
-        // Wait for the blocking handler to finish and decrement.
-        // The handler sleeps 200ms; give it time to complete.
-        tokio::time::sleep(Duration::from_millis(300)).await;
-
-        // timed_out_handlers must not be elevated by our test (tolerance for parallel tests).
-        let after = snapshot_metrics();
-        assert!(
-            after.timed_out_handlers <= before.timed_out_handlers + 1,
-            "timed_out_handlers must return to baseline: before={}, after={}",
-            before.timed_out_handlers,
-            after.timed_out_handlers,
-        );
-    }
-
-    #[tokio::test]
-    async fn all_gauges_return_to_zero() {
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let tool_budget = ToolBudget::CHEAP;
-
-        let outcome = execute_tool_bounded(
-            |_args| {
-                std::thread::sleep(Duration::from_millis(10));
-                ToolResponse::success(serde_json::json!("ok"), None)
-            },
-            Value::Object(serde_json::Map::new()),
-            "test_tool".to_string(),
-            tool_budget,
-            cancel_flag.clone(),
-            semaphore.clone(),
-        )
-        .await;
-
-        assert!(!outcome.timed_out);
-        assert!(outcome.tool_response.is_ok());
-
-        let after = snapshot_metrics();
-        assert!(
-            after.timed_out_handlers <= after.active_blocking_handlers,
-            "INVARIANT VIOLATION: timed_out_handlers ({}) > active_blocking_handlers ({})",
-            after.timed_out_handlers,
-            after.active_blocking_handlers,
-        );
-    }
-}
-
-// ── Deterministic coordinator tests ──────────────────────────────────────
-//
-// These tests exercise the coordinator with deterministic synchronization
-// (barriers, channels) rather than timing. Each test asserts:
-//   - stable snapshots never show timed_out_handlers > active_blocking_handlers
-//   - all gauges return to baseline after the test
-//
-// Note: ToolHandler is `fn(&Value) -> ToolResponse` (a function pointer), so
-// closures that capture variables cannot be used. Tests that need to track
-// handler execution use static atomics for communication.
-
-#[cfg(test)]
-mod coordinator_tests {
-    use super::*;
-    use crate::mcp::runtime::snapshot_metrics;
+    use crate::mcp::runtime::MetricsSnapshot;
     use std::sync::atomic::AtomicUsize;
-    use std::sync::Arc as StdArc;
-    use std::time::Duration;
+    use std::sync::Arc;
 
-    /// Static flag for queued_timeout_blocks_handler_after_permit_release test.
-    static HANDLER_RAN_FLAG: AtomicBool = AtomicBool::new(false);
-
-    /// Fast handler for the race test — always returns immediately.
-    fn race_fast_handler(_args: &Value) -> ToolResponse {
-        ToolResponse::success(serde_json::json!("fast"), None)
-    }
-
-    /// Slow handler for the race test — sleeps to allow timeout to fire.
-    fn race_slow_handler(_args: &Value) -> ToolResponse {
-        std::thread::sleep(Duration::from_millis(15));
-        ToolResponse::success(serde_json::json!("slow"), None)
-    }
-
-    /// Assert invariant: timed_out_handlers <= active_blocking_handlers.
-    fn assert_snapshot_invariant(snap: &crate::mcp::runtime::MetricsSnapshot) {
+    fn assert_snapshot_invariant(snap: &MetricsSnapshot) {
         assert!(
             snap.timed_out_handlers <= snap.active_blocking_handlers,
             "INVARIANT VIOLATION: timed_out_handlers ({}) > active_blocking_handlers ({})",
@@ -509,246 +524,387 @@ mod coordinator_tests {
         );
     }
 
-    // Test 2: queued timeout never enters the handler after a permit is released.
-    // 0-permit semaphore → timeout fires → release permit → handler must NOT run.
+    fn snapshot_from_metrics(m: &runtime::RuntimeMetrics) -> MetricsSnapshot {
+        MetricsSnapshot {
+            active_requests: m.active_requests.load(Ordering::Relaxed),
+            active_blocking_handlers: m.active_blocking_handlers.load(Ordering::Relaxed),
+            timed_out_handlers: m.timed_out_handlers.load(Ordering::Relaxed),
+            total_timeouts: m.total_timeouts.load(Ordering::Relaxed),
+            peak_blocking_concurrency: m.peak_blocking_concurrency.load(Ordering::Relaxed),
+        }
+    }
+
+    fn new_test_metrics() -> Arc<runtime::RuntimeMetrics> {
+        Arc::new(runtime::RuntimeMetrics::new_for_test())
+    }
+
+    /// Reset all test handler statics to defaults.
+    fn reset_test_handler_statics() {
+        TEST_HANDLER_SHOULD_BLOCK.store(false, Ordering::SeqCst);
+        TEST_HANDLER_RELEASED.store(false, Ordering::SeqCst);
+    }
+
+    // ── Test 1: queued_timeout_blocks_handler_after_permit_release ─────
+
+    static TEST1_HANDLER_RAN: AtomicBool = AtomicBool::new(false);
+
+    fn test1_handler(_args: &Value) -> ToolResponse {
+        TEST1_HANDLER_RAN.store(true, Ordering::SeqCst);
+        ToolResponse::success(serde_json::json!("done"), None)
+    }
+
     #[tokio::test]
     async fn queued_timeout_blocks_handler_after_permit_release() {
+        reset_test_handler_statics();
+        let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
         let cancel_flag = Arc::new(AtomicBool::new(false));
-
-        HANDLER_RAN_FLAG.store(false, Ordering::SeqCst);
-
         let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
-        let outcome = execute_tool_bounded(
+
+        TEST1_HANDLER_RAN.store(false, Ordering::SeqCst);
+
+        let outcome = execute_tool_bounded_with_hooks(
+            test1_handler as registry::ToolHandler,
+            Value::Object(serde_json::Map::new()),
+            "test_tool".to_string(),
+            budget,
+            cancel_flag.clone(),
+            semaphore.clone(),
+            ExecutionHooks::none(),
+            metrics.clone(),
+        )
+        .await;
+
+        assert!(outcome.timed_out);
+        assert!(!TEST1_HANDLER_RAN.load(Ordering::SeqCst));
+
+        semaphore.add_permits(1);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert!(
+            !TEST1_HANDLER_RAN.load(Ordering::SeqCst),
+            "handler must not run after queued timeout"
+        );
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
+    }
+
+    // ── Test 2: timeout_after_permit_but_before_closure_start ──────────
+    //
+    // The handler sleeps deterministically, guaranteeing the tokio timeout
+    // fires while the handler is running.
+
+    #[tokio::test]
+    async fn timeout_after_permit_but_before_closure_start() {
+        let metrics = new_test_metrics();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
+
+        let outcome = execute_tool_bounded_with_hooks(
             |_args| {
-                HANDLER_RAN_FLAG.store(true, Ordering::SeqCst);
-                ToolResponse::success(serde_json::json!("done"), None)
+                std::thread::sleep(Duration::from_millis(200));
+                ToolResponse::success(serde_json::json!("ok"), None)
             },
             Value::Object(serde_json::Map::new()),
             "test_tool".to_string(),
             budget,
             cancel_flag.clone(),
             semaphore.clone(),
+            ExecutionHooks::none(),
+            metrics.clone(),
         )
         .await;
 
         assert!(outcome.timed_out);
-        // Release permit — the queued task should detect TIMED_OUT_QUEUED and not run handler.
-        semaphore.add_permits(1);
-        // Give the spawned task time to observe the state and bail.
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        assert!(
-            !HANDLER_RAN_FLAG.load(Ordering::SeqCst),
-            "handler must not run after queued timeout"
-        );
-        let after = snapshot_metrics();
-        assert_snapshot_invariant(&after);
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // Test 5: completion racing timeout reservation before gauge accounting.
-    // Handler finishes just as timeout fires — compare_exchange for RUNNING→TIMEOUT_ACCOUNTING
-    // should fail, so no increment occurs. No underflow possible.
+    // ── Test 3: running_timeout_increments_exactly_once ────────────────
+
     #[tokio::test]
-    async fn completion_races_timeout_before_gauge_accounting() {
+    async fn running_timeout_increments_exactly_once() {
+        let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
+        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
 
-        // Very short timeout so it fires while handler is still completing.
+        let outcome = execute_tool_bounded_with_hooks(
+            |_args| {
+                std::thread::sleep(Duration::from_millis(200));
+                ToolResponse::success(serde_json::json!("ok"), None)
+            },
+            Value::Object(serde_json::Map::new()),
+            "test_tool".to_string(),
+            budget,
+            cancel_flag.clone(),
+            semaphore.clone(),
+            ExecutionHooks::none(),
+            metrics.clone(),
+        )
+        .await;
+
+        assert!(outcome.timed_out);
+        // Handler is still sleeping — timed_out_handlers must be exactly 1.
+        assert_eq!(
+            metrics.timed_out_handlers.load(Ordering::Relaxed),
+            1,
+            "timed_out_handlers should be exactly 1 while handler is still running"
+        );
+
+        // Wait for handler to finish and decrement.
+        tokio::time::sleep(Duration::from_millis(250)).await;
+
+        assert_eq!(
+            metrics.timed_out_handlers.load(Ordering::Relaxed),
+            0,
+            "timed_out_handlers must return to 0 after handler finishes"
+        );
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
+    }
+
+    // ── Test 4: completion_wins_race ───────────────────────────────────
+
+    #[tokio::test]
+    async fn completion_wins_race() {
+        reset_test_handler_statics();
+        let metrics = new_test_metrics();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let cancel_flag = Arc::new(AtomicBool::new(false));
         let budget = ToolBudget::CHEAP.with_max_elapsed_ms(1);
 
-        let _outcome = execute_tool_bounded(
-            |_args| {
-                // Fast handler — should complete before or around timeout.
-                ToolResponse::success(serde_json::json!("ok"), None)
-            },
-            Value::Object(serde_json::map::Map::new()),
+        let _outcome = execute_tool_bounded_with_hooks(
+            test_handler_fast as registry::ToolHandler,
+            Value::Object(serde_json::Map::new()),
             "test_tool".to_string(),
             budget,
             cancel_flag.clone(),
             semaphore.clone(),
+            ExecutionHooks::none(),
+            metrics.clone(),
         )
         .await;
 
-        // Wait for any blocking handler to finish.
         tokio::time::sleep(Duration::from_millis(50)).await;
-
-        let after = snapshot_metrics();
-        assert_snapshot_invariant(&after);
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // Test 6: completion racing after gauge accounting.
-    // Timeout fires and increments timed_out_handlers, then handler finishes and decrements.
-    // Net effect: gauges return to baseline.
+    // ── Test 5: timeout_wins_race ──────────────────────────────────────
+
     #[tokio::test]
-    async fn completion_after_gauge_accounting_decrements_exactly_once() {
+    async fn timeout_wins_race() {
+        reset_test_handler_statics();
+        let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
-
-        // Short timeout + slightly longer handler ensures timeout fires while running.
         let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
 
-        let outcome = execute_tool_bounded(
-            |_args| {
-                std::thread::sleep(Duration::from_millis(100));
-                ToolResponse::success(serde_json::json!("ok"), None)
-            },
-            Value::Object(serde_json::map::Map::new()),
+        let outcome = execute_tool_bounded_with_hooks(
+            test_handler_slow_cancel as registry::ToolHandler,
+            Value::Object(serde_json::Map::new()),
             "test_tool".to_string(),
             budget,
             cancel_flag.clone(),
             semaphore.clone(),
+            ExecutionHooks::none(),
+            metrics.clone(),
         )
         .await;
 
         assert!(outcome.timed_out);
-        // Wait for the handler to finish and decrement.
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        let after = snapshot_metrics();
-        assert_snapshot_invariant(&after);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // Test 7: handler panic after timeout.
-    // Timeout fires, then handler panics. The completion guard's swap to FINISHED
-    // must still observe TIMED_OUT_ACCOUNTED and decrement.
+    // ── Test 6: panic_after_timeout_corrects_gauges ───────────────────
+
     #[tokio::test]
-    async fn handler_panic_after_timeout_corrects_gauges() {
+    async fn panic_after_timeout_corrects_gauges() {
+        let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
-
         let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
 
-        let outcome = execute_tool_bounded(
+        let outcome = execute_tool_bounded_with_hooks(
             |_args| {
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(Duration::from_millis(200));
                 panic!("intentional test panic");
             },
-            Value::Object(serde_json::map::Map::new()),
+            Value::Object(serde_json::Map::new()),
             "test_tool".to_string(),
             budget,
             cancel_flag.clone(),
             semaphore.clone(),
+            ExecutionHooks::none(),
+            metrics.clone(),
         )
         .await;
 
         assert!(outcome.timed_out);
-        // The JoinError from the panic is captured; wait for cleanup.
-        tokio::time::sleep(Duration::from_millis(200)).await;
 
-        let after = snapshot_metrics();
-        assert_snapshot_invariant(&after);
+        // Wait for the handler to panic and lifecycle cleanup to complete.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        assert_eq!(
+            metrics.timed_out_handlers.load(Ordering::Relaxed),
+            0,
+            "timed_out_handlers must be 0 after panic cleanup"
+        );
+        assert_eq!(
+            metrics.active_blocking_handlers.load(Ordering::Relaxed),
+            0,
+            "active_blocking_handlers must be 0 after panic cleanup"
+        );
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // Test 8: cooperative cancellation after timeout.
-    // Timeout fires, sets cancel flag, handler checks flag and exits early.
+    // ── Test 7: cancellation_flag_visible_after_timeout ────────────────
+
     #[tokio::test]
-    async fn cooperative_cancellation_after_timeout() {
+    async fn cancellation_flag_visible_after_timeout() {
+        let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
-
         let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
 
-        let outcome = execute_tool_bounded(
+        let outcome = execute_tool_bounded_with_hooks(
             |_args| {
-                // Check cancel flag cooperatively.
-                if crate::mcp::budget::current_cancel_flag()
-                    .is_some_and(|f| f.load(Ordering::Relaxed))
-                {
-                    return ToolResponse::error_with_code(
+                // Sleep so timeout fires, then check cancel flag.
+                std::thread::sleep(Duration::from_millis(200));
+                let cancelled = crate::mcp::budget::current_cancel_flag()
+                    .is_some_and(|f| f.load(Ordering::Relaxed));
+                if cancelled {
+                    ToolResponse::error_with_code(
                         "cancelled",
                         machine_codes::CANCELLED,
                         "cooperative cancel",
                         None,
                         None,
-                    );
+                    )
+                } else {
+                    ToolResponse::success(serde_json::json!("ok"), None)
                 }
-                std::thread::sleep(Duration::from_millis(100));
-                ToolResponse::success(serde_json::json!("ok"), None)
             },
-            Value::Object(serde_json::map::Map::new()),
+            Value::Object(serde_json::Map::new()),
             "test_tool".to_string(),
             budget,
             cancel_flag.clone(),
             semaphore.clone(),
+            ExecutionHooks::none(),
+            metrics.clone(),
         )
         .await;
 
         assert!(outcome.timed_out);
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(cancel_flag.load(Ordering::Relaxed));
 
-        let after = snapshot_metrics();
-        assert_snapshot_invariant(&after);
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // Test 9+10: hundreds of controlled timeout/completion races.
-    // Alternate between fast handlers (win the race) and slow handlers (lose the race).
-    // Uses separate handler functions since ToolHandler is fn pointer (cannot capture).
+    // ── Test 8: no_double_completion ───────────────────────────────────
+
     #[tokio::test]
-    async fn hundreds_of_controlled_timeout_completion_races() {
+    async fn no_double_completion() {
+        reset_test_handler_statics();
+        let metrics = new_test_metrics();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let budget = ToolBudget::CHEAP;
+
+        let outcome = execute_tool_bounded_with_hooks(
+            test_handler_fast as registry::ToolHandler,
+            Value::Object(serde_json::Map::new()),
+            "test_tool".to_string(),
+            budget,
+            cancel_flag.clone(),
+            semaphore.clone(),
+            ExecutionHooks::none(),
+            metrics.clone(),
+        )
+        .await;
+
+        assert!(!outcome.timed_out);
+        assert!(outcome.tool_response.is_ok());
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
+    }
+
+    // ── Test 9: hundreds_of_controlled_interleavings ───────────────────
+
+    #[tokio::test]
+    async fn hundreds_of_controlled_interleavings() {
+        reset_test_handler_statics();
+        let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let mut timeouts_observed = 0usize;
         let mut successes_observed = 0usize;
 
         for iter in 0..100 {
             let cancel_flag = Arc::new(AtomicBool::new(false));
-            // Alternate: even iterations = fast handler (should succeed),
-            // odd iterations = slow handler (should timeout).
+            TEST_HANDLER_SHOULD_BLOCK.store(false, Ordering::SeqCst);
+            TEST_HANDLER_RELEASED.store(false, Ordering::SeqCst);
+
             let (handler, budget) = if iter % 2 == 0 {
                 (
-                    race_fast_handler as registry::ToolHandler,
+                    test_handler_fast as registry::ToolHandler,
                     ToolBudget::CHEAP.with_max_elapsed_ms(5000),
                 )
             } else {
                 (
-                    race_slow_handler as registry::ToolHandler,
+                    test_handler_blocking as registry::ToolHandler,
                     ToolBudget::CHEAP.with_max_elapsed_ms(5),
                 )
             };
 
-            let outcome = execute_tool_bounded(
+            if iter % 2 != 0 {
+                TEST_HANDLER_SHOULD_BLOCK.store(true, Ordering::SeqCst);
+            }
+
+            let outcome = execute_tool_bounded_with_hooks(
                 handler,
-                Value::Object(serde_json::map::Map::new()),
+                Value::Object(serde_json::Map::new()),
                 "race_tool".to_string(),
                 budget,
                 cancel_flag,
                 semaphore.clone(),
+                ExecutionHooks::none(),
+                metrics.clone(),
             )
             .await;
 
             if outcome.timed_out {
                 timeouts_observed += 1;
-                // Wait for handler to finish.
-                tokio::time::sleep(Duration::from_millis(30)).await;
+                TEST_HANDLER_SHOULD_BLOCK.store(false, Ordering::SeqCst);
+                TEST_HANDLER_RELEASED.store(true, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(20)).await;
             } else {
                 successes_observed += 1;
             }
 
-            // Assert invariant after every iteration.
-            let snap = snapshot_metrics();
-            assert_snapshot_invariant(&snap);
+            assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
         }
 
-        // We should have seen both outcomes (fast and slow handlers).
         assert!(
             successes_observed > 0,
             "should have at least some successful completions"
         );
         assert!(timeouts_observed > 0, "should have at least some timeouts");
-
-        let after = snapshot_metrics();
-        assert_snapshot_invariant(&after);
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // Test 12: semaphore occupancy never exceeds MAX_TOOL_WORKERS.
-    // Launch more concurrent tasks than permits and verify peak concurrency.
+    // ── Test 10: worker_bound_never_exceeded ───────────────────────────
+
     #[tokio::test]
-    async fn semaphore_never_exceeds_max_workers() {
+    async fn worker_bound_never_exceeded() {
+        reset_test_handler_statics();
         let max_workers = 4usize;
+        let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(max_workers));
         let num_tasks = 16;
-        let active = StdArc::new(AtomicUsize::new(0));
-        let peak_observed = StdArc::new(AtomicUsize::new(0));
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak_observed = Arc::new(AtomicUsize::new(0));
 
         let mut handles = Vec::new();
         for _ in 0..num_tasks {
@@ -759,7 +915,6 @@ mod coordinator_tests {
                 let _permit = sem.acquire_owned().await.unwrap();
                 let current = active.fetch_add(1, Ordering::SeqCst) + 1;
                 peak.fetch_max(current, Ordering::SeqCst);
-                // Hold permit briefly.
                 tokio::time::sleep(Duration::from_millis(10)).await;
                 active.fetch_sub(1, Ordering::SeqCst);
             }));
@@ -776,75 +931,99 @@ mod coordinator_tests {
             peak,
             max_workers
         );
-
-        let after = snapshot_metrics();
-        assert_snapshot_invariant(&after);
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // ── WS3 additional tests: request lifecycle under coordinator ─────────
+    // ── Basic execution test ───────────────────────────────────────────
 
-    // Handler panic still allows lifecycle cleanup (active_blocking_handlers returns to baseline).
+    #[tokio::test]
+    async fn basic_execution_completes_successfully() {
+        reset_test_handler_statics();
+        let metrics = new_test_metrics();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let tool_budget = ToolBudget::CHEAP;
+
+        let outcome = execute_tool_bounded_with_hooks(
+            |_args| ToolResponse::success(serde_json::json!("hello"), None),
+            Value::Object(serde_json::Map::new()),
+            "test_tool".to_string(),
+            tool_budget,
+            cancel_flag.clone(),
+            semaphore.clone(),
+            ExecutionHooks::none(),
+            metrics.clone(),
+        )
+        .await;
+
+        assert!(!outcome.timed_out);
+        let resp = outcome.tool_response.unwrap();
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.as_ref().unwrap().as_str().unwrap(), "hello");
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
+    }
+
     #[tokio::test]
     async fn handler_panic_returns_blocking_handler_count_to_baseline() {
+        let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let budget = ToolBudget::CHEAP;
 
-        let outcome = execute_tool_bounded(
-            |_args| {
-                panic!("intentional panic for cleanup test");
-            },
-            Value::Object(serde_json::map::Map::new()),
+        fn always_panic_handler(_args: &Value) -> ToolResponse {
+            panic!("intentional test panic");
+        }
+
+        let outcome = execute_tool_bounded_with_hooks(
+            always_panic_handler as registry::ToolHandler,
+            Value::Object(serde_json::Map::new()),
             "panic_tool".to_string(),
             budget,
             cancel_flag,
             semaphore,
+            ExecutionHooks::none(),
+            metrics.clone(),
         )
         .await;
 
-        // Handler panicked — JoinError is captured, not propagated.
         assert!(!outcome.timed_out);
-        assert!(outcome.tool_response.is_err());
+        // Panic is caught by catch_unwind and converted to an error ToolResponse.
+        let resp = outcome.tool_response.unwrap();
+        assert!(!resp.ok, "panicked handler should return ok=false response");
 
-        // Wait for all cleanup to complete.
         tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let after = snapshot_metrics();
-        assert_snapshot_invariant(&after);
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // Timeout response is returned while the handler may still be running.
-    // After the handler finishes, metrics return to baseline.
     #[tokio::test]
     async fn timeout_response_returns_while_handler_continues() {
+        reset_test_handler_statics();
+        let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
 
-        let outcome = execute_tool_bounded(
+        let outcome = execute_tool_bounded_with_hooks(
             |_args| {
-                // Slow handler — timeout fires first, then handler completes.
                 std::thread::sleep(Duration::from_millis(100));
                 ToolResponse::success(serde_json::json!("late"), None)
             },
-            Value::Object(serde_json::map::Map::new()),
+            Value::Object(serde_json::Map::new()),
             "slow_tool".to_string(),
             budget,
             cancel_flag,
             semaphore,
+            ExecutionHooks::none(),
+            metrics.clone(),
         )
         .await;
 
-        // Timeout response was returned to caller.
         assert!(outcome.timed_out);
         let resp = outcome.tool_response.unwrap();
         assert!(!resp.ok);
 
-        // Handler may still be running — wait for it to finish.
         tokio::time::sleep(Duration::from_millis(200)).await;
-
-        let after = snapshot_metrics();
-        assert_snapshot_invariant(&after);
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 }
 
@@ -862,8 +1041,6 @@ mod controlled_tests {
 
     #[test]
     fn test_direct_calls_do_not_modify_mcp_metrics() {
-        // Verify that calling tool handlers directly (not through execute_tool_bounded)
-        // does not touch MCP runtime metrics
         let before = snapshot_metrics();
         let handler = crate::mcp::registry::tool_handler_for("math_eval").unwrap();
         let args = serde_json::json!({"expression": "2 + 2"});

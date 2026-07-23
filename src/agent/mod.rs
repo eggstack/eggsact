@@ -627,12 +627,16 @@ impl ToolRegistry {
     /// Call a tool with an explicit budget, applying resource limits and output truncation.
     ///
     /// This is the budget-aware entry point for in-process tool execution. It:
-    /// 1. Resolves the tool's default budget from its declared `ToolCost`
-    /// 2. Merges with any explicit `budget` override
-    /// 3. Validates profile, audience, and arguments on the calling thread
-    /// 4. Executes the handler on a bounded worker pool with elapsed-time enforcement
+    /// 1. Validates profile, audience, and arguments on the calling thread
+    /// 2. Resolves the tool's default budget from its declared `ToolCost`
+    /// 3. Merges with any explicit `budget` override
+    /// 4. Executes the approved handler on a bounded worker pool with elapsed-time enforcement
     /// 5. Truncates output findings and result to fit within budget limits
     /// 6. Populates `limits_applied` on the response
+    ///
+    /// Pre-execution failures (unknown tool, profile mismatch, invalid args)
+    /// return `Err(ToolCallError)`. Runtime failures (timeout, queue full)
+    /// return `Ok(ToolResponse)` with appropriate machine codes.
     ///
     /// Use this method when the caller needs deterministic resource discipline.
     /// For simple calls without budget enforcement, use [`call_json`](Self::call_json).
@@ -642,12 +646,22 @@ impl ToolRegistry {
         args: Value,
         budget: Option<ToolBudget>,
     ) -> Result<ToolResponse, ToolCallError> {
+        // 1. Prepare policy on caller thread using self's profile/audience/compat
+        let outcome = self.prepare_tool_call(name, &args);
+        let handler = match outcome {
+            ToolCallOutcome::Ready { handler } => handler,
+            ToolCallOutcome::PreExecutionError(e) => return Err(e),
+        };
+
+        // 2. Resolve budget
         let spec =
             registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
         let effective_budget = match budget {
             Some(b) => b,
             None => budget_for_tool_resolved(name, spec),
         };
+
+        // 3. Check input size
         let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
         if serialized_len > effective_budget.max_input_bytes {
             return Ok(ToolResponse::error_with_code(
@@ -661,27 +675,18 @@ impl ToolRegistry {
                 Some(name),
             ));
         }
+
+        // 4. Create cancel flag and submit approved handler to pool
         let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
-        let name_owned = name.to_string();
         let args_clone = args.clone();
-        let result = crate::mcp::sync_pool::sync_pool().submit(
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
             move || {
                 let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
-                crate::mcp::budget::with_eval_context(&mut mcp_eval_ctx, || {
-                    let prepared = Self::prepare_tool_call_static(&name_owned, &args_clone);
-                    match prepared {
-                        ToolCallOutcome::Ready { handler } => handler(&args_clone),
-                        ToolCallOutcome::PreExecutionError(e) => ToolResponse::error_with_code(
-                            "internal_error",
-                            crate::mcp::machine_codes::INTERNAL_ERROR,
-                            &format!("Pre-execution error: {}", e),
-                            None,
-                            Some(&name_owned),
-                        ),
-                    }
-                })
+                crate::mcp::budget::with_eval_context(&mut mcp_eval_ctx, || handler(&args_clone))
             },
             timeout,
+            cancel_flag,
         );
         match result {
             Ok(mut response) => {
@@ -696,9 +701,10 @@ impl ToolRegistry {
     /// limits and output truncation.
     ///
     /// This extends [`call_json_with_budget`](Self::call_json_with_budget) with
-    /// an external cancellation flag. The flag is set as a thread-local during
-    /// handler execution so that high-risk handlers that create their own
-    /// `BudgetContext` (via [`budget::for_handler`]) will inherit cancellation.
+    /// an external cancellation flag. The flag is installed as the thread-local
+    /// cancel flag during handler execution so that high-risk handlers that create
+    /// their own `BudgetContext` (via [`budget::for_handler`]) will inherit cancellation.
+    /// On timeout, the flag is set to `true` by the pool so the handler can observe it.
     pub fn call_json_with_context(
         &self,
         name: &str,
@@ -706,12 +712,22 @@ impl ToolRegistry {
         budget: Option<ToolBudget>,
         cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     ) -> Result<ToolResponse, ToolCallError> {
+        // 1. Prepare policy on caller thread using self's profile/audience/compat
+        let outcome = self.prepare_tool_call(name, &args);
+        let handler = match outcome {
+            ToolCallOutcome::Ready { handler } => handler,
+            ToolCallOutcome::PreExecutionError(e) => return Err(e),
+        };
+
+        // 2. Resolve budget
         let spec =
             registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
         let effective_budget = match budget {
             Some(b) => b,
             None => budget_for_tool_resolved(name, spec),
         };
+
+        // 3. Check input size
         let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
         if serialized_len > effective_budget.max_input_bytes {
             return Ok(ToolResponse::error_with_code(
@@ -725,29 +741,25 @@ impl ToolRegistry {
                 Some(name),
             ));
         }
+
+        // 4. Use provided cancel_flag or create internal one
+        let flag = cancel_flag.unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
+
+        // 5. Submit approved handler to pool with cancellation
         let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
-        let name_owned = name.to_string();
         let args_clone = args.clone();
-        let result = crate::mcp::sync_pool::sync_pool().submit(
+        let flag_for_handler = flag.clone();
+        let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
             move || {
-                budget::with_cancel_flag(cancel_flag, || {
+                crate::mcp::budget::with_cancel_flag(Some(flag_for_handler), || {
                     let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
                     crate::mcp::budget::with_eval_context(&mut mcp_eval_ctx, || {
-                        let prepared = Self::prepare_tool_call_static(&name_owned, &args_clone);
-                        match prepared {
-                            ToolCallOutcome::Ready { handler } => handler(&args_clone),
-                            ToolCallOutcome::PreExecutionError(e) => ToolResponse::error_with_code(
-                                "internal_error",
-                                crate::mcp::machine_codes::INTERNAL_ERROR,
-                                &format!("Pre-execution error: {}", e),
-                                None,
-                                Some(&name_owned),
-                            ),
-                        }
+                        handler(&args_clone)
                     })
                 })
             },
             timeout,
+            flag,
         );
         match result {
             Ok(mut response) => {
@@ -781,12 +793,33 @@ impl ToolRegistry {
         args: Value,
         ctx: &ExecutionContext,
     ) -> Result<ToolResponse, ToolCallError> {
+        // 1. Resolve effective policy from context
+        let effective_profile = ctx.profile.clone().unwrap_or_else(|| self.profile.clone());
+        let effective_audience = ctx.audience.unwrap_or(self.audience);
+        let effective_compat = ctx.compatibility_mode;
+
+        // 2. Prepare policy on caller thread with explicit policy
+        let outcome = self.prepare_tool_call_with_policy(
+            name,
+            &args,
+            &effective_profile,
+            effective_audience,
+            effective_compat,
+        );
+        let handler = match outcome {
+            ToolCallOutcome::Ready { handler } => handler,
+            ToolCallOutcome::PreExecutionError(e) => return Err(e),
+        };
+
+        // 3. Resolve budget
         let spec =
             registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
         let effective_budget = match ctx.budget {
             Some(b) => b,
             None => budget_for_tool_resolved(name, spec),
         };
+
+        // 4. Check input size
         let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
         if serialized_len > effective_budget.max_input_bytes {
             return Ok(ToolResponse::error_with_code(
@@ -800,39 +833,21 @@ impl ToolRegistry {
                 Some(name),
             ));
         }
-        let effective_profile = ctx.profile.clone().unwrap_or_else(|| self.profile.clone());
-        let effective_audience = ctx.audience.unwrap_or(self.audience);
-        let effective_compat = ctx.compatibility_mode;
+
+        // 5. Get cancel flag, clone eval context, submit to pool
         let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
-        let name_owned = name.to_string();
         let args_clone = args.clone();
         let eval_ctx_clone = ctx.eval_ctx.clone();
         let cancel_clone = ctx.cancellation.clone();
-        let result = crate::mcp::sync_pool::sync_pool().submit(
+        let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
             move || {
                 budget::with_cancel_flag(cancel_clone, || {
                     let mut eval_ctx = eval_ctx_clone;
-                    crate::mcp::budget::with_eval_context(&mut eval_ctx, || {
-                        match Self::prepare_tool_call_static_with_policy(
-                            &name_owned,
-                            &args_clone,
-                            &effective_profile,
-                            effective_audience,
-                            effective_compat,
-                        ) {
-                            ToolCallOutcome::Ready { handler } => handler(&args_clone),
-                            ToolCallOutcome::PreExecutionError(e) => ToolResponse::error_with_code(
-                                "internal_error",
-                                crate::mcp::machine_codes::INTERNAL_ERROR,
-                                &format!("Pre-execution error: {}", e),
-                                None,
-                                Some(&name_owned),
-                            ),
-                        }
-                    })
+                    crate::mcp::budget::with_eval_context(&mut eval_ctx, || handler(&args_clone))
                 })
             },
             timeout,
+            Arc::new(AtomicBool::new(false)),
         );
         match result {
             Ok(mut response) => {
@@ -916,12 +931,33 @@ impl ToolRegistry {
         args: Value,
         ctx: &mut ExecutionContext,
     ) -> Result<ToolResponse, ToolCallError> {
+        // 1. Resolve effective policy from context
+        let effective_profile = ctx.profile.clone().unwrap_or_else(|| self.profile.clone());
+        let effective_audience = ctx.audience.unwrap_or(self.audience);
+        let effective_compat = ctx.compatibility_mode;
+
+        // 2. Prepare policy on caller thread with explicit policy
+        let outcome = self.prepare_tool_call_with_policy(
+            name,
+            &args,
+            &effective_profile,
+            effective_audience,
+            effective_compat,
+        );
+        let handler = match outcome {
+            ToolCallOutcome::Ready { handler } => handler,
+            ToolCallOutcome::PreExecutionError(e) => return Err(e),
+        };
+
+        // 3. Resolve budget
         let spec =
             registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
         let effective_budget = match ctx.budget {
             Some(b) => b,
             None => budget_for_tool_resolved(name, spec),
         };
+
+        // 4. Check input size
         let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
         if serialized_len > effective_budget.max_input_bytes {
             return Ok(ToolResponse::error_with_code(
@@ -935,25 +971,29 @@ impl ToolRegistry {
                 Some(name),
             ));
         }
-        let effective_profile = ctx.profile.clone().unwrap_or_else(|| self.profile.clone());
-        let effective_audience = ctx.audience.unwrap_or(self.audience);
-        let effective_compat = ctx.compatibility_mode;
-        let mut response = budget::with_cancel_flag(ctx.cancellation.clone(), || {
-            budget::with_eval_context(&mut ctx.eval_ctx, || {
-                match self.prepare_tool_call_with_policy(
-                    name,
-                    &args,
-                    &effective_profile,
-                    effective_audience,
-                    effective_compat,
-                ) {
-                    ToolCallOutcome::Ready { handler } => Ok(handler(&args)),
-                    ToolCallOutcome::PreExecutionError(e) => Err(e),
-                }
-            })
-        })?;
-        truncate_response(&mut response, &effective_budget);
-        Ok(response)
+
+        // 5. Get cancel flag, clone eval context, submit to pool
+        let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
+        let args_clone = args.clone();
+        let eval_ctx_clone = ctx.eval_ctx.clone();
+        let cancel_clone = ctx.cancellation.clone();
+        let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
+            move || {
+                budget::with_cancel_flag(cancel_clone, || {
+                    let mut eval_ctx = eval_ctx_clone;
+                    crate::mcp::budget::with_eval_context(&mut eval_ctx, || handler(&args_clone))
+                })
+            },
+            timeout,
+            Arc::new(AtomicBool::new(false)),
+        );
+        match result {
+            Ok(mut response) => {
+                truncate_response(&mut response, &effective_budget);
+                Ok(response)
+            }
+            Err(pool_error) => Ok(pool_error.to_tool_response(name)),
+        }
     }
 
     /// Call a tool and return only the result `Value`, or `null` on error.
@@ -965,93 +1005,6 @@ impl ToolRegistry {
             Ok(response) => response.result.unwrap_or(Value::Null),
             Err(_) => Value::Null,
         }
-    }
-
-    /// Static tool-call preparation without `&self`.
-    ///
-    /// Used by sync pool closures that cannot borrow `&self` across threads.
-    /// Performs tool lookup, profile check, audience check, and schema validation.
-    fn prepare_tool_call_static(name: &str, args: &Value) -> ToolCallOutcome {
-        let handler = match registry::tool_handler_for(name) {
-            Some(h) => h,
-            None => {
-                return ToolCallOutcome::PreExecutionError(ToolCallError::UnknownTool(
-                    name.to_string(),
-                ))
-            }
-        };
-        // Use default profile (full) and default audience (Model) for the
-        // static path — callers routed through call_json_with_budget which
-        // already validated policy before submitting to the pool.
-        let profile_tools = registry::tools_for_profile("full");
-        if !profile_tools.iter().any(|s| s.name == name) {
-            return ToolCallOutcome::PreExecutionError(ToolCallError::ToolUnavailable {
-                tool: name.to_string(),
-                profile: "full".to_string(),
-            });
-        }
-        if let Some(spec) = registry::get_tool(name) {
-            if !ToolAudience::Model.can_execute_exposure(spec.exposure) {
-                return ToolCallOutcome::PreExecutionError(
-                    ToolCallError::ToolNotAllowedForAudience {
-                        tool: name.to_string(),
-                        profile: "full".to_string(),
-                        audience: "Model".to_string(),
-                        exposure: spec.exposure.as_str().to_string(),
-                    },
-                );
-            }
-        }
-        if let Some(msg) =
-            schema_validation::validate_arguments(name, args, CompatibilityMode::default())
-        {
-            return ToolCallOutcome::PreExecutionError(ToolCallError::InvalidArguments(msg));
-        }
-        ToolCallOutcome::Ready { handler }
-    }
-
-    /// Static tool-call preparation with explicit policy, without `&self`.
-    ///
-    /// Used by `call_json_with_execution_context`'s sync pool closure which
-    /// cannot borrow `&self` across threads.
-    fn prepare_tool_call_static_with_policy(
-        name: &str,
-        args: &Value,
-        effective_profile: &Profile,
-        effective_audience: ToolAudience,
-        effective_compat: CompatibilityMode,
-    ) -> ToolCallOutcome {
-        let handler = match registry::tool_handler_for(name) {
-            Some(h) => h,
-            None => {
-                return ToolCallOutcome::PreExecutionError(ToolCallError::UnknownTool(
-                    name.to_string(),
-                ))
-            }
-        };
-        let profile_tools = registry::tools_for_profile(effective_profile.as_str());
-        if !profile_tools.iter().any(|s| s.name == name) {
-            return ToolCallOutcome::PreExecutionError(ToolCallError::ToolUnavailable {
-                tool: name.to_string(),
-                profile: effective_profile.to_string(),
-            });
-        }
-        if let Some(spec) = registry::get_tool(name) {
-            if !effective_audience.can_execute_exposure(spec.exposure) {
-                return ToolCallOutcome::PreExecutionError(
-                    ToolCallError::ToolNotAllowedForAudience {
-                        tool: name.to_string(),
-                        profile: effective_profile.to_string(),
-                        audience: format!("{:?}", effective_audience),
-                        exposure: spec.exposure.as_str().to_string(),
-                    },
-                );
-            }
-        }
-        if let Some(msg) = schema_validation::validate_arguments(name, args, effective_compat) {
-            return ToolCallOutcome::PreExecutionError(ToolCallError::InvalidArguments(msg));
-        }
-        ToolCallOutcome::Ready { handler }
     }
 }
 
@@ -1796,6 +1749,176 @@ mod tests {
         match result.unwrap_err() {
             ToolCallError::UnknownTool(name) => assert_eq!(name, "nonexistent"),
             other => panic!("expected UnknownTool, got {:?}", other),
+        }
+    }
+
+    // -- Workstream 4+5 regression tests: registry policy in budget-aware calls --
+
+    #[test]
+    fn human_math_rejects_text_equal_with_budget() {
+        let registry = ToolRegistry::with_profile(Profile::HumanMath);
+        let result = registry.call_json_with_budget(
+            "text_equal",
+            serde_json::json!({"a": "x", "b": "x"}),
+            None,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolCallError::ToolUnavailable { tool, .. } => assert_eq!(tool, "text_equal"),
+            other => panic!("expected ToolUnavailable, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn full_harness_allows_shell_split_with_budget() {
+        let registry =
+            ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Harness);
+        let result = registry.call_json_with_budget(
+            "shell_split",
+            serde_json::json!({"command": "echo hello"}),
+            None,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn full_model_rejects_shell_split_with_budget() {
+        let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
+        let result = registry.call_json_with_budget(
+            "shell_split",
+            serde_json::json!({"command": "echo hello"}),
+            None,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolCallError::ToolNotAllowedForAudience { .. } => {}
+            other => panic!("expected ToolNotAllowedForAudience, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn unknown_tool_with_budget_returns_error() {
+        let registry = ToolRegistry::default();
+        let result =
+            registry.call_json_with_budget("nonexistent_tool_xyz", serde_json::json!({}), None);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ToolCallError::UnknownTool(_)));
+    }
+
+    #[test]
+    fn invalid_args_with_budget_returns_error() {
+        let registry = ToolRegistry::default();
+        let result = registry.call_json_with_budget("math_eval", serde_json::json!({}), None);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ToolCallError::InvalidArguments(_)
+        ));
+    }
+
+    #[test]
+    fn human_math_rejects_text_equal_with_context() {
+        let registry = ToolRegistry::with_profile(Profile::HumanMath);
+        let result = registry.call_json_with_context(
+            "text_equal",
+            serde_json::json!({"a": "x", "b": "x"}),
+            None,
+            None,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolCallError::ToolUnavailable { tool, .. } => assert_eq!(tool, "text_equal"),
+            other => panic!("expected ToolUnavailable, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn full_model_rejects_shell_split_with_context() {
+        let registry = ToolRegistry::with_profile_and_audience(Profile::Full, ToolAudience::Model);
+        let result = registry.call_json_with_context(
+            "shell_split",
+            serde_json::json!({"command": "echo hello"}),
+            None,
+            None,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolCallError::ToolNotAllowedForAudience { .. } => {}
+            other => panic!("expected ToolNotAllowedForAudience, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn execution_context_overrides_profile_for_budget_call() {
+        let registry = ToolRegistry::default();
+        let ctx = ExecutionContext {
+            profile: Some(Profile::HumanMath),
+            ..ExecutionContext::test_default()
+        };
+        // text_equal is not in human_math, should be rejected
+        let result = registry.call_json_with_execution_context(
+            "text_equal",
+            serde_json::json!({"a": "x", "b": "x"}),
+            &ctx,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolCallError::ToolUnavailable { tool, .. } => assert_eq!(tool, "text_equal"),
+            other => panic!("expected ToolUnavailable, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn execution_context_audience_enforced_for_budget_call() {
+        let registry = ToolRegistry::default();
+        let ctx = ExecutionContext {
+            profile: Some(Profile::Full),
+            audience: Some(ToolAudience::Model),
+            ..ExecutionContext::test_default()
+        };
+        let result = registry.call_json_with_execution_context(
+            "shell_split",
+            serde_json::json!({"command": "echo hello"}),
+            &ctx,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolCallError::ToolNotAllowedForAudience { .. } => {}
+            other => panic!("expected ToolNotAllowedForAudience, got {:?}", other),
+        }
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn execution_context_mut_routes_through_pool() {
+        let registry = ToolRegistry::default();
+        let mut ctx = ExecutionContext::test_default();
+        let result = registry.call_json_with_execution_context_mut(
+            "text_equal",
+            serde_json::json!({"a": "foo", "b": "foo"}),
+            &mut ctx,
+        );
+        assert!(result.is_ok());
+        assert!(result.unwrap().ok);
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn execution_context_mut_rejects_unavailable_tool() {
+        let registry = ToolRegistry::with_profile(Profile::HumanMath);
+        let mut ctx = ExecutionContext {
+            profile: Some(Profile::HumanMath),
+            ..ExecutionContext::test_default()
+        };
+        let result = registry.call_json_with_execution_context_mut(
+            "text_equal",
+            serde_json::json!({"a": "x", "b": "x"}),
+            &mut ctx,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolCallError::ToolUnavailable { tool, .. } => assert_eq!(tool, "text_equal"),
+            other => panic!("expected ToolUnavailable, got {:?}", other),
         }
     }
 }

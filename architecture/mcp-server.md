@@ -7,7 +7,7 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | File | Purpose |
 |------|---------|
 | `server.rs` | Protocol orchestration: stdio read loop, request validation, JSON-RPC dispatch |
-| `execution.rs` | Execution coordinator: 6-state handler lifecycle, `SyncExecutionPool`, request timeout accounting |
+| `execution.rs` | Execution coordinator: mutex-backed handler lifecycle, `SyncExecutionPool`, request timeout accounting |
 | `runtime.rs` | Rate limiter, constants, profile management, generation-aware request tracking |
 | `sync_pool.rs` | Bounded synchronous execution pool (8 workers, 32-slot queue) for budget-aware APIs |
 | `registry/` | Tool registration: aggregation, listing, types |
@@ -399,28 +399,24 @@ live atomic counters: `active_requests`, `active_blocking_handlers`,
 RAII `MetricGuard` ensures counters decrement correctly on panic/unwind.
 At synchronized snapshots, `timed_out_handlers <= active_blocking_handlers`.
 
-**Timeout metrics lifecycle state machine:** `timed_out_handlers` uses an
-`AtomicU8` lifecycle state machine in `execution.rs` to eliminate the race
-condition present in the previous `AtomicBool` design. Each handler transitions
-through five states:
+**Timeout metrics lifecycle:** `timed_out_handlers` uses a
+`Mutex<HandlerPhase>` lifecycle in `execution.rs`. Each handler transitions
+through five phases:
 
-| State | Value | Meaning |
-|-------|-------|---------|
-| `HANDLER_QUEUED` | 0 | Request received, awaiting spawn |
-| `HANDLER_RUNNING` | 1 | Handler is actively executing |
-| `HANDLER_TIMEOUT_ACCOUNTING` | 2 | Timeout fired, awaiting state transition |
-| `HANDLER_TIMED_OUT_ACCOUNTED` | 3 | Timeout accounted, awaiting handler exit |
-| `HANDLER_FINISHED` | 4 | Handler has completed |
-| `HANDLER_TIMED_OUT_QUEUED` | 5 | Timeout while still queued (never ran) |
+| Phase | Meaning |
+|-------|---------|
+| `Queued` | Request received, awaiting spawn |
+| `Running` | Handler is actively executing |
+| `TimedOutQueued` | Timeout while still queued (never ran) |
+| `TimedOutRunning` | Timeout fired while handler was running |
+| `Finished` | Handler has completed |
 
-Queued timeouts (state 0) increment only `total_timeouts`, NOT
-`timed_out_handlers`. Running timeouts use
-`compare_exchange(HANDLER_RUNNING, HANDLER_TIMEOUT_ACCOUNTING)` — only
-increments `timed_out_handlers` on success. Handler exit uses
-`swap(HANDLER_FINISHED)` — only decrements `timed_out_handlers` if the
-previous state was `HANDLER_TIMED_OUT_ACCOUNTED`. This guarantees exactly one
-increment and one decrement per running-timeout event, and zero for
-queued-timeout events.
+Queued timeouts transition `Queued → TimedOutQueued` and increment only
+`total_timeouts`, NOT `timed_out_handlers`. Running timeouts transition
+`Running → TimedOutRunning` and increment `timed_out_handlers`. Completion
+after timeout transitions `TimedOutRunning → Finished` and decrements
+`timed_out_handlers`. All transitions are linearizable under a single lock
+acquisition.
 
 **Graceful shutdown:** When stdin reaches EOF, the read loop breaks and the
 server drains in-flight requests via `JoinSet::join_next()` before dropping the
@@ -450,21 +446,22 @@ thread pool.
 
 ### Execution Coordinator (`src/mcp/execution.rs`)
 
-The execution coordinator manages the 6-state handler lifecycle and timeout
-accounting. It owns the `AtomicU8` lifecycle state per handler and provides
-the `SyncExecutionPool` for budget-aware in-process APIs.
+The execution coordinator manages the mutex-backed handler lifecycle and
+timeout accounting. It owns a `HandlerLifecycle` (wrapping
+`Mutex<HandlerPhase>`) per handler and provides the `SyncExecutionPool` for
+budget-aware in-process APIs.
 
-#### 6-State Handler Lifecycle
+#### Mutex-Backed Handler Lifecycle
 
-Each request handler progresses through states in `execution.rs`:
+Each request handler progresses through phases in `execution.rs`:
 
 ```
-HANDLER_QUEUED → HANDLER_RUNNING → HANDLER_TIMEOUT_ACCOUNTING → HANDLER_TIMED_OUT_ACCOUNTED → HANDLER_FINISHED
-                                  ↘ HANDLER_FINISHED (normal exit, no timeout)
+Queued → Running → Finished
+         ↓           ↑
+    TimedOutRunning ─┘
+         ↑
+Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 ```
-
-Queued handlers that timeout before being spawned transition through
-`HANDLER_TIMED_OUT_QUEUED` and increment only `total_timeouts`.
 
 ### Bounded Synchronous Execution Pool (`src/mcp/sync_pool.rs`)
 
