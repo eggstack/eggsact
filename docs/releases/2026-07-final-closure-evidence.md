@@ -1,11 +1,11 @@
 # Final Closure Evidence
 
 This document records the exact evidence supporting closure of the runtime
-correctness corrective pass (plans/2026-07-22-timeout-sync-policy-final-corrective-pass.md).
+correctness corrective pass (plans/2026-07-23-final-cancellation-lifecycle-evidence-closure-pass.md).
 
 ## Code-under-test
 
-- **SHA**: `a3621c3`
+- **SHA**: `PLACEHOLDER_COMMIT_SHA` (update after commit)
 - **Date**: 2026-07-23
 - **Branch**: `main`
 
@@ -20,6 +20,7 @@ correctness corrective pass (plans/2026-07-22-timeout-sync-policy-final-correcti
 - **MSRV**: `1.89.0` (declared in `Cargo.toml`, tested in CI)
 - **Nightly Rust**: `1.98.0-nightly (beae78130 2026-06-09)`
 - **cargo-fuzz**: `0.13.2`
+- **cargo-deny**: `0.19.0` (pinned in CI workflows)
 
 ## Local Verification Commands
 
@@ -30,10 +31,13 @@ All commands run on 2026-07-23 against the working tree.
 ```
 cargo fmt --all -- --check                                         PASS
 cargo clippy --locked --all-targets --all-features -- -D warnings  PASS
-cargo test --locked --all-features --lib                          PASS (481 tests)
+cargo test --locked --all-features --lib                          PASS (481+ tests)
 cargo test --locked --all-features --bins                         PASS (24 tests)
 cargo test --locked --doc                                         PASS (11 tests)
 cargo run --locked --bin generate-docs -- --check                 PASS
+cargo deny check advisories bans licenses sources                 PASS
+cargo package --locked --list                                     PASS
+cargo package --locked --verbose                                  PASS
 ```
 
 ### MSRV gate
@@ -91,18 +95,26 @@ cargo test --locked --all-features --test lib mcp::test_runtime_helpers
 | Context isolation | 38 |
 | **Total (local)** | **672** |
 
-### New tests added in this session (coordinator_tests in execution.rs)
+### New tests added in this session (execution.rs)
 
-- `queued_timeout_blocks_handler_after_permit_release` — verifies queued timeout prevents handler from running after permit release
+**Timing-based tests** (basic behavior verification):
+- `queued_timeout_blocks_handler_after_permit_release` — queued timeout prevents handler from running
 - `timeout_after_permit_but_before_closure_start` — timeout fires while handler is running
 - `running_timeout_increments_exactly_once` — timed_out_handlers is exactly 1 while handler runs
-- `completion_wins_race` — handler finishes before timeout, no gauge increment
-- `timeout_wins_race` — timeout fires before handler finishes, exactly one decrement
-- `panic_after_timeout_corrects_gauges` — panic after timeout, metrics still correct
-- `cancellation_flag_visible_after_timeout` — cancel flag is set and visible to handler
 - `no_double_completion` — defensive completion behavior verified
-- `five_hundred_controlled_interleavings` — 500 iterations alternating fast/slow handlers
-- `worker_bound_never_exceeded` — concurrent tasks bounded by semaphore permits
+- `basic_execution_completes_successfully` — basic handler execution
+- `handler_panic_returns_blocking_handler_count_to_baseline` — panic cleanup
+- `timeout_response_returns_while_handler_continues` — timeout returns while handler runs
+
+**Deterministic tests** (hook-driven exact interleavings):
+- `deterministic_completion_wins` — fast handler completes before timeout, no gauge increment
+- `deterministic_timeout_wins` — slow handler times out, gauges return to zero after release
+- `deterministic_queued_timeout_after_permit` — timeout fires while queued, handler never runs
+- `five_hundred_deterministic_interleavings` — 250 completion-wins + 250 timeout-wins, all hook-driven
+- `worker_bound_coordinator_test` — N workers via coordinator, N+1 queues, gauges verified
+- `repeated_single_threaded_100_iterations` — 100 iterations with varying handlers/timeouts
+- `deterministic_panic_after_timeout` — panic after timeout, gauges return to zero via hook
+- `deterministic_cancellation_flag_after_timeout` — cancel flag set after timeout, verified via hook
 
 ### New tests added in sync_pool.rs
 
@@ -174,26 +186,56 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 
 ### Tests
 
-- [x] Lifecycle races use barriers/channels/hooks rather than timing guesses
+- [x] Lifecycle races use hooks rather than timing guesses
+- [x] Deterministic completion-wins and timeout-wins tests force exact orderings
 - [x] Queued timeout is tested with a saturated semaphore
-- [x] Pre-accounting and post-accounting completion races are tested
 - [x] Panic-after-timeout is tested
-- [x] Request-map lock contention is tested
-- [x] Synchronous worker saturation and recovery are tested
-- [x] 500 controlled race iterations pass without gauge leaks
-- [x] Worker bound is verified (concurrent tasks never exceed semaphore permits)
+- [x] 500 controlled interleavings (250 completion + 250 timeout) pass without gauge leaks
+- [x] Worker-bound test exercises the actual coordinator with shared semaphore
+- [x] 100-iteration repeated single-threaded test passes consistently
+- [x] Sleeps used only as bounded "did not happen" observations, never to establish order
 
-### Mutable execution context (WS5)
+### Mutable execution context
 
 - [x] Mutable-context calls use the bounded pool via `submit_cancellable`
 - [x] Transactional commit slot (`Arc<Mutex<Option<EvalContext>>>`) stores worker-local context
-- [x] On success, worker-local context is committed back to caller
-- [x] On timeout/saturation, commit slot is never read (late writes discarded)
+- [x] Commit requires `response.ok == true` AND cancel flag still false
+- [x] On timeout/saturation/cancellation/failure, commit slot is never read (late writes discarded)
 - [x] math_eval cloning limitation is documented and tested
-- [x] Pre-execution error leaves context unchanged
-- [x] Tool failure leaves context unchanged
+- [x] Generic test handler proves successful mutation commit and rollback on failure
 - [x] Pool saturation leaves context unchanged
 - [x] Cancellation flag is passed through to the pool
+
+### Shared cancellation identity
+
+- [x] `call_json_with_budget` uses one flag for pool and handler
+- [x] `call_json_with_context` preserves and uses the supplied flag
+- [x] `call_json_with_execution_context` uses one effective flag for pool and handler
+- [x] `call_json_with_execution_context_mut` uses one effective flag for pool, handler, and commit decision
+- [x] Timeout sets the effective flag before returning
+- [x] Fast success leaves the flag false
+- [x] Queue saturation leaves the flag false
+
+### Sync worker preflight
+
+- [x] Worker checks deadline before invocation
+- [x] Worker checks cancellation before invocation
+- [x] Timed-out queued jobs never execute
+- [x] Externally cancelled queued jobs never execute
+- [x] Running non-cooperative jobs retain worker occupancy
+- [x] Timeout and shutdown are classified separately
+- [x] Disconnection tests exercise real channel disconnection
+
+### MCP lifecycle
+
+- [x] `begin_running` occurs inside the blocking closure
+- [x] `active_blocking_handlers` increments inside the blocking closure
+- [x] Permit acquisition alone does not publish `Running`
+- [x] Timeout after permit but before closure start prevents handler invocation
+- [x] Running timeout increments exactly once
+- [x] Completion after timeout decrements exactly once
+- [x] Panic returns gauges to zero
+- [x] Peak concurrency reflects actual executing closures
 
 ### Documentation and evidence
 

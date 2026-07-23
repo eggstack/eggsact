@@ -102,10 +102,14 @@ impl SyncExecutionPool {
             std::sync::mpsc::TrySendError::Disconnected(_) => SyncPoolError::Shutdown,
         })?;
 
-        reply_rx.recv_timeout(timeout).map_err(|_| {
-            cancel_flag.store(true, Ordering::SeqCst);
-            SyncPoolError::Timeout
-        })
+        match reply_rx.recv_timeout(timeout) {
+            Ok(response) => Ok(response),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                cancel_flag.store(true, Ordering::SeqCst);
+                Err(SyncPoolError::Timeout)
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(SyncPoolError::Shutdown),
+        }
     }
 
     /// Return the number of worker threads in this pool.
@@ -125,7 +129,7 @@ fn worker_loop(receiver: Arc<std::sync::Mutex<Receiver<SyncJob>>>) {
             }
         };
 
-        // Preflight: if the deadline has already expired, set the flag and skip.
+        // Preflight: if the deadline has already expired, skip invocation.
         // The handler is responsible for checking cancellation cooperatively;
         // we only skip when the caller-facing deadline has passed.
         if Instant::now() >= job.deadline {
@@ -134,6 +138,20 @@ fn worker_loop(receiver: Arc<std::sync::Mutex<Receiver<SyncJob>>>) {
                 "timeout",
                 crate::mcp::machine_codes::TIMEOUT,
                 "Tool handler deadline expired before execution",
+                None,
+                None,
+            ));
+            continue;
+        }
+
+        // Preflight: if the cancellation flag was already set before the
+        // worker dequeued this job, skip invocation. The job was cancelled
+        // while still queued.
+        if job.cancel_flag.load(Ordering::Acquire) {
+            let _ = job.reply.send(ToolResponse::error_with_code(
+                "cancelled",
+                crate::mcp::machine_codes::CANCELLED,
+                "Tool handler was cancelled while queued",
                 None,
                 None,
             ));

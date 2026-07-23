@@ -87,7 +87,7 @@ fn for_handler_without_thread_local_has_no_cancellation() {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-fn call_json_with_context_handler_sees_cancel_flag() {
+fn call_json_with_context_pre_cancelled_flag_returns_cancelled() {
     let registry = full_harness_registry();
     let flag = Arc::new(AtomicBool::new(true)); // pre-cancelled
     let resp = registry
@@ -99,13 +99,17 @@ fn call_json_with_context_handler_sees_cancel_flag() {
         )
         .expect("registry call should succeed");
 
-    // Smoke test: the cancel flag is threaded through to the handler's
-    // BudgetContext. math_eval does NOT check cancellation eagerly, so it
-    // still returns ok — this verifies the plumbing, not the cancellation
-    // effect itself.
+    // With WS2 fix: the worker checks the cancellation flag before invoking
+    // the handler. A pre-cancelled flag causes the job to be rejected with
+    // CANCELLED without invoking the handler at all.
     assert!(
-        resp.ok,
-        "math_eval should still succeed with pre-cancelled flag (no eager check)"
+        !resp.ok,
+        "pre-cancelled flag must prevent handler invocation"
+    );
+    assert_eq!(
+        resp.machine_code.as_deref(),
+        Some("CANCELLED"),
+        "machine_code must be CANCELLED"
     );
 }
 

@@ -676,14 +676,22 @@ impl ToolRegistry {
             ));
         }
 
-        // 4. Create cancel flag and submit approved handler to pool
+        // 4. Create cancel flag and submit approved handler to pool.
+        //    The same flag is used for both pool timeout and handler
+        //    thread-local cancellation so that the handler can observe
+        //    cancellation set by the pool.
         let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
         let args_clone = args.clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
+        let handler_cancel = cancel_flag.clone();
         let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
             move || {
-                let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
-                crate::mcp::budget::with_eval_context(&mut mcp_eval_ctx, || handler(&args_clone))
+                budget::with_cancel_flag(Some(handler_cancel), || {
+                    let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
+                    crate::mcp::budget::with_eval_context(&mut mcp_eval_ctx, || {
+                        handler(&args_clone)
+                    })
+                })
             },
             timeout,
             cancel_flag,
@@ -834,20 +842,26 @@ impl ToolRegistry {
             ));
         }
 
-        // 5. Get cancel flag, clone eval context, submit to pool
+        // 5. Get cancel flag, clone eval context, submit to pool.
+        //    The same effective flag is used for both pool timeout and
+        //    handler thread-local cancellation.
         let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
         let args_clone = args.clone();
         let eval_ctx_clone = ctx.eval_ctx.clone();
-        let cancel_clone = ctx.cancellation.clone();
+        let cancel_flag = ctx
+            .cancellation
+            .clone()
+            .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
+        let handler_cancel = cancel_flag.clone();
         let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
             move || {
-                budget::with_cancel_flag(cancel_clone, || {
+                budget::with_cancel_flag(Some(handler_cancel), || {
                     let mut eval_ctx = eval_ctx_clone;
                     crate::mcp::budget::with_eval_context(&mut eval_ctx, || handler(&args_clone))
                 })
             },
             timeout,
-            Arc::new(AtomicBool::new(false)),
+            cancel_flag,
         );
         match result {
             Ok(mut response) => {
@@ -974,19 +988,25 @@ impl ToolRegistry {
 
         // 5. Get cancel flag, clone eval context, submit to pool with
         //    transactional commit slot. The worker writes the (possibly
-        //    modified) eval_ctx into the slot. On success, we commit it
-        //    back to the caller. On timeout/cancellation/saturation, the
+        //    modified) eval_ctx into the slot. On success (response.ok
+        //    AND cancellation flag still false), we commit it back to the
+        //    caller. On timeout/cancellation/saturation/tool-failure, the
         //    slot is never read — late worker writes go to the detached
         //    slot and are silently discarded.
         let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
         let args_clone = args.clone();
         let eval_ctx_clone = ctx.eval_ctx.clone();
-        let cancel_clone = ctx.cancellation.clone();
+        let cancel_flag = ctx
+            .cancellation
+            .clone()
+            .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
+        let handler_cancel = cancel_flag.clone();
+        let commit_cancel = cancel_flag.clone();
         let commit_slot: Arc<Mutex<Option<EvalContext>>> = Arc::new(Mutex::new(None));
         let commit_slot_clone = commit_slot.clone();
         let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
             move || {
-                budget::with_cancel_flag(cancel_clone, || {
+                budget::with_cancel_flag(Some(handler_cancel), || {
                     let mut eval_ctx = eval_ctx_clone;
                     let resp = crate::mcp::budget::with_eval_context(&mut eval_ctx, || {
                         handler(&args_clone)
@@ -1000,16 +1020,22 @@ impl ToolRegistry {
                 })
             },
             timeout,
-            Arc::new(AtomicBool::new(false)),
+            cancel_flag,
         );
         match result {
             Ok(mut response) => {
                 truncate_response(&mut response, &effective_budget);
-                // Commit the worker-local context back to the caller.
-                // Only on successful completion (not timeout/saturation).
-                if let Ok(mut slot) = commit_slot.lock() {
-                    if let Some(worker_ctx) = slot.take() {
-                        ctx.eval_ctx = worker_ctx;
+                // Commit only when the tool succeeded (response.ok) AND
+                // the cancellation flag is still false. Tool-level failures
+                // (ok=false), cancellation, and timeout all leave caller
+                // context unchanged.
+                let commit_allowed =
+                    response.ok && !commit_cancel.load(std::sync::atomic::Ordering::Acquire);
+                if commit_allowed {
+                    if let Ok(mut slot) = commit_slot.lock() {
+                        if let Some(worker_ctx) = slot.take() {
+                            ctx.eval_ctx = worker_ctx;
+                        }
                     }
                 }
                 Ok(response)
