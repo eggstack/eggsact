@@ -45,7 +45,7 @@ use crate::mcp::schema_validation;
 use serde_json::Value;
 use std::fmt;
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::calc::context::EvalContext;
@@ -972,16 +972,31 @@ impl ToolRegistry {
             ));
         }
 
-        // 5. Get cancel flag, clone eval context, submit to pool
+        // 5. Get cancel flag, clone eval context, submit to pool with
+        //    transactional commit slot. The worker writes the (possibly
+        //    modified) eval_ctx into the slot. On success, we commit it
+        //    back to the caller. On timeout/cancellation/saturation, the
+        //    slot is never read — late worker writes go to the detached
+        //    slot and are silently discarded.
         let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
         let args_clone = args.clone();
         let eval_ctx_clone = ctx.eval_ctx.clone();
         let cancel_clone = ctx.cancellation.clone();
+        let commit_slot: Arc<Mutex<Option<EvalContext>>> = Arc::new(Mutex::new(None));
+        let commit_slot_clone = commit_slot.clone();
         let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
             move || {
                 budget::with_cancel_flag(cancel_clone, || {
                     let mut eval_ctx = eval_ctx_clone;
-                    crate::mcp::budget::with_eval_context(&mut eval_ctx, || handler(&args_clone))
+                    let resp = crate::mcp::budget::with_eval_context(&mut eval_ctx, || {
+                        handler(&args_clone)
+                    });
+                    // Write the worker-local context into the result slot.
+                    // On timeout, nobody reads this — the slot is dropped.
+                    if let Ok(mut slot) = commit_slot_clone.lock() {
+                        *slot = Some(eval_ctx);
+                    }
+                    resp
                 })
             },
             timeout,
@@ -990,6 +1005,13 @@ impl ToolRegistry {
         match result {
             Ok(mut response) => {
                 truncate_response(&mut response, &effective_budget);
+                // Commit the worker-local context back to the caller.
+                // Only on successful completion (not timeout/saturation).
+                if let Ok(mut slot) = commit_slot.lock() {
+                    if let Some(worker_ctx) = slot.take() {
+                        ctx.eval_ctx = worker_ctx;
+                    }
+                }
                 Ok(response)
             }
             Err(pool_error) => Ok(pool_error.to_tool_response(name)),

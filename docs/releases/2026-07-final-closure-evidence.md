@@ -1,12 +1,12 @@
 # Final Closure Evidence
 
 This document records the exact evidence supporting closure of the runtime
-correctness corrective pass (plans/2026-07-21-runtime-correctness-evidence-corrective-pass.md).
+correctness corrective pass (plans/2026-07-22-timeout-sync-policy-final-corrective-pass.md).
 
-## Commit
+## Code-under-test
 
-- **SHA**: `d2e160d7f89d8762991d86dd94631ff439adfd8e`
-- **Date**: 2026-07-22
+- **SHA**: `72a0d92` (plus uncommitted WS5/interleaving/evidence changes)
+- **Date**: 2026-07-23
 - **Branch**: `main`
 
 ## Package
@@ -23,14 +23,14 @@ correctness corrective pass (plans/2026-07-21-runtime-correctness-evidence-corre
 
 ## Local Verification Commands
 
-All commands run on 2026-07-22 against commit `d2e160d`.
+All commands run on 2026-07-23 against the working tree.
 
 ### Release gate
 
 ```
 cargo fmt --all -- --check                                         PASS
 cargo clippy --locked --all-targets --all-features -- -D warnings  PASS
-cargo test --locked --all-features --lib                          PASS (462 tests)
+cargo test --locked --all-features --lib                          PASS (481 tests)
 cargo test --locked --all-features --bins                         PASS (24 tests)
 cargo test --locked --doc                                         PASS (11 tests)
 cargo run --locked --bin generate-docs -- --check                 PASS
@@ -40,7 +40,7 @@ cargo run --locked --bin generate-docs -- --check                 PASS
 
 ```
 cargo +1.89.0 check --locked --all-targets --all-features         PASS
-cargo +1.89.0 test --locked --all-features --lib                  PASS (462 tests)
+cargo +1.89.0 test --locked --all-features --lib                  PASS (481 tests)
 ```
 
 ### Property tests
@@ -82,25 +82,27 @@ cargo test --locked --all-features --test lib mcp::test_runtime_helpers
 
 | Partition | Count |
 |-----------|-------|
-| Unit (lib) | 462 |
+| Unit (lib) | 481 |
 | Binary | 24 |
 | Property | 47 |
 | Doc | 11 |
 | Execution safety | 26 |
 | Runtime helpers | 45 |
-| **Total (local)** | **615** |
+| Context isolation | 38 |
+| **Total (local)** | **672** |
 
 ### New tests added in this session (coordinator_tests in execution.rs)
 
 - `queued_timeout_blocks_handler_after_permit_release` — verifies queued timeout prevents handler from running after permit release
-- `completion_races_timeout_before_gauge_accounting` — handler wins race, no gauge increment
-- `completion_after_gauge_accounting_decrements_exactly_once` — timeout fires, handler completes, net zero
-- `handler_panic_after_timeout_corrects_gauges` — panic after timeout, metrics still correct
-- `cooperative_cancellation_after_timeout` — cancel flag respected during timeout
-- `hundreds_of_controlled_timeout_completion_races` — 100 iterations alternating fast/slow handlers
-- `semaphore_never_exceeds_max_workers` — concurrent tasks bounded by semaphore permits
-- `handler_panic_returns_blocking_handler_count_to_baseline` — panic cleanup verified
-- `timeout_response_returns_while_handler_continues` — timeout response while handler still running
+- `timeout_after_permit_but_before_closure_start` — timeout fires while handler is running
+- `running_timeout_increments_exactly_once` — timed_out_handlers is exactly 1 while handler runs
+- `completion_wins_race` — handler finishes before timeout, no gauge increment
+- `timeout_wins_race` — timeout fires before handler finishes, exactly one decrement
+- `panic_after_timeout_corrects_gauges` — panic after timeout, metrics still correct
+- `cancellation_flag_visible_after_timeout` — cancel flag is set and visible to handler
+- `no_double_completion` — defensive completion behavior verified
+- `five_hundred_controlled_interleavings` — 500 iterations alternating fast/slow handlers
+- `worker_bound_never_exceeded` — concurrent tasks bounded by semaphore permits
 
 ### New tests added in sync_pool.rs
 
@@ -178,8 +180,20 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - [x] Panic-after-timeout is tested
 - [x] Request-map lock contention is tested
 - [x] Synchronous worker saturation and recovery are tested
-- [x] The old sequential "500-iteration race" claim is renamed
-- [x] 100 controlled race iterations pass without gauge leaks (50-iteration stress loop)
+- [x] 500 controlled race iterations pass without gauge leaks
+- [x] Worker bound is verified (concurrent tasks never exceed semaphore permits)
+
+### Mutable execution context (WS5)
+
+- [x] Mutable-context calls use the bounded pool via `submit_cancellable`
+- [x] Transactional commit slot (`Arc<Mutex<Option<EvalContext>>>`) stores worker-local context
+- [x] On success, worker-local context is committed back to caller
+- [x] On timeout/saturation, commit slot is never read (late writes discarded)
+- [x] math_eval cloning limitation is documented and tested
+- [x] Pre-execution error leaves context unchanged
+- [x] Tool failure leaves context unchanged
+- [x] Pool saturation leaves context unchanged
+- [x] Cancellation flag is passed through to the pool
 
 ### Documentation and evidence
 

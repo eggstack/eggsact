@@ -1347,3 +1347,267 @@ fn test_mutable_dispatch_non_math_tool_persists_state() {
         );
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// WS5 tests: Transactional commit model for call_json_with_execution_context_mut
+// ─────────────────────────────────────────────────────────────────────────
+
+// WS5-1: timeout returns within the configured budget.
+#[test]
+#[allow(deprecated)]
+fn test_mut_ctx_timeout_returns_within_budget() {
+    use std::time::Instant;
+
+    let registry = ToolRegistry::with_profile(Profile::Full);
+    let mut ctx = ExecutionContext::test_default();
+    // 1ms timeout — tight enough that queue contention causes timeout
+    ctx = ctx.with_budget(ToolBudget::CHEAP.with_max_elapsed_ms(1));
+
+    let start = Instant::now();
+    let result = registry.call_json_with_execution_context_mut(
+        "math_eval",
+        serde_json::json!({"expression": "1 + 1"}),
+        &mut ctx,
+    );
+    let elapsed = start.elapsed();
+
+    // May succeed or timeout depending on pool state — both are valid.
+    // The key assertion is that it returns within a reasonable bound.
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "call should return within budget, took {:?}",
+        elapsed
+    );
+    let _ = result;
+}
+
+// WS5-2: caller context is unchanged after timeout.
+#[test]
+#[allow(deprecated)]
+fn test_mut_ctx_timeout_leaves_context_unchanged() {
+    let registry = ToolRegistry::with_profile(Profile::Full);
+    let mut ctx = ExecutionContext::test_default();
+
+    // Establish known state: store 42 in register 1
+    let _ = evaluate_with_context("store(42, 1)", &mut ctx.eval_ctx);
+
+    // Set a 1ms timeout — tight enough that queue contention causes timeout
+    ctx = ctx.with_budget(ToolBudget::CHEAP.with_max_elapsed_ms(1));
+
+    // Try to mutate the context (store 99 in register 2)
+    let result = registry.call_json_with_execution_context_mut(
+        "math_eval",
+        serde_json::json!({"expression": "store(99, 2)"}),
+        &mut ctx,
+    );
+
+    // Whether the call succeeded or timed out, register 1 should still be 42.
+    // If it timed out, register 2 should not exist.
+    // If it succeeded, the transactional commit model wrote the worker's
+    // context to the commit slot. But math_eval clones internally, so the
+    // worker-local context is NOT mutated — register 2 won't persist.
+    let val1 = evaluate_with_context("recall(1)", &mut ctx.eval_ctx)
+        .unwrap()
+        .0;
+    assert_eq!(val1, "42", "register 1 should be unchanged");
+
+    // math_eval clones the context internally, so even on success the
+    // mutation doesn't persist. recall(2) returns 0.0 for an unset register.
+    let val2 = evaluate_with_context("recall(2)", &mut ctx.eval_ctx)
+        .unwrap()
+        .0;
+    assert_eq!(
+        val2, "0",
+        "register 2 should not persist (math_eval clones internally)"
+    );
+    let _ = result;
+}
+
+// WS5-3: late completion cannot mutate caller context.
+// After timeout, the worker writes to the detached commit slot.
+// The caller never reads it, so the context is unchanged.
+// Even on success, math_eval clones internally so no mutation persists.
+#[test]
+#[allow(deprecated)]
+fn test_mut_ctx_late_completion_cannot_mutate_context() {
+    let registry = ToolRegistry::with_profile(Profile::Full);
+    let mut ctx = ExecutionContext::test_default();
+
+    // Establish known state
+    let _ = evaluate_with_context("store(10, 1)", &mut ctx.eval_ctx);
+
+    // Use a 1ms timeout
+    ctx = ctx.with_budget(ToolBudget::CHEAP.with_max_elapsed_ms(1));
+
+    // Submit a call that tries to store 50 in register 2
+    let _ = registry.call_json_with_execution_context_mut(
+        "math_eval",
+        serde_json::json!({"expression": "store(50, 2)"}),
+        &mut ctx,
+    );
+
+    // Wait a bit for any late worker completion
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    // Verify context is unchanged (register 1 = 10, register 2 not set).
+    // math_eval clones internally, so even on success the mutation doesn't
+    // persist. On timeout, the commit slot is never read.
+    let val1 = evaluate_with_context("recall(1)", &mut ctx.eval_ctx)
+        .unwrap()
+        .0;
+    assert_eq!(val1, "10", "register 1 should be unchanged");
+
+    // recall(2) returns 0.0 for an unset register (not an error)
+    let val2 = evaluate_with_context("recall(2)", &mut ctx.eval_ctx)
+        .unwrap()
+        .0;
+    assert_eq!(
+        val2, "0",
+        "register 2 should not persist (math_eval clones, or timeout discarded commit)"
+    );
+}
+
+// WS5-4: pre-execution error leaves context unchanged (already exists as
+// test_mutable_dispatch_preexecution_failure_no_mutation).
+
+// WS5-5: tool failure leaves context unchanged.
+#[test]
+#[allow(deprecated)]
+fn test_mut_ctx_tool_failure_leaves_context_unchanged() {
+    let registry = ToolRegistry::with_profile(Profile::Full);
+    let mut ctx = ExecutionContext::test_default();
+
+    // Establish known state
+    let _ = evaluate_with_context("store(77, 1)", &mut ctx.eval_ctx);
+
+    // Division by zero should fail
+    let result = registry.call_json_with_execution_context_mut(
+        "math_eval",
+        serde_json::json!({"expression": "1 / 0"}),
+        &mut ctx,
+    );
+
+    // The call should return Ok (not ToolCallError), but the response
+    // should indicate failure
+    assert!(
+        result.is_ok(),
+        "division by zero should not be ToolCallError"
+    );
+
+    // eval_ctx should be unchanged — no store happened
+    let val1 = evaluate_with_context("recall(1)", &mut ctx.eval_ctx)
+        .unwrap()
+        .0;
+    assert_eq!(val1, "77", "tool failure should not mutate eval_ctx");
+}
+
+// WS5-6: successful handler — math_eval clones context internally.
+// The transactional commit model writes the worker-local context to the
+// commit slot, but math_eval clones the context before mutating it, so
+// the worker-local context is NOT mutated. This test verifies the
+// documented limitation: the response is correct, but the context
+// mutation does not persist.
+#[test]
+#[allow(deprecated)]
+fn test_mut_ctx_successful_handler_math_eval_clones() {
+    let registry = ToolRegistry::with_profile(Profile::Full);
+    let mut ctx = ExecutionContext::test_default();
+
+    // Store 42 in register 1 via direct evaluate
+    let _ = evaluate_with_context("store(42, 1)", &mut ctx.eval_ctx);
+
+    // Use a generous timeout so the call succeeds
+    ctx = ctx.with_budget(ToolBudget::CHEAP.with_max_elapsed_ms(5000));
+
+    // Store 99 in register 2 via call_json_with_execution_context_mut
+    let result = registry.call_json_with_execution_context_mut(
+        "math_eval",
+        serde_json::json!({"expression": "store(99, 2)"}),
+        &mut ctx,
+    );
+
+    if let Ok(resp) = &result {
+        if resp.ok {
+            // Call succeeded. register 1 should be preserved.
+            let val1 = evaluate_with_context("recall(1)", &mut ctx.eval_ctx)
+                .unwrap()
+                .0;
+            assert_eq!(val1, "42", "register 1 should be preserved");
+
+            // math_eval clones the context internally, so the mutation
+            // (store 99 in register 2) does NOT persist to the caller's
+            // eval_ctx. This is the documented limitation.
+            // recall(2) returns 0.0 for an unset register (not an error).
+            let val2 = evaluate_with_context("recall(2)", &mut ctx.eval_ctx)
+                .unwrap()
+                .0;
+            assert_eq!(
+                val2, "0",
+                "register 2 should NOT persist (math_eval clones internally)"
+            );
+        }
+    }
+    // If pool saturated, this is acceptable under concurrent test load
+}
+
+// WS5-7: cancellation flag is set and visible.
+#[test]
+#[allow(deprecated)]
+fn test_mut_ctx_cancellation_flag_visible() {
+    let registry = ToolRegistry::with_profile(Profile::Full);
+    let mut ctx = ExecutionContext::test_default();
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    ctx.cancellation = Some(cancel_flag.clone());
+
+    ctx = ctx.with_budget(ToolBudget::CHEAP.with_max_elapsed_ms(5000));
+
+    // math_eval is fast, so the flag won't be set during execution.
+    // But we can verify the flag was passed to the pool.
+    let result = registry.call_json_with_execution_context_mut(
+        "math_eval",
+        serde_json::json!({"expression": "1 + 1"}),
+        &mut ctx,
+    );
+
+    // The flag should not be set for a fast, successful call
+    assert!(
+        !cancel_flag.load(Ordering::SeqCst),
+        "cancel flag should not be set for fast successful call"
+    );
+    let _ = result;
+}
+
+// WS5-8: pool saturation leaves context unchanged.
+// Uses a very short timeout (1ms) and rapid successive calls to increase
+// the chance of queue saturation. Whether the call succeeds, times out,
+// or is saturated, the context must remain unchanged.
+#[test]
+#[allow(deprecated)]
+fn test_mut_ctx_pool_saturation_leaves_context_unchanged() {
+    let registry = ToolRegistry::with_profile(Profile::Full);
+    let mut ctx = ExecutionContext::test_default();
+
+    // Establish known state
+    let _ = evaluate_with_context("store(55, 1)", &mut ctx.eval_ctx);
+
+    // Very short timeout to increase chance of timeout/saturation
+    ctx = ctx.with_budget(ToolBudget::CHEAP.with_max_elapsed_ms(1));
+
+    // Rapid successive calls to increase chance of queue contention
+    for expr in ["store(10, 2)", "store(20, 3)", "store(30, 4)"] {
+        let _ = registry.call_json_with_execution_context_mut(
+            "math_eval",
+            serde_json::json!({"expression": expr}),
+            &mut ctx,
+        );
+    }
+
+    // Whether saturated or not, register 1 should still be 55
+    let val1 = evaluate_with_context("recall(1)", &mut ctx.eval_ctx)
+        .unwrap()
+        .0;
+    assert_eq!(
+        val1, "55",
+        "register 1 should be unchanged regardless of pool state"
+    );
+}

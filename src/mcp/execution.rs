@@ -834,14 +834,14 @@ mod tests {
     // ── Test 9: hundreds_of_controlled_interleavings ───────────────────
 
     #[tokio::test]
-    async fn hundreds_of_controlled_interleavings() {
+    async fn five_hundred_controlled_interleavings() {
         reset_test_handler_statics();
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let mut timeouts_observed = 0usize;
         let mut successes_observed = 0usize;
 
-        for iter in 0..100 {
+        for iter in 0..500 {
             let cancel_flag = Arc::new(AtomicBool::new(false));
             TEST_HANDLER_SHOULD_BLOCK.store(false, Ordering::SeqCst);
             TEST_HANDLER_RELEASED.store(false, Ordering::SeqCst);
