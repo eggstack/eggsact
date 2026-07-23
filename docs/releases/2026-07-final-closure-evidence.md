@@ -5,7 +5,7 @@ correctness corrective pass (plans/2026-07-23-final-cancellation-lifecycle-evide
 
 ## Code-under-test
 
-- **SHA**: `PLACEHOLDER_COMMIT_SHA` (update after commit)
+- **SHA**: `54bd7b9e761637f76a50b71a13d3f6647055e09b`
 - **Date**: 2026-07-23
 - **Branch**: `main`
 
