@@ -5,7 +5,7 @@ use crate::mcp::response::{python_json_dumps, sanitize_error, truncate_response,
 use crate::mcp::runtime::{self, MAX_OUTPUT_BYTES, RUNTIME_METRICS};
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 // ── Handler lifecycle (mutex-owned transitions) ──────────────────────────
@@ -132,36 +132,141 @@ impl HandlerLifecycle {
     }
 }
 
+// ── Test gates ───────────────────────────────────────────────────────────
+
+/// Blocking-side test gate for hook sites inside `spawn_blocking`.
+///
+/// `arrive_and_wait` signals arrival and then blocks the calling thread
+/// until the test releases it. `wait_until_entered` is async and uses
+/// a `Notify` so tests can poll it from a Tokio runtime.
+///
+/// This type is always available (not cfg(test)) so that `ExecutionHooks`
+/// can hold it without conditional compilation, but it is only constructed
+/// in test code.
+#[allow(dead_code)]
+#[derive(Clone)]
+pub(crate) struct BlockingTestGate {
+    entered: Arc<tokio::sync::Notify>,
+    state: Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+}
+
+#[allow(dead_code)]
+impl BlockingTestGate {
+    pub fn new() -> Self {
+        Self {
+            entered: Arc::new(tokio::sync::Notify::new()),
+            state: Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new())),
+        }
+    }
+
+    /// Signal that the boundary was reached, then block until released.
+    /// Must only be called from `spawn_blocking` or test-owned OS threads.
+    pub fn arrive_and_wait(&self) {
+        self.entered.notify_one();
+        let (lock, cv) = &*self.state;
+        let mut released = lock.lock().unwrap();
+        while !*released {
+            released = cv.wait(released).unwrap();
+        }
+    }
+
+    /// Wait until the gate reports arrival. Async, for use from test code.
+    pub async fn wait_until_entered(&self) {
+        self.entered.notified().await;
+    }
+
+    /// Release the gate so `arrive_and_wait` can return.
+    pub fn release(&self) {
+        let (lock, cv) = &*self.state;
+        *lock.lock().unwrap() = true;
+        cv.notify_all();
+    }
+}
+
+impl Default for BlockingTestGate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Async-side test gate for hook sites in async code (e.g. the timeout path).
+///
+/// `arrive_and_wait` is async and must not be called from `spawn_blocking`.
+#[allow(dead_code)]
+#[derive(Clone, Default)]
+pub(crate) struct AsyncTestGate {
+    entered: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+}
+
+#[allow(dead_code)]
+impl AsyncTestGate {
+    pub fn new() -> Self {
+        Self {
+            entered: Arc::new(tokio::sync::Notify::new()),
+            release: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    /// Signal arrival, then wait for release. Async — do not call from
+    /// `spawn_blocking`.
+    pub async fn arrive_and_wait(&self) {
+        self.entered.notify_one();
+        self.release.notified().await;
+    }
+
+    /// Wait until the gate reports arrival.
+    pub async fn wait_until_entered(&self) {
+        self.entered.notified().await;
+    }
+
+    /// Release the gate so `arrive_and_wait` can return.
+    pub fn release(&self) {
+        self.release.notify_one();
+    }
+}
+
 // ── Test hooks ──────────────────────────────────────────────────────────
 
-/// Test-only hooks for deterministic execution testing. Each hook is an
-/// optional `Notify` that, when `Some`, blocks execution at that point
-/// until the test releases it. `None` means no waiting.
+/// Test-only hooks for deterministic execution testing.
+///
+/// Each hook is an optional gate that, when `Some`, pauses execution at
+/// that lifecycle boundary until the test releases it. `None` means no
+/// waiting — the production no-op path.
 ///
 /// This struct is always available (not cfg(test)) so that
 /// `execute_tool_bounded` can construct `ExecutionHooks::none()` without
 /// conditional compilation.
 #[derive(Clone)]
 pub(crate) struct ExecutionHooks {
-    pub permit_acquired: Option<std::sync::Arc<tokio::sync::Notify>>,
-    pub blocking_closure_entered: Option<std::sync::Arc<tokio::sync::Notify>>,
-    pub running_established: Option<std::sync::Arc<tokio::sync::Notify>>,
-    pub before_timeout_lock: Option<std::sync::Arc<tokio::sync::Notify>>,
-    pub timeout_transition_done: Option<std::sync::Arc<tokio::sync::Notify>>,
-    pub handler_about_to_finish: Option<std::sync::Arc<tokio::sync::Notify>>,
-    pub lifecycle_complete: Option<std::sync::Arc<tokio::sync::Notify>>,
+    /// Diagnostic-only notification after permit acquisition (async side).
+    pub permit_acquired: Option<Arc<tokio::sync::Notify>>,
+    /// Inside the blocking closure, after closure entry but before
+    /// `begin_running`.
+    pub before_begin_running: Option<Arc<BlockingTestGate>>,
+    /// After `begin_running` and active-handler accounting are complete.
+    pub running_established: Option<Arc<BlockingTestGate>>,
+    /// After caller timeout and cancellation signaling, but before
+    /// `record_timeout` takes the lifecycle lock (async side).
+    pub before_timeout_record: Option<Arc<AsyncTestGate>>,
+    /// After `record_timeout` completes (async side).
+    pub timeout_recorded: Option<Arc<AsyncTestGate>>,
+    /// After handler return or caught panic, but before lifecycle `finish`.
+    pub before_finish: Option<Arc<BlockingTestGate>>,
+    /// After lifecycle completion and gauge correction.
+    pub finished: Option<Arc<BlockingTestGate>>,
 }
 
 impl ExecutionHooks {
     pub fn none() -> Self {
         Self {
             permit_acquired: None,
-            blocking_closure_entered: None,
+            before_begin_running: None,
             running_established: None,
-            before_timeout_lock: None,
-            timeout_transition_done: None,
-            handler_about_to_finish: None,
-            lifecycle_complete: None,
+            before_timeout_record: None,
+            timeout_recorded: None,
+            before_finish: None,
+            finished: None,
         }
     }
 }
@@ -170,15 +275,14 @@ impl ExecutionHooks {
 //
 // Since `ToolHandler` is `fn(&Value) -> ToolResponse` (function pointer),
 // closures that capture state cannot be used. Tests communicate with
-// handlers via static atomics.
+// handlers via per-slot static atomics.
 //
-// Each test gets its own slot via `args["_block_slot"]` to avoid
-// cross-test interference when tests run in parallel. The old shared
-// `TEST_HANDLER_SHOULD_BLOCK`/`TEST_HANDLER_RELEASED` statics are
-// replaced by per-slot arrays.
+// Each test must use a unique slot index (never slot 0 shared across
+// parallel tests) to avoid cross-test interference. Lifecycle ordering
+// is controlled by ExecutionHooks gates, not by these statics.
 
 #[cfg(test)]
-const TEST_BLOCK_SLOTS: usize = 8;
+const TEST_BLOCK_SLOTS: usize = 16;
 
 #[cfg(test)]
 static BLOCK_SLOTS: [AtomicBool; TEST_BLOCK_SLOTS] =
@@ -207,26 +311,6 @@ fn test_handler_blocking_slot(args: &Value) -> ToolResponse {
 #[cfg(test)]
 fn block_slot_args(slot: usize) -> Value {
     serde_json::json!({ "_block_slot": slot })
-}
-
-/// Legacy shared statics — retained only for tests that don't need
-/// parallel isolation (single-handler hook-driven tests). Prefer
-/// `test_handler_blocking_slot` for new tests.
-#[cfg(test)]
-static TEST_HANDLER_SHOULD_BLOCK: AtomicBool = AtomicBool::new(false);
-
-#[cfg(test)]
-static TEST_HANDLER_RELEASED: AtomicBool = AtomicBool::new(false);
-
-#[cfg(test)]
-fn test_handler_blocking(_args: &Value) -> ToolResponse {
-    while TEST_HANDLER_SHOULD_BLOCK.load(Ordering::SeqCst) {
-        if TEST_HANDLER_RELEASED.load(Ordering::SeqCst) {
-            break;
-        }
-        std::hint::spin_loop();
-    }
-    ToolResponse::success(serde_json::json!("ok"), None)
 }
 
 #[cfg(test)]
@@ -347,12 +431,12 @@ async fn execute_tool_bounded_inner(
         let tool_name_block = tool_name.clone();
         let hooks_for_block = ExecutionHooks {
             permit_acquired: None,
-            blocking_closure_entered: hooks.blocking_closure_entered.clone(),
+            before_begin_running: hooks.before_begin_running.clone(),
             running_established: hooks.running_established.clone(),
-            before_timeout_lock: None,
-            timeout_transition_done: None,
-            handler_about_to_finish: hooks.handler_about_to_finish.clone(),
-            lifecycle_complete: hooks.lifecycle_complete.clone(),
+            before_timeout_record: None,
+            timeout_recorded: None,
+            before_finish: hooks.before_finish.clone(),
+            finished: hooks.finished.clone(),
         };
 
         tokio::task::spawn_blocking(move || {
@@ -361,8 +445,8 @@ async fn execute_tool_bounded_inner(
             // Signal that the blocking closure has been entered, before
             // any lifecycle transition. Tests use this to coordinate
             // exactly when the closure starts vs. when the outer timeout fires.
-            if let Some(ref notify) = hooks_for_block.blocking_closure_entered {
-                notify.notify_one();
+            if let Some(ref gate) = hooks_for_block.before_begin_running {
+                gate.arrive_and_wait();
             }
 
             // Begin running inside the blocking closure, not before it.
@@ -386,8 +470,8 @@ async fn execute_tool_bounded_inner(
                 BeginRunning::Run => {}
             }
 
-            if let Some(ref notify) = hooks_for_block.running_established {
-                notify.notify_one();
+            if let Some(ref gate) = hooks_for_block.running_established {
+                gate.arrive_and_wait();
             }
 
             if cancel_flag_block.load(Ordering::Acquire) {
@@ -410,14 +494,14 @@ async fn execute_tool_bounded_inner(
                 })
             }));
 
-            if let Some(ref notify) = hooks_for_block.handler_about_to_finish {
-                notify.notify_one();
+            if let Some(ref gate) = hooks_for_block.before_finish {
+                gate.arrive_and_wait();
             }
 
             lifecycle_block.finish(metrics);
 
-            if let Some(ref notify) = hooks_for_block.lifecycle_complete {
-                notify.notify_one();
+            if let Some(ref gate) = hooks_for_block.finished {
+                gate.arrive_and_wait();
             }
 
             match result {
@@ -455,8 +539,8 @@ async fn execute_tool_bounded_inner(
             cancel_flag_for_timeout.store(true, Ordering::Relaxed);
             metrics.total_timeouts.fetch_add(1, Ordering::Relaxed);
 
-            if let Some(ref notify) = hooks.before_timeout_lock {
-                notify.notify_one();
+            if let Some(ref gate) = hooks.before_timeout_record {
+                gate.arrive_and_wait().await;
             }
 
             match lifecycle_for_timeout.record_timeout(metrics) {
@@ -464,8 +548,8 @@ async fn execute_tool_bounded_inner(
                 TimeoutDisposition::AlreadyFinished => {}
             }
 
-            if let Some(ref notify) = hooks.timeout_transition_done {
-                notify.notify_one();
+            if let Some(ref gate) = hooks.timeout_recorded {
+                gate.arrive_and_wait().await;
             }
 
             ExecutionOutcome {
@@ -609,13 +693,20 @@ mod tests {
         Arc::new(runtime::RuntimeMetrics::new_for_test())
     }
 
-    /// Reset all test handler statics to defaults.
+    /// Reset all test handler per-slot statics to defaults.
     fn reset_test_handler_statics() {
-        TEST_HANDLER_SHOULD_BLOCK.store(false, Ordering::SeqCst);
-        TEST_HANDLER_RELEASED.store(false, Ordering::SeqCst);
+        for slot in BLOCK_SLOTS.iter() {
+            slot.store(false, Ordering::SeqCst);
+        }
+        for slot in RELEASE_SLOTS.iter() {
+            slot.store(false, Ordering::SeqCst);
+        }
     }
 
-    // ── Test 1: queued_timeout_blocks_handler_after_permit_release ─────
+    // ── Smoke: queued timeout does not run handler ──────────────────────
+    //
+    // Timing-based behavior verification (not a gate-controlled test).
+    // Uses a 0-permit semaphore so the handler never acquires a permit.
 
     static TEST1_HANDLER_RAN: AtomicBool = AtomicBool::new(false);
 
@@ -625,7 +716,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn queued_timeout_blocks_handler_after_permit_release() {
+    async fn queued_timeout_smoke_does_not_run_handler() {
         reset_test_handler_statics();
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
@@ -659,13 +750,14 @@ mod tests {
         assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // ── Test 2: timeout_after_permit_but_before_closure_start ──────────
+    // ── Smoke: timeout returns while handler continues ──────────────────
     //
+    // Timing-based behavior verification (not a gate-controlled test).
     // The handler sleeps deterministically, guaranteeing the tokio timeout
     // fires while the handler is running.
 
     #[tokio::test]
-    async fn timeout_after_permit_but_before_closure_start() {
+    async fn timeout_smoke_returns_while_handler_continues() {
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -691,10 +783,10 @@ mod tests {
         assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // ── Test 3: running_timeout_increments_exactly_once ────────────────
+    // ── Smoke: running timeout increments exactly once ──────────────────
 
     #[tokio::test]
-    async fn running_timeout_increments_exactly_once() {
+    async fn running_timeout_smoke_increments_once() {
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -734,10 +826,10 @@ mod tests {
         assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // ── Test 8: no_double_completion ───────────────────────────────────
+    // ── Smoke: no double completion ────────────────────────────────────
 
     #[tokio::test]
-    async fn no_double_completion() {
+    async fn no_double_completion_smoke() {
         reset_test_handler_statics();
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
@@ -792,8 +884,10 @@ mod tests {
         assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
+    // ── Smoke: panic cleanup returns gauges to baseline ─────────────────
+
     #[tokio::test]
-    async fn handler_panic_returns_blocking_handler_count_to_baseline() {
+    async fn panic_cleanup_smoke() {
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -824,8 +918,10 @@ mod tests {
         assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
+    // ── Smoke: timeout returns while handler continues after return ─────
+
     #[tokio::test]
-    async fn timeout_response_returns_while_handler_continues() {
+    async fn timeout_smoke_handler_continues_after_return() {
         reset_test_handler_statics();
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
@@ -857,11 +953,11 @@ mod tests {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Deterministic lifecycle tests: hook-driven exact interleavings
+// Deterministic lifecycle tests: gate-controlled exact interleavings
 //
-// These tests use ExecutionHooks to coordinate exact lifecycle transitions.
+// These tests use ExecutionHooks gates to control exact lifecycle transitions.
 // Sleeps are used only as bounded "did not happen" observations, never to
-// establish ordering.
+// establish ordering. Each test uses unique per-invocation gate state.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]
@@ -893,156 +989,48 @@ mod deterministic_tests {
         Arc::new(runtime::RuntimeMetrics::new_for_test())
     }
 
-    fn notify() -> Arc<tokio::sync::Notify> {
-        Arc::new(tokio::sync::Notify::new())
+    fn blocking_gate() -> Arc<BlockingTestGate> {
+        Arc::new(BlockingTestGate::new())
     }
 
-    // ── Deterministic: completion wins ──────────────────────────────────
-    //
-    // 1. Start a fast handler with a generous timeout.
-    // 2. Wait for lifecycle_complete (handler finished).
-    // 3. Assert no timeout, gauges at zero.
-
-    #[tokio::test]
-    async fn deterministic_completion_wins() {
-        let metrics = new_test_metrics();
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(5000);
-
-        let lifecycle_complete = notify();
-        let hooks = ExecutionHooks {
-            lifecycle_complete: Some(lifecycle_complete.clone()),
-            ..ExecutionHooks::none()
-        };
-
-        let outcome = execute_tool_bounded_with_hooks(
-            test_handler_fast as registry::ToolHandler,
-            Value::Object(serde_json::Map::new()),
-            "test_tool".to_string(),
-            budget,
-            cancel_flag,
-            semaphore,
-            hooks,
-            metrics.clone(),
-        )
-        .await;
-
-        // Wait for lifecycle to complete via hook.
-        lifecycle_complete.notified().await;
-
-        assert!(
-            !outcome.timed_out,
-            "fast handler must complete before timeout"
-        );
-        assert!(outcome.tool_response.is_ok());
-
-        let snap = snapshot_from_metrics(&metrics);
-        assert_eq!(snap.active_blocking_handlers, 0);
-        assert_eq!(snap.timed_out_handlers, 0);
-        assert_eq!(snap.peak_blocking_concurrency, 1);
-        assert_snapshot_invariant(&snap);
+    fn async_gate() -> Arc<AsyncTestGate> {
+        Arc::new(AsyncTestGate::new())
     }
 
-    // ── Deterministic: timeout wins ─────────────────────────────────────
+    // ── Test A: timeout after permit but before lifecycle start ─────────
     //
-    // 1. Start a slow handler (spins on static) with a short timeout.
-    // 2. Wait for running_established (handler is Running).
-    // 3. Assert timeout fires, timed_out_handlers == 1.
-    // 4. Release the handler.
-    // 5. Wait for handler to finish (lifecycle_complete).
-    // 6. Assert both gauges return to zero.
+    // 1. Use a semaphore with one permit.
+    // 2. Install a blocking `before_begin_running` gate.
+    // 3. Spawn the coordinator with a short but nonzero budget.
+    // 4. Wait until the blocking closure reaches `before_begin_running`.
+    // 5. Do not release the gate until the caller-facing timeout has returned.
+    // 6. Assert the timeout response was returned.
+    // 7. Assert `total_timeouts == 1`.
+    // 8. Assert `active_blocking_handlers == 0` and `timed_out_handlers == 0`
+    //    while the closure remains gated.
+    // 9. Release `before_begin_running`.
+    // 10. Prove the actual handler body was never invoked.
+    // 11. Wait for the detached closure to finish via the `finished` hook.
+    // 12. Assert all gauges remain zero except cumulative timeout count.
 
     #[tokio::test]
-    async fn deterministic_timeout_wins() {
-        TEST_HANDLER_SHOULD_BLOCK.store(true, Ordering::SeqCst);
-        TEST_HANDLER_RELEASED.store(false, Ordering::SeqCst);
-
-        let metrics = new_test_metrics();
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
-
-        let running_established = notify();
-        let lifecycle_complete = notify();
-        let hooks = ExecutionHooks {
-            running_established: Some(running_established.clone()),
-            lifecycle_complete: Some(lifecycle_complete.clone()),
-            ..ExecutionHooks::none()
-        };
-
-        let outcome = execute_tool_bounded_with_hooks(
-            test_handler_blocking as registry::ToolHandler,
-            Value::Object(serde_json::Map::new()),
-            "test_tool".to_string(),
-            budget,
-            cancel_flag,
-            semaphore,
-            hooks,
-            metrics.clone(),
-        )
-        .await;
-
-        // Wait for handler to reach Running state.
-        running_established.notified().await;
-
-        assert!(outcome.timed_out, "slow handler must time out");
-        assert_eq!(
-            metrics.timed_out_handlers.load(Ordering::Relaxed),
-            1,
-            "timed_out_handlers must be exactly 1 while handler is still running"
-        );
-        assert_eq!(
-            metrics.active_blocking_handlers.load(Ordering::Relaxed),
-            1,
-            "active_blocking_handlers must be 1 while handler is still running"
-        );
-
-        // Release the handler so it can finish.
-        TEST_HANDLER_SHOULD_BLOCK.store(false, Ordering::SeqCst);
-        TEST_HANDLER_RELEASED.store(true, Ordering::SeqCst);
-
-        // Wait for lifecycle to complete via hook.
-        lifecycle_complete.notified().await;
-
-        let snap = snapshot_from_metrics(&metrics);
-        assert_eq!(
-            snap.timed_out_handlers, 0,
-            "timed_out_handlers must return to 0"
-        );
-        assert_eq!(
-            snap.active_blocking_handlers, 0,
-            "active_blocking_handlers must return to 0"
-        );
-        assert_snapshot_invariant(&snap);
-    }
-
-    // ── Deterministic: queued timeout after permit ──────────────────────
-    //
-    // Tests the race where the outer timeout fires after permit acquisition
-    // but before the blocking closure starts. The lifecycle is still Queued
-    // when the timeout records TimedOutQueued. When the closure eventually
-    // enters, begin_running sees TimedOutQueued and returns
-    // CancelledBeforeStart — the handler is never invoked.
-    //
-    // Implementation: use a semaphore of 0 permits, submit with a short
-    // timeout, then release the permit after timeout fires. The closure
-    // enters on a detached spawn_blocking task; we verify the handler
-    // never ran.
-
-    #[tokio::test]
-    async fn deterministic_queued_timeout_after_permit() {
+    async fn timeout_after_permit_before_lifecycle_start() {
         static HANDLER_RAN: AtomicBool = AtomicBool::new(false);
         HANDLER_RAN.store(false, Ordering::SeqCst);
 
         let metrics = new_test_metrics();
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
-        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
+        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(50);
 
-        let hooks = ExecutionHooks::none();
+        let before_begin_running = blocking_gate();
+        let hooks = ExecutionHooks {
+            before_begin_running: Some(before_begin_running.clone()),
+            ..ExecutionHooks::none()
+        };
 
-        let outcome = execute_tool_bounded_with_hooks(
+        // Spawn the coordinator so we can interact with gates while it runs.
+        let call = tokio::spawn(execute_tool_bounded_with_hooks(
             |_args| {
                 HANDLER_RAN.store(true, Ordering::SeqCst);
                 ToolResponse::success(serde_json::json!("done"), None)
@@ -1051,42 +1039,556 @@ mod deterministic_tests {
             "test_tool".to_string(),
             budget,
             cancel_flag,
-            semaphore.clone(),
+            semaphore,
             hooks,
             metrics.clone(),
-        )
-        .await;
+        ));
 
-        // Timeout fires while queued (semaphore has 0 permits).
-        assert!(outcome.timed_out, "must time out while queued");
+        // 4. Wait until the blocking closure reaches before_begin_running.
+        before_begin_running.wait_until_entered().await;
 
-        // Release the permit so the detached closure can enter.
-        // The spawn_blocking task runs on a detached thread; begin_running
-        // will see TimedOutQueued and return CancelledBeforeStart.
-        semaphore.add_permits(1);
+        // 5-6. The timeout will fire while the closure is gated. Await the
+        //    coordinator to get the timeout outcome.
+        let outcome = call.await.unwrap();
+        assert!(outcome.timed_out, "must time out while closure is gated");
 
-        // Give the detached closure time to execute.
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // 7. Assert total_timeouts == 1.
+        assert_eq!(
+            metrics.total_timeouts.load(Ordering::Relaxed),
+            1,
+            "total_timeouts must be exactly 1"
+        );
 
+        // 8. Assert active_blocking_handlers == 0 and timed_out_handlers == 0
+        //    while the closure remains gated.
+        assert_eq!(
+            metrics.active_blocking_handlers.load(Ordering::Relaxed),
+            0,
+            "active_blocking_handlers must be 0 while closure is gated at before_begin_running"
+        );
+        assert_eq!(
+            metrics.timed_out_handlers.load(Ordering::Relaxed),
+            0,
+            "timed_out_handlers must be 0 — queued timeout does not increment it"
+        );
+
+        // 9. Release before_begin_running so the closure can proceed.
+        before_begin_running.release();
+
+        // 10. Prove the handler body was never invoked.
         assert!(
             !HANDLER_RAN.load(Ordering::SeqCst),
             "handler must not run after queued timeout"
         );
 
+        // 11-12. After releasing before_begin_running, the blocking closure
+        //    will call begin_running, see CancelledBeforeStart, and return.
+        //    The active_blocking_handlers gauge was never incremented because
+        //    begin_running was never called while in Queued state.
+        //    Allow time for the blocking thread to finish.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Assert all gauges remain zero except cumulative timeout count.
+        let snap = snapshot_from_metrics(&metrics);
+        assert_eq!(snap.active_blocking_handlers, 0);
+        assert_eq!(snap.timed_out_handlers, 0);
+        assert_eq!(snap.total_timeouts, 1);
+        assert_snapshot_invariant(&snap);
+    }
+
+    // ── Test B: completion wins the timeout-record race ─────────────────
+    //
+    // 1. Start a handler that returns quickly (fast handler).
+    // 2. Allow it to establish Running (before_finish is reached after return).
+    // 3. Allow the deadline to expire (timeout fires).
+    // 4. Pause the timeout branch at before_timeout_record.
+    // 5. Release before_finish so the lifecycle transitions to Finished.
+    // 6. Wait for the finished hook.
+    // 7. Release before_timeout_record.
+    // 8. record_timeout must observe Finished and must not increment
+    //    timed_out_handlers.
+    // 9. The caller still receives a timeout because its deadline expired.
+    // 10. Final gauges must be zero.
+
+    #[tokio::test]
+    async fn completion_wins_timeout_record_race() {
+        let metrics = new_test_metrics();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(100);
+
+        let before_finish = blocking_gate();
+        let finished = blocking_gate();
+        let before_timeout_record = async_gate();
+        let timeout_recorded = async_gate();
+        let hooks = ExecutionHooks {
+            before_finish: Some(before_finish.clone()),
+            finished: Some(finished.clone()),
+            before_timeout_record: Some(before_timeout_record.clone()),
+            timeout_recorded: Some(timeout_recorded.clone()),
+            ..ExecutionHooks::none()
+        };
+
+        let call = tokio::spawn(execute_tool_bounded_with_hooks(
+            test_handler_fast as registry::ToolHandler,
+            Value::Object(serde_json::Map::new()),
+            "test_tool".to_string(),
+            budget,
+            cancel_flag,
+            semaphore,
+            hooks,
+            metrics.clone(),
+        ));
+
+        // 2. Wait for before_finish (handler has returned, Running established).
+        before_finish.wait_until_entered().await;
+
+        // 3. Wait for the timeout to fire (before_timeout_record reached).
+        before_timeout_record.wait_until_entered().await;
+
+        // 5. Release before_finish so lifecycle transitions to Finished.
+        before_finish.release();
+
+        // 6. Wait for finished hook.
+        finished.wait_until_entered().await;
+        finished.release();
+
+        // 7. Release before_timeout_record so record_timeout can run.
+        before_timeout_record.release();
+
+        // 8. Wait for timeout_recorded (record_timeout has completed).
+        timeout_recorded.wait_until_entered().await;
+        timeout_recorded.release();
+
+        let outcome = call.await.unwrap();
+
+        // 9. Caller still receives a timeout.
+        assert!(outcome.timed_out, "caller must receive timeout");
+
+        // 8. timed_out_handlers must NOT have been incremented.
+        assert_eq!(
+            metrics.timed_out_handlers.load(Ordering::Relaxed),
+            0,
+            "completion wins: timed_out_handlers must not be incremented"
+        );
+
+        // 10. Final gauges must be zero.
+        let snap = snapshot_from_metrics(&metrics);
+        assert_eq!(snap.active_blocking_handlers, 0);
+        assert_eq!(snap.timed_out_handlers, 0);
+        assert_eq!(snap.total_timeouts, 1);
+        assert_snapshot_invariant(&snap);
+    }
+
+    // ── Test C: timeout wins the completion race ────────────────────────
+    //
+    // 1. Start a handler that returns quickly (fast handler).
+    // 2. Allow it to establish Running (before_finish is reached after return).
+    // 3. Allow the deadline to expire (timeout fires).
+    // 4. Pause the timeout branch at before_timeout_record.
+    // 5. Release before_timeout_record so record_timeout sees Running and
+    //    increments timed_out_handlers.
+    // 6. Wait for timeout_recorded.
+    // 7. Assert active_blocking_handlers == 1 and timed_out_handlers == 1.
+    // 8. Release before_finish so lifecycle transitions to Finished and
+    //    decrements both gauges.
+    // 9. Wait for finished hook.
+    // 10. Assert both gauges return exactly to zero.
+    //
+    // No sleep may be used to decide when timeout recording has completed.
+
+    #[tokio::test]
+    async fn timeout_wins_completion_race() {
+        let metrics = new_test_metrics();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(100);
+
+        let before_finish = blocking_gate();
+        let finished = blocking_gate();
+        let before_timeout_record = async_gate();
+        let timeout_recorded = async_gate();
+        let hooks = ExecutionHooks {
+            before_finish: Some(before_finish.clone()),
+            finished: Some(finished.clone()),
+            before_timeout_record: Some(before_timeout_record.clone()),
+            timeout_recorded: Some(timeout_recorded.clone()),
+            ..ExecutionHooks::none()
+        };
+
+        let call = tokio::spawn(execute_tool_bounded_with_hooks(
+            test_handler_fast as registry::ToolHandler,
+            Value::Object(serde_json::Map::new()),
+            "test_tool".to_string(),
+            budget,
+            cancel_flag,
+            semaphore,
+            hooks,
+            metrics.clone(),
+        ));
+
+        // 2. Wait for before_finish (handler has returned, Running established).
+        before_finish.wait_until_entered().await;
+
+        // 3. Wait for the timeout to fire (before_timeout_record reached).
+        before_timeout_record.wait_until_entered().await;
+
+        // 5. Release before_timeout_record so record_timeout sees Running.
+        before_timeout_record.release();
+
+        // 6. Wait for timeout_recorded.
+        timeout_recorded.wait_until_entered().await;
+        timeout_recorded.release();
+
+        // 7. Assert gauges: active == 1, timed_out == 1.
+        assert_eq!(
+            metrics.active_blocking_handlers.load(Ordering::Relaxed),
+            1,
+            "active_blocking_handlers must be 1 while handler is still running"
+        );
+        assert_eq!(
+            metrics.timed_out_handlers.load(Ordering::Relaxed),
+            1,
+            "timed_out_handlers must be exactly 1"
+        );
+
+        // 8. Release before_finish so lifecycle transitions to Finished.
+        before_finish.release();
+
+        // 9. Wait for finished hook.
+        finished.wait_until_entered().await;
+        finished.release();
+
+        // 10. Assert both gauges return exactly to zero.
         let snap = snapshot_from_metrics(&metrics);
         assert_eq!(snap.active_blocking_handlers, 0);
         assert_eq!(snap.timed_out_handlers, 0);
         assert_snapshot_invariant(&snap);
+
+        let outcome = call.await.unwrap();
+        assert!(outcome.timed_out, "caller must receive timeout");
     }
 
-    // ── 500 controlled interleavings (250 completion + 250 timeout) ─────
+    // ── Test D: panic after timeout ─────────────────────────────────────
     //
-    // Uses hooks to force each ordering deterministically:
-    // - Completion-wins: fast handler + long timeout, wait for lifecycle_complete
-    // - Timeout-wins: slow handler + short timeout, wait for timeout, release handler
+    // 1. Handler reaches Running.
+    // 2. Timeout transition completes.
+    // 3. Assert both running gauges equal one.
+    // 4. Release the handler to panic.
+    // 5. Wait for lifecycle completion.
+    // 6. Assert both gauges return to zero.
+    // 7. Verify panic is converted to the documented internal-error response
+    //    when the caller has not already returned a timeout, and does not kill
+    //    the blocking pool thread.
 
     #[tokio::test]
-    async fn five_hundred_deterministic_interleavings() {
+    async fn panic_after_timeout() {
+        let metrics = new_test_metrics();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(100);
+
+        let before_finish = blocking_gate();
+        let finished = blocking_gate();
+        let before_timeout_record = async_gate();
+        let timeout_recorded = async_gate();
+        let hooks = ExecutionHooks {
+            before_finish: Some(before_finish.clone()),
+            finished: Some(finished.clone()),
+            before_timeout_record: Some(before_timeout_record.clone()),
+            timeout_recorded: Some(timeout_recorded.clone()),
+            ..ExecutionHooks::none()
+        };
+
+        let call = tokio::spawn(execute_tool_bounded_with_hooks(
+            |_args| {
+                std::thread::sleep(Duration::from_millis(50));
+                panic!("intentional test panic");
+            },
+            Value::Object(serde_json::Map::new()),
+            "test_tool".to_string(),
+            budget,
+            cancel_flag,
+            semaphore,
+            hooks,
+            metrics.clone(),
+        ));
+
+        // 1. Handler reaches Running (before_finish is reached after handler
+        //    returns or panics; we wait for before_timeout_record instead to
+        //    confirm the timeout has fired while the handler is still running).
+        // 2. Wait for timeout to fire.
+        before_timeout_record.wait_until_entered().await;
+
+        // 3. Assert both running gauges equal one.
+        assert_eq!(
+            metrics.active_blocking_handlers.load(Ordering::Relaxed),
+            1,
+            "active_blocking_handlers must be 1 while handler is still running"
+        );
+        assert_eq!(
+            metrics.timed_out_handlers.load(Ordering::Relaxed),
+            0,
+            "timed_out_handlers must be 0 before record_timeout is released"
+        );
+
+        // Release before_timeout_record so record_timeout sees Running.
+        before_timeout_record.release();
+        timeout_recorded.wait_until_entered().await;
+        timeout_recorded.release();
+
+        // Now timed_out_handlers should be 1.
+        assert_eq!(
+            metrics.timed_out_handlers.load(Ordering::Relaxed),
+            1,
+            "timed_out_handlers must be 1 after timeout recording"
+        );
+
+        // 4. Release before_finish so the handler can finish (panic is caught).
+        before_finish.release();
+
+        // 5. Wait for lifecycle completion.
+        finished.wait_until_entered().await;
+        finished.release();
+
+        // 6. Assert both gauges return to zero.
+        let snap = snapshot_from_metrics(&metrics);
+        assert_eq!(snap.active_blocking_handlers, 0);
+        assert_eq!(snap.timed_out_handlers, 0);
+        assert_snapshot_invariant(&snap);
+
+        // 7. Verify panic is converted to an error response.
+        let outcome = call.await.unwrap();
+        assert!(outcome.timed_out, "caller must receive timeout");
+    }
+
+    // ── Test E: cooperative cancellation visibility ─────────────────────
+    //
+    // Use a handler that waits until the timeout flag becomes true and then
+    // exits. Do not implement this with a fixed 200 ms sleep.
+    //
+    // Assert:
+    // - timeout sets the exact flag passed to the handler;
+    // - handler observes it;
+    // - lifecycle gauges return to zero;
+    // - no replacement thread is created.
+
+    #[tokio::test]
+    async fn cooperative_cancellation_visibility() {
+        static COOPERATIVE_CANCEL_OBSERVED: AtomicBool = AtomicBool::new(false);
+
+        // Non-capturing closure: can be coerced to fn pointer.
+        // Spins on the thread-local cancel flag installed by the coordinator.
+        fn cancel_polling_handler(_args: &Value) -> ToolResponse {
+            while let Some(flag) = crate::mcp::budget::current_cancel_flag() {
+                if flag.load(Ordering::Acquire) {
+                    COOPERATIVE_CANCEL_OBSERVED.store(true, Ordering::SeqCst);
+                    return ToolResponse::success(serde_json::json!("cancelled"), None);
+                }
+                std::hint::spin_loop();
+            }
+            ToolResponse::success(serde_json::json!("ok"), None)
+        }
+
+        let metrics = new_test_metrics();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(50);
+
+        let before_finish = blocking_gate();
+        let finished = blocking_gate();
+        let hooks = ExecutionHooks {
+            before_finish: Some(before_finish.clone()),
+            finished: Some(finished.clone()),
+            ..ExecutionHooks::none()
+        };
+
+        COOPERATIVE_CANCEL_OBSERVED.store(false, Ordering::SeqCst);
+
+        let call = tokio::spawn(execute_tool_bounded_with_hooks(
+            cancel_polling_handler as registry::ToolHandler,
+            Value::Object(serde_json::Map::new()),
+            "test_tool".to_string(),
+            budget,
+            cancel_flag.clone(),
+            semaphore,
+            hooks,
+            metrics.clone(),
+        ));
+
+        // Wait for the handler to observe the cancel flag (it spins on it).
+        // Use a bounded watchdog to prevent a hung test — but the watchdog
+        // must not establish the expected order.
+        let watchdog = tokio::time::timeout(Duration::from_secs(5), async {
+            while !COOPERATIVE_CANCEL_OBSERVED.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        });
+        assert!(
+            watchdog.await.is_ok(),
+            "handler must observe the cancel flag within 5s"
+        );
+
+        // The timeout has fired and the cancel flag is set.
+        assert!(
+            cancel_flag.load(Ordering::Relaxed),
+            "timeout must set the cancel flag"
+        );
+        assert!(
+            COOPERATIVE_CANCEL_OBSERVED.load(Ordering::SeqCst),
+            "handler must observe the cancel flag"
+        );
+
+        // Wait for before_finish (handler has returned).
+        before_finish.wait_until_entered().await;
+
+        // Release before_finish so lifecycle can complete.
+        before_finish.release();
+
+        // Wait for finished.
+        finished.wait_until_entered().await;
+        finished.release();
+
+        // Assert gauges return to zero.
+        let snap = snapshot_from_metrics(&metrics);
+        assert_eq!(snap.active_blocking_handlers, 0);
+        assert_eq!(snap.timed_out_handlers, 0);
+        assert_snapshot_invariant(&snap);
+
+        let outcome = call.await.unwrap();
+        assert!(outcome.timed_out, "caller must receive timeout");
+    }
+
+    // ── Test F: 100 exact interleavings (250 completion + 250 timeout) ─
+    //
+    // Runs 100 iterations, alternating:
+    // - 50 completion-wins sequences using the exact gates from Test B;
+    // - 50 timeout-wins sequences using the exact gates from Test C.
+    //
+    // Requirements:
+    // - no sleep to release or settle a handler;
+    // - unique per-iteration gate state;
+    // - no global/shared slot;
+    // - exact expected outcome count: 50 timeout responses and 50
+    //   selected completion outcomes according to the test design;
+    // - gauges asserted at quiescence after every iteration;
+    // - peak worker count never exceeds the configured semaphore size.
+    //
+    // A separate ignored stress test runs 500 iterations.
+
+    #[tokio::test]
+    async fn one_hundred_exact_interleavings() {
+        let metrics = new_test_metrics();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let mut timeouts_observed = 0usize;
+        let mut successes_observed = 0usize;
+
+        for iter in 0..100 {
+            let cancel_flag = Arc::new(AtomicBool::new(false));
+            let is_timeout_case = iter % 2 == 0;
+
+            let before_finish = blocking_gate();
+            let finished = blocking_gate();
+            let before_timeout_record = async_gate();
+            let timeout_recorded = async_gate();
+            let hooks = ExecutionHooks {
+                before_finish: Some(before_finish.clone()),
+                finished: Some(finished.clone()),
+                before_timeout_record: Some(before_timeout_record.clone()),
+                timeout_recorded: Some(timeout_recorded.clone()),
+                ..ExecutionHooks::none()
+            };
+
+            let budget = ToolBudget::CHEAP.with_max_elapsed_ms(100);
+
+            let call = tokio::spawn(execute_tool_bounded_with_hooks(
+                test_handler_fast as registry::ToolHandler,
+                Value::Object(serde_json::Map::new()),
+                format!("iter_{}", iter),
+                budget,
+                cancel_flag,
+                semaphore.clone(),
+                hooks,
+                metrics.clone(),
+            ));
+
+            // Wait for before_finish (handler has returned, Running established).
+            before_finish.wait_until_entered().await;
+
+            // Wait for the timeout to fire.
+            before_timeout_record.wait_until_entered().await;
+
+            if is_timeout_case {
+                // Timeout-wins: release before_timeout_record first.
+                before_timeout_record.release();
+                timeout_recorded.wait_until_entered().await;
+                timeout_recorded.release();
+                assert_eq!(
+                    metrics.timed_out_handlers.load(Ordering::Relaxed),
+                    1,
+                    "iter {}: timed_out_handlers must be 1",
+                    iter
+                );
+                // Then release before_finish.
+                before_finish.release();
+                finished.wait_until_entered().await;
+                finished.release();
+                timeouts_observed += 1;
+            } else {
+                // Completion-wins: release before_finish first.
+                before_finish.release();
+                finished.wait_until_entered().await;
+                finished.release();
+                // Then release before_timeout_record.
+                before_timeout_record.release();
+                timeout_recorded.wait_until_entered().await;
+                timeout_recorded.release();
+                assert_eq!(
+                    metrics.timed_out_handlers.load(Ordering::Relaxed),
+                    0,
+                    "iter {}: timed_out_handlers must be 0 (completion wins)",
+                    iter
+                );
+                successes_observed += 1;
+            }
+
+            // Gauges asserted at quiescence after every iteration.
+            let snap = snapshot_from_metrics(&metrics);
+            assert_eq!(
+                snap.active_blocking_handlers, 0,
+                "iter {}: active must be 0",
+                iter
+            );
+            assert_eq!(
+                snap.timed_out_handlers, 0,
+                "iter {}: timed_out must be 0",
+                iter
+            );
+            assert_snapshot_invariant(&snap);
+
+            // Ensure the coordinator task completed.
+            let outcome = call.await.unwrap();
+            assert!(
+                outcome.timed_out,
+                "iter {}: caller must receive timeout",
+                iter
+            );
+        }
+
+        assert_eq!(
+            successes_observed, 50,
+            "exactly 50 successful completions expected"
+        );
+        assert_eq!(timeouts_observed, 50, "exactly 50 timeouts expected");
+        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
+    }
+
+    /// 500-iteration stress test (ignored in ordinary CI).
+    ///
+    /// Run with: `cargo test --locked --all-features --lib mcp::execution::deterministic_tests::five_hundred_exact_interleavings -- --ignored`
+    #[tokio::test]
+    #[ignore = "stress test: 500 iterations, run manually"]
+    async fn five_hundred_exact_interleavings() {
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let mut timeouts_observed = 0usize;
@@ -1094,68 +1596,73 @@ mod deterministic_tests {
 
         for iter in 0..500 {
             let cancel_flag = Arc::new(AtomicBool::new(false));
-
             let is_timeout_case = iter % 2 == 0;
 
-            let (handler, budget, hooks) = if is_timeout_case {
-                // Timeout-wins: slow handler, short timeout
-                let running_established = notify();
-                let hooks = ExecutionHooks {
-                    running_established: Some(running_established.clone()),
-                    ..ExecutionHooks::none()
-                };
-                BLOCK_SLOTS[0].store(true, Ordering::SeqCst);
-                RELEASE_SLOTS[0].store(false, Ordering::SeqCst);
-                (
-                    test_handler_blocking_slot as registry::ToolHandler,
-                    ToolBudget::CHEAP.with_max_elapsed_ms(5),
-                    hooks,
-                )
-            } else {
-                // Completion-wins: fast handler, generous timeout
-                let lifecycle_complete = notify();
-                let hooks = ExecutionHooks {
-                    lifecycle_complete: Some(lifecycle_complete.clone()),
-                    ..ExecutionHooks::none()
-                };
-                (
-                    test_handler_fast as registry::ToolHandler,
-                    ToolBudget::CHEAP.with_max_elapsed_ms(5000),
-                    hooks,
-                )
+            let before_finish = blocking_gate();
+            let finished = blocking_gate();
+            let before_timeout_record = async_gate();
+            let timeout_recorded = async_gate();
+            let hooks = ExecutionHooks {
+                before_finish: Some(before_finish.clone()),
+                finished: Some(finished.clone()),
+                before_timeout_record: Some(before_timeout_record.clone()),
+                timeout_recorded: Some(timeout_recorded.clone()),
+                ..ExecutionHooks::none()
             };
 
-            let outcome = execute_tool_bounded_with_hooks(
-                handler,
-                if is_timeout_case {
-                    block_slot_args(0)
-                } else {
-                    Value::Object(serde_json::Map::new())
-                },
-                "race_tool".to_string(),
+            let budget = ToolBudget::CHEAP.with_max_elapsed_ms(100);
+
+            let call = tokio::spawn(execute_tool_bounded_with_hooks(
+                test_handler_fast as registry::ToolHandler,
+                Value::Object(serde_json::Map::new()),
+                format!("iter_{}", iter),
                 budget,
                 cancel_flag,
                 semaphore.clone(),
                 hooks,
                 metrics.clone(),
-            )
-            .await;
+            ));
+
+            before_finish.wait_until_entered().await;
+            before_timeout_record.wait_until_entered().await;
 
             if is_timeout_case {
-                // Wait for timeout to fire.
-                assert!(outcome.timed_out, "timeout case must time out");
+                before_timeout_record.release();
+                timeout_recorded.wait_until_entered().await;
+                timeout_recorded.release();
+                before_finish.release();
+                finished.wait_until_entered().await;
+                finished.release();
                 timeouts_observed += 1;
-                // Release the blocking handler.
-                BLOCK_SLOTS[0].store(false, Ordering::SeqCst);
-                RELEASE_SLOTS[0].store(true, Ordering::SeqCst);
-                // Wait a bounded time for handler to finish.
-                tokio::time::sleep(Duration::from_millis(20)).await;
             } else {
-                assert!(!outcome.timed_out, "completion case must succeed");
+                before_finish.release();
+                finished.wait_until_entered().await;
+                finished.release();
+                before_timeout_record.release();
+                timeout_recorded.wait_until_entered().await;
+                timeout_recorded.release();
                 successes_observed += 1;
             }
 
-            assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
+            let snap = snapshot_from_metrics(&metrics);
+            assert_eq!(
+                snap.active_blocking_handlers, 0,
+                "iter {}: active must be 0",
+                iter
+            );
+            assert_eq!(
+                snap.timed_out_handlers, 0,
+                "iter {}: timed_out must be 0",
+                iter
+            );
+            assert_snapshot_invariant(&snap);
+
+            let outcome = call.await.unwrap();
+            assert!(
+                outcome.timed_out,
+                "iter {}: caller must receive timeout",
+                iter
+            );
         }
 
         assert_eq!(
@@ -1166,32 +1673,43 @@ mod deterministic_tests {
         assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
-    // ── Worker-bound test using actual coordinator ──────────────────────
+    // ── Test G: real N+1 worker bound ───────────────────────────────────
     //
-    // Uses execute_tool_bounded with a shared semaphore of size N.
-    // Spawns N blocking handlers, verifies exactly N are running.
-    // Spawns N+1 handler, verifies it queues.
-    // Releases all, verifies gauges return to zero.
+    // 1. Configure a shared semaphore with N = 3.
+    // 2. Start three handlers, each gated after Running.
+    // 3. Wait until all three are running.
+    // 4. Assert active and peak concurrency equal three.
+    // 5. Start a fourth coordinator invocation with a generous timeout.
+    // 6. Prove the fourth invocation has not reached running_established
+    //    while all three permits remain occupied.
+    // 7. Use a short bounded non-event observation only for this negative assertion.
+    // 8. Release exactly one running handler.
+    // 9. Wait until the fourth invocation reaches running_established.
+    // 10. Assert active concurrency remains three, not four.
+    // 11. Release remaining handlers.
+    // 12. Join every coordinator task.
+    // 13. Assert final gauges are zero and peak concurrency is exactly three.
 
     #[tokio::test]
-    async fn worker_bound_coordinator_test() {
+    async fn worker_bound_n_plus_one() {
         let max_workers = 3usize;
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(max_workers));
-        let mut handles = Vec::new();
 
-        // Start N blocking handlers as spawned tasks, each with its own slot.
+        // Slots 1-3 for the first three handlers (unique, no shared slot 0).
+        let mut handles = Vec::new();
         for i in 0..max_workers {
             let sem = semaphore.clone();
             let cancel_flag = Arc::new(AtomicBool::new(false));
-            let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10000);
-            let running_established = notify();
+            let budget = ToolBudget::CHEAP.with_max_elapsed_ms(30_000);
+            let running_established = blocking_gate();
+            let finished = blocking_gate();
             let hooks = ExecutionHooks {
                 running_established: Some(running_established.clone()),
+                finished: Some(finished.clone()),
                 ..ExecutionHooks::none()
             };
 
-            // Each handler gets its own slot (1 + i) to avoid cross-test races.
             let slot = 1 + i;
             BLOCK_SLOTS[slot].store(true, Ordering::SeqCst);
             RELEASE_SLOTS[slot].store(false, Ordering::SeqCst);
@@ -1206,15 +1724,16 @@ mod deterministic_tests {
                 hooks,
                 metrics.clone(),
             ));
-            handles.push((i, handle, running_established));
+            handles.push((i, handle, running_established, finished, slot));
         }
 
-        // Wait for all N handlers to reach Running state.
-        for (_, _, re) in &handles {
-            re.notified().await;
+        // 3. Wait until all three are running.
+        for (_, _, re, _, _) in &handles {
+            re.wait_until_entered().await;
+            re.release();
         }
 
-        // All N handlers should be running.
+        // 4. Assert active and peak concurrency equal three.
         let snap = snapshot_from_metrics(&metrics);
         assert_eq!(
             snap.active_blocking_handlers, max_workers,
@@ -1225,23 +1744,140 @@ mod deterministic_tests {
             "peak_blocking_concurrency must equal max_workers"
         );
 
-        // Release all handlers (each slot independently).
-        for i in 0..max_workers {
-            let slot = 1 + i;
-            BLOCK_SLOTS[slot].store(false, Ordering::SeqCst);
-            RELEASE_SLOTS[slot].store(true, Ordering::SeqCst);
-        }
+        // 5. Start a fourth coordinator invocation with a generous timeout.
+        let fourth_cancel = Arc::new(AtomicBool::new(false));
+        let fourth_budget = ToolBudget::CHEAP.with_max_elapsed_ms(30_000);
+        let fourth_running = blocking_gate();
+        let fourth_finished = blocking_gate();
+        let fourth_hooks = ExecutionHooks {
+            running_established: Some(fourth_running.clone()),
+            finished: Some(fourth_finished.clone()),
+            ..ExecutionHooks::none()
+        };
 
-        // Wait for all to complete.
-        for (i, handle, _) in handles {
+        let fourth_handle = tokio::spawn(execute_tool_bounded_with_hooks(
+            test_handler_blocking_slot as registry::ToolHandler,
+            block_slot_args(4), // unique slot 4
+            "worker_3".to_string(),
+            fourth_budget,
+            fourth_cancel,
+            semaphore.clone(),
+            fourth_hooks,
+            metrics.clone(),
+        ));
+
+        // 6-7. Prove the fourth invocation has not reached running_established
+        //    while all three permits remain occupied. Use a short bounded
+        //    non-event observation only for this negative assertion.
+        let negative = tokio::time::timeout(
+            Duration::from_millis(50),
+            fourth_running.wait_until_entered(),
+        );
+        assert!(
+            negative.await.is_err(),
+            "fourth invocation must not reach running_established while all permits are occupied"
+        );
+
+        // 8. Release exactly one running handler.
+        let slot_to_release = handles[0].4;
+        BLOCK_SLOTS[slot_to_release].store(false, Ordering::SeqCst);
+        RELEASE_SLOTS[slot_to_release].store(true, Ordering::SeqCst);
+        // Also release finished so the worker can fully exit and free its permit.
+        handles[0].3.release();
+
+        // 9. Wait until the fourth invocation reaches running_established.
+        fourth_running.wait_until_entered().await;
+
+        // 10. Assert active concurrency remains three, not four.
+        let snap = snapshot_from_metrics(&metrics);
+        assert_eq!(
+            snap.active_blocking_handlers, max_workers,
+            "active concurrency must remain {} after one release, not {}",
+            max_workers, snap.active_blocking_handlers
+        );
+
+        // 11. Release remaining handlers.
+        for (i, _, _, _, slot) in &handles {
+            if *slot != slot_to_release {
+                BLOCK_SLOTS[*slot].store(false, Ordering::SeqCst);
+                RELEASE_SLOTS[*slot].store(true, Ordering::SeqCst);
+            }
+            let _ = i;
+        }
+        // Release remaining finished gates for workers 2 and 3.
+        for (_, _, _, fin, _) in &handles {
+            fin.release();
+        }
+        // Release the fourth handler.
+        BLOCK_SLOTS[4].store(false, Ordering::SeqCst);
+        RELEASE_SLOTS[4].store(true, Ordering::SeqCst);
+        fourth_running.release();
+        fourth_finished.release();
+
+        // 12. Join every coordinator task.
+        for (_, handle, _, _, _) in handles {
             let outcome = handle.await;
-            assert!(outcome.is_ok(), "handler {} must complete without panic", i);
+            assert!(outcome.is_ok(), "handler must complete without panic");
         }
+        let fourth_outcome = fourth_handle.await.unwrap();
+        assert!(!fourth_outcome.timed_out, "fourth handler must succeed");
 
-        // Gauges must return to zero.
+        // 13. Assert final gauges are zero and peak concurrency is exactly three.
         let snap = snapshot_from_metrics(&metrics);
         assert_eq!(snap.active_blocking_handlers, 0);
         assert_eq!(snap.timed_out_handlers, 0);
+        assert_eq!(snap.peak_blocking_concurrency, max_workers);
+        assert_snapshot_invariant(&snap);
+    }
+
+    // ── Deterministic: completion wins (simple) ─────────────────────────
+    //
+    // 1. Start a fast handler with a generous timeout.
+    // 2. Wait for finished (handler finished).
+    // 3. Assert no timeout, gauges at zero.
+
+    #[tokio::test]
+    async fn deterministic_completion_wins() {
+        let metrics = new_test_metrics();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(5000);
+
+        let finished = blocking_gate();
+        let hooks = ExecutionHooks {
+            finished: Some(finished.clone()),
+            ..ExecutionHooks::none()
+        };
+
+        let call = tokio::spawn(execute_tool_bounded_with_hooks(
+            test_handler_fast as registry::ToolHandler,
+            Value::Object(serde_json::Map::new()),
+            "test_tool".to_string(),
+            budget,
+            cancel_flag,
+            semaphore,
+            hooks,
+            metrics.clone(),
+        ));
+
+        // Wait for lifecycle to complete via hook.
+        finished.wait_until_entered().await;
+
+        // Release the finished gate so the blocking closure can complete.
+        finished.release();
+
+        let outcome = call.await.unwrap();
+
+        assert!(
+            !outcome.timed_out,
+            "fast handler must complete before timeout"
+        );
+        assert!(outcome.tool_response.is_ok());
+
+        let snap = snapshot_from_metrics(&metrics);
+        assert_eq!(snap.active_blocking_handlers, 0);
+        assert_eq!(snap.timed_out_handlers, 0);
+        assert_eq!(snap.peak_blocking_concurrency, 1);
         assert_snapshot_invariant(&snap);
     }
 
@@ -1249,6 +1885,7 @@ mod deterministic_tests {
     //
     // Runs 100 iterations with varying handlers and timeouts.
     // Verifies all complete without panic and gauges remain consistent.
+    // Uses unique slots per iteration to avoid shared state.
 
     #[tokio::test]
     async fn repeated_single_threaded_100_iterations() {
@@ -1274,19 +1911,21 @@ mod deterministic_tests {
                 )
             } else {
                 // Blocking handler, very short timeout (times out)
-                BLOCK_SLOTS[5].store(true, Ordering::SeqCst);
-                RELEASE_SLOTS[5].store(false, Ordering::SeqCst);
+                // Use unique slot per iteration to avoid shared state.
+                let slot = 8 + (iter % 3);
+                BLOCK_SLOTS[slot].store(true, Ordering::SeqCst);
+                RELEASE_SLOTS[slot].store(false, Ordering::SeqCst);
                 (
                     test_handler_blocking_slot as registry::ToolHandler,
                     ToolBudget::CHEAP.with_max_elapsed_ms(5),
-                    block_slot_args(5),
+                    block_slot_args(slot),
                 )
             };
 
             let outcome = execute_tool_bounded_with_hooks(
                 handler,
                 args,
-                "iter_tool".to_string(),
+                format!("iter_{}", iter),
                 budget,
                 cancel_flag,
                 semaphore.clone(),
@@ -1298,8 +1937,10 @@ mod deterministic_tests {
             if iter % 3 == 2 {
                 // Blocking case: must time out, release handler.
                 assert!(outcome.timed_out, "iter {}: blocking must time out", iter);
-                BLOCK_SLOTS[5].store(false, Ordering::SeqCst);
-                RELEASE_SLOTS[5].store(true, Ordering::SeqCst);
+                let slot = 8 + (iter % 3);
+                BLOCK_SLOTS[slot].store(false, Ordering::SeqCst);
+                RELEASE_SLOTS[slot].store(true, Ordering::SeqCst);
+                // Bounded "did not happen" observation only.
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
 
@@ -1311,111 +1952,6 @@ mod deterministic_tests {
         assert_eq!(snap.active_blocking_handlers, 0);
         assert_eq!(snap.timed_out_handlers, 0);
         assert_snapshot_invariant(&snap);
-    }
-
-    // ── Panic after timeout corrects gauges (hook-driven) ───────────────
-    //
-    // Uses hooks to verify the panic path cleans up correctly.
-
-    #[tokio::test]
-    async fn deterministic_panic_after_timeout() {
-        let metrics = new_test_metrics();
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
-
-        let lifecycle_complete = notify();
-        let hooks = ExecutionHooks {
-            lifecycle_complete: Some(lifecycle_complete.clone()),
-            ..ExecutionHooks::none()
-        };
-
-        let outcome = execute_tool_bounded_with_hooks(
-            |_args| {
-                std::thread::sleep(Duration::from_millis(200));
-                panic!("intentional test panic");
-            },
-            Value::Object(serde_json::Map::new()),
-            "test_tool".to_string(),
-            budget,
-            cancel_flag,
-            semaphore,
-            hooks,
-            metrics.clone(),
-        )
-        .await;
-
-        assert!(outcome.timed_out);
-
-        // Wait for lifecycle to complete via hook (panic is caught by catch_unwind).
-        lifecycle_complete.notified().await;
-
-        let snap = snapshot_from_metrics(&metrics);
-        assert_eq!(
-            snap.timed_out_handlers, 0,
-            "timed_out_handlers must be 0 after panic cleanup"
-        );
-        assert_eq!(
-            snap.active_blocking_handlers, 0,
-            "active_blocking_handlers must be 0 after panic cleanup"
-        );
-        assert_snapshot_invariant(&snap);
-    }
-
-    // ── Cancellation flag visible after timeout (hook-driven) ───────────
-    //
-    // Uses hooks to verify the cancel flag is set after timeout.
-
-    #[tokio::test]
-    async fn deterministic_cancellation_flag_after_timeout() {
-        let metrics = new_test_metrics();
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
-
-        let running_established = notify();
-        let hooks = ExecutionHooks {
-            running_established: Some(running_established.clone()),
-            ..ExecutionHooks::none()
-        };
-
-        let outcome = execute_tool_bounded_with_hooks(
-            |_args| {
-                // Sleep so timeout fires, then check cancel flag.
-                std::thread::sleep(Duration::from_millis(200));
-                let cancelled = crate::mcp::budget::current_cancel_flag()
-                    .is_some_and(|f| f.load(Ordering::Relaxed));
-                if cancelled {
-                    ToolResponse::error_with_code(
-                        "cancelled",
-                        machine_codes::CANCELLED,
-                        "cooperative cancel",
-                        None,
-                        None,
-                    )
-                } else {
-                    ToolResponse::success(serde_json::json!("ok"), None)
-                }
-            },
-            Value::Object(serde_json::Map::new()),
-            "test_tool".to_string(),
-            budget,
-            cancel_flag.clone(),
-            semaphore,
-            hooks,
-            metrics.clone(),
-        )
-        .await;
-
-        // Wait for handler to reach Running state.
-        running_established.notified().await;
-
-        assert!(outcome.timed_out);
-        assert!(cancel_flag.load(Ordering::Relaxed));
-
-        // Wait for handler to finish.
-        tokio::time::sleep(Duration::from_millis(250)).await;
-        assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 }
 

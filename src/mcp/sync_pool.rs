@@ -102,14 +102,7 @@ impl SyncExecutionPool {
             std::sync::mpsc::TrySendError::Disconnected(_) => SyncPoolError::Shutdown,
         })?;
 
-        match reply_rx.recv_timeout(timeout) {
-            Ok(response) => Ok(response),
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                cancel_flag.store(true, Ordering::SeqCst);
-                Err(SyncPoolError::Timeout)
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(SyncPoolError::Shutdown),
-        }
+        wait_for_reply(&reply_rx, timeout, &cancel_flag)
     }
 
     /// Return the number of worker threads in this pool.
@@ -221,6 +214,27 @@ impl SyncPoolError {
                 Some(tool_name),
             ),
         }
+    }
+}
+
+/// Wait for a worker reply and classify the outcome.
+///
+/// On timeout, sets the cancellation flag before returning `SyncPoolError::Timeout`
+/// so the handler (if still running or queued) can observe the cancellation and
+/// exit early. On disconnected sender, returns `SyncPoolError::Shutdown` without
+/// setting the flag (the pool channel has shut down, not this invocation).
+fn wait_for_reply(
+    reply_rx: &Receiver<ToolResponse>,
+    timeout: Duration,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<ToolResponse, SyncPoolError> {
+    match reply_rx.recv_timeout(timeout) {
+        Ok(response) => Ok(response),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            cancel_flag.store(true, Ordering::SeqCst);
+            Err(SyncPoolError::Timeout)
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(SyncPoolError::Shutdown),
     }
 }
 
@@ -759,18 +773,61 @@ mod tests {
         );
     }
 
-    #[test]
-    fn recv_timeout_disconnected_returns_error() {
-        use std::sync::mpsc::RecvTimeoutError;
+    // ── wait_for_reply classification tests ──────────────────────────
 
-        let (tx, rx) = sync_channel::<ToolResponse>(1);
-        drop(tx);
-        let result = rx.recv_timeout(Duration::from_secs(1));
+    #[test]
+    fn wait_for_reply_success_returns_response() {
+        let (tx, rx) = sync_channel(1);
+        let flag = Arc::new(AtomicBool::new(false));
+        tx.send(ToolResponse::success(serde_json::json!("ok"), Some("test")))
+            .unwrap();
+        let result = wait_for_reply(&rx, Duration::from_secs(1), &flag);
+        assert!(result.is_ok());
+        assert!(result.unwrap().ok);
         assert!(
-            matches!(result, Err(RecvTimeoutError::Disconnected)),
-            "dropped sender must produce Disconnected, got {:?}",
+            !flag.load(Ordering::SeqCst),
+            "flag must not be set on success"
+        );
+    }
+
+    #[test]
+    fn wait_for_reply_timeout_sets_cancel_flag() {
+        let (_tx, rx) = sync_channel::<ToolResponse>(1);
+        let flag = Arc::new(AtomicBool::new(false));
+        let result = wait_for_reply(&rx, Duration::from_millis(10), &flag);
+        assert!(
+            matches!(result, Err(SyncPoolError::Timeout)),
+            "expected Timeout, got {:?}",
             result
         );
+        assert!(flag.load(Ordering::SeqCst), "flag must be set on timeout");
+    }
+
+    #[test]
+    fn wait_for_reply_disconnected_returns_shutdown() {
+        let (tx, rx) = sync_channel::<ToolResponse>(1);
+        let flag = Arc::new(AtomicBool::new(false));
+        drop(tx);
+        let result = wait_for_reply(&rx, Duration::from_secs(1), &flag);
+        assert!(
+            matches!(result, Err(SyncPoolError::Shutdown)),
+            "expected Shutdown, got {:?}",
+            result
+        );
+        assert!(
+            !flag.load(Ordering::SeqCst),
+            "flag must NOT be set on disconnected shutdown"
+        );
+    }
+
+    #[test]
+    fn wait_for_reply_timeout_with_sender_retained_sets_cancel() {
+        let (_tx, rx) = sync_channel::<ToolResponse>(1);
+        let flag = Arc::new(AtomicBool::new(false));
+        let result = wait_for_reply(&rx, Duration::from_millis(5), &flag);
+        assert!(matches!(result, Err(SyncPoolError::Timeout)));
+        assert!(flag.load(Ordering::SeqCst));
+        // Sender is still alive — this is a timeout, not shutdown.
     }
 
     #[test]

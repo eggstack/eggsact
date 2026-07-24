@@ -986,62 +986,27 @@ impl ToolRegistry {
             ));
         }
 
-        // 5. Get cancel flag, clone eval context, submit to pool with
-        //    transactional commit slot. The worker writes the (possibly
-        //    modified) eval_ctx into the slot. On success (response.ok
-        //    AND cancellation flag still false), we commit it back to the
-        //    caller. On timeout/cancellation/saturation/tool-failure, the
-        //    slot is never read — late worker writes go to the detached
-        //    slot and are silently discarded.
+        // 5. Get cancel flag and delegate to the shared commit-slot helper.
+        //    On success (response.ok AND cancellation flag still false), the
+        //    worker's eval_ctx is committed back to the caller. On timeout,
+        //    cancellation, saturation, or tool-failure, the slot is never
+        //    read — late worker writes go to the detached slot and are
+        //    silently discarded.
         let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
-        let args_clone = args.clone();
-        let eval_ctx_clone = ctx.eval_ctx.clone();
         let cancel_flag = ctx
             .cancellation
             .clone()
             .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
-        let handler_cancel = cancel_flag.clone();
-        let commit_cancel = cancel_flag.clone();
-        let commit_slot: Arc<Mutex<Option<EvalContext>>> = Arc::new(Mutex::new(None));
-        let commit_slot_clone = commit_slot.clone();
-        let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
-            move || {
-                budget::with_cancel_flag(Some(handler_cancel), || {
-                    let mut eval_ctx = eval_ctx_clone;
-                    let resp = crate::mcp::budget::with_eval_context(&mut eval_ctx, || {
-                        handler(&args_clone)
-                    });
-                    // Write the worker-local context into the result slot.
-                    // On timeout, nobody reads this — the slot is dropped.
-                    if let Ok(mut slot) = commit_slot_clone.lock() {
-                        *slot = Some(eval_ctx);
-                    }
-                    resp
-                })
-            },
-            timeout,
+
+        execute_handler_with_commit_slot(
+            handler,
+            args,
+            &mut ctx.eval_ctx,
             cancel_flag,
-        );
-        match result {
-            Ok(mut response) => {
-                truncate_response(&mut response, &effective_budget);
-                // Commit only when the tool succeeded (response.ok) AND
-                // the cancellation flag is still false. Tool-level failures
-                // (ok=false), cancellation, and timeout all leave caller
-                // context unchanged.
-                let commit_allowed =
-                    response.ok && !commit_cancel.load(std::sync::atomic::Ordering::Acquire);
-                if commit_allowed {
-                    if let Ok(mut slot) = commit_slot.lock() {
-                        if let Some(worker_ctx) = slot.take() {
-                            ctx.eval_ctx = worker_ctx;
-                        }
-                    }
-                }
-                Ok(response)
-            }
-            Err(pool_error) => Ok(pool_error.to_tool_response(name)),
-        }
+            timeout,
+            &effective_budget,
+            name,
+        )
     }
 
     /// Call a tool and return only the result `Value`, or `null` on error.
@@ -1077,6 +1042,66 @@ impl Default for ToolRegistry {
 /// with any tool-specific overrides from the budget module.
 fn budget_for_tool_resolved(name: &str, spec: &ToolSpec) -> ToolBudget {
     budget::budget_for_tool(name, spec.cost)
+}
+
+/// Execute a handler with commit/rollback semantics through the sync pool.
+///
+/// The handler runs in the sync pool with a commit slot. On success
+/// (`response.ok && cancel flag is still false`), the worker's `eval_ctx`
+/// is committed back to the caller. On failure, cancellation, timeout,
+/// or pool saturation, the slot is never read — late worker writes go
+/// to the detached slot and are silently discarded.
+///
+/// This is the shared production helper used by both
+/// `call_json_with_execution_context_mut` and the mutable-context tests.
+/// Tests must call this helper, not reproduce its body.
+fn execute_handler_with_commit_slot(
+    handler: registry::ToolHandler,
+    args: Value,
+    eval_ctx: &mut EvalContext,
+    cancel_flag: Arc<AtomicBool>,
+    timeout: Duration,
+    effective_budget: &ToolBudget,
+    tool_name: &str,
+) -> Result<ToolResponse, ToolCallError> {
+    let args_clone = args.clone();
+    let eval_ctx_clone = eval_ctx.clone();
+    let handler_cancel = cancel_flag.clone();
+    let commit_cancel = cancel_flag.clone();
+    let commit_slot: Arc<Mutex<Option<EvalContext>>> = Arc::new(Mutex::new(None));
+    let commit_slot_clone = commit_slot.clone();
+
+    let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
+        move || {
+            budget::with_cancel_flag(Some(handler_cancel), || {
+                let mut worker_ctx = eval_ctx_clone;
+                let resp = budget::with_eval_context(&mut worker_ctx, || handler(&args_clone));
+                if let Ok(mut slot) = commit_slot_clone.lock() {
+                    *slot = Some(worker_ctx);
+                }
+                resp
+            })
+        },
+        timeout,
+        cancel_flag,
+    );
+
+    match result {
+        Ok(mut response) => {
+            truncate_response(&mut response, effective_budget);
+            let commit_allowed =
+                response.ok && !commit_cancel.load(std::sync::atomic::Ordering::Acquire);
+            if commit_allowed {
+                if let Ok(mut slot) = commit_slot.lock() {
+                    if let Some(worker_ctx) = slot.take() {
+                        *eval_ctx = worker_ctx;
+                    }
+                }
+            }
+            Ok(response)
+        }
+        Err(pool_error) => Ok(pool_error.to_tool_response(tool_name)),
+    }
 }
 
 /// Re-export budget types for convenience.
@@ -1977,10 +2002,12 @@ mod tests {
     // `ctx.memory_registers` — then verify the commit-slot predicate
     // (`response.ok && !cancel_flag`) by checking whether `recall(99)`
     // returns 42 after the call.
+    //
+    // All tests delegate to the shared production helper
+    // `execute_handler_with_commit_slot` — no test helper reproduces
+    // the commit-slot algorithm.
 
-    /// Helper: run a custom handler through the commit-slot logic
-    /// without going through the registry lookup. Mirrors the exact code
-    /// path in `call_json_with_execution_context_mut`.
+    /// Thin wrapper that calls the shared production helper.
     fn execute_with_commit_slot(
         handler: crate::mcp::registry::ToolHandler,
         args: serde_json::Value,
@@ -1988,51 +2015,15 @@ mod tests {
         cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
         timeout: std::time::Duration,
     ) -> Result<crate::mcp::response::ToolResponse, ToolCallError> {
-        use crate::mcp::budget;
-        use crate::mcp::sync_pool::sync_pool;
-        use std::sync::atomic::Ordering;
-
-        let handler_cancel = cancel_flag.clone();
-        let commit_cancel = cancel_flag.clone();
-        let commit_slot: std::sync::Arc<std::sync::Mutex<Option<crate::calc::EvalContext>>> =
-            std::sync::Arc::new(std::sync::Mutex::new(None));
-        let commit_slot_clone = commit_slot.clone();
-        let eval_ctx_clone = eval_ctx.clone();
-        let args_clone = args.clone();
-
-        let result = sync_pool().submit_cancellable(
-            move || {
-                budget::with_cancel_flag(Some(handler_cancel), || {
-                    let mut eval_ctx = eval_ctx_clone;
-                    let resp = budget::with_eval_context(&mut eval_ctx, || handler(&args_clone));
-                    if let Ok(mut slot) = commit_slot_clone.lock() {
-                        *slot = Some(eval_ctx);
-                    }
-                    resp
-                })
-            },
-            timeout,
+        super::execute_handler_with_commit_slot(
+            handler,
+            args,
+            eval_ctx,
             cancel_flag,
-        );
-
-        match result {
-            Ok(mut response) => {
-                crate::mcp::response::truncate_response(
-                    &mut response,
-                    &crate::mcp::budget::ToolBudget::CHEAP,
-                );
-                let commit_allowed = response.ok && !commit_cancel.load(Ordering::Acquire);
-                if commit_allowed {
-                    if let Ok(mut slot) = commit_slot.lock() {
-                        if let Some(worker_ctx) = slot.take() {
-                            *eval_ctx = worker_ctx;
-                        }
-                    }
-                }
-                Ok(response)
-            }
-            Err(pool_error) => Ok(pool_error.to_tool_response("test_tool")),
-        }
+            timeout,
+            &crate::mcp::budget::ToolBudget::CHEAP,
+            "test_tool",
+        )
     }
 
     #[test]
