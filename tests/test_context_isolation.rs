@@ -1550,10 +1550,14 @@ fn test_mut_ctx_successful_handler_math_eval_clones() {
     // If pool saturated, this is acceptable under concurrent test load
 }
 
-// WS5-7: cancellation flag is set and visible.
+// WS5-7: cancellation flag is passed through the public wrapper.
+//
+// This is a timing-based smoke test: the process-wide pool may be saturated by
+// unrelated integration tests, in which case a valid timeout or resource
+// exhaustion response is expected instead of a fast success.
 #[test]
 #[allow(deprecated)]
-fn test_mut_ctx_cancellation_flag_visible() {
+fn test_mut_ctx_cancellation_flag_visible_smoke() {
     let registry = ToolRegistry::with_profile(Profile::Full);
     let mut ctx = ExecutionContext::test_default();
     let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -1561,20 +1565,30 @@ fn test_mut_ctx_cancellation_flag_visible() {
 
     ctx = ctx.with_budget(ToolBudget::CHEAP.with_max_elapsed_ms(5000));
 
-    // math_eval is fast, so the flag won't be set during execution.
-    // But we can verify the flag was passed to the pool.
+    // math_eval is normally fast, so a successful call should not set the
+    // flag. Under ordinary integration-test contention, the bounded pool may
+    // instead return timeout or resource exhaustion; those are valid outcomes
+    // for this smoke test and are not evidence of handler execution.
     let result = registry.call_json_with_execution_context_mut(
         "math_eval",
         serde_json::json!({"expression": "1 + 1"}),
         &mut ctx,
     );
 
-    // The flag should not be set for a fast, successful call
-    assert!(
-        !cancel_flag.load(Ordering::SeqCst),
-        "cancel flag should not be set for fast successful call"
-    );
-    let _ = result;
+    let response = result.expect("math_eval policy preparation should succeed");
+    if response.ok {
+        assert!(
+            !cancel_flag.load(Ordering::SeqCst),
+            "cancel flag should not be set for fast successful call"
+        );
+    } else {
+        assert!(
+            response.machine_code.as_deref() == Some("TIMEOUT")
+                || response.machine_code.as_deref() == Some("RESOURCE_EXHAUSTED"),
+            "unexpected smoke-test response: {:?}",
+            response.machine_code
+        );
+    }
 }
 
 // WS5-8: pool saturation leaves context unchanged.
