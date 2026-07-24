@@ -171,7 +171,47 @@ impl ExecutionHooks {
 // Since `ToolHandler` is `fn(&Value) -> ToolResponse` (function pointer),
 // closures that capture state cannot be used. Tests communicate with
 // handlers via static atomics.
+//
+// Each test gets its own slot via `args["_block_slot"]` to avoid
+// cross-test interference when tests run in parallel. The old shared
+// `TEST_HANDLER_SHOULD_BLOCK`/`TEST_HANDLER_RELEASED` statics are
+// replaced by per-slot arrays.
 
+#[cfg(test)]
+const TEST_BLOCK_SLOTS: usize = 8;
+
+#[cfg(test)]
+static BLOCK_SLOTS: [AtomicBool; TEST_BLOCK_SLOTS] =
+    [const { AtomicBool::new(false) }; TEST_BLOCK_SLOTS];
+
+#[cfg(test)]
+static RELEASE_SLOTS: [AtomicBool; TEST_BLOCK_SLOTS] =
+    [const { AtomicBool::new(false) }; TEST_BLOCK_SLOTS];
+
+#[cfg(test)]
+fn test_handler_blocking_slot(args: &Value) -> ToolResponse {
+    let slot = args
+        .get("_block_slot")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as usize
+        % TEST_BLOCK_SLOTS;
+    while BLOCK_SLOTS[slot].load(Ordering::SeqCst) {
+        if RELEASE_SLOTS[slot].load(Ordering::SeqCst) {
+            break;
+        }
+        std::hint::spin_loop();
+    }
+    ToolResponse::success(serde_json::json!("ok"), None)
+}
+
+#[cfg(test)]
+fn block_slot_args(slot: usize) -> Value {
+    serde_json::json!({ "_block_slot": slot })
+}
+
+/// Legacy shared statics — retained only for tests that don't need
+/// parallel isolation (single-handler hook-driven tests). Prefer
+/// `test_handler_blocking_slot` for new tests.
 #[cfg(test)]
 static TEST_HANDLER_SHOULD_BLOCK: AtomicBool = AtomicBool::new(false);
 
@@ -1054,8 +1094,6 @@ mod deterministic_tests {
 
         for iter in 0..500 {
             let cancel_flag = Arc::new(AtomicBool::new(false));
-            TEST_HANDLER_SHOULD_BLOCK.store(false, Ordering::SeqCst);
-            TEST_HANDLER_RELEASED.store(false, Ordering::SeqCst);
 
             let is_timeout_case = iter % 2 == 0;
 
@@ -1066,9 +1104,10 @@ mod deterministic_tests {
                     running_established: Some(running_established.clone()),
                     ..ExecutionHooks::none()
                 };
-                TEST_HANDLER_SHOULD_BLOCK.store(true, Ordering::SeqCst);
+                BLOCK_SLOTS[0].store(true, Ordering::SeqCst);
+                RELEASE_SLOTS[0].store(false, Ordering::SeqCst);
                 (
-                    test_handler_blocking as registry::ToolHandler,
+                    test_handler_blocking_slot as registry::ToolHandler,
                     ToolBudget::CHEAP.with_max_elapsed_ms(5),
                     hooks,
                 )
@@ -1088,7 +1127,11 @@ mod deterministic_tests {
 
             let outcome = execute_tool_bounded_with_hooks(
                 handler,
-                Value::Object(serde_json::Map::new()),
+                if is_timeout_case {
+                    block_slot_args(0)
+                } else {
+                    Value::Object(serde_json::Map::new())
+                },
                 "race_tool".to_string(),
                 budget,
                 cancel_flag,
@@ -1103,8 +1146,8 @@ mod deterministic_tests {
                 assert!(outcome.timed_out, "timeout case must time out");
                 timeouts_observed += 1;
                 // Release the blocking handler.
-                TEST_HANDLER_SHOULD_BLOCK.store(false, Ordering::SeqCst);
-                TEST_HANDLER_RELEASED.store(true, Ordering::SeqCst);
+                BLOCK_SLOTS[0].store(false, Ordering::SeqCst);
+                RELEASE_SLOTS[0].store(true, Ordering::SeqCst);
                 // Wait a bounded time for handler to finish.
                 tokio::time::sleep(Duration::from_millis(20)).await;
             } else {
@@ -1137,7 +1180,7 @@ mod deterministic_tests {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(max_workers));
         let mut handles = Vec::new();
 
-        // Start N blocking handlers as spawned tasks.
+        // Start N blocking handlers as spawned tasks, each with its own slot.
         for i in 0..max_workers {
             let sem = semaphore.clone();
             let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -1148,12 +1191,14 @@ mod deterministic_tests {
                 ..ExecutionHooks::none()
             };
 
-            TEST_HANDLER_SHOULD_BLOCK.store(true, Ordering::SeqCst);
-            TEST_HANDLER_RELEASED.store(false, Ordering::SeqCst);
+            // Each handler gets its own slot (1 + i) to avoid cross-test races.
+            let slot = 1 + i;
+            BLOCK_SLOTS[slot].store(true, Ordering::SeqCst);
+            RELEASE_SLOTS[slot].store(false, Ordering::SeqCst);
 
             let handle = tokio::spawn(execute_tool_bounded_with_hooks(
-                test_handler_blocking as registry::ToolHandler,
-                Value::Object(serde_json::Map::new()),
+                test_handler_blocking_slot as registry::ToolHandler,
+                block_slot_args(slot),
                 format!("worker_{}", i),
                 budget,
                 cancel_flag,
@@ -1180,9 +1225,12 @@ mod deterministic_tests {
             "peak_blocking_concurrency must equal max_workers"
         );
 
-        // Release all handlers.
-        TEST_HANDLER_SHOULD_BLOCK.store(false, Ordering::SeqCst);
-        TEST_HANDLER_RELEASED.store(true, Ordering::SeqCst);
+        // Release all handlers (each slot independently).
+        for i in 0..max_workers {
+            let slot = 1 + i;
+            BLOCK_SLOTS[slot].store(false, Ordering::SeqCst);
+            RELEASE_SLOTS[slot].store(true, Ordering::SeqCst);
+        }
 
         // Wait for all to complete.
         for (i, handle, _) in handles {
@@ -1209,33 +1257,35 @@ mod deterministic_tests {
 
         for iter in 0..100 {
             let cancel_flag = Arc::new(AtomicBool::new(false));
-            TEST_HANDLER_SHOULD_BLOCK.store(false, Ordering::SeqCst);
-            TEST_HANDLER_RELEASED.store(false, Ordering::SeqCst);
 
-            let (handler, budget) = if iter % 3 == 0 {
+            let (handler, budget, args) = if iter % 3 == 0 {
                 // Fast handler, generous timeout
                 (
                     test_handler_fast as registry::ToolHandler,
                     ToolBudget::CHEAP.with_max_elapsed_ms(5000),
+                    Value::Object(serde_json::Map::new()),
                 )
             } else if iter % 3 == 1 {
                 // Fast handler, short timeout (still completes before timeout)
                 (
                     test_handler_fast as registry::ToolHandler,
                     ToolBudget::CHEAP.with_max_elapsed_ms(100),
+                    Value::Object(serde_json::Map::new()),
                 )
             } else {
                 // Blocking handler, very short timeout (times out)
-                TEST_HANDLER_SHOULD_BLOCK.store(true, Ordering::SeqCst);
+                BLOCK_SLOTS[5].store(true, Ordering::SeqCst);
+                RELEASE_SLOTS[5].store(false, Ordering::SeqCst);
                 (
-                    test_handler_blocking as registry::ToolHandler,
+                    test_handler_blocking_slot as registry::ToolHandler,
                     ToolBudget::CHEAP.with_max_elapsed_ms(5),
+                    block_slot_args(5),
                 )
             };
 
             let outcome = execute_tool_bounded_with_hooks(
                 handler,
-                Value::Object(serde_json::Map::new()),
+                args,
                 "iter_tool".to_string(),
                 budget,
                 cancel_flag,
@@ -1248,8 +1298,8 @@ mod deterministic_tests {
             if iter % 3 == 2 {
                 // Blocking case: must time out, release handler.
                 assert!(outcome.timed_out, "iter {}: blocking must time out", iter);
-                TEST_HANDLER_SHOULD_BLOCK.store(false, Ordering::SeqCst);
-                TEST_HANDLER_RELEASED.store(true, Ordering::SeqCst);
+                BLOCK_SLOTS[5].store(false, Ordering::SeqCst);
+                RELEASE_SLOTS[5].store(true, Ordering::SeqCst);
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
 
