@@ -108,7 +108,7 @@ fn parse_last_response(response_text: &str) -> Result<JsonRpcResponse, String> {
         .lines()
         .filter(|line| !line.trim().is_empty())
         .map(|line| serde_json::from_str(line).map_err(|e| e.to_string()))
-        .last()
+        .next_back()
         .ok_or_else(|| "MCP server returned no JSON-RPC response".to_string())?
 }
 
@@ -117,7 +117,7 @@ fn parse_last_value(response_text: &str) -> Value {
         .lines()
         .filter(|line| !line.trim().is_empty())
         .filter_map(|line| serde_json::from_str(line).ok())
-        .last()
+        .next_back()
         .unwrap_or_else(|| serde_json::json!({"parse_error": response_text}))
 }
 
