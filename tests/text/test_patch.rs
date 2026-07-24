@@ -83,3 +83,18 @@ fn test_patch_apply_check_fingerprint() {
     let result = patch_apply_check(original, patch, false, true, false);
     let _ = result;
 }
+
+#[test]
+fn test_zero_line_destination_ranges_remain_ordered() {
+    let patch = "--- a/file.txt\n+++ b/file.txt\n@@ -2,1 +2,0 @@\n-line2\n";
+
+    let applied = patch_apply_check("line1\nline2\n", patch, true, false, false);
+    assert!(applied.applies);
+    assert_eq!(applied.affected_line_ranges[0].start, 2);
+    assert_eq!(applied.affected_line_ranges[0].end, 2);
+
+    let summary = patch_summary(patch);
+    let ranges = summary.line_ranges_by_file.get("file.txt").unwrap();
+    assert_eq!(ranges[0].start, 2);
+    assert_eq!(ranges[0].end, 2);
+}

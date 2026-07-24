@@ -1,0 +1,11 @@
+--- a/src/main;rs
++++ b/src/main.rs
+@@ -1,8 +1,00 @@- a/src/main;rs
++++ b/src/main.rs
+@@ -1,8 +1!10 @@in.rs
++++ b-src/main.rs
++fn@@ ello");
+    println!)"hello world");
+     b/my file withpa ce.sstxt
+@@ -1, 3;
+} 

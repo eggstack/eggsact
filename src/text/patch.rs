@@ -66,6 +66,22 @@ pub struct LineRange {
     pub end: usize,
 }
 
+/// Build an inclusive line range for a hunk's destination span.
+///
+/// A deletion hunk has a zero-line destination span (for example, `+1,0`).
+/// Represent that empty span by its insertion/deletion point so serialized
+/// ranges remain ordered and callers can still identify the affected location.
+fn line_range(start: usize, count: usize) -> LineRange {
+    LineRange {
+        start,
+        end: if count == 0 {
+            start
+        } else {
+            start.saturating_add(count - 1)
+        },
+    }
+}
+
 #[derive(Debug, PartialEq, Serialize)]
 pub struct PatchSummaryResult {
     pub files_changed: usize,
@@ -515,13 +531,7 @@ pub fn patch_apply_check(
         if let Some(new_lines) = result {
             current_lines = new_lines;
             hunks_applied += 1;
-            affected_line_ranges.push(LineRange {
-                start: hunk.new_start,
-                end: hunk
-                    .new_start
-                    .saturating_add(hunk.new_count)
-                    .saturating_sub(1),
-            });
+            affected_line_ranges.push(line_range(hunk.new_start, hunk.new_count));
         } else {
             hunks_failed += 1;
             let expected_ctx: Vec<String> = hunk
@@ -675,13 +685,7 @@ pub fn patch_summary(patch_text: &str) -> PatchSummaryResult {
             additions += hunk_additions;
             deletions += hunk_deletions;
 
-            file_ranges.push(LineRange {
-                start: hunk.new_start,
-                end: hunk
-                    .new_start
-                    .saturating_add(hunk.new_count)
-                    .saturating_sub(1),
-            });
+            file_ranges.push(line_range(hunk.new_start, hunk.new_count));
         }
 
         if !file_key.is_empty() {
