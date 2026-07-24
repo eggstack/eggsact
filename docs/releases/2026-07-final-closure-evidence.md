@@ -8,7 +8,8 @@ correctness corrective passes:
 
 ## Code-under-test
 
-- **SHA**: `6216d82f355e7acacf05484355c5d1252010327b`
+- **Implementation SHA**: `6216d82f355e7acacf05484355c5d1252010327b`
+- **Evidence-recording SHA**: the commit containing this document (`0e08dd6`)
 - **Date**: 2026-07-24
 - **Branch**: `main`
 
