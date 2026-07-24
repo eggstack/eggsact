@@ -693,16 +693,6 @@ mod tests {
         Arc::new(runtime::RuntimeMetrics::new_for_test())
     }
 
-    /// Reset all test handler per-slot statics to defaults.
-    fn reset_test_handler_statics() {
-        for slot in BLOCK_SLOTS.iter() {
-            slot.store(false, Ordering::SeqCst);
-        }
-        for slot in RELEASE_SLOTS.iter() {
-            slot.store(false, Ordering::SeqCst);
-        }
-    }
-
     // ── Smoke: queued timeout does not run handler ──────────────────────
     //
     // Timing-based behavior verification (not a gate-controlled test).
@@ -717,7 +707,6 @@ mod tests {
 
     #[tokio::test]
     async fn queued_timeout_smoke_does_not_run_handler() {
-        reset_test_handler_statics();
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
         let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -837,7 +826,6 @@ mod tests {
 
     #[tokio::test]
     async fn no_double_completion_smoke() {
-        reset_test_handler_statics();
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -866,7 +854,6 @@ mod tests {
 
     #[tokio::test]
     async fn basic_execution_completes_successfully() {
-        reset_test_handler_statics();
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -929,7 +916,6 @@ mod tests {
 
     #[tokio::test]
     async fn timeout_smoke_handler_continues_after_return() {
-        reset_test_handler_statics();
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
