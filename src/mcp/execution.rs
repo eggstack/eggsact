@@ -189,6 +189,33 @@ impl Default for BlockingTestGate {
     }
 }
 
+/// One-way notification emitted when a blocking execution closure exits.
+///
+/// This is used only by deterministic tests. `Notify` retains one permit when
+/// the closure exits before the test begins waiting, so the observation is not
+/// scheduler-sensitive.
+#[derive(Clone, Default)]
+pub(crate) struct ClosureExitSignal {
+    exited: Arc<tokio::sync::Notify>,
+}
+
+#[allow(dead_code)]
+impl ClosureExitSignal {
+    pub fn new() -> Self {
+        Self {
+            exited: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    pub fn signal(&self) {
+        self.exited.notify_one();
+    }
+
+    pub async fn wait(&self) {
+        self.exited.notified().await;
+    }
+}
+
 /// Async-side test gate for hook sites in async code (e.g. the timeout path).
 ///
 /// `arrive_and_wait` is async and must not be called from `spawn_blocking`.
@@ -246,6 +273,8 @@ pub(crate) struct ExecutionHooks {
     pub before_begin_running: Option<Arc<BlockingTestGate>>,
     /// After `begin_running` and active-handler accounting are complete.
     pub running_established: Option<Arc<BlockingTestGate>>,
+    /// Immediately before invoking the handler, after the cancellation check.
+    pub before_handler: Option<Arc<BlockingTestGate>>,
     /// After caller timeout and cancellation signaling, but before
     /// `record_timeout` takes the lifecycle lock (async side).
     pub before_timeout_record: Option<Arc<AsyncTestGate>>,
@@ -255,6 +284,8 @@ pub(crate) struct ExecutionHooks {
     pub before_finish: Option<Arc<BlockingTestGate>>,
     /// After lifecycle completion and gauge correction.
     pub finished: Option<Arc<BlockingTestGate>>,
+    /// Signalled exactly once when the blocking closure exits.
+    pub closure_exited: Option<Arc<ClosureExitSignal>>,
 }
 
 impl ExecutionHooks {
@@ -263,10 +294,12 @@ impl ExecutionHooks {
             permit_acquired: None,
             before_begin_running: None,
             running_established: None,
+            before_handler: None,
             before_timeout_record: None,
             timeout_recorded: None,
             before_finish: None,
             finished: None,
+            closure_exited: None,
         }
     }
 }
@@ -275,11 +308,7 @@ impl ExecutionHooks {
 //
 // Since `ToolHandler` is `fn(&Value) -> ToolResponse` (function pointer),
 // closures that capture state cannot be used. Tests communicate with
-// handlers via per-slot static atomics.
-//
-// Each test must use a unique slot index (never slot 0 shared across
-// parallel tests) to avoid cross-test interference. Lifecycle ordering
-// is controlled by ExecutionHooks gates, not by these statics.
+// handlers through static backing arrays protected by exclusive RAII leases.
 
 #[cfg(test)]
 const TEST_BLOCK_SLOTS: usize = 16;
@@ -291,6 +320,54 @@ static BLOCK_SLOTS: [AtomicBool; TEST_BLOCK_SLOTS] =
 #[cfg(test)]
 static RELEASE_SLOTS: [AtomicBool; TEST_BLOCK_SLOTS] =
     [const { AtomicBool::new(false) }; TEST_BLOCK_SLOTS];
+
+#[cfg(test)]
+static SLOT_IN_USE: [AtomicBool; TEST_BLOCK_SLOTS] =
+    [const { AtomicBool::new(false) }; TEST_BLOCK_SLOTS];
+
+#[cfg(test)]
+struct TestSlotLease {
+    index: usize,
+}
+
+#[cfg(test)]
+impl TestSlotLease {
+    fn index(&self) -> usize {
+        self.index
+    }
+
+    fn block(&self) {
+        BLOCK_SLOTS[self.index].store(true, Ordering::SeqCst);
+        RELEASE_SLOTS[self.index].store(false, Ordering::SeqCst);
+    }
+
+    fn release(&self) {
+        BLOCK_SLOTS[self.index].store(false, Ordering::SeqCst);
+        RELEASE_SLOTS[self.index].store(true, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestSlotLease {
+    fn drop(&mut self) {
+        BLOCK_SLOTS[self.index].store(false, Ordering::SeqCst);
+        RELEASE_SLOTS[self.index].store(false, Ordering::SeqCst);
+        SLOT_IN_USE[self.index].store(false, Ordering::Release);
+    }
+}
+
+#[cfg(test)]
+fn acquire_test_slot() -> TestSlotLease {
+    for (index, slot_in_use) in SLOT_IN_USE.iter().enumerate() {
+        if slot_in_use
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            return TestSlotLease { index };
+        }
+    }
+    panic!("no test blocking slots available");
+}
 
 #[cfg(test)]
 fn test_handler_blocking_slot(args: &Value) -> ToolResponse {
@@ -309,8 +386,8 @@ fn test_handler_blocking_slot(args: &Value) -> ToolResponse {
 }
 
 #[cfg(test)]
-fn block_slot_args(slot: usize) -> Value {
-    serde_json::json!({ "_block_slot": slot })
+fn block_slot_args(slot: &TestSlotLease) -> Value {
+    serde_json::json!({ "_block_slot": slot.index() })
 }
 
 #[cfg(test)]
@@ -433,13 +510,26 @@ async fn execute_tool_bounded_inner(
             permit_acquired: None,
             before_begin_running: hooks.before_begin_running.clone(),
             running_established: hooks.running_established.clone(),
+            before_handler: hooks.before_handler.clone(),
             before_timeout_record: None,
             timeout_recorded: None,
             before_finish: hooks.before_finish.clone(),
             finished: hooks.finished.clone(),
+            closure_exited: hooks.closure_exited.clone(),
         };
 
         tokio::task::spawn_blocking(move || {
+            struct ClosureExitGuard(Option<Arc<ClosureExitSignal>>);
+
+            impl Drop for ClosureExitGuard {
+                fn drop(&mut self) {
+                    if let Some(signal) = self.0.take() {
+                        signal.signal();
+                    }
+                }
+            }
+
+            let _closure_exit = ClosureExitGuard(hooks_for_block.closure_exited.clone());
             let _permit = permit;
 
             // Signal that the blocking closure has been entered, before
@@ -483,6 +573,10 @@ async fn execute_tool_bounded_inner(
                     None,
                     Some(&tool_name_block),
                 );
+            }
+
+            if let Some(ref gate) = hooks_for_block.before_handler {
+                gate.arrive_and_wait();
             }
 
             let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
@@ -693,6 +787,42 @@ mod tests {
         Arc::new(runtime::RuntimeMetrics::new_for_test())
     }
 
+    #[test]
+    fn slot_leases_are_exclusive_under_parallel_allocation() {
+        let workers = 8;
+        let barrier = Arc::new(std::sync::Barrier::new(workers));
+        let claimed = Arc::new([const { AtomicBool::new(false) }; TEST_BLOCK_SLOTS]);
+        let mut handles = Vec::new();
+
+        for _ in 0..workers {
+            let barrier = barrier.clone();
+            let claimed = claimed.clone();
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                for _ in 0..100 {
+                    let lease = acquire_test_slot();
+                    let index = lease.index();
+                    assert!(
+                        claimed[index]
+                            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                            .is_ok(),
+                        "slot {} was allocated to two parallel test invocations",
+                        index
+                    );
+                    std::thread::yield_now();
+                    assert!(claimed[index].swap(false, Ordering::Release));
+                    drop(lease);
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle
+                .join()
+                .expect("slot lease stress thread must not panic");
+        }
+    }
+
     // ── Smoke: queued timeout does not run handler ──────────────────────
     //
     // Timing-based behavior verification (not a gate-controlled test).
@@ -858,6 +988,7 @@ mod tests {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let tool_budget = ToolBudget::CHEAP;
+        let closure_exited = Arc::new(ClosureExitSignal::new());
 
         let outcome = execute_tool_bounded_with_hooks(
             |_args| ToolResponse::success(serde_json::json!("hello"), None),
@@ -866,7 +997,10 @@ mod tests {
             tool_budget,
             cancel_flag.clone(),
             semaphore.clone(),
-            ExecutionHooks::none(),
+            ExecutionHooks {
+                closure_exited: Some(closure_exited.clone()),
+                ..ExecutionHooks::none()
+            },
             metrics.clone(),
         )
         .await;
@@ -875,6 +1009,12 @@ mod tests {
         let resp = outcome.tool_response.unwrap();
         assert!(resp.error.is_none());
         assert_eq!(resp.result.as_ref().unwrap().as_str().unwrap(), "hello");
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), closure_exited.wait())
+                .await
+                .is_ok(),
+            "normal blocking closure must signal exit"
+        );
         assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
@@ -886,6 +1026,7 @@ mod tests {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let budget = ToolBudget::CHEAP;
+        let closure_exited = Arc::new(ClosureExitSignal::new());
 
         fn always_panic_handler(_args: &Value) -> ToolResponse {
             panic!("intentional test panic");
@@ -898,7 +1039,10 @@ mod tests {
             budget,
             cancel_flag,
             semaphore,
-            ExecutionHooks::none(),
+            ExecutionHooks {
+                closure_exited: Some(closure_exited.clone()),
+                ..ExecutionHooks::none()
+            },
             metrics.clone(),
         )
         .await;
@@ -907,8 +1051,17 @@ mod tests {
         // Panic is caught by catch_unwind and converted to an error ToolResponse.
         let resp = outcome.tool_response.unwrap();
         assert!(!resp.ok, "panicked handler should return ok=false response");
+        assert_eq!(
+            resp.machine_code.as_deref(),
+            Some(machine_codes::INTERNAL_ERROR)
+        );
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), closure_exited.wait())
+                .await
+                .is_ok(),
+            "caught-panic blocking closure must signal exit"
+        );
         assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
     }
 
@@ -1003,7 +1156,7 @@ mod deterministic_tests {
     //    while the closure remains gated.
     // 9. Release `before_begin_running`.
     // 10. Prove the actual handler body was never invoked.
-    // 11. Wait for the detached closure to finish via the `finished` hook.
+    // 11. Wait for the detached closure to exit via `closure_exited`.
     // 12. Assert all gauges remain zero except cumulative timeout count.
 
     #[tokio::test]
@@ -1017,8 +1170,10 @@ mod deterministic_tests {
         let budget = ToolBudget::CHEAP.with_max_elapsed_ms(50);
 
         let before_begin_running = blocking_gate();
+        let closure_exited = Arc::new(ClosureExitSignal::new());
         let hooks = ExecutionHooks {
             before_begin_running: Some(before_begin_running.clone()),
+            closure_exited: Some(closure_exited.clone()),
             ..ExecutionHooks::none()
         };
 
@@ -1074,14 +1229,19 @@ mod deterministic_tests {
             "handler must not run after queued timeout"
         );
 
-        // 11-12. After releasing before_begin_running, the blocking closure
-        //    will call begin_running, see CancelledBeforeStart, and return.
-        //    The active_blocking_handlers gauge was never incremented because
-        //    begin_running was never called while in Queued state.
-        //    Allow time for the blocking thread to finish.
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // 11. The blocking closure will call begin_running, see
+        // CancelledBeforeStart, and return. Wait for actual closure exit with
+        // a watchdog that cannot establish the expected ordering.
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), closure_exited.wait())
+                .await
+                .is_ok(),
+            "blocking closure must signal exit after queued timeout"
+        );
 
-        // Assert all gauges remain zero except cumulative timeout count.
+        // 12. Assert the handler was still never invoked and all gauges remain
+        // zero except cumulative timeout count.
+        assert!(!HANDLER_RAN.load(Ordering::SeqCst));
         let snap = snapshot_from_metrics(&metrics);
         assert_eq!(snap.active_blocking_handlers, 0);
         assert_eq!(snap.timed_out_handlers, 0);
@@ -1262,17 +1422,12 @@ mod deterministic_tests {
         assert!(outcome.timed_out, "caller must receive timeout");
     }
 
-    // ── Test D: panic after timeout ─────────────────────────────────────
+    // ── Test D: panic after recorded timeout ────────────────────────────
     //
-    // 1. Handler reaches Running.
-    // 2. Timeout transition completes.
-    // 3. Assert both running gauges equal one.
-    // 4. Release the handler to panic.
-    // 5. Wait for lifecycle completion.
-    // 6. Assert both gauges return to zero.
-    // 7. Verify panic is converted to the documented internal-error response
-    //    when the caller has not already returned a timeout, and does not kill
-    //    the blocking pool thread.
+    // The handler-entry gate holds the handler immediately before invocation.
+    // The timeout is recorded while that gate is held, then the gate is
+    // released and the handler panics immediately. No handler sleep is used
+    // to establish the running-timeout ordering.
 
     #[tokio::test]
     async fn panic_after_timeout() {
@@ -1281,23 +1436,24 @@ mod deterministic_tests {
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let budget = ToolBudget::CHEAP.with_max_elapsed_ms(100);
 
+        let before_handler = blocking_gate();
         let before_finish = blocking_gate();
         let finished = blocking_gate();
         let before_timeout_record = async_gate();
         let timeout_recorded = async_gate();
+        let closure_exited = Arc::new(ClosureExitSignal::new());
         let hooks = ExecutionHooks {
+            before_handler: Some(before_handler.clone()),
             before_finish: Some(before_finish.clone()),
             finished: Some(finished.clone()),
             before_timeout_record: Some(before_timeout_record.clone()),
             timeout_recorded: Some(timeout_recorded.clone()),
+            closure_exited: Some(closure_exited.clone()),
             ..ExecutionHooks::none()
         };
 
         let call = tokio::spawn(execute_tool_bounded_with_hooks(
-            |_args| {
-                std::thread::sleep(Duration::from_millis(50));
-                panic!("intentional test panic");
-            },
+            |_args| panic!("intentional test panic"),
             Value::Object(serde_json::Map::new()),
             "test_tool".to_string(),
             budget,
@@ -1307,10 +1463,10 @@ mod deterministic_tests {
             metrics.clone(),
         ));
 
-        // 1. Handler reaches Running (before_finish is reached after handler
-        //    returns or panics; we wait for before_timeout_record instead to
-        //    confirm the timeout has fired while the handler is still running).
-        // 2. Wait for timeout to fire.
+        // 1. Running is established before the handler-entry gate.
+        before_handler.wait_until_entered().await;
+
+        // 2. Wait for timeout to fire while the handler is held at entry.
         before_timeout_record.wait_until_entered().await;
 
         // 3. Assert both running gauges equal one.
@@ -1337,12 +1493,20 @@ mod deterministic_tests {
             "timed_out_handlers must be 1 after timeout recording"
         );
 
-        // 4. Release before_finish so the handler can finish (panic is caught).
+        // 4. Release the handler-entry gate. The handler panics immediately;
+        // catch_unwind converts it and the closure reaches before_finish.
+        before_handler.release();
         before_finish.release();
 
-        // 5. Wait for lifecycle completion.
+        // 5. Wait for lifecycle completion and actual closure exit.
         finished.wait_until_entered().await;
         finished.release();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), closure_exited.wait())
+                .await
+                .is_ok(),
+            "panicking blocking closure must signal exit"
+        );
 
         // 6. Assert both gauges return to zero.
         let snap = snapshot_from_metrics(&metrics);
@@ -1350,7 +1514,7 @@ mod deterministic_tests {
         assert_eq!(snap.timed_out_handlers, 0);
         assert_snapshot_invariant(&snap);
 
-        // 7. Verify panic is converted to an error response.
+        // 7. The caller already timed out; panic cleanup is still complete.
         let outcome = call.await.unwrap();
         assert!(outcome.timed_out, "caller must receive timeout");
     }
@@ -1452,7 +1616,7 @@ mod deterministic_tests {
         assert!(outcome.timed_out, "caller must receive timeout");
     }
 
-    // ── Test F: 100 exact interleavings (250 completion + 250 timeout) ─
+    // ── Test F: 100 exact interleavings (50 completion + 50 timeout) ───
     //
     // Runs 100 iterations, alternating:
     // - 50 completion-wins sequences using the exact gates from Test B;
@@ -1461,7 +1625,8 @@ mod deterministic_tests {
     // Requirements:
     // - no sleep to release or settle a handler;
     // - unique per-iteration gate state;
-    // - no global/shared slot;
+    // - no manually assigned slot; any static backing storage uses an
+    //   exclusive RAII lease;
     // - exact expected outcome count: 50 timeout responses and 50
     //   selected completion outcomes according to the test design;
     // - gauges asserted at quiescence after every iteration;
@@ -1689,7 +1854,7 @@ mod deterministic_tests {
         let metrics = new_test_metrics();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(max_workers));
 
-        // Slots 1-3 for the first three handlers (unique, no shared slot 0).
+        // Each handler owns an exclusive RAII slot lease for its lifetime.
         let mut handles = Vec::new();
         for i in 0..max_workers {
             let sem = semaphore.clone();
@@ -1703,13 +1868,12 @@ mod deterministic_tests {
                 ..ExecutionHooks::none()
             };
 
-            let slot = 1 + i;
-            BLOCK_SLOTS[slot].store(true, Ordering::SeqCst);
-            RELEASE_SLOTS[slot].store(false, Ordering::SeqCst);
+            let slot = acquire_test_slot();
+            slot.block();
 
             let handle = tokio::spawn(execute_tool_bounded_with_hooks(
                 test_handler_blocking_slot as registry::ToolHandler,
-                block_slot_args(slot),
+                block_slot_args(&slot),
                 format!("worker_{}", i),
                 budget,
                 cancel_flag,
@@ -1748,9 +1912,11 @@ mod deterministic_tests {
             ..ExecutionHooks::none()
         };
 
+        let fourth_slot = acquire_test_slot();
+        fourth_slot.block();
         let fourth_handle = tokio::spawn(execute_tool_bounded_with_hooks(
             test_handler_blocking_slot as registry::ToolHandler,
-            block_slot_args(4), // unique slot 4
+            block_slot_args(&fourth_slot),
             "worker_3".to_string(),
             fourth_budget,
             fourth_cancel,
@@ -1772,9 +1938,7 @@ mod deterministic_tests {
         );
 
         // 8. Release exactly one running handler.
-        let slot_to_release = handles[0].4;
-        BLOCK_SLOTS[slot_to_release].store(false, Ordering::SeqCst);
-        RELEASE_SLOTS[slot_to_release].store(true, Ordering::SeqCst);
+        handles[0].4.release();
         // Also release finished so the worker can fully exit and free its permit.
         handles[0].3.release();
 
@@ -1790,20 +1954,15 @@ mod deterministic_tests {
         );
 
         // 11. Release remaining handlers.
-        for (i, _, _, _, slot) in &handles {
-            if *slot != slot_to_release {
-                BLOCK_SLOTS[*slot].store(false, Ordering::SeqCst);
-                RELEASE_SLOTS[*slot].store(true, Ordering::SeqCst);
-            }
-            let _ = i;
+        for (_, _, _, _, slot) in handles.iter().skip(1) {
+            slot.release();
         }
         // Release remaining finished gates for workers 2 and 3.
         for (_, _, _, fin, _) in &handles {
             fin.release();
         }
         // Release the fourth handler.
-        BLOCK_SLOTS[4].store(false, Ordering::SeqCst);
-        RELEASE_SLOTS[4].store(true, Ordering::SeqCst);
+        fourth_slot.release();
         fourth_running.release();
         fourth_finished.release();
 
@@ -1874,11 +2033,11 @@ mod deterministic_tests {
         assert_snapshot_invariant(&snap);
     }
 
-    // ── Repeated single-threaded 100-iteration test ─────────────────────
+    // ── Repeated 100-iteration test ────────────────────────────────────
     //
-    // Runs 100 iterations with varying handlers and timeouts.
-    // Verifies all complete without panic and gauges remain consistent.
-    // Uses unique slots per iteration to avoid shared state.
+    // Runs 100 iterations with varying handlers and timeouts. Blocking
+    // invocations retain their slot lease until their closure has signalled
+    // actual exit, so no settlement sleep is needed.
 
     #[tokio::test]
     async fn repeated_single_threaded_100_iterations() {
@@ -1888,53 +2047,55 @@ mod deterministic_tests {
         for iter in 0..100 {
             let cancel_flag = Arc::new(AtomicBool::new(false));
 
-            let (handler, budget, args) = if iter % 3 == 0 {
-                // Fast handler, generous timeout
-                (
-                    test_handler_fast as registry::ToolHandler,
-                    ToolBudget::CHEAP.with_max_elapsed_ms(5000),
-                    Value::Object(serde_json::Map::new()),
-                )
-            } else if iter % 3 == 1 {
-                // Fast handler, short timeout (still completes before timeout)
-                (
-                    test_handler_fast as registry::ToolHandler,
-                    ToolBudget::CHEAP.with_max_elapsed_ms(100),
-                    Value::Object(serde_json::Map::new()),
-                )
-            } else {
-                // Blocking handler, very short timeout (times out)
-                // Use unique slot per iteration to avoid shared state.
-                let slot = 8 + (iter % 3);
-                BLOCK_SLOTS[slot].store(true, Ordering::SeqCst);
-                RELEASE_SLOTS[slot].store(false, Ordering::SeqCst);
-                (
-                    test_handler_blocking_slot as registry::ToolHandler,
-                    ToolBudget::CHEAP.with_max_elapsed_ms(5),
-                    block_slot_args(slot),
-                )
-            };
-
-            let outcome = execute_tool_bounded_with_hooks(
-                handler,
-                args,
-                format!("iter_{}", iter),
-                budget,
-                cancel_flag,
-                semaphore.clone(),
-                ExecutionHooks::none(),
-                metrics.clone(),
-            )
-            .await;
-
             if iter % 3 == 2 {
-                // Blocking case: must time out, release handler.
+                let slot = acquire_test_slot();
+                slot.block();
+                let closure_exited = Arc::new(ClosureExitSignal::new());
+                let outcome = execute_tool_bounded_with_hooks(
+                    test_handler_blocking_slot as registry::ToolHandler,
+                    block_slot_args(&slot),
+                    format!("iter_{}", iter),
+                    ToolBudget::CHEAP.with_max_elapsed_ms(5),
+                    cancel_flag,
+                    semaphore.clone(),
+                    ExecutionHooks {
+                        closure_exited: Some(closure_exited.clone()),
+                        ..ExecutionHooks::none()
+                    },
+                    metrics.clone(),
+                )
+                .await;
+
                 assert!(outcome.timed_out, "iter {}: blocking must time out", iter);
-                let slot = 8 + (iter % 3);
-                BLOCK_SLOTS[slot].store(false, Ordering::SeqCst);
-                RELEASE_SLOTS[slot].store(true, Ordering::SeqCst);
-                // Bounded "did not happen" observation only.
-                tokio::time::sleep(Duration::from_millis(20)).await;
+                slot.release();
+                assert!(
+                    tokio::time::timeout(Duration::from_secs(5), closure_exited.wait())
+                        .await
+                        .is_ok(),
+                    "iter {}: blocking closure must signal exit",
+                    iter
+                );
+            } else {
+                let outcome = execute_tool_bounded_with_hooks(
+                    test_handler_fast as registry::ToolHandler,
+                    Value::Object(serde_json::Map::new()),
+                    format!("iter_{}", iter),
+                    if iter % 3 == 0 {
+                        ToolBudget::CHEAP.with_max_elapsed_ms(5000)
+                    } else {
+                        ToolBudget::CHEAP.with_max_elapsed_ms(100)
+                    },
+                    cancel_flag,
+                    semaphore.clone(),
+                    ExecutionHooks::none(),
+                    metrics.clone(),
+                )
+                .await;
+                assert!(
+                    !outcome.timed_out,
+                    "iter {}: fast handler must finish",
+                    iter
+                );
             }
 
             assert_snapshot_invariant(&snapshot_from_metrics(&metrics));

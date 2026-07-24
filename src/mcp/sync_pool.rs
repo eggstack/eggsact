@@ -17,6 +17,34 @@ struct SyncJob {
     deadline: Instant,
 }
 
+#[cfg(test)]
+pub(crate) struct TestEnqueueSignal {
+    entered: std::sync::Mutex<bool>,
+    ready: std::sync::Condvar,
+}
+
+#[cfg(test)]
+impl TestEnqueueSignal {
+    pub(crate) fn new() -> Self {
+        Self {
+            entered: std::sync::Mutex::new(false),
+            ready: std::sync::Condvar::new(),
+        }
+    }
+
+    pub(crate) fn signal(&self) {
+        *self.entered.lock().unwrap() = true;
+        self.ready.notify_all();
+    }
+
+    pub(crate) fn wait_until_entered(&self) {
+        let mut entered = self.entered.lock().unwrap();
+        while !*entered {
+            entered = self.ready.wait(entered).unwrap();
+        }
+    }
+}
+
 /// Bounded synchronous worker pool for in-process tool execution.
 ///
 /// The pool provides concurrency limiting and elapsed-time enforcement for
@@ -105,6 +133,35 @@ impl SyncExecutionPool {
         wait_for_reply(&reply_rx, timeout, &cancel_flag)
     }
 
+    /// Test-only submission helper that signals after the job is queued.
+    #[cfg(test)]
+    fn submit_cancellable_with_enqueue_signal(
+        &self,
+        handler: impl FnOnce() -> ToolResponse + Send + 'static,
+        timeout: Duration,
+        cancel_flag: Arc<AtomicBool>,
+        signal: Arc<TestEnqueueSignal>,
+    ) -> Result<ToolResponse, SyncPoolError> {
+        let deadline = Instant::now() + timeout;
+        let (reply_tx, reply_rx) = sync_channel(1);
+        let job = SyncJob {
+            handler: Box::new(handler),
+            reply: reply_tx,
+            cancel_flag: cancel_flag.clone(),
+            deadline,
+        };
+
+        self.sender.try_send(job).map_err(|e| match e {
+            std::sync::mpsc::TrySendError::Full(_) => SyncPoolError::QueueFull {
+                worker_count: self.worker_count,
+            },
+            std::sync::mpsc::TrySendError::Disconnected(_) => SyncPoolError::Shutdown,
+        })?;
+        signal.signal();
+
+        wait_for_reply(&reply_rx, timeout, &cancel_flag)
+    }
+
     /// Return the number of worker threads in this pool.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn worker_count(&self) -> usize {
@@ -123,8 +180,7 @@ fn worker_loop(receiver: Arc<std::sync::Mutex<Receiver<SyncJob>>>) {
         };
 
         // Preflight: if the deadline has already expired, skip invocation.
-        // The handler is responsible for checking cancellation cooperatively;
-        // we only skip when the caller-facing deadline has passed.
+        // This check runs after dequeue and before the handler is invoked.
         if Instant::now() >= job.deadline {
             job.cancel_flag.store(true, Ordering::SeqCst);
             let _ = job.reply.send(ToolResponse::error_with_code(
@@ -251,6 +307,41 @@ pub(crate) fn sync_pool() -> &'static SyncExecutionPool {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct BlockingJobGate {
+        state: std::sync::Mutex<(bool, bool)>,
+        ready: std::sync::Condvar,
+    }
+
+    impl BlockingJobGate {
+        fn new() -> Self {
+            Self {
+                state: std::sync::Mutex::new((false, false)),
+                ready: std::sync::Condvar::new(),
+            }
+        }
+
+        fn arrive_and_wait(&self) {
+            let mut state = self.state.lock().unwrap();
+            state.0 = true;
+            self.ready.notify_all();
+            while !state.1 {
+                state = self.ready.wait(state).unwrap();
+            }
+        }
+
+        fn wait_until_started(&self) {
+            let mut state = self.state.lock().unwrap();
+            while !state.0 {
+                state = self.ready.wait(state).unwrap();
+            }
+        }
+
+        fn release(&self) {
+            self.state.lock().unwrap().1 = true;
+            self.ready.notify_all();
+        }
+    }
 
     #[test]
     fn two_jobs_run_concurrently() {
@@ -606,57 +697,82 @@ mod tests {
     }
 
     #[test]
-    fn queued_job_timeout_never_invokes_handler() {
-        // Pool with 1 worker: first job blocks the worker, second job queues.
+    fn queued_timed_out_job_is_skipped_before_sentinel() {
         let pool = Arc::new(SyncExecutionPool::with_limits(1, 4));
-        let handler_ran = Arc::new(AtomicBool::new(false));
+        let blocker = Arc::new(BlockingJobGate::new());
+        let expired_ran = Arc::new(AtomicBool::new(false));
+        let expired_cancel = Arc::new(AtomicBool::new(false));
 
-        // Long-running first job blocks the single worker.
         let p1 = pool.clone();
+        let blocker_for_job = blocker.clone();
         let h1 = std::thread::spawn(move || {
             p1.submit(
                 move || {
-                    std::thread::sleep(Duration::from_millis(300));
-                    ToolResponse::success(serde_json::json!({}), Some("test"))
+                    blocker_for_job.arrive_and_wait();
+                    ToolResponse::success(serde_json::json!("blocker"), Some("test"))
                 },
                 Duration::from_secs(5),
             )
         });
-        std::thread::sleep(Duration::from_millis(20)); // let h1 start
+        blocker.wait_until_started();
 
-        // Second job goes into the queue; short timeout causes it to be dropped.
-        let ran = handler_ran.clone();
         let p2 = pool.clone();
+        let ran = expired_ran.clone();
+        let cancel = expired_cancel.clone();
         let h2 = std::thread::spawn(move || {
             p2.submit_cancellable(
                 move || {
                     ran.store(true, Ordering::SeqCst);
-                    ToolResponse::success(serde_json::json!({}), Some("test"))
+                    ToolResponse::success(serde_json::json!("expired"), Some("test"))
                 },
-                Duration::from_millis(10),
-                Arc::new(AtomicBool::new(false)),
+                Duration::from_millis(20),
+                cancel,
             )
         });
 
-        // Wait for the short timeout to fire.
-        std::thread::sleep(Duration::from_millis(50));
+        let expired_result = h2.join().expect("expired submitter must not panic");
+        assert!(matches!(expired_result, Err(SyncPoolError::Timeout)));
+        assert!(expired_cancel.load(Ordering::SeqCst));
+        assert!(!expired_ran.load(Ordering::SeqCst));
+
+        // Queue order is blocker -> expired -> sentinel. Once the sentinel
+        // completes, the single FIFO worker necessarily examined the expired
+        // position before invoking the sentinel.
+        let sentinel_ran = Arc::new(AtomicBool::new(false));
+        let p3 = pool.clone();
+        let sentinel_flag = sentinel_ran.clone();
+        let sentinel = std::thread::spawn(move || {
+            p3.submit(
+                move || {
+                    sentinel_flag.store(true, Ordering::SeqCst);
+                    ToolResponse::success(serde_json::json!("sentinel"), Some("test"))
+                },
+                Duration::from_secs(5),
+            )
+        });
+
+        blocker.release();
         assert!(
-            !handler_ran.load(Ordering::SeqCst),
-            "handler of queued+timed-out job must not run"
+            h1.join()
+                .expect("blocking submitter must not panic")
+                .unwrap()
+                .ok
         );
+        assert!(
+            sentinel
+                .join()
+                .expect("sentinel submitter must not panic")
+                .unwrap()
+                .ok
+        );
+        assert!(sentinel_ran.load(Ordering::SeqCst));
+        assert!(!expired_ran.load(Ordering::SeqCst));
 
-        // Wait for h1 to finish so the worker can process the queued job.
-        // But since h2 timed out, the reply channel is dropped — the worker
-        // will try to send on a disconnected channel, which is fine.
-        let _ = h1.join();
-        let _ = h2.join();
-
-        // Give the worker time to process the queued job (reply send will fail silently).
-        std::thread::sleep(Duration::from_millis(100));
-
-        // The handler may or may not have run by now (it's allowed to).
-        // The important thing is that the caller got a timeout, not that the
-        // handler was prevented from running (that's the cooperative model).
+        let recovered = pool.submit(
+            || ToolResponse::success(serde_json::json!("recovered"), Some("test")),
+            Duration::from_secs(5),
+        );
+        assert!(recovered.unwrap().ok, "pool must remain usable");
     }
 
     #[test]
@@ -858,43 +974,86 @@ mod tests {
     }
 
     #[test]
-    fn expired_queued_jobs_discarded() {
-        // First job blocks the worker, second job times out in the queue.
+    fn queued_externally_cancelled_job_is_skipped_before_sentinel() {
         let pool = Arc::new(SyncExecutionPool::with_limits(1, 4));
-        let handler_ran = Arc::new(AtomicBool::new(false));
+        let blocker = Arc::new(BlockingJobGate::new());
+        let cancelled_ran = Arc::new(AtomicBool::new(false));
+        let cancelled_flag = Arc::new(AtomicBool::new(false));
+        let enqueued = Arc::new(TestEnqueueSignal::new());
 
         let p1 = pool.clone();
+        let blocker_for_job = blocker.clone();
         let h1 = std::thread::spawn(move || {
             p1.submit(
                 move || {
-                    std::thread::sleep(Duration::from_millis(300));
-                    ToolResponse::success(serde_json::json!({}), Some("test"))
+                    blocker_for_job.arrive_and_wait();
+                    ToolResponse::success(serde_json::json!("blocker"), Some("test"))
                 },
                 Duration::from_secs(5),
             )
         });
-        std::thread::sleep(Duration::from_millis(20));
+        blocker.wait_until_started();
 
-        let ran = handler_ran.clone();
-        let flag = Arc::new(AtomicBool::new(false));
         let p2 = pool.clone();
+        let ran = cancelled_ran.clone();
+        let flag = cancelled_flag.clone();
+        let enqueue_signal = enqueued.clone();
         let h2 = std::thread::spawn(move || {
-            p2.submit_cancellable(
+            p2.submit_cancellable_with_enqueue_signal(
                 move || {
                     ran.store(true, Ordering::SeqCst);
-                    ToolResponse::success(serde_json::json!({}), Some("test"))
+                    ToolResponse::success(serde_json::json!("cancelled"), Some("test"))
                 },
-                Duration::from_millis(10),
+                Duration::from_secs(5),
                 flag,
+                enqueue_signal,
             )
         });
 
-        std::thread::sleep(Duration::from_millis(50));
+        enqueued.wait_until_entered();
+        cancelled_flag.store(true, Ordering::SeqCst);
 
-        let _ = h1.join();
-        let _ = h2.join();
+        let sentinel_ran = Arc::new(AtomicBool::new(false));
+        let p3 = pool.clone();
+        let sentinel_flag = sentinel_ran.clone();
+        let sentinel = std::thread::spawn(move || {
+            p3.submit(
+                move || {
+                    sentinel_flag.store(true, Ordering::SeqCst);
+                    ToolResponse::success(serde_json::json!("sentinel"), Some("test"))
+                },
+                Duration::from_secs(5),
+            )
+        });
 
-        // The handler may run after the worker is freed — that's the cooperative
-        // model. The key assertion is the caller received a timeout.
+        blocker.release();
+        assert!(
+            h1.join()
+                .expect("blocking submitter must not panic")
+                .unwrap()
+                .ok
+        );
+
+        let cancelled_response = h2
+            .join()
+            .expect("cancelled submitter must not panic")
+            .expect("queued cancellation returns response");
+        assert!(!cancelled_response.ok);
+        assert_eq!(
+            cancelled_response.machine_code.as_deref(),
+            Some(crate::mcp::machine_codes::CANCELLED)
+        );
+        assert!(cancelled_flag.load(Ordering::SeqCst));
+        assert!(!cancelled_ran.load(Ordering::SeqCst));
+
+        assert!(
+            sentinel
+                .join()
+                .expect("sentinel submitter must not panic")
+                .unwrap()
+                .ok
+        );
+        assert!(sentinel_ran.load(Ordering::SeqCst));
+        assert!(!cancelled_ran.load(Ordering::SeqCst));
     }
 }
