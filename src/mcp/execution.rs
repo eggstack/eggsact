@@ -791,6 +791,7 @@ mod tests {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let budget = ToolBudget::CHEAP.with_max_elapsed_ms(10);
+        let finished = Arc::new(BlockingTestGate::new());
 
         let outcome = execute_tool_bounded_with_hooks(
             |_args| {
@@ -802,7 +803,10 @@ mod tests {
             budget,
             cancel_flag.clone(),
             semaphore.clone(),
-            ExecutionHooks::none(),
+            ExecutionHooks {
+                finished: Some(finished.clone()),
+                ..ExecutionHooks::none()
+            },
             metrics.clone(),
         )
         .await;
@@ -815,8 +819,10 @@ mod tests {
             "timed_out_handlers should be exactly 1 while handler is still running"
         );
 
-        // Wait for handler to finish and decrement.
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        // Wait for the lifecycle to finish and decrement. The hook is after
+        // `HandlerLifecycle::finish`, so this is an exact synchronization
+        // point rather than a scheduler-dependent delay.
+        finished.wait_until_entered().await;
 
         assert_eq!(
             metrics.timed_out_handlers.load(Ordering::Relaxed),
@@ -824,6 +830,7 @@ mod tests {
             "timed_out_handlers must return to 0 after handler finishes"
         );
         assert_snapshot_invariant(&snapshot_from_metrics(&metrics));
+        finished.release();
     }
 
     // ── Smoke: no double completion ────────────────────────────────────
