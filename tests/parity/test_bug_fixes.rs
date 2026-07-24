@@ -1,27 +1,5 @@
+use crate::parity::run_rust_jsonrpc;
 use serde_json::Value;
-use std::io::Write;
-use std::process::{Command, Stdio};
-
-fn run_rust_jsonrpc(request: &str) -> Value {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
-        .arg("--mcp")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to spawn process");
-
-    {
-        let mut stdin = child.stdin.take().expect("Failed to open stdin");
-        stdin.write_all(request.as_bytes()).unwrap();
-        stdin.write_all(b"\n").unwrap();
-    }
-
-    let output = child.wait_with_output().unwrap();
-    let response_text = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&response_text)
-        .unwrap_or_else(|_| serde_json::json!({"parse_error": response_text.to_string()}))
-}
 
 fn call_tool(tool_name: &str, arguments: Value) -> Value {
     let request = serde_json::json!({

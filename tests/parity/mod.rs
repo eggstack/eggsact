@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 mod test_bug_fixes;
@@ -38,6 +39,117 @@ struct JsonRpcResponse {
     error: Option<Value>,
 }
 
+fn python_command() -> Command {
+    let mut command = Command::new("python3");
+    command.args(["-m", "eggcalc.mcp.server"]);
+
+    if let Some(root) = python_reference_root() {
+        command.current_dir(root);
+    }
+
+    command
+}
+
+fn python_reference_root() -> Option<PathBuf> {
+    if let Some(root) = std::env::var_os("EGGCALC_ROOT") {
+        let root = PathBuf::from(root);
+        if root.is_dir() {
+            return Some(root);
+        }
+    }
+
+    let sibling = Path::new(env!("CARGO_MANIFEST_DIR")).join("../eggcalc");
+    sibling.is_dir().then_some(sibling)
+}
+
+fn initialize_request() -> Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {
+                "name": "eggsact-parity",
+                "version": env!("CARGO_PKG_VERSION")
+            }
+        },
+        "id": 0
+    })
+}
+
+fn write_session_request<W: Write>(stdin: &mut W, request: &str) -> Result<(), String> {
+    let request_value: Value = serde_json::from_str(request).map_err(|e| e.to_string())?;
+    let messages = if request_value.get("method").and_then(Value::as_str) == Some("initialize") {
+        vec![request.to_string()]
+    } else {
+        vec![
+            serde_json::to_string(&initialize_request()).map_err(|e| e.to_string())?,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            })
+            .to_string(),
+            request.to_string(),
+        ]
+    };
+
+    for message in messages {
+        stdin
+            .write_all(message.as_bytes())
+            .map_err(|e| e.to_string())?;
+        stdin.write_all(b"\n").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn parse_last_response(response_text: &str) -> Result<JsonRpcResponse, String> {
+    response_text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).map_err(|e| e.to_string()))
+        .last()
+        .ok_or_else(|| "MCP server returned no JSON-RPC response".to_string())?
+}
+
+fn parse_last_value(response_text: &str) -> Value {
+    response_text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .last()
+        .unwrap_or_else(|| serde_json::json!({"parse_error": response_text}))
+}
+
+fn run_jsonrpc(mut command: Command, request: &str) -> Value {
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap_or_else(|error| panic!("Failed to spawn MCP process: {error}"));
+
+    {
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        write_session_request(&mut stdin, request).expect("Failed to write MCP session");
+    }
+
+    let output = child
+        .wait_with_output()
+        .expect("Failed to wait for MCP process");
+    parse_last_value(&String::from_utf8_lossy(&output.stdout))
+}
+
+pub fn run_rust_jsonrpc(request: &str) -> Value {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_eggsact"));
+    command.arg("--mcp");
+    run_jsonrpc(command, request)
+}
+
+pub fn run_python_jsonrpc(request: &str) -> Value {
+    run_jsonrpc(python_command(), request)
+}
+
 fn run_python_request(tool_name: &str, arguments: Value, request_id: u32) -> Option<Value> {
     let request = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
@@ -51,9 +163,7 @@ fn run_python_request(tool_name: &str, arguments: Value, request_id: u32) -> Opt
 
     let request_str = serde_json::to_string(&request).unwrap();
 
-    let mut child = Command::new("python3")
-        .args(["-m", "eggcalc.mcp.server"])
-        .current_dir("/Users/davidbowman/projects/eggcalc")
+    let mut child = python_command()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -62,14 +172,13 @@ fn run_python_request(tool_name: &str, arguments: Value, request_id: u32) -> Opt
 
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
-        stdin.write_all(request_str.as_bytes()).unwrap();
-        stdin.write_all(b"\n").unwrap();
+        write_session_request(&mut stdin, &request_str).ok()?;
     }
 
     let output = child.wait_with_output().ok()?;
     let response_text = String::from_utf8_lossy(&output.stdout);
 
-    let response: JsonRpcResponse = serde_json::from_str(&response_text).ok()?;
+    let response = parse_last_response(&response_text).ok()?;
 
     if let Some(error) = response.error {
         return Some(serde_json::json!({
@@ -110,14 +219,13 @@ fn run_rust_tool(tool_name: &str, arguments: Value) -> Option<Value> {
 
     {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
-        stdin.write_all(request_str.as_bytes()).unwrap();
-        stdin.write_all(b"\n").unwrap();
+        write_session_request(&mut stdin, &request_str).ok()?;
     }
 
     let output = child.wait_with_output().ok()?;
     let response_text = String::from_utf8_lossy(&output.stdout);
 
-    let response: JsonRpcResponse = serde_json::from_str(&response_text).ok()?;
+    let response = parse_last_response(&response_text).ok()?;
 
     if let Some(error) = response.error {
         return Some(serde_json::json!({
@@ -333,35 +441,10 @@ pub fn compare_tool_text_parity(tool_name: &str, arguments: Value) -> ParityTest
     }
 }
 
-fn run_python_mcp_request(request: &Value) -> Result<Value, String> {
-    let request_str = serde_json::to_string(request).map_err(|e| e.to_string())?;
+pub fn run_python_mcp_request(request: &Value) -> Result<Value, String> {
+    let response = run_python_jsonrpc(&serde_json::to_string(request).map_err(|e| e.to_string())?);
 
-    let mut child = Command::new("python3")
-        .args(["-m", "eggcalc.mcp.server"])
-        .current_dir("/Users/davidbowman/projects/eggcalc")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| e.to_string())?;
-
-    {
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "Failed to open stdin".to_string())?;
-        stdin
-            .write_all(request_str.as_bytes())
-            .map_err(|e| e.to_string())?;
-        stdin.write_all(b"\n").map_err(|e| e.to_string())?;
-    }
-
-    let output = child.wait_with_output().map_err(|e| e.to_string())?;
-    let response_text = String::from_utf8_lossy(&output.stdout);
-    let response: JsonRpcResponse =
-        serde_json::from_str(&response_text).map_err(|e| e.to_string())?;
-
-    if let Some(error) = response.error {
+    if let Some(error) = response.get("error") {
         let message = error
             .get("message")
             .and_then(|m| m.as_str())
@@ -370,38 +453,15 @@ fn run_python_mcp_request(request: &Value) -> Result<Value, String> {
     }
 
     response
-        .result
+        .get("result")
+        .cloned()
         .ok_or_else(|| "Python MCP response missing result".to_string())
 }
 
 fn run_rust_mcp_request(request: &Value) -> Result<Value, String> {
-    let request_str = serde_json::to_string(request).map_err(|e| e.to_string())?;
+    let response = run_rust_jsonrpc(&serde_json::to_string(request).map_err(|e| e.to_string())?);
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
-        .arg("--mcp")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| e.to_string())?;
-
-    {
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "Failed to open stdin".to_string())?;
-        stdin
-            .write_all(request_str.as_bytes())
-            .map_err(|e| e.to_string())?;
-        stdin.write_all(b"\n").map_err(|e| e.to_string())?;
-    }
-
-    let output = child.wait_with_output().map_err(|e| e.to_string())?;
-    let response_text = String::from_utf8_lossy(&output.stdout);
-    let response: JsonRpcResponse =
-        serde_json::from_str(&response_text).map_err(|e| e.to_string())?;
-
-    if let Some(error) = response.error {
+    if let Some(error) = response.get("error") {
         let message = error
             .get("message")
             .and_then(|m| m.as_str())
@@ -410,7 +470,8 @@ fn run_rust_mcp_request(request: &Value) -> Result<Value, String> {
     }
 
     response
-        .result
+        .get("result")
+        .cloned()
         .ok_or_else(|| "Rust MCP response missing result".to_string())
 }
 

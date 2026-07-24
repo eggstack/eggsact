@@ -1,49 +1,5 @@
+use crate::parity::{run_python_jsonrpc, run_rust_jsonrpc};
 use serde_json::Value;
-use std::io::Write;
-use std::process::{Command, Stdio};
-
-fn run_rust_jsonrpc(request: &str) -> Value {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
-        .arg("--mcp")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to spawn process");
-
-    {
-        let mut stdin = child.stdin.take().expect("Failed to open stdin");
-        stdin.write_all(request.as_bytes()).unwrap();
-        stdin.write_all(b"\n").unwrap();
-    }
-
-    let output = child.wait_with_output().unwrap();
-    let response_text = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&response_text)
-        .unwrap_or_else(|_| serde_json::json!({"parse_error": response_text.to_string()}))
-}
-
-fn run_python_jsonrpc(request: &str) -> Value {
-    let mut child = Command::new("python3")
-        .args(["-m", "eggcalc.mcp.server"])
-        .current_dir("/Users/davidbowman/projects/eggcalc")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to spawn process");
-
-    {
-        let mut stdin = child.stdin.take().expect("Failed to open stdin");
-        stdin.write_all(request.as_bytes()).unwrap();
-        stdin.write_all(b"\n").unwrap();
-    }
-
-    let output = child.wait_with_output().unwrap();
-    let response_text = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&response_text)
-        .unwrap_or_else(|_| serde_json::json!({"parse_error": response_text.to_string()}))
-}
 
 fn has_error_response(response: &Value) -> bool {
     // Check for JSON-RPC level error
@@ -899,20 +855,21 @@ fn test_float_request_id_rejected() {
     );
 }
 
-// ── BUG-032: validate_regex error message wording ──
+// ── BUG-032: validate_regex panic-safety contract ──
 
 #[test]
-fn test_validate_regex_timeout_message_wording() {
-    // Verify the source code uses the ReDoS-aware timeout message.
-    // This is a code-level check since triggering an actual 5s timeout is impractical in tests.
+fn test_validate_regex_panic_safety_contract() {
+    // Verify the source code converts panics into an error result. Timeout
+    // enforcement is provided by the outer MCP execution budget, so this
+    // test must not assert the removed inner timeout implementation.
     let source = include_str!("../../src/tools/regex.rs");
     assert!(
-        source.contains("Regex execution exceeded time limit (possible ReDoS)"),
-        "validate_regex should use 'Regex execution exceeded time limit (possible ReDoS)' in timeout message"
+        source.contains("catch_unwind"),
+        "validate_regex should catch regex-engine panics"
     );
     assert!(
-        !source.contains("Regex evaluation timed out"),
-        "validate_regex should NOT use old 'evaluation timed out' message"
+        source.contains("Regex evaluation panicked (possible resource limit)"),
+        "validate_regex should report a resource-limit panic"
     );
 
     // Also verify basic functionality works
@@ -1039,9 +996,6 @@ fn test_spawn_slot_acquire_and_release() {
     // This is a unit-level test of the concurrency primitive.
     // We can't easily saturate all slots in a test, but we can verify
     // that acquiring and releasing a permit doesn't leak.
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
     // Run a simple tool call that uses the spawn permit (validate_regex)
     let request = serde_json::json!({
         "jsonrpc": "2.0",
@@ -1054,24 +1008,7 @@ fn test_spawn_slot_acquire_and_release() {
     })
     .to_string();
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
-        .arg("--mcp")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to spawn process");
-
-    {
-        let mut stdin = child.stdin.take().expect("Failed to open stdin");
-        stdin.write_all(request.as_bytes()).unwrap();
-        stdin.write_all(b"\n").unwrap();
-    }
-
-    let output = child.wait_with_output().unwrap();
-    let response_text = String::from_utf8_lossy(&output.stdout);
-    let response: Value = serde_json::from_str(&response_text)
-        .unwrap_or_else(|_| serde_json::json!({"error": response_text.to_string()}));
+    let response = run_rust_jsonrpc(&request);
 
     // Should succeed - the permit was acquired and released properly
     assert!(

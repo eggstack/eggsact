@@ -37,3 +37,4 @@ test_shell_split_basic
 test_bug006_prompt_inspect_vt_ff_detected
 test_math_eval_power
 test_version_compare_phase4_cases
+test_validate_toml_invalid

@@ -107,46 +107,8 @@ fn test_prompt_input_inspect_ansi_case() {
     });
     let req_text = serde_json::to_string(&req).expect("request serialization failed");
 
-    let python_out = std::process::Command::new("python3")
-        .args(["-m", "eggcalc.mcp.server"])
-        .current_dir("/Users/davidbowman/projects/eggcalc")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .and_then(|mut child| {
-            {
-                let mut stdin = child.stdin.take().expect("python stdin");
-                use std::io::Write;
-                stdin.write_all(req_text.as_bytes()).expect("write request");
-                stdin.write_all(b"\n").expect("write newline");
-            }
-            child.wait_with_output()
-        })
-        .expect("Python MCP request failed");
-
-    let rust_out = std::process::Command::new(env!("CARGO_BIN_EXE_eggsact"))
-        .arg("--mcp")
-        .current_dir("/Users/davidbowman/projects/eggcalc/eggsact")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .and_then(|mut child| {
-            {
-                let mut stdin = child.stdin.take().expect("rust stdin");
-                use std::io::Write;
-                stdin.write_all(req_text.as_bytes()).expect("write request");
-                stdin.write_all(b"\n").expect("write newline");
-            }
-            child.wait_with_output()
-        })
-        .expect("Rust MCP request failed");
-
-    let python_json: serde_json::Value =
-        serde_json::from_slice(&python_out.stdout).expect("Python response parse failed");
-    let rust_json: serde_json::Value =
-        serde_json::from_slice(&rust_out.stdout).expect("Rust response parse failed");
+    let python_json = crate::parity::run_python_jsonrpc(&req_text);
+    let rust_json = crate::parity::run_rust_jsonrpc(&req_text);
 
     let python_text = python_json["result"]["content"][0]["text"]
         .as_str()
