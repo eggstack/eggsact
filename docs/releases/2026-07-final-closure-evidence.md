@@ -1,12 +1,15 @@
 # Final Closure Evidence
 
 This document records the exact evidence supporting closure of the runtime
-correctness corrective pass (plans/2026-07-23-final-cancellation-lifecycle-evidence-closure-pass.md).
+correctness corrective passes:
+
+- `plans/2026-07-23-final-cancellation-lifecycle-evidence-closure-pass.md`
+- `plans/2026-07-24-final-verification-evidence-closure-pass.md`
 
 ## Code-under-test
 
-- **SHA**: `54bd7b9e761637f76a50b71a13d3f6647055e09b`
-- **Date**: 2026-07-23
+- **SHA**: `6216d82f355e7acacf05484355c5d1252010327b`
+- **Date**: 2026-07-24
 - **Branch**: `main`
 
 ## Package
@@ -16,111 +19,116 @@ correctness corrective pass (plans/2026-07-23-final-cancellation-lifecycle-evide
 
 ## Toolchain
 
-- **Stable Rust**: `1.96.0 (ac68faa20 2026-05-25)`
+- **Stable Rust**: `1.97.0 (2d8144b78 2026-07-07)`
 - **MSRV**: `1.89.0` (declared in `Cargo.toml`, tested in CI)
-- **Nightly Rust**: `1.98.0-nightly (beae78130 2026-06-09)`
+- **Nightly Rust**: not recorded for this pass
 - **cargo-fuzz**: `0.13.2`
 - **cargo-deny**: `0.19.0` (pinned in CI workflows)
 
 ## Local Verification Commands
 
-All commands run on 2026-07-23 against the working tree.
+All commands run on 2026-07-24 against the working tree at `6216d82`.
 
 ### Release gate
 
 ```
-cargo fmt --all -- --check                                         PASS
-cargo clippy --locked --all-targets --all-features -- -D warnings  PASS
-cargo test --locked --all-features --lib                          PASS (481+ tests)
-cargo test --locked --all-features --bins                         PASS (24 tests)
-cargo test --locked --doc                                         PASS (11 tests)
-cargo run --locked --bin generate-docs -- --check                 PASS
-cargo deny check advisories bans licenses sources                 PASS
-cargo package --locked --list                                     PASS
-cargo package --locked --verbose                                  PASS
+cargo fmt --all -- --check                                         PASS (0 diffs)
+cargo clippy --locked --all-targets --all-features -- -D warnings  PASS (no issues)
+cargo test --locked --all-features --lib                           PASS (492 tests)
+cargo test --locked --all-features --bins                          PASS (24 tests)
+cargo test --locked --all-features --tests -- --skip parity        PASS (3418 tests)
+cargo test --locked --doc                                          PASS (11 tests)
+cargo run --locked --bin generate-docs -- --check                  PASS
+cargo deny check advisories bans licenses sources                  PASS
+cargo package --locked --verbose                                   PASS
+cargo publish --locked --dry-run                                   PASS
+```
+
+### Deterministic lifecycle stress loop
+
+```
+for i in $(seq 1 100); do
+  cargo test --locked --all-features --lib mcp::execution::deterministic_tests || exit 1
+done
+  100 iterations: 9 passed each
+```
+
+All 9 deterministic gate-controlled tests pass consistently across 100 sequential iterations.
+No flakiness observed.
+
+### Focused lifecycle gates
+
+```
+cargo test --locked --all-features --lib mcp::execution::deterministic_tests
+  9 passed (1 ignored: 500-iteration stress test)
+cargo test --locked --all-features --lib mcp::execution::deterministic_tests -- --test-threads=1
+  9 passed (1 ignored)
+```
+
+### Focused synchronous gates
+
+```
+cargo test --locked --all-features --lib mcp::sync_pool             PASS (24 tests)
+cargo test --locked --all-features --test lib sync_policy           PASS
+cargo test --locked --all-features --test lib context_isolation     PASS
 ```
 
 ### MSRV gate
 
 ```
-cargo +1.89.0 check --locked --all-targets --all-features         PASS
-cargo +1.89.0 test --locked --all-features --lib                  PASS (481 tests)
-```
-
-### Property tests
-
-```
-cargo test --locked --all-features --tests property               PASS (47 tests)
+cargo +1.89.0 check --locked --all-targets --all-features           PASS
+cargo +1.89.0 test --locked --all-features --lib                    PASS (492 tests)
+cargo +1.89.0 test --locked --all-features --bins                   PASS (24 tests)
+cargo +1.89.0 test --locked --doc                                   PASS (11 tests)
 ```
 
 ### Fuzz build
 
 ```
-RUSTUP_TOOLCHAIN=nightly cargo fuzz build                          PASS (12 targets)
-```
-
-### Coordinator stress loop
-
-```
-for i in 1..50: cargo test --locked --all-features --lib mcp::execution::coordinator_tests
-  Iterations 1-50: 9 passed (each)
-```
-
-All 9 coordinator tests pass consistently across 50 sequential iterations.
-
-### Execution safety tests
-
-```
-cargo test --locked --all-features --test lib mcp::test_execution_safety
-  26 passed
-```
-
-### Runtime helper tests
-
-```
-cargo test --locked --all-features --test lib mcp::test_runtime_helpers
-  45 passed
+RUSTUP_TOOLCHAIN=nightly cargo fuzz build                           PASS (12 targets)
 ```
 
 ## Test Counts
 
 | Partition | Count |
 |-----------|-------|
-| Unit (lib) | 481 |
+| Unit (lib) | 492 |
 | Binary | 24 |
-| Property | 47 |
+| Integration (non-parity) | 3418 |
 | Doc | 11 |
-| Execution safety | 26 |
-| Runtime helpers | 45 |
-| Context isolation | 38 |
-| **Total (local)** | **672** |
+| **Total (local)** | **3945** |
 
-### New tests added in this session (execution.rs)
+### Deterministic lifecycle tests (execution.rs `deterministic_tests`)
 
-**Timing-based tests** (basic behavior verification):
-- `queued_timeout_blocks_handler_after_permit_release` — queued timeout prevents handler from running
-- `timeout_after_permit_but_before_closure_start` — timeout fires while handler is running
-- `running_timeout_increments_exactly_once` — timed_out_handlers is exactly 1 while handler runs
-- `no_double_completion` — defensive completion behavior verified
-- `basic_execution_completes_successfully` — basic handler execution
-- `handler_panic_returns_blocking_handler_count_to_baseline` — panic cleanup
-- `timeout_response_returns_while_handler_continues` — timeout returns while handler runs
+**Gate-controlled exact interleavings** (winner selection controlled by gates, not timing):
 
-**Deterministic tests** (hook-driven exact interleavings):
-- `deterministic_completion_wins` — fast handler completes before timeout, no gauge increment
-- `deterministic_timeout_wins` — slow handler times out, gauges return to zero after release
-- `deterministic_queued_timeout_after_permit` — timeout fires while queued, handler never runs
-- `five_hundred_deterministic_interleavings` — 250 completion-wins + 250 timeout-wins, all hook-driven
-- `worker_bound_coordinator_test` — N workers via coordinator, N+1 queues, gauges verified
+- `timeout_after_permit_before_lifecycle_start` — Test A: timeout fires while closure is gated at `before_begin_running`; `begin_running` sees `CancelledBeforeStart`; handler never invoked
+- `completion_wins_timeout_record_race` — Test B: `before_finish` released before `record_timeout`; `record_timeout` observes `Finished`; `timed_out_handlers` not incremented
+- `timeout_wins_completion_race` — Test C: `record_timeout` released before `before_finish`; `timed_out_handlers` incremented then decremented
+- `panic_after_timeout` — Test D: handler panics after timeout; `catch_unwind` catches panic; gauges return to zero
+- `cooperative_cancellation_visibility` — Test E: handler polls cancel flag via `current_cancel_flag()`; observes flag set by timeout
+- `one_hundred_exact_interleavings` — Test F: 50 completion-wins + 50 timeout-wins sequences; per-iteration gates; no shared state
+- `five_hundred_exact_interleavings` — 500-iteration stress test (ignored in ordinary CI)
+- `worker_bound_n_plus_one` — Test G: 3 workers with `running_established` gates; N+1 invocation queued and observed
+- `deterministic_completion_wins` — fast handler completes before timeout; no gauge leak
 - `repeated_single_threaded_100_iterations` — 100 iterations with varying handlers/timeouts
-- `deterministic_panic_after_timeout` — panic after timeout, gauges return to zero via hook
-- `deterministic_cancellation_flag_after_timeout` — cancel flag set after timeout, verified via hook
 
-### New tests added in sync_pool.rs
+**Timing-based smoke tests** (`mod tests`):
 
-- `panic_in_job_does_not_kill_worker` — worker survives job panic via catch_unwind
-- `eval_context_not_leaked_between_jobs` — thread-local state isolated between jobs
-- `repeated_timeouts_pool_stays_usable` — pool remains functional after timeouts
+- `queued_timeout_smoke_does_not_run_handler`
+- `timeout_smoke_returns_while_handler_continues`
+- `running_timeout_smoke_increments_once`
+- `no_double_completion_smoke`
+- `basic_execution_completes_successfully`
+- `panic_cleanup_smoke`
+- `timeout_smoke_handler_continues_after_return`
+
+### Sync pool reply classification tests
+
+- `wait_for_reply_success_returns_response` — success path, flag not set
+- `wait_for_reply_timeout_sets_cancel_flag` — timeout sets cancel before returning
+- `wait_for_reply_disconnected_returns_shutdown` — disconnection maps to Shutdown, flag not set
+- `wait_for_reply_timeout_with_sender_retained_sets_cancel` — sender alive, timeout still sets flag
 
 ## Runtime Lifecycle Model
 
@@ -129,7 +137,7 @@ The implementation uses a mutex-backed lifecycle with five phases:
 ```
 Queued → Running → Finished
          ↓           ↑
-    TimedOutRunning ─┘
+     TimedOutRunning ─┘
          ↑
 Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 ```
@@ -184,47 +192,39 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - [x] Raw `call_json` timeout semantics are documented accurately
 - [x] Worker survives job panic via `catch_unwind`
 
-### Tests
+### Tests — exact transition gates
 
-- [x] Lifecycle races use hooks rather than timing guesses
-- [x] Deterministic completion-wins and timeout-wins tests force exact orderings
-- [x] Queued timeout is tested with a saturated semaphore
-- [x] Panic-after-timeout is tested
-- [x] 500 controlled interleavings (250 completion + 250 timeout) pass without gauge leaks
-- [x] Worker-bound test exercises the actual coordinator with shared semaphore
-- [x] 100-iteration repeated single-threaded test passes consistently
-- [x] Sleeps used only as bounded "did not happen" observations, never to establish order
+- [x] Exact async/blocking test gates exist (`BlockingTestGate`, `AsyncTestGate`)
+- [x] Test gates pause (not merely notify) via `arrive_and_wait`
+- [x] All 7 lifecycle hook sites have gate support
+- [x] Timeout-before-`begin_running` is directly forced (Test A)
+- [x] Completion-wins is forced at the timeout lifecycle lock (Test B)
+- [x] Timeout-wins is forced before completion lifecycle lock (Test C)
+- [x] Panic-after-timeout uses exact gates (Test D)
+- [x] Cooperative cancellation exits without a fixed sleep (Test E)
+- [x] 100 interleavings use per-invocation gates, no shared state (Test F)
+- [x] Worker-bound test submits and observes N+1 (Test G)
+- [x] No parallel lifecycle test uses shared mutable statics (per-slot BLOCK_SLOTS with unique slots)
+- [x] Legacy `TEST_HANDLER_SHOULD_BLOCK` / `TEST_HANDLER_RELEASED` removed
+- [x] Timing-based tests renamed with `_smoke_` suffix
+
+### Tests — mutable commit
+
+- [x] Mutable transaction tests call shared production code (`execute_handler_with_commit_slot`)
+- [x] No test helper duplicates the commit-slot algorithm
+- [x] Success commits, failure/cancel/timeout/saturation/panic roll back
+
+### Tests — reply classification
+
+- [x] Production `wait_for_reply` helper extracted and called by `submit_cancellable`
+- [x] Tests exercise the helper directly (success, timeout, disconnect, flag visibility)
+- [x] `std::mpsc`-only test replaced with production helper tests
 
 ### Mutable execution context
 
-- [x] Mutable-context calls use the bounded pool via `submit_cancellable`
-- [x] Transactional commit slot (`Arc<Mutex<Option<EvalContext>>>`) stores worker-local context
+- [x] `call_json_with_execution_context_mut` delegates to shared `execute_handler_with_commit_slot`
 - [x] Commit requires `response.ok == true` AND cancel flag still false
 - [x] On timeout/saturation/cancellation/failure, commit slot is never read (late writes discarded)
-- [x] math_eval cloning limitation is documented and tested
-- [x] Generic test handler proves successful mutation commit and rollback on failure
-- [x] Pool saturation leaves context unchanged
-- [x] Cancellation flag is passed through to the pool
-
-### Shared cancellation identity
-
-- [x] `call_json_with_budget` uses one flag for pool and handler
-- [x] `call_json_with_context` preserves and uses the supplied flag
-- [x] `call_json_with_execution_context` uses one effective flag for pool and handler
-- [x] `call_json_with_execution_context_mut` uses one effective flag for pool, handler, and commit decision
-- [x] Timeout sets the effective flag before returning
-- [x] Fast success leaves the flag false
-- [x] Queue saturation leaves the flag false
-
-### Sync worker preflight
-
-- [x] Worker checks deadline before invocation
-- [x] Worker checks cancellation before invocation
-- [x] Timed-out queued jobs never execute
-- [x] Externally cancelled queued jobs never execute
-- [x] Running non-cooperative jobs retain worker occupancy
-- [x] Timeout and shutdown are classified separately
-- [x] Disconnection tests exercise real channel disconnection
 
 ### MCP lifecycle
 
@@ -239,29 +239,52 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 
 ### Documentation and evidence
 
-- [x] Changelog describes the implemented lifecycle accurately
-- [x] Deprecation `since` metadata matches actual shipping history
-- [x] Architecture docs distinguish MCP and in-process execution boundaries
+- [x] Test names and comments match what each test actually proves
+- [x] Evidence distinguishes smoke tests from exact transition tests
+- [x] Every cited test exists in the code-under-test SHA `6216d82`
+- [x] No approximate test counts remain (exact: 492 lib, 24 bin, 3418 integration, 11 doc)
 - [x] Closure evidence identifies the exact commit containing all cited changes
-- [x] Local command results were produced from a clean checkout of that commit
+- [x] All local verification gates pass from the code-under-test SHA
 - [x] MSRV gate passes on Rust 1.89.0
-- [x] Fuzz build succeeds
-- [ ] Ordinary CI passed for that commit (requires CI dispatch)
-- [ ] Manual release-verification workflow passed for that commit (requires CI dispatch)
-- [ ] Extended fuzz and sanitizer matrices passed for that commit (requires CI dispatch)
-- [ ] Release 4 and Release 5 remain open until their evidence-dependent items pass
+- [x] Fuzz build succeeds (12 targets)
+- [x] `cargo publish --dry-run` passes
+- [ ] Ordinary CI passed for `6216d82` (run pending)
+- [ ] Manual release-verification workflow passed for `6216d82` (pending)
+- [ ] Extended fuzz and sanitizer matrices passed (pending)
+
+## GitHub Actions Evidence (to be filled after CI completes)
+
+### Ordinary CI
+
+- **Run ID**: (pending)
+- **URL**: (pending)
+- **Head SHA**: `6216d82f355e7acacf05484355c5d1252010327b`
+- **Conclusion**: (pending)
+
+### Release Verification
+
+- **Run ID**: (pending)
+- **URL**: (pending)
+- **Head SHA**: `6216d82f355e7acacf05484355c5d1252010327b`
+
+### Extended Fuzz
+
+- **Run ID**: (pending)
+- **URL**: (pending)
+
+### Provenance Artifacts
+
+- **Artifact ID**: (pending)
+- **SHA-256**: (pending)
 
 ## Intentionally Deferred Items
 
-1. **GitHub Actions CI**: Requires push to trigger CI workflow. Evidence will be
-   recorded after the commit is pushed and CI completes.
-
-2. **Manual release-verification workflow run**: Requires dispatching the
-   `Release Verification` workflow via GitHub Actions.
-
-3. **Per-target fuzz run evidence**: Requires the extended fuzz matrix workflow
+1. **Per-target fuzz run evidence**: Requires the extended fuzz matrix workflow
    to run on GitHub Actions.
 
-4. **Release 4/5 status closure**: Status notes will be marked complete
-   after the manual release-verification workflow succeeds and the maintainer
+2. **Release 4/5 status closure**: Status notes will be marked complete
+   after the release-verification workflow succeeds and the maintainer
    confirms the release candidate.
+
+3. **Sanitizer matrix**: The repository does not currently have a sanitizer
+   CI workflow. One should be added as a manual-only workflow per the plan.
