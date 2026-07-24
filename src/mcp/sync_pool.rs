@@ -760,6 +760,20 @@ mod tests {
     }
 
     #[test]
+    fn recv_timeout_disconnected_returns_error() {
+        use std::sync::mpsc::RecvTimeoutError;
+
+        let (tx, rx) = sync_channel::<ToolResponse>(1);
+        drop(tx);
+        let result = rx.recv_timeout(Duration::from_secs(1));
+        assert!(
+            matches!(result, Err(RecvTimeoutError::Disconnected)),
+            "dropped sender must produce Disconnected, got {:?}",
+            result
+        );
+    }
+
+    #[test]
     fn repeated_timeouts_do_not_increase_worker_count() {
         let pool = SyncExecutionPool::with_limits(2, 4);
         assert_eq!(pool.worker_count(), 2);

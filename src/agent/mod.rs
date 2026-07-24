@@ -1969,4 +1969,181 @@ mod tests {
             other => panic!("expected ToolUnavailable, got {:?}", other),
         }
     }
+
+    // ── Mutable-context commit/rollback tests (WS6) ────────────────────
+    //
+    // These tests use a custom handler that mutates the eval context via
+    // `evaluate_with_context("store(99, 42)", ctx)` — which writes to
+    // `ctx.memory_registers` — then verify the commit-slot predicate
+    // (`response.ok && !cancel_flag`) by checking whether `recall(99)`
+    // returns 42 after the call.
+
+    /// Helper: run a custom handler through the commit-slot logic
+    /// without going through the registry lookup. Mirrors the exact code
+    /// path in `call_json_with_execution_context_mut`.
+    fn execute_with_commit_slot(
+        handler: crate::mcp::registry::ToolHandler,
+        args: serde_json::Value,
+        eval_ctx: &mut crate::calc::EvalContext,
+        cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        timeout: std::time::Duration,
+    ) -> Result<crate::mcp::response::ToolResponse, ToolCallError> {
+        use crate::mcp::budget;
+        use crate::mcp::sync_pool::sync_pool;
+        use std::sync::atomic::Ordering;
+
+        let handler_cancel = cancel_flag.clone();
+        let commit_cancel = cancel_flag.clone();
+        let commit_slot: std::sync::Arc<std::sync::Mutex<Option<crate::calc::EvalContext>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let commit_slot_clone = commit_slot.clone();
+        let eval_ctx_clone = eval_ctx.clone();
+        let args_clone = args.clone();
+
+        let result = sync_pool().submit_cancellable(
+            move || {
+                budget::with_cancel_flag(Some(handler_cancel), || {
+                    let mut eval_ctx = eval_ctx_clone;
+                    let resp = budget::with_eval_context(&mut eval_ctx, || handler(&args_clone));
+                    if let Ok(mut slot) = commit_slot_clone.lock() {
+                        *slot = Some(eval_ctx);
+                    }
+                    resp
+                })
+            },
+            timeout,
+            cancel_flag,
+        );
+
+        match result {
+            Ok(mut response) => {
+                crate::mcp::response::truncate_response(
+                    &mut response,
+                    &crate::mcp::budget::ToolBudget::CHEAP,
+                );
+                let commit_allowed = response.ok && !commit_cancel.load(Ordering::Acquire);
+                if commit_allowed {
+                    if let Ok(mut slot) = commit_slot.lock() {
+                        if let Some(worker_ctx) = slot.take() {
+                            *eval_ctx = worker_ctx;
+                        }
+                    }
+                }
+                Ok(response)
+            }
+            Err(pool_error) => Ok(pool_error.to_tool_response("test_tool")),
+        }
+    }
+
+    #[test]
+    fn mutable_context_commit_on_success() {
+        use crate::calc::evaluate_with_context;
+        use crate::mcp::execution::test_handler_mutate_then_controlled_response;
+
+        let mut ctx = crate::calc::EvalContext::new();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let result = execute_with_commit_slot(
+            test_handler_mutate_then_controlled_response,
+            serde_json::json!({}),
+            &mut ctx,
+            cancel,
+            std::time::Duration::from_secs(5),
+        );
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().ok);
+
+        // Verify mutation was committed: recall(99) should return 42
+        let recall = evaluate_with_context("recall(99)", &mut ctx);
+        assert!(recall.is_ok());
+        let (val, _unit) = recall.unwrap();
+        assert_eq!(
+            val, "42",
+            "store(42, 99) should be committed via recall(99)"
+        );
+    }
+
+    #[test]
+    fn mutable_context_rollback_on_failure() {
+        use crate::calc::evaluate_with_context;
+        use crate::mcp::execution::test_handler_mutate_then_controlled_response;
+
+        let mut ctx = crate::calc::EvalContext::new();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let result = execute_with_commit_slot(
+            test_handler_mutate_then_controlled_response,
+            serde_json::json!({"fail": true}),
+            &mut ctx,
+            cancel,
+            std::time::Duration::from_secs(5),
+        );
+
+        assert!(result.is_ok());
+        assert!(!result.unwrap().ok, "response.ok must be false on failure");
+
+        // Verify mutation was NOT committed: recall(99) should return 0
+        let recall = evaluate_with_context("recall(99)", &mut ctx);
+        assert!(recall.is_ok());
+        let (val, _unit) = recall.unwrap();
+        assert_eq!(val, "0", "recall(99) must be 0 — commit was rolled back");
+    }
+
+    #[test]
+    fn mutable_context_rollback_on_cancel() {
+        use crate::calc::evaluate_with_context;
+        use crate::mcp::execution::test_handler_mutate_then_controlled_response;
+
+        let mut ctx = crate::calc::EvalContext::new();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+
+        let result = execute_with_commit_slot(
+            test_handler_mutate_then_controlled_response,
+            serde_json::json!({}),
+            &mut ctx,
+            cancel,
+            std::time::Duration::from_secs(5),
+        );
+
+        // Pre-cancelled jobs are rejected by worker preflight (WS2)
+        assert!(result.is_ok());
+        let resp = result.unwrap();
+        assert!(!resp.ok, "pre-cancelled job must not succeed");
+
+        // Verify mutation was NOT committed
+        let recall = evaluate_with_context("recall(99)", &mut ctx);
+        assert!(recall.is_ok());
+        let (val, _unit) = recall.unwrap();
+        assert_eq!(val, "0", "recall(99) must be 0 — commit was rolled back");
+    }
+
+    #[test]
+    fn mutable_context_rollback_on_timeout() {
+        use crate::calc::evaluate_with_context;
+        use crate::mcp::response::ToolResponse;
+
+        let mut ctx = crate::calc::EvalContext::new();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let result = execute_with_commit_slot(
+            |_args| {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                ToolResponse::success(serde_json::json!("late"), None)
+            },
+            serde_json::json!({}),
+            &mut ctx,
+            cancel,
+            std::time::Duration::from_millis(10),
+        );
+
+        // Timeout returns an error via pool
+        assert!(result.is_ok());
+
+        // Verify mutation was NOT committed (timeout = no commit)
+        let recall = evaluate_with_context("recall(99)", &mut ctx);
+        assert!(recall.is_ok());
+        let (val, _unit) = recall.unwrap();
+        assert_eq!(val, "0", "recall(99) must be 0 — timeout prevented commit");
+    }
 }
