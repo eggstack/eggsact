@@ -107,6 +107,20 @@ RUSTUP_TOOLCHAIN=nightly-2026-05-07 cargo fuzz build                PASS (12 tar
 RUSTUP_TOOLCHAIN=nightly-2026-05-07 cargo fuzz build --sanitizer=address PASS
 ```
 
+### Clean worktree verification
+
+```
+CODE_SHA=06f7a0bd7c1005439e9de229c37cb34d988b42e4
+git worktree add /tmp/eggsact-final-closure "$CODE_SHA"
+cd /tmp/eggsact-final-closure
+git rev-parse HEAD                                   # $CODE_SHA
+git status --porcelain                               # (clean, no output)
+test "$(git rev-parse HEAD)" = "$CODE_SHA"           # MATCH
+```
+
+Full release gate ran from clean worktree. Worktree remained clean after all
+verification commands. Worktree was removed after verification completed.
+
 ### Fuzz-discovered production fixes
 
 The final proof run found and closed two production defects: `gcd`/`lcm` now
@@ -278,9 +292,10 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - [x] MSRV gate passes on Rust 1.89.0
 - [x] Fuzz build succeeds (12 targets)
 - [x] `cargo publish --dry-run` passes
-- [x] Ordinary CI passed for `fa6a6e9`
-- [x] Manual release-verification workflow passed for `fa6a6e9`
-- [x] Extended fuzz and sanitizer matrices passed for `fa6a6e9`
+- [x] Clean worktree at CODE_SHA verified
+- [x] Ordinary CI passed for `06f7a0b`
+- [x] Release-verification workflow passed for `06f7a0b` (Run 30177462182)
+- [x] Extended fuzz and sanitizer matrices passed for `fa6a6e9` (code identical to `06f7a0b`)
 
 ## GitHub Actions Evidence
 
@@ -298,7 +313,15 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - **Head SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
 - **Conclusion**: success; all 12 jobs passed
 
-### Release Verification
+### Release Verification (exact CODE_SHA)
+
+- **Run ID**: `30177462182`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30177462182>
+- **Head SHA**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
+- **Branch**: `release-verify-closure` (temporary, points to exact CODE_SHA)
+- **Conclusion**: success; all 18 jobs passed (format, generated docs, clippy, unit, binary, integration, doc, cargo-deny, package contents, assert package contents, package build, publish dry run, generate provenance, upload provenance)
+
+### Release Verification (original baseline `fa6a6e9`)
 
 - **Run ID**: `30138546415`
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138546415>
@@ -327,15 +350,20 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - **Conclusion**: success; 381 passed, 0 failed, 37 ignored
 - **Report**: eggcalc `1.1.6`, Python `3.12.13`
 
-### Provenance Artifacts
+### Provenance Artifacts (from release verification on exact CODE_SHA)
+
+- **Release provenance artifact ID**: `8624794842`
+- **Release provenance SHA-256**: `7f977abfbfc94eb9c66e7894622ba0a41e1116892ece458a3e4f9bacbb51a30f`
+
+### Provenance Artifacts (from original baseline `fa6a6e9`)
 
 - **Release provenance artifact ID**: `8613958617`
 - **Release provenance SHA-256**: `9df4ee7a493904a3026be94219e33409356dfeaf17fe75c718825c49da6b4337`
 - **Parity report artifact ID**: `8613698390`
 - **Parity report SHA-256**: `5df89518813d4ade61b6b9102b84b63f0223fc6faa313b25a7c622f044c1bd0d`
 
-The release provenance records package version `1.2.0`, commit
-`fa6a6e92ad183061b01ca710d4cbfbf6932a1067`, MSRV `1.89.0`, Linux release
+The release provenance from exact CODE_SHA records package version `1.2.0`, commit
+`06f7a0bd7c1005439e9de229c37cb34d988b42e4`, MSRV `1.89.0`, Linux release
 Rust `1.97.1`, lockfile SHA-256
 `5dd9396665d264fb406c4e9295f6caae2696916650db33a25e7dd2c31d04cec7`, and
 235 packaged files.

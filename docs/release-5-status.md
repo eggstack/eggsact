@@ -86,6 +86,7 @@ included in the final verification baseline.
 | Fuzz dependencies excluded from runtime | `fuzz/Cargo.toml` isolated workspace; not in root `Cargo.toml` | Complete |
 | Fuzzing documentation current | `docs/fuzzing.md` — reproduce, minimize, fix, promote, security handling | Complete |
 | Full CI, cargo-deny, docs, package gates pass | CI run [30162970273](https://github.com/eggstack/eggsact/actions/runs/30162970273) — all 12 jobs success | Complete |
+| Release verification on exact CODE_SHA | Release verification [30177462182](https://github.com/eggstack/eggsact/actions/runs/30177462182) — all 18 jobs success on `06f7a0b` | Complete |
 
 ## Publication status
 
