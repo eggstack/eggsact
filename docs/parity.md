@@ -145,19 +145,26 @@ They do not affect client-facing behavior or interchangeability.
 Both implementations identify themselves identically to MCP clients:
 
 - **Name:** `eggsact`
-- **Version:** `1.1.3`
+- **Version:** `1.2.0` for the final release candidate
 
 This ensures clients see the same server regardless of which backend is running.
 
 ## Verification status
 
-CI does not run parity tests (Python `eggcalc` is not available in the CI
-environment). The most recent local run:
+The final parity workflow ran the Rust and Python servers together on the exact
+release-verification baseline:
 
-- **Command:** `cargo test --test lib parity`
-- **Date:** 2026-07-09
-- **Commit:** `bd089a9`
-- **Result:** 382 passed, 0 failed, 36 ignored (out of 418 parity tests)
+- **Workflow:** [Python Parity run 30138548267](https://github.com/eggstack/eggsact/actions/runs/30138548267)
+- **Date:** 2026-07-25 UTC
+- **Commit:** `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+- **Result:** `381 passed, 0 failed, 37 ignored, 2867 filtered out`
+- **Report:** eggsact `1.2.0`, eggcalc `1.1.6`, Python `3.12.13`
+- **Artifact:** parity-report ID `8613698390`
+- **Artifact SHA-256:** `5df89518813d4ade61b6b9102b84b63f0223fc6faa313b25a7c622f044c1bd0d`
+
+The ignored cases are the accepted behavioral differences listed below, not
+new failures in the final candidate. The TOML invalid-input diagnostic remains
+an explicitly accepted Rust/Python wording difference.
 
 The remaining parity gaps are now classified in the [decision table](#decision-table)
 below. They are not regressions — they accumulated across the phase 06–09

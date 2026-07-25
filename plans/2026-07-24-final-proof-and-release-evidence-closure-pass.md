@@ -2,9 +2,12 @@
 
 ## Status
 
+- **Status:** completed
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Plan baseline:** `85eccc600f42c279aff4fdec9f973960b6c23a30`
+- **Final evidence baseline:** `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+- **Completion evidence:** `docs/releases/2026-07-final-closure-evidence.md`
 - **Scope:** remaining proof-quality, test-isolation, and release-evidence closure only
 - **Predecessor plans:**
   - `plans/2026-07-23-final-cancellation-lifecycle-evidence-closure-pass.md`

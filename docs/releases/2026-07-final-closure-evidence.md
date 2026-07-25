@@ -5,39 +5,46 @@ correctness corrective passes:
 
 - `plans/2026-07-23-final-cancellation-lifecycle-evidence-closure-pass.md`
 - `plans/2026-07-24-final-verification-evidence-closure-pass.md`
+- `plans/2026-07-24-final-proof-and-release-evidence-closure-pass.md`
 
 ## Code-under-test
 
-- **Implementation SHA**: `6216d82f355e7acacf05484355c5d1252010327b`
-- **Evidence-recording SHA**: the commit containing this document (`0e08dd6`)
-- **Date**: 2026-07-24
+- **Final code-under-test SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+- **Production-fix parent**: `d9acca3ecf534c0fb50d67faa6cf95ccd6ae186f`
+- **Evidence date**: 2026-07-25 UTC
 - **Branch**: `main`
+
+The final SHA is the exact clean-checkout baseline used by all five required
+GitHub workflows. The documentation commit is reported in the final handoff;
+the SHA above remains the immutable code-and-workflow evidence baseline.
 
 ## Package
 
-- **Version**: `1.2.0` (last published to crates.io)
+- **Version**: `1.2.0` (release candidate)
 - **Manifest**: `Cargo.toml`
 
 ## Toolchain
 
-- **Stable Rust**: `1.97.0 (2d8144b78 2026-07-07)`
+- **Stable Rust (local)**: `1.97.0 (2d8144b78 2026-07-07)`
+- **Stable Rust (release runner)**: `1.97.1`
 - **MSRV**: `1.89.0` (declared in `Cargo.toml`, tested in CI)
-- **Nightly Rust**: not recorded for this pass
+- **Nightly Rust**: `nightly-2026-05-07`, `rustc 1.97.0-nightly (365c0e1d7 2026-05-06)`
 - **cargo-fuzz**: `0.13.2`
 - **cargo-deny**: `0.19.0` (pinned in CI workflows)
 
 ## Local Verification Commands
 
-All commands run on 2026-07-24 against the working tree at `6216d82`.
+All commands ran against a clean checkout of `fa6a6e9` during the final
+verification window.
 
 ### Release gate
 
 ```
 cargo fmt --all -- --check                                         PASS (0 diffs)
 cargo clippy --locked --all-targets --all-features -- -D warnings  PASS (no issues)
-cargo test --locked --all-features --lib                           PASS (492 tests)
+cargo test --locked --all-features --lib                           PASS (494 passed, 1 ignored)
 cargo test --locked --all-features --bins                          PASS (24 tests)
-cargo test --locked --all-features --tests -- --skip parity        PASS (3418 tests)
+cargo test --locked --all-features --tests -- --skip parity        PASS (3423 passed, 1 ignored, 418 filtered)
 cargo test --locked --doc                                          PASS (11 tests)
 cargo run --locked --bin generate-docs -- --check                  PASS
 cargo deny check advisories bans licenses sources                  PASS
@@ -54,8 +61,10 @@ done
   100 iterations: 9 passed each
 ```
 
-All 9 deterministic gate-controlled tests pass consistently across 100 sequential iterations.
-No flakiness observed.
+All 9 deterministic gate-controlled tests pass across 100 sequential
+invocations. The combined ordinary-scheduling fallback also passed 25 complete
+library runs. The separate ignored exact-interleaving test passed 500/500
+iterations (250 completion-wins and 250 timeout-wins).
 
 ### Focused lifecycle gates
 
@@ -78,7 +87,7 @@ cargo test --locked --all-features --test lib context_isolation     PASS
 
 ```
 cargo +1.89.0 check --locked --all-targets --all-features           PASS
-cargo +1.89.0 test --locked --all-features --lib                    PASS (492 tests)
+cargo +1.89.0 test --locked --all-features --lib                    PASS (494 passed, 1 ignored)
 cargo +1.89.0 test --locked --all-features --bins                   PASS (24 tests)
 cargo +1.89.0 test --locked --doc                                   PASS (11 tests)
 ```
@@ -86,18 +95,30 @@ cargo +1.89.0 test --locked --doc                                   PASS (11 tes
 ### Fuzz build
 
 ```
-RUSTUP_TOOLCHAIN=nightly cargo fuzz build                           PASS (12 targets)
+RUSTUP_TOOLCHAIN=nightly-2026-05-07 cargo fuzz build                PASS (12 targets)
+RUSTUP_TOOLCHAIN=nightly-2026-05-07 cargo fuzz build --sanitizer=address PASS
 ```
+
+### Fuzz-discovered production fixes
+
+The final proof run found and closed two production defects: `gcd`/`lcm` now
+reject `i64::MIN` before absolute-value conversion, and regex iteration now
+advances after a zero-length match at end-of-input. Additional minimized inputs
+closed a zero-count unified-diff range panic and a short-Unicode path indexing
+panic. The corresponding regression seeds are committed in `fuzz/corpus/`.
+The calculator-normalization and JSON-pointer fuzz assertions were also
+corrected to test their actual deterministic/valid-JSON contracts rather than
+invalid byte-for-byte assumptions for large-number formatting.
 
 ## Test Counts
 
 | Partition | Count |
 |-----------|-------|
-| Unit (lib) | 492 |
+| Unit (lib) | 494 passed, 1 ignored |
 | Binary | 24 |
-| Integration (non-parity) | 3418 |
+| Integration (non-parity) | 3423 passed, 1 ignored, 418 filtered |
 | Doc | 11 |
-| **Total (local)** | **3945** |
+| **Total (passing tests reported)** | **3952** |
 
 ### Deterministic lifecycle tests (execution.rs `deterministic_tests`)
 
@@ -205,7 +226,7 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - [x] Cooperative cancellation exits without a fixed sleep (Test E)
 - [x] 100 interleavings use per-invocation gates, no shared state (Test F)
 - [x] Worker-bound test submits and observes N+1 (Test G)
-- [x] No parallel lifecycle test uses shared mutable statics (per-slot BLOCK_SLOTS with unique slots)
+- [x] Parallel lifecycle tests use exclusive RAII slot leases over cfg(test) backing storage; no manual slot assignment is exposed to tests
 - [x] Legacy `TEST_HANDLER_SHOULD_BLOCK` / `TEST_HANDLER_RELEASED` removed
 - [x] Timing-based tests renamed with `_smoke_` suffix
 
@@ -242,50 +263,76 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 
 - [x] Test names and comments match what each test actually proves
 - [x] Evidence distinguishes smoke tests from exact transition tests
-- [x] Every cited test exists in the code-under-test SHA `6216d82`
-- [x] No approximate test counts remain (exact: 492 lib, 24 bin, 3418 integration, 11 doc)
-- [x] Closure evidence identifies the exact commit containing all cited changes
+- [x] Every cited test exists in the code-under-test SHA `fa6a6e9`
+- [x] No approximate test counts remain (exact: 494 lib passed, 24 bin, 3423 integration passed, 11 doc)
+- [x] Closure evidence identifies the exact code-and-workflow evidence baseline
 - [x] All local verification gates pass from the code-under-test SHA
 - [x] MSRV gate passes on Rust 1.89.0
 - [x] Fuzz build succeeds (12 targets)
 - [x] `cargo publish --dry-run` passes
-- [ ] Ordinary CI passed for `6216d82` (run pending)
-- [ ] Manual release-verification workflow passed for `6216d82` (pending)
-- [ ] Extended fuzz and sanitizer matrices passed (pending)
+- [x] Ordinary CI passed for `fa6a6e9`
+- [x] Manual release-verification workflow passed for `fa6a6e9`
+- [x] Extended fuzz and sanitizer matrices passed for `fa6a6e9`
 
-## GitHub Actions Evidence (to be filled after CI completes)
+## GitHub Actions Evidence
 
 ### Ordinary CI
 
-- **Run ID**: (pending)
-- **URL**: (pending)
-- **Head SHA**: `6216d82f355e7acacf05484355c5d1252010327b`
-- **Conclusion**: (pending)
+- **Run ID**: `30138542368`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138542368>
+- **Head SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+- **Conclusion**: success; all 12 jobs passed
 
 ### Release Verification
 
-- **Run ID**: (pending)
-- **URL**: (pending)
-- **Head SHA**: `6216d82f355e7acacf05484355c5d1252010327b`
+- **Run ID**: `30138546415`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138546415>
+- **Head SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+- **Conclusion**: success; package, publish dry run, and provenance steps passed
 
 ### Extended Fuzz
 
-- **Run ID**: (pending)
-- **URL**: (pending)
+- **Run ID**: `30138546987`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138546987>
+- **Head SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+- **Conclusion**: success; 19/19 jobs passed, including 7/7 sanitizer jobs
+
+### Latest-compatible dependencies
+
+- **Run ID**: `30138547661`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138547661>
+- **Head SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+- **Conclusion**: success
+
+### Python parity
+
+- **Run ID**: `30138548267`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138548267>
+- **Head SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+- **Conclusion**: success; 381 passed, 0 failed, 37 ignored
+- **Report**: eggcalc `1.1.6`, Python `3.12.13`
 
 ### Provenance Artifacts
 
-- **Artifact ID**: (pending)
-- **SHA-256**: (pending)
+- **Release provenance artifact ID**: `8613958617`
+- **Release provenance SHA-256**: `9df4ee7a493904a3026be94219e33409356dfeaf17fe75c718825c49da6b4337`
+- **Parity report artifact ID**: `8613698390`
+- **Parity report SHA-256**: `5df89518813d4ade61b6b9102b84b63f0223fc6faa313b25a7c622f044c1bd0d`
+
+The release provenance records package version `1.2.0`, commit
+`fa6a6e92ad183061b01ca710d4cbfbf6932a1067`, MSRV `1.89.0`, Linux release
+Rust `1.97.1`, lockfile SHA-256
+`5dd9396665d264fb406c4e9295f6caae2696916650db33a25e7dd2c31d04cec7`, and
+235 packaged files.
 
 ## Intentionally Deferred Items
 
-1. **Per-target fuzz run evidence**: Requires the extended fuzz matrix workflow
-   to run on GitHub Actions.
+1. **Actual crates.io publication and tag creation** remain direct maintainer
+   actions. The release gate proves the package and publish dry run but does
+   not publish.
 
-2. **Release 4/5 status closure**: Status notes will be marked complete
-   after the release-verification workflow succeeds and the maintainer
-   confirms the release candidate.
+2. **Accepted Python parity differences** remain documented in `docs/parity.md`;
+   the final parity workflow passed with those accepted cases ignored.
 
-3. **Sanitizer matrix**: The repository does not currently have a sanitizer
-   CI workflow. One should be added as a manual-only workflow per the plan.
+3. **Sanitizers** are covered by the existing `fuzz-scheduled.yml` sanitizer
+   matrix: all seven sanitizer jobs passed in the final run.

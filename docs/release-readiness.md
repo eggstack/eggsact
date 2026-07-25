@@ -1,134 +1,120 @@
 # Release Readiness
 
-Date: TBD
-Commit: TBD
-Version: TBD
+Date: 2026-07-25 UTC  
+Final verification baseline: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`  
+Version: `1.2.0`
 
 ## Release candidate
 
 - **Branch:** `main`
-- **Commit SHA:** TBD
-- **Version:** TBD
-- **Working tree:** clean
-- **Status:** TBD
+- **Commit SHA:** `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+- **Version:** `1.2.0`
+- **Working tree:** clean at verification time
+- **Status:** verification complete; publication remains a direct maintainer action
 
 ## Verification
 
 ### GitHub CI
 
-Run ID: TBD
-
-Result: **12/12 jobs passing** (including MSRV, Windows, macOS, cargo-deny).
+Run [30138542368](https://github.com/eggstack/eggsact/actions/runs/30138542368) passed
+with all 12 jobs successful on the final verification baseline.
 
 | Job | Result |
 |-----|--------|
-| Check (`cargo fmt --all -- --check`) | success |
-| Generated Docs (`cargo run --locked --bin generate-docs -- --check`) | success |
-| Clippy (`cargo clippy --locked --all-targets --all-features -- -D warnings`) | success |
-| Test (lib) (`cargo test --locked --all-features --lib`) | success |
-| Test (bins) (`cargo test --locked --all-features --bins`) | success |
-| Test (integration) (`cargo test --locked --all-features --tests -- --skip parity`) | success |
-| Test (doc) (`cargo test --locked --doc`) | success |
-| MSRV (`cargo check/test --locked` on Rust 1.89.0) | success |
-| Windows (`cargo check/test --locked`) | success |
-| macOS (`cargo check/test --locked`) | success |
-| cargo-deny (`cargo deny check advisories bans licenses sources`) | success |
-| Package (`cargo package --locked --verbose`) | success |
+| Check | success |
+| Generated Docs | success |
+| Clippy | success |
+| Test (lib) | success — 494 passed, 1 ignored |
+| Test (bins) | success — 24 passed |
+| Test (integration) | success |
+| Test (doc) | success |
+| MSRV (1.89.0) | success |
+| Windows | success |
+| macOS | success |
+| cargo-deny | success |
+| Package | success |
 
 ### Local release gate
 
-Run locally against the same commit:
+The same clean-checkout code baseline passed:
 
 | Step | Result | Details |
 |------|--------|---------|
-| `cargo fmt --all -- --check` | pass | |
-| `cargo clippy --locked --all-targets --all-features -- -D warnings` | pass | 0 warnings |
-| `cargo test --locked --all-features --lib` | pass | |
-| `cargo test --locked --all-features --bins` | pass | |
-| `cargo test --locked --all-features --tests -- --skip parity` | pass | |
-| `cargo test --locked --doc` | pass | |
-| `cargo run --locked --bin generate-docs -- --check` | pass | generated docs are current |
-| `cargo deny check advisories bans licenses sources` | pass | no advisories, all licenses allowed |
-| `cargo package --locked --verbose` | pass | crate produced |
-| `cargo publish --dry-run --locked` | pass | |
+| `cargo fmt --all -- --check` | pass | no diffs |
+| `cargo clippy --locked --all-targets --all-features -- -D warnings` | pass | no errors |
+| `cargo test --locked --all-features --lib` | pass | 494 passed, 1 ignored |
+| `cargo test --locked --all-features --bins` | pass | 24 passed |
+| `cargo test --locked --all-features --tests -- --skip parity` | pass | 3423 passed, 1 ignored, 418 filtered |
+| `cargo test --locked --doc` | pass | 11 passed |
+| `cargo run --locked --bin generate-docs -- --check` | pass | generated docs current |
+| `cargo deny check advisories bans licenses sources` | pass | no advisories or policy failures |
+| `cargo package --locked --list` | pass | 235 package files |
+| `cargo package --locked --verbose` | pass | package build succeeded |
+| `cargo publish --locked --dry-run` | pass | no upload performed |
 
-### Parity gate
+Focused proof also passed: lifecycle tests 9 passed (1 ignored), single-threaded
+lifecycle tests 9 passed (1 ignored), sync-pool tests 24 passed, lifecycle and
+sync-pool repeated loops 100/100, ordinary full-library parallel fallback 25/25,
+and the ignored exact-interleaving test 500/500 (250 completion-wins and 250
+timeout-wins).
 
-Not run as part of this readiness pass (Python `eggcalc` reference is not in this environment).
-See `docs/parity.md` for the latest verification status and scheduled CI runs.
+### MSRV
 
-### Publish dry run
+Rust `1.89.0` passed all-target check, library tests (494 passed, 1 ignored),
+binary tests (24 passed), and doc tests (11 passed).
 
-`cargo publish --dry-run --locked` ran on the verified commit against a clean worktree:
+### Fuzz and sanitizer verification
 
-```
-TBD
-```
+The [Fuzz Extended run 30138546987](https://github.com/eggstack/eggsact/actions/runs/30138546987)
+passed 19/19 jobs on the final SHA: 12 extended fuzz targets and 7 AddressSanitizer
+jobs. Local normal and AddressSanitizer fuzz-target builds also passed using
+`nightly-2026-05-07` and cargo-fuzz `0.13.2`.
 
-### Actual publish
+### Latest-compatible dependencies
 
-`cargo publish --locked` was run from the maintainer's local machine:
+The [Latest Compatible run 30138547661](https://github.com/eggstack/eggsact/actions/runs/30138547661)
+passed on the final SHA.
 
-```
-TBD
-```
+### Python parity
 
-### Tag
+The [Python Parity run 30138548267](https://github.com/eggstack/eggsact/actions/runs/30138548267)
+passed with `381 passed, 0 failed, 37 ignored, 2867 filtered out`. Its report
+records eggsact `1.2.0`, eggcalc `1.1.6`, and Python `3.12.13`.
 
-Tag `vX.Y.Z` (annotated) created on commit after publish succeeded, per the tag-after-publish policy in `docs/release.md`.
+## Release verification workflow
 
-## Publishing
+The [Release Verification run 30138546415](https://github.com/eggstack/eggsact/actions/runs/30138546415)
+passed all package, publish-dry-run, and provenance steps. Its provenance
+artifact is ID `8613958617`, SHA-256
+`9df4ee7a493904a3026be94219e33409356dfeaf17fe75c718825c49da6b4337`.
+The artifact records 235 package files and lockfile SHA-256
+`5dd9396665d264fb406c4e9295f6caae2696916650db33a25e7dd2c31d04cec7`.
 
-**Publishing is a direct maintainer action.** GitHub CI verifies release readiness but does **not**
-publish to crates.io. The maintainer publishes manually with `cargo publish --locked` from a local
-authenticated environment.
+## Actual publish
 
-- Crates.io tokens must **not** be placed in GitHub Actions secrets for this release line.
-- `cargo publish` runs only after `cargo publish --dry-run` passes.
-- Tags are created only after a successful publish (tag-after-publish policy in `docs/release.md`).
+`cargo publish --locked` has not been run by this workflow. Publication and
+annotated tag creation remain direct maintainer actions, following the policy
+in `docs/release.md`.
 
-## Package status
-
-`cargo package --locked --list` includes the source tree, tests, docs, and architecture docs. The
-following are excluded and will not appear on crates.io:
-
-`plans/`, `data/`, `scripts/`, `build.sh`, `release.sh`, `.github/`, `.opencode/`, `.agents/`, `deny.toml`,
-`AGENTS.md`.
-
-## Crates.io metadata (in `Cargo.toml`)
+## Package metadata
 
 - `name = "eggsact"`
-- `version = "TBD"`
+- `version = "1.2.0"`
 - `edition = "2021"`
 - `rust-version = "1.89.0"`
-- `description = "Deterministic MCP and in-process utility tools for coding agents"`
 - `license = "MIT"`
 - `repository = "https://github.com/eggstack/eggsact"`
-- `homepage = "https://github.com/eggstack/eggsact"`
-- `documentation = "https://docs.rs/eggsact"`
-- `readme = "README.md"`
-- `keywords = ["mcp", "coding-agent", "preflight", "math", "calculator"]`
-- `categories = ["command-line-utilities", "mathematics", "science"]`
-- `authors = ["David Bowman"]`
-
-## Known deferred items
-
-- **Python parity:** Accepted failures tracked in `docs/parity.md`; scheduled CI runs weekly.
-- **crates.io publish workflow:** intentionally not added. Publishing remains a direct maintainer
-  action; CI is a verification gate, not a publish mechanism.
 
 ## Publish checklist status
 
-- [ ] Latest commit SHA recorded
-- [ ] GitHub CI 12/12 passing
-- [ ] Local release gate passing (--locked)
-- [ ] Generated docs current
-- [ ] cargo-deny passing
-- [ ] `cargo package --locked` succeeds
-- [ ] Package excludes audited and tightened
-- [ ] Crates.io metadata reviewed (including rust-version)
-- [ ] Canonical release doc in `docs/release.md`
-- [ ] `docs/release-readiness.md` reflects this candidate
-- [ ] `cargo publish --dry-run --locked` run on final candidate — passed
-- [ ] `cargo publish --locked` run from clean worktree — published
-- [ ] `git tag vX.Y.Z && git push origin vX.Y.Z` — tag pushed to `origin`
+- [x] Final verification SHA recorded
+- [x] GitHub CI passes
+- [x] Local release gate passes with `--locked`
+- [x] Generated docs current
+- [x] cargo-deny passes
+- [x] Package contents and build pass
+- [x] Crates.io metadata reviewed
+- [x] `cargo publish --dry-run --locked` passes
+- [x] `docs/release.md` remains the canonical release policy
+- [ ] `cargo publish --locked` — direct maintainer action
+- [ ] `git tag v1.2.0 && git push origin v1.2.0` — after successful publication
