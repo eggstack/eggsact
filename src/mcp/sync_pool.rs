@@ -387,7 +387,7 @@ mod tests {
         let start = std::time::Instant::now();
         let result = pool.submit(
             move || {
-                std::thread::sleep(Duration::from_secs(60));
+                std::thread::sleep(Duration::from_secs(5));
                 ToolResponse::success(serde_json::json!({}), Some("test"))
             },
             Duration::from_millis(50),
@@ -645,7 +645,7 @@ mod tests {
 
         let result = pool.submit_cancellable(
             move || {
-                std::thread::sleep(Duration::from_secs(60));
+                std::thread::sleep(Duration::from_secs(5));
                 ToolResponse::success(serde_json::json!({}), Some("test"))
             },
             Duration::from_millis(10),
@@ -806,8 +806,8 @@ mod tests {
         // handler finished fast. Either is acceptable.
         let _ = r2;
 
-        // Wait for the handler to finish.
-        std::thread::sleep(Duration::from_millis(300));
+        // Wait for the handler to finish and the worker to drain queued jobs.
+        std::thread::sleep(Duration::from_millis(500));
 
         // Pool should be usable again.
         let r3 = pool.submit(
