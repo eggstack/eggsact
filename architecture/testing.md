@@ -11,7 +11,7 @@ tests/
   lib.rs                          # single test crate root, declares 5 modules
   test_context_isolation.rs       # context isolation integration tests (819 lines)
   calc/                           # calculator tests (4 files)
-  mcp/                            # MCP protocol + tool tests (27 files)
+  mcp/                            # MCP protocol + tool tests (28 files)
   text/                           # text processing tests (24 files)
   parity/                         # Python/Rust parity tests (11 files)
   property/                       # property-based tests (9 files, 47 tests)
@@ -51,7 +51,7 @@ Tests call `eggsact::calc::run()` or `eggsact::calc::evaluate()` directly — no
 
 ## MCP Tests (`tests/mcp/`)
 
-27 test files covering the MCP server, protocol, tool execution, and contract enforcement.
+28 test files covering the MCP server, protocol, tool execution, and contract enforcement.
 
 ### Important Test Files
 
