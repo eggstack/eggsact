@@ -1,13 +1,13 @@
 # Release Readiness
 
 Date: 2026-07-25 UTC  
-Final verification baseline: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`  
+Final verification baseline: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`  
 Version: `1.2.0`
 
 ## Release candidate
 
 - **Branch:** `main`
-- **Commit SHA:** `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+- **Commit SHA:** `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
 - **Version:** `1.2.0`
 - **Working tree:** clean at verification time
 - **Status:** verification complete; publication remains a direct maintainer action
@@ -16,7 +16,7 @@ Version: `1.2.0`
 
 ### GitHub CI
 
-Run [30138542368](https://github.com/eggstack/eggsact/actions/runs/30138542368) passed
+Run [30162970273](https://github.com/eggstack/eggsact/actions/runs/30162970273) passed
 with all 12 jobs successful on the final verification baseline.
 
 | Job | Result |

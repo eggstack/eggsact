@@ -1,7 +1,8 @@
 # Release 5 Status Note
 
-**Date:** 2026-07-25 UTC  
-**Final verification baseline:** `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+**Date:** 2026-07-25 UTC
+**Final verification baseline:** `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
+**Plan:** `plans/2026-07-18-release-5-fuzzing-property-testing-plan.md`
 
 ## Fuzz targets
 
@@ -68,19 +69,24 @@ Local `cargo fuzz build` and `cargo fuzz build --sanitizer=address` also passed.
 These fixes were made narrowly in response to minimized fuzz inputs and are
 included in the final verification baseline.
 
-## Release closure
+## Closure criteria
 
-- [x] Every planned fuzz target builds against bounded input
-- [x] Persistent corpora are committed and seeded with historical regressions
-- [x] Calculator, diff, shell, regex, JSON, TOML/config, Unicode, Markdown, and glob/path surfaces have fuzz coverage
-- [x] Core properties are enforced in ordinary tests
-- [x] Fuzz target assertions match implemented guarantees
-- [x] No known crash, hang, OOM, stack overflow, or invariant failure remains untriaged
-- [x] PR smoke fuzzing is bounded and cancellable
-- [x] Scheduled/manual extended fuzzing uses a matrix strategy with per-target timeouts
-- [x] Sanitizer matrix passed on the final SHA
-- [x] Fuzz dependencies and artifacts are excluded from normal package/runtime dependencies
-- [x] Ordinary CI, cargo-deny, generated docs, package, release, and parity gates pass
+| Criterion | Evidence | Status |
+|-----------|----------|--------|
+| Releases 1–3 final correctness closure | `plans/2026-07-18-releases-1-3-final-correctness-plan.md` | Complete |
+| Release 4 verification infrastructure green | `docs/release-4-status.md` — all criteria met | Complete |
+| Every planned fuzz target builds and runs | 12 targets build; all run in extended fuzz matrix | Complete |
+| Persistent corpora committed and seeded | 77 seeds across 12 targets (see table above) | Complete |
+| All required surfaces have fuzz coverage | Calculator, diff, shell, regex, JSON, TOML, Unicode, Markdown, glob — all covered | Complete |
+| Core properties enforced in ordinary tests | 47 property tests across 9 modules | Complete |
+| No untriaged crash/hang/OOM/overflow | Fuzz Extended run [30138546987](https://github.com/eggstack/eggsact/actions/runs/30138546987) — 19/19 success, 0 failures | Complete |
+| Fixed findings have regression tests | 4 fuzz-discovered fixes with regression seeds in `fuzz/corpus/` | Complete |
+| PR smoke fuzzing active and bounded | `fuzz-pr.yml` — builds all targets, runs bounded high-value targets with concurrency cancellation | Complete |
+| Extended fuzzing covers all targets | `fuzz-scheduled.yml` — 12-target matrix with per-target timeouts | Complete |
+| Fuzz dependencies excluded from runtime | `fuzz/Cargo.toml` isolated workspace; not in root `Cargo.toml` | Complete |
+| Fuzzing documentation current | `docs/fuzzing.md` — reproduce, minimize, fix, promote, security handling | Complete |
+| Full CI, cargo-deny, docs, package gates pass | CI run [30162970273](https://github.com/eggstack/eggsact/actions/runs/30162970273) — all 12 jobs success | Complete |
 
-Actual crates.io publication remains a direct maintainer action; this note
-records proof and release readiness, not publication itself.
+## Publication status
+
+Actual crates.io publication and annotated tag creation remain direct maintainer actions; this note records proof and release readiness, not publication itself.

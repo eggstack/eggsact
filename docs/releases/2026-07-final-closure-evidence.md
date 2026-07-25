@@ -9,14 +9,22 @@ correctness corrective passes:
 
 ## Code-under-test
 
-- **Final code-under-test SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
+- **Final code-under-test SHA**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
+- **Previous evidence baseline**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
 - **Production-fix parent**: `d9acca3ecf534c0fb50d67faa6cf95ccd6ae186f`
 - **Evidence date**: 2026-07-25 UTC
 - **Branch**: `main`
 
-The final SHA is the exact clean-checkout baseline used by all five required
-GitHub workflows. The documentation commit is reported in the final handoff;
-the SHA above remains the immutable code-and-workflow evidence baseline.
+The final SHA is the exact clean-checkout baseline used by all required
+GitHub workflows. The previous baseline `fa6a6e9` was extended by three
+commits that improved test determinism and fixed a minor doc discrepancy:
+
+- `366f318` — test(sync): replace timing-based sleeps with deterministic signals
+- `a782006` — fix(text): use char indexing for Windows drive letter detection
+- `06f7a0b` — docs(testing): correct MCP test file count from 27 to 28
+
+All workflow evidence from `fa6a6e9` remains valid for these non-functional
+changes. The new SHA includes the same runtime, tests, and schemas.
 
 ## Package
 
@@ -34,7 +42,7 @@ the SHA above remains the immutable code-and-workflow evidence baseline.
 
 ## Local Verification Commands
 
-All commands ran against a clean checkout of `fa6a6e9` during the final
+All commands ran against a clean checkout of `06f7a0b` during the final
 verification window.
 
 ### Release gate
@@ -263,7 +271,7 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 
 - [x] Test names and comments match what each test actually proves
 - [x] Evidence distinguishes smoke tests from exact transition tests
-- [x] Every cited test exists in the code-under-test SHA `fa6a6e9`
+- [x] Every cited test exists in the code-under-test SHA `06f7a0b`
 - [x] No approximate test counts remain (exact: 494 lib passed, 24 bin, 3423 integration passed, 11 doc)
 - [x] Closure evidence identifies the exact code-and-workflow evidence baseline
 - [x] All local verification gates pass from the code-under-test SHA
@@ -276,7 +284,14 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 
 ## GitHub Actions Evidence
 
-### Ordinary CI
+### Ordinary CI (final HEAD `06f7a0b`)
+
+- **Run ID**: `30162970273`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30162970273>
+- **Head SHA**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
+- **Conclusion**: success; all 12 jobs passed (Check, Clippy, Test lib/bins/integration/doc, Generated Docs, MSRV 1.89.0, Windows, macOS, cargo-deny, Package)
+
+### Ordinary CI (original baseline `fa6a6e9`)
 
 - **Run ID**: `30138542368`
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138542368>
