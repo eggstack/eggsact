@@ -49,22 +49,23 @@ jobs:
           cargo deny check advisories bans licenses sources
 
       - name: Package contents
-        run: cargo package --locked --list > package-list.txt
+        run: cargo package --locked --list > "$RUNNER_TEMP/eggsact-package-list.txt"
 
       - name: Assert package contents
         run: |
+          PACKAGE_LIST="$RUNNER_TEMP/eggsact-package-list.txt"
           # Must include core source
           for f in src/lib.rs src/main.rs Cargo.toml LICENSE README.md; do
-            grep -q "^${f}$" package-list.txt || { echo "MISSING: $f"; exit 1; }
+            grep -q "^${f}$" "$PACKAGE_LIST" || { echo "MISSING: $f"; exit 1; }
           done
           # Must not include excluded paths
           for pat in '^\.(github|opencode|agents)/' '^plans/' '^scripts/' '^fuzz/' '^deny\.toml$' '^AGENTS\.md$'; do
-            if grep -qE "$pat" package-list.txt; then
-              echo "EXCLUDED PATH LEAKED: $(grep -E "$pat" package-list.txt)"
+            if grep -qE "$pat" "$PACKAGE_LIST"; then
+              echo "EXCLUDED PATH LEAKED: $(grep -E "$pat" "$PACKAGE_LIST")"
               exit 1
             fi
           done
-          echo "Package content assertions passed ($(wc -l < package-list.txt) files)"
+          echo "Package content assertions passed ($(wc -l < "$PACKAGE_LIST") files)"
 
       - name: Package build
         run: cargo package --locked --verbose
@@ -78,7 +79,7 @@ jobs:
           PACKAGE_SHA=$(sha256sum Cargo.lock | cut -d' ' -f1)
           RUST_VERSION=$(rustc --version | cut -d' ' -f2)
           PACKAGE_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          PACKAGE_FILES=$(wc -l < package-list.txt 2>/dev/null || echo 0)
+          PACKAGE_FILES=$(wc -l < "$RUNNER_TEMP/eggsact-package-list.txt" 2>/dev/null || echo 0)
 
           cat > release-provenance.json <<EOF
           {
