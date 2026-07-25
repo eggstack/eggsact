@@ -10,6 +10,8 @@ correctness corrective passes:
 ## Code-under-test
 
 - **Final code-under-test SHA**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
+- **Evidence-recording commit**: `0f5e0c4` (docs-only, on `main`)
+- **Final main head**: `0f5e0c4`
 - **Previous evidence baseline**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
 - **Production-fix parent**: `d9acca3ecf534c0fb50d67faa6cf95ccd6ae186f`
 - **Evidence date**: 2026-07-25 UTC
@@ -296,6 +298,7 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - [x] Ordinary CI passed for `06f7a0b`
 - [x] Release-verification workflow passed for `06f7a0b` (Run 30177462182)
 - [x] Extended fuzz and sanitizer matrices passed for `fa6a6e9` (code identical to `06f7a0b`)
+- [x] Final evidence head passes ordinary CI (Run 30178252463)
 
 ## GitHub Actions Evidence
 
@@ -305,6 +308,13 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30162970273>
 - **Head SHA**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
 - **Conclusion**: success; all 12 jobs passed (Check, Clippy, Test lib/bins/integration/doc, Generated Docs, MSRV 1.89.0, Windows, macOS, cargo-deny, Package)
+
+### Ordinary CI (evidence commit `0f5e0c4`)
+
+- **Run ID**: `30178252463`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30178252463>
+- **Head SHA**: `0f5e0c4` (docs-only commit on `main`)
+- **Conclusion**: success; all 12 jobs passed
 
 ### Ordinary CI (original baseline `fa6a6e9`)
 
