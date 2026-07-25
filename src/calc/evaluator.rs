@@ -1669,6 +1669,9 @@ fn evaluate_function(
                 }
             }
             let ints: Vec<i64> = args.iter().map(|a| *a as i64).collect();
+            if ints.contains(&i64::MIN) {
+                return Err(EvaluationError::ValueOverflow);
+            }
             let mut result = ints[0].abs();
             for &v in &ints[1..] {
                 result = gcd(result, v.abs());
@@ -1684,6 +1687,9 @@ fn evaluate_function(
                 }
             }
             let ints: Vec<i64> = args.iter().map(|a| *a as i64).collect();
+            if ints.contains(&i64::MIN) {
+                return Err(EvaluationError::ValueOverflow);
+            }
             let mut result = ints[0].abs();
             for &v in &ints[1..] {
                 let g = gcd(result, v.abs());
@@ -2448,6 +2454,9 @@ fn evaluate_function_with(
                 }
             }
             let ints: Vec<i64> = args.iter().map(|a| *a as i64).collect();
+            if ints.contains(&i64::MIN) {
+                return Err(EvaluationError::ValueOverflow);
+            }
             let mut result = ints[0].abs();
             for &v in &ints[1..] {
                 result = gcd(result, v.abs());
@@ -2463,6 +2472,9 @@ fn evaluate_function_with(
                 }
             }
             let ints: Vec<i64> = args.iter().map(|a| *a as i64).collect();
+            if ints.contains(&i64::MIN) {
+                return Err(EvaluationError::ValueOverflow);
+            }
             let mut result = ints[0].abs();
             for &v in &ints[1..] {
                 let g = gcd(result, v.abs());
@@ -3506,6 +3518,12 @@ mod tests {
     fn test_variadic_lcm() {
         assert_eq!(val("lcm(4, 6)"), "12");
         assert_eq!(val("lcm(2, 3, 4)"), "12");
+    }
+
+    #[test]
+    fn test_gcd_lcm_min_i64_fail_closed() {
+        assert!(evaluate("gcd(-9223372036854775808)").is_err());
+        assert!(evaluate("lcm(-9223372036854775808, 2)").is_err());
     }
 
     #[test]

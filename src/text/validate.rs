@@ -1378,7 +1378,11 @@ pub fn regex_finditer(
             let abs_start = start_pos + first_match.start();
             let abs_end = start_pos + first_match.end();
             start_pos = if abs_end == abs_start {
-                advance_to_next_char_boundary(text, abs_start)
+                if abs_start >= text.len() {
+                    text.len().saturating_add(1)
+                } else {
+                    advance_to_next_char_boundary(text, abs_start)
+                }
             } else {
                 abs_end
             };
@@ -1481,7 +1485,11 @@ pub fn regex_finditer(
             .unwrap_or_else(|| advance_to_next_char_boundary(text, start_pos));
         // Advance past this match; if it was zero-length, advance by 1
         start_pos = if end_pos == start_pos {
-            advance_to_next_char_boundary(text, start_pos)
+            if start_pos >= text.len() {
+                text.len().saturating_add(1)
+            } else {
+                advance_to_next_char_boundary(text, start_pos)
+            }
         } else {
             end_pos
         };

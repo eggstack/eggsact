@@ -220,6 +220,14 @@ fn test_bug025_regex_finditer_custom_group_not_in_hardcoded_list() {
 }
 
 #[test]
+fn test_regex_finditer_zero_length_match_at_end_terminates() {
+    let result = regex_finditer("fooo||bbaar ", "fo wlo world", None, 100, false, false);
+    assert!(result.valid_pattern);
+    assert!(result.match_count > 0);
+    assert!(result.matches.len() <= 100);
+}
+
+#[test]
 fn test_regex_test_with_flags_multiline() {
     let flags = vec!["MULTILINE".to_string()];
     let result = regex_test(
