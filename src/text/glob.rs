@@ -20,9 +20,10 @@ fn split_path_posix(path: &str) -> Vec<&str> {
 fn split_path_windows(path: &str) -> Vec<String> {
     let mut segments: Vec<String> = vec![];
 
-    if path.len() >= 2 && path.chars().nth(1) == Some(':') {
-        segments.push(path[..2].to_string());
-        let rest = &path[2..];
+    let chars: Vec<char> = path.chars().collect();
+    if chars.len() >= 2 && chars[1] == ':' {
+        segments.push(chars[..2].iter().collect());
+        let rest: String = chars[2..].iter().collect();
         if !rest.is_empty() {
             let parts: Vec<&str> = rest.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
             segments.extend(parts.iter().map(|p| p.to_string()));
