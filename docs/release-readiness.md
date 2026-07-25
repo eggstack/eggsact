@@ -83,12 +83,21 @@ records eggsact `1.2.0`, eggcalc `1.1.6`, and Python `3.12.13`.
 
 ## Release verification workflow
 
-The [Release Verification run 30138546415](https://github.com/eggstack/eggsact/actions/runs/30138546415)
-passed all package, publish-dry-run, and provenance steps. Its provenance
-artifact is ID `8613958617`, SHA-256
-`9df4ee7a493904a3026be94219e33409356dfeaf17fe75c718825c49da6b4337`.
-The artifact records 235 package files and lockfile SHA-256
+The [Release Verification run 30177462182](https://github.com/eggstack/eggsact/actions/runs/30177462182)
+passed all 18 jobs on the exact CODE_SHA `06f7a0b` via the temporary
+`release-verify-closure` branch. Its provenance artifact is ID `8624794842`,
+SHA-256 `7f977abfbfc94eb9c66e7894622ba0a41e1116892ece458a3e4f9bacbb51a30f`.
+The artifact records 235 package files, version `1.2.0`, commit
+`06f7a0bd7c1005439e9de229c37cb34d988b42e4`, MSRV `1.89.0`, Linux release
+Rust `1.97.1`, and lockfile SHA-256
 `5dd9396665d264fb406c4e9295f6caae2696916650db33a25e7dd2c31d04cec7`.
+
+### Clean worktree verification
+
+A clean worktree was created at CODE_SHA (`git worktree add`), verified with
+`git status --porcelain` (no output), and the full local release gate ran
+successfully from it. The worktree remained clean after all verification
+commands.
 
 ## Actual publish
 
