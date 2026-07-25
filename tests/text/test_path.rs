@@ -51,6 +51,12 @@ fn test_path_analyze_windows() {
 }
 
 #[test]
+fn test_path_analyze_windows_single_multibyte_component() {
+    let result = path_analyze("͌", "windows");
+    assert_eq!(result.name.as_deref(), Some("͌"));
+}
+
+#[test]
 fn test_path_analyze_unc() {
     let result = path_analyze("\\\\server\\share", "windows");
     assert!(result.absolute);

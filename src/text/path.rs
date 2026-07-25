@@ -85,7 +85,7 @@ fn _split_windows_components(path: &str) -> (Vec<&str>, Option<String>) {
         return (vec![], None);
     }
 
-    if path.len() >= 2 {
+    if path.chars().count() >= 2 {
         let chars: Vec<char> = path.chars().collect();
         if chars[1] == ':' {
             let root = path[..2].to_string();
