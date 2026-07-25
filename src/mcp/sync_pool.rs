@@ -410,19 +410,23 @@ mod tests {
         // Pool with 1 worker, queue capacity 1 → can handle 2 concurrent jobs max.
         let pool = Arc::new(SyncExecutionPool::with_limits(1, 1));
 
+        // Signal to confirm job 1's handler has started (worker is occupied).
+        let (started_tx, started_rx) = sync_channel(1);
+
         // Submit job 1 from a separate thread (long-running, blocks the worker).
         let p1 = pool.clone();
         let h1 = std::thread::spawn(move || {
             p1.submit(
                 move || {
+                    let _ = started_tx.send(());
                     std::thread::sleep(Duration::from_millis(500));
                     ToolResponse::success(serde_json::json!({}), Some("test"))
                 },
                 Duration::from_secs(5),
             )
         });
-        // Wait for job 1 to be accepted by the worker.
-        std::thread::sleep(Duration::from_millis(50));
+        // Wait for job 1's handler to be actually running — worker is occupied.
+        let _ = started_rx.recv_timeout(Duration::from_secs(2));
 
         // Submit job 2 from a separate thread (goes into the queue buffer).
         let p2 = pool.clone();
@@ -652,9 +656,8 @@ mod tests {
             flag_clone,
         );
 
-        // Give the timeout path time to set the flag.
-        std::thread::sleep(Duration::from_millis(20));
-
+        // The cancel flag is set inside wait_for_reply before submit_cancellable
+        // returns, so no settlement sleep is needed.
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), SyncPoolError::Timeout));
         assert!(
@@ -822,18 +825,23 @@ mod tests {
         let pool = Arc::new(SyncExecutionPool::with_limits(1, 1));
         let flag = Arc::new(AtomicBool::new(false));
 
+        // Signal to confirm h1's handler has started (worker is occupied).
+        let (started_tx, started_rx) = sync_channel(1);
+
         // Block the worker.
         let p1 = pool.clone();
         let h1 = std::thread::spawn(move || {
             p1.submit(
                 move || {
+                    let _ = started_tx.send(());
                     std::thread::sleep(Duration::from_millis(300));
                     ToolResponse::success(serde_json::json!({}), Some("test"))
                 },
                 Duration::from_secs(5),
             )
         });
-        std::thread::sleep(Duration::from_millis(20));
+        // Wait until h1's handler is actually running — worker is occupied.
+        let _ = started_rx.recv_timeout(Duration::from_secs(2));
 
         // Fill the queue.
         let p2 = pool.clone();
@@ -846,6 +854,7 @@ mod tests {
                 Duration::from_secs(5),
             )
         });
+        // Give the queue time to fill.
         std::thread::sleep(Duration::from_millis(20));
 
         // This should get QueueFull, NOT Timeout.
