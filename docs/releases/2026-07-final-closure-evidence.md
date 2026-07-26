@@ -11,7 +11,7 @@ correctness corrective passes:
 
 - **Final code-under-test SHA**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
 - **Evidence-recording commit**: `e28b6e7` (docs-only, on `main`)
-- **Final main head**: `e28b6e7`
+- **Final main head**: `e1b223f`
 - **Previous evidence baseline**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
 - **Production-fix parent**: `d9acca3ecf534c0fb50d67faa6cf95ccd6ae186f`
 - **Evidence date**: 2026-07-25 UTC
