@@ -9,24 +9,15 @@ correctness corrective passes:
 
 ## Code-under-test
 
-- **Final code-under-test SHA**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
-- **Evidence-recording commit**: `e28b6e7` (docs-only, on `main`)
-- **Final main head**: `6e9cb31`
-- **Previous evidence baseline**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
-- **Production-fix parent**: `d9acca3ecf534c0fb50d67faa6cf95ccd6ae186f`
-- **Evidence date**: 2026-07-25 UTC
+- **Code-under-test SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Evidence date**: 2026-07-26 UTC
 - **Branch**: `main`
+- **Previous evidence baseline**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
 
-The final SHA is the exact clean-checkout baseline used by all required
-GitHub workflows. The previous baseline `fa6a6e9` was extended by three
-commits that improved test determinism and fixed a minor doc discrepancy:
-
-- `366f318` — test(sync): replace timing-based sleeps with deterministic signals
-- `a782006` — fix(text): use char indexing for Windows drive letter detection
-- `06f7a0b` — docs(testing): correct MCP test file count from 27 to 28
-
-All workflow evidence from `fa6a6e9` remains valid for these non-functional
-changes. The new SHA includes the same runtime, tests, and schemas.
+The CODE_SHA extends the previous baseline with deterministic sync-pool
+test rewrites (queue-saturation signals, concurrency proof, retained-worker
+proof) and a shared `enqueue_job` helper that eliminates duplicated
+job-construction logic.
 
 ## Package
 
@@ -176,6 +167,13 @@ invalid byte-for-byte assumptions for large-number formatting.
 - `wait_for_reply_disconnected_returns_shutdown` — disconnection maps to Shutdown, flag not set
 - `wait_for_reply_timeout_with_sender_retained_sets_cancel` — sender alive, timeout still sets flag
 
+### Sync pool deterministic tests
+
+- `queue_saturation_returns_queue_full` — 1 worker, 1 queue slot; BlockingJobGate holds worker, TestEnqueueSignal confirms queue insertion, third submit returns QueueFull
+- `queue_saturation_does_not_set_cancel` — same pattern; third submit uses submit_cancellable with own flag, asserts flag remains false on QueueFull
+- `two_jobs_run_concurrently` — 2 workers; two BlockingJobGates prove simultaneous handler execution via atomic peak counter
+- `timed_out_running_retains_worker` — 1 worker, 1 queue slot; handler blocks on gate, caller times out, sentinel fills queue, third submit returns QueueFull while timed-out handler still owns worker
+
 ## Runtime Lifecycle Model
 
 The implementation uses a mutex-backed lifecycle with five phases:
@@ -295,64 +293,58 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - [x] Fuzz build succeeds (12 targets)
 - [x] `cargo publish --dry-run` passes
 - [x] Clean worktree at CODE_SHA verified
-- [x] Ordinary CI passed for `06f7a0b`
-- [x] Release-verification workflow passed for `06f7a0b` (Run 30177462182)
-- [x] Extended fuzz and sanitizer matrices passed for `fa6a6e9` (code identical to `06f7a0b`)
-- [x] Final evidence head passes ordinary CI (Run 30180342655)
+- [ ] Ordinary CI pending on CODE_SHA `50f9132`
+- [ ] Release-verification workflow pending on CODE_SHA
+- [ ] Extended fuzz and sanitizer matrices pending on CODE_SHA
+- [ ] Final evidence head CI pending
 
 ## GitHub Actions Evidence
 
-### Ordinary CI (final HEAD `06f7a0b`)
+### Ordinary CI — pending on CODE_SHA `50f9132`
+
+Awaiting CI run after push.
+
+### Release Verification — pending on CODE_SHA `50f9132`
+
+Awaiting manual dispatch.
+
+### Extended Fuzz — pending on CODE_SHA `50f9132`
+
+Awaiting manual dispatch. The previous run on `fa6a6e9` is historical and
+does not satisfy final closure because the CODE_SHA includes production
+changes after `fa6a6e9`.
+
+### Historical runs (earlier baselines, not final evidence)
+
+#### Ordinary CI (baseline `06f7a0b`)
 
 - **Run ID**: `30162970273`
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30162970273>
 - **Head SHA**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
-- **Conclusion**: success; all 12 jobs passed (Check, Clippy, Test lib/bins/integration/doc, Generated Docs, MSRV 1.89.0, Windows, macOS, cargo-deny, Package)
-
-### Ordinary CI (evidence commit `e28b6e7`)
-
-- **Run ID**: `30180342655`
-- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30180342655>
-- **Head SHA**: `e28b6e7` (docs-only commit on `main`)
 - **Conclusion**: success; all 12 jobs passed
 
-### Ordinary CI (original baseline `fa6a6e9`)
-
-- **Run ID**: `30138542368`
-- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138542368>
-- **Head SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
-- **Conclusion**: success; all 12 jobs passed
-
-### Release Verification (exact CODE_SHA)
+#### Release Verification (baseline `06f7a0b`)
 
 - **Run ID**: `30177462182`
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30177462182>
 - **Head SHA**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
-- **Branch**: `release-verify-closure` (temporary, points to exact CODE_SHA)
-- **Conclusion**: success; all 18 jobs passed (format, generated docs, clippy, unit, binary, integration, doc, cargo-deny, package contents, assert package contents, package build, publish dry run, generate provenance, upload provenance)
+- **Conclusion**: success; all 18 jobs passed
 
-### Release Verification (original baseline `fa6a6e9`)
-
-- **Run ID**: `30138546415`
-- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138546415>
-- **Head SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
-- **Conclusion**: success; package, publish dry run, and provenance steps passed
-
-### Extended Fuzz
+#### Extended Fuzz (baseline `fa6a6e9`, historical only)
 
 - **Run ID**: `30138546987`
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138546987>
 - **Head SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
 - **Conclusion**: success; 19/19 jobs passed, including 7/7 sanitizer jobs
 
-### Latest-compatible dependencies
+#### Latest-compatible dependencies (baseline `fa6a6e9`, historical only)
 
 - **Run ID**: `30138547661`
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138547661>
 - **Head SHA**: `fa6a6e92ad183061b01ca710d4cbfbf6932a1067`
 - **Conclusion**: success
 
-### Python parity
+#### Python parity (baseline `fa6a6e9`, historical only)
 
 - **Run ID**: `30138548267`
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30138548267>
@@ -360,23 +352,10 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - **Conclusion**: success; 381 passed, 0 failed, 37 ignored
 - **Report**: eggcalc `1.1.6`, Python `3.12.13`
 
-### Provenance Artifacts (from release verification on exact CODE_SHA)
+#### Provenance Artifacts (from baseline `06f7a0b`, historical only)
 
 - **Release provenance artifact ID**: `8624794842`
 - **Release provenance SHA-256**: `7f977abfbfc94eb9c66e7894622ba0a41e1116892ece458a3e4f9bacbb51a30f`
-
-### Provenance Artifacts (from original baseline `fa6a6e9`)
-
-- **Release provenance artifact ID**: `8613958617`
-- **Release provenance SHA-256**: `9df4ee7a493904a3026be94219e33409356dfeaf17fe75c718825c49da6b4337`
-- **Parity report artifact ID**: `8613698390`
-- **Parity report SHA-256**: `5df89518813d4ade61b6b9102b84b63f0223fc6faa313b25a7c622f044c1bd0d`
-
-The release provenance from exact CODE_SHA records package version `1.2.0`, commit
-`06f7a0bd7c1005439e9de229c37cb34d988b42e4`, MSRV `1.89.0`, Linux release
-Rust `1.97.1`, lockfile SHA-256
-`5dd9396665d264fb406c4e9295f6caae2696916650db33a25e7dd2c31d04cec7`, and
-235 packaged files.
 
 ## Intentionally Deferred Items
 

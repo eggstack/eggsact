@@ -76,6 +76,8 @@ src/
     budget.rs       # per-tool budgets, tiers, composite sub-budgets, BudgetContext with cooperative helpers
     runtime.rs      # rate limiter, constants, profile management, schema detail validation
     schema_validation.rs # argument validation against tool schemas
+    sync_pool.rs    # bounded synchronous worker pool (SyncExecutionPool, SyncPoolError, wait_for_reply)
+    execution.rs    # HandlerPhase lifecycle, execution hooks, closure-exit signals
     schemas/        # JSON-schema builders per tool category
       mod.rs        # module declarations + re-exports
       math.rs       # math/text/json/regex/path/shell/etc. schema builders

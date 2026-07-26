@@ -1,13 +1,13 @@
 # Release Readiness
 
-Date: 2026-07-25 UTC  
-Final verification baseline: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`  
+Date: 2026-07-26 UTC  
+Final verification baseline: `50f9132f23c72e9a0df9475774430bdea9ac32d7`  
 Version: `1.2.0`
 
 ## Release candidate
 
 - **Branch:** `main`
-- **Commit SHA:** `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
+- **Commit SHA:** `50f9132f23c72e9a0df9475774430bdea9ac32d7`
 - **Version:** `1.2.0`
 - **Working tree:** clean at verification time
 - **Status:** verification complete; publication remains a direct maintainer action
@@ -65,32 +65,26 @@ binary tests (24 passed), and doc tests (11 passed).
 
 ### Fuzz and sanitizer verification
 
-The [Fuzz Extended run 30138546987](https://github.com/eggstack/eggsact/actions/runs/30138546987)
-passed 19/19 jobs on the final SHA: 12 extended fuzz targets and 7 AddressSanitizer
-jobs. Local normal and AddressSanitizer fuzz-target builds also passed using
-`nightly-2026-05-07` and cargo-fuzz `0.13.2`.
+The extended fuzz/sanitizer runs need to be re-run on the exact CODE_SHA
+`50f9132`. The previous run on `fa6a6e9` is historical and does not
+satisfy final closure. Local normal and AddressSanitizer fuzz-target
+builds passed using `nightly-2026-05-07` and cargo-fuzz `0.13.2`.
 
 ### Latest-compatible dependencies
 
-The [Latest Compatible run 30138547661](https://github.com/eggstack/eggsact/actions/runs/30138547661)
-passed on the final SHA.
+The latest-compatible run needs to be re-run on the exact CODE_SHA `50f9132`.
+The previous run on `fa6a6e9` is historical.
 
 ### Python parity
 
-The [Python Parity run 30138548267](https://github.com/eggstack/eggsact/actions/runs/30138548267)
-passed with `381 passed, 0 failed, 37 ignored, 2867 filtered out`. Its report
-records eggsact `1.2.0`, eggcalc `1.1.6`, and Python `3.12.13`.
+The Python parity run needs to be re-run on the exact CODE_SHA `50f9132`.
+The previous run on `fa6a6e9` is historical. Its report recorded eggsact
+`1.2.0`, eggcalc `1.1.6`, and Python `3.12.13`.
 
 ## Release verification workflow
 
-The [Release Verification run 30177462182](https://github.com/eggstack/eggsact/actions/runs/30177462182)
-passed all 18 jobs on the exact CODE_SHA `06f7a0b` via the temporary
-`release-verify-closure` branch. Its provenance artifact is ID `8624794842`,
-SHA-256 `7f977abfbfc94eb9c66e7894622ba0a41e1116892ece458a3e4f9bacbb51a30f`.
-The artifact records 235 package files, version `1.2.0`, commit
-`06f7a0bd7c1005439e9de229c37cb34d988b42e4`, MSRV `1.89.0`, Linux release
-Rust `1.97.1`, and lockfile SHA-256
-`5dd9396665d264fb406c4e9295f6caae2696916650db33a25e7dd2c31d04cec7`.
+The release verification workflow needs to be re-run on the exact CODE_SHA
+`50f9132`. The previous run on `06f7a0b` is historical.
 
 ### Clean worktree verification
 

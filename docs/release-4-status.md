@@ -1,7 +1,7 @@
 # Release 4 Status Note
 
-**Date:** 2026-07-25 UTC
-**Final verification baseline:** `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
+**Date:** 2026-07-26 UTC
+**Final verification baseline:** `50f9132f23c72e9a0df9475774430bdea9ac32d7`
 **Version:** `1.2.0`
 
 ## Closure criteria

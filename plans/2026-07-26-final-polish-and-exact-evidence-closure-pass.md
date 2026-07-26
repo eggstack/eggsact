@@ -2,9 +2,11 @@
 
 ## Status
 
+- **Status:** in progress (workstreams 1-2 complete, 3-6 pending)
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Plan baseline:** `980c4d23cf5560a0aac096631f413aaf03e900b5`
+- **CODE_SHA:** `50f9132f23c72e9a0df9475774430bdea9ac32d7`
 - **Scope:** test determinism, exact-SHA workflow evidence, and release-document cleanup
 - **Runtime redesign:** explicitly out of scope
 - **Publication:** explicitly out of scope; crates.io publication remains a direct maintainer action

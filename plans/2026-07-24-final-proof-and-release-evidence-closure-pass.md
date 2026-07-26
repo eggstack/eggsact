@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** completed
+- **Status:** completed (superseded by `plans/2026-07-26-final-polish-and-exact-evidence-closure-pass.md`)
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Plan baseline:** `85eccc600f42c279aff4fdec9f973960b6c23a30`
