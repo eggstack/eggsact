@@ -104,17 +104,16 @@ impl SyncExecutionPool {
         self.submit_cancellable(handler, timeout, Arc::new(AtomicBool::new(false)))
     }
 
-    /// Submit a job to the pool with an explicit cancellation flag.
+    /// Enqueue a job into the worker queue and return the reply receiver.
     ///
-    /// The flag is set to `true` on timeout so that the handler (if still
-    /// running or queued) can observe the cancellation and exit early.
-    pub fn submit_cancellable(
+    /// Shared by `submit_cancellable` and the test-only
+    /// `submit_cancellable_with_enqueue_signal`.
+    fn enqueue_job(
         &self,
         handler: impl FnOnce() -> ToolResponse + Send + 'static,
-        timeout: Duration,
-        cancel_flag: Arc<AtomicBool>,
-    ) -> Result<ToolResponse, SyncPoolError> {
-        let deadline = Instant::now() + timeout;
+        cancel_flag: &Arc<AtomicBool>,
+        deadline: Instant,
+    ) -> Result<Receiver<ToolResponse>, SyncPoolError> {
         let (reply_tx, reply_rx) = sync_channel(1);
         let job = SyncJob {
             handler: Box::new(handler),
@@ -130,6 +129,21 @@ impl SyncExecutionPool {
             std::sync::mpsc::TrySendError::Disconnected(_) => SyncPoolError::Shutdown,
         })?;
 
+        Ok(reply_rx)
+    }
+
+    /// Submit a job to the pool with an explicit cancellation flag.
+    ///
+    /// The flag is set to `true` on timeout so that the handler (if still
+    /// running or queued) can observe the cancellation and exit early.
+    pub fn submit_cancellable(
+        &self,
+        handler: impl FnOnce() -> ToolResponse + Send + 'static,
+        timeout: Duration,
+        cancel_flag: Arc<AtomicBool>,
+    ) -> Result<ToolResponse, SyncPoolError> {
+        let deadline = Instant::now() + timeout;
+        let reply_rx = self.enqueue_job(handler, &cancel_flag, deadline)?;
         wait_for_reply(&reply_rx, timeout, &cancel_flag)
     }
 
@@ -143,22 +157,8 @@ impl SyncExecutionPool {
         signal: Arc<TestEnqueueSignal>,
     ) -> Result<ToolResponse, SyncPoolError> {
         let deadline = Instant::now() + timeout;
-        let (reply_tx, reply_rx) = sync_channel(1);
-        let job = SyncJob {
-            handler: Box::new(handler),
-            reply: reply_tx,
-            cancel_flag: cancel_flag.clone(),
-            deadline,
-        };
-
-        self.sender.try_send(job).map_err(|e| match e {
-            std::sync::mpsc::TrySendError::Full(_) => SyncPoolError::QueueFull {
-                worker_count: self.worker_count,
-            },
-            std::sync::mpsc::TrySendError::Disconnected(_) => SyncPoolError::Shutdown,
-        })?;
+        let reply_rx = self.enqueue_job(handler, &cancel_flag, deadline)?;
         signal.signal();
-
         wait_for_reply(&reply_rx, timeout, &cancel_flag)
     }
 
@@ -306,7 +306,7 @@ pub(crate) fn sync_pool() -> &'static SyncExecutionPool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     struct BlockingJobGate {
         state: std::sync::Mutex<(bool, bool)>,
@@ -345,40 +345,72 @@ mod tests {
 
     #[test]
     fn two_jobs_run_concurrently() {
-        let pool = SyncExecutionPool::with_limits(2, 4);
-        let started_first = Arc::new(AtomicBool::new(false));
-        let started_second = Arc::new(AtomicBool::new(false));
+        let pool = Arc::new(SyncExecutionPool::with_limits(2, 2));
+        let gate1 = Arc::new(BlockingJobGate::new());
+        let gate2 = Arc::new(BlockingJobGate::new());
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
 
-        let s1 = started_first.clone();
-        let r1 = pool.submit(
-            move || {
-                s1.store(true, Ordering::SeqCst);
-                std::thread::sleep(Duration::from_millis(50));
-                ToolResponse::success(serde_json::json!({"id": 1}), Some("test"))
-            },
-            Duration::from_secs(5),
+        let g1 = gate1.clone();
+        let a1 = active.clone();
+        let pk1 = peak.clone();
+        let p1 = pool.clone();
+        let h1 = std::thread::spawn(move || {
+            p1.submit(
+                move || {
+                    let now = a1.fetch_add(1, Ordering::SeqCst) + 1;
+                    pk1.fetch_max(now, Ordering::SeqCst);
+                    g1.arrive_and_wait();
+                    a1.fetch_sub(1, Ordering::SeqCst);
+                    ToolResponse::success(serde_json::json!({"id": 1}), Some("test"))
+                },
+                Duration::from_secs(5),
+            )
+        });
+
+        let g2 = gate2.clone();
+        let a2 = active.clone();
+        let pk2 = peak.clone();
+        let p2 = pool.clone();
+        let h2 = std::thread::spawn(move || {
+            p2.submit(
+                move || {
+                    let now = a2.fetch_add(1, Ordering::SeqCst) + 1;
+                    pk2.fetch_max(now, Ordering::SeqCst);
+                    g2.arrive_and_wait();
+                    a2.fetch_sub(1, Ordering::SeqCst);
+                    ToolResponse::success(serde_json::json!({"id": 2}), Some("test"))
+                },
+                Duration::from_secs(5),
+            )
+        });
+
+        // Wait until both handlers are simultaneously inside their bodies.
+        gate1.wait_until_started();
+        gate2.wait_until_started();
+
+        // Both handlers are now blocked at the gate, proving overlap.
+        assert_eq!(
+            peak.load(Ordering::SeqCst),
+            2,
+            "both handlers must be running simultaneously"
         );
 
-        // Wait a tiny bit so the first job is running on a worker
-        std::thread::sleep(Duration::from_millis(10));
+        // Release both gates.
+        gate1.release();
+        gate2.release();
 
-        let s2 = started_second.clone();
-        let r2 = pool.submit(
-            move || {
-                s2.store(true, Ordering::SeqCst);
-                std::thread::sleep(Duration::from_millis(50));
-                ToolResponse::success(serde_json::json!({"id": 2}), Some("test"))
-            },
+        let r1 = h1.join().expect("h1 panic");
+        let r2 = h2.join().expect("h2 panic");
+        assert!(r1.expect("job1").ok);
+        assert!(r2.expect("job2").ok);
+
+        // Pool remains usable.
+        let r = pool.submit(
+            move || ToolResponse::success(serde_json::json!("sentinel"), Some("test")),
             Duration::from_secs(5),
         );
-
-        let resp1 = r1.expect("first job should succeed");
-        let resp2 = r2.expect("second job should succeed");
-        assert!(resp1.ok);
-        assert!(resp2.ok);
-        // Both jobs ran
-        assert!(started_first.load(Ordering::SeqCst));
-        assert!(started_second.load(Ordering::SeqCst));
+        assert!(r.unwrap().ok, "pool must remain usable");
     }
 
     #[test]
@@ -409,40 +441,38 @@ mod tests {
     fn queue_saturation_returns_queue_full() {
         // Pool with 1 worker, queue capacity 1 → can handle 2 concurrent jobs max.
         let pool = Arc::new(SyncExecutionPool::with_limits(1, 1));
+        let blocker = Arc::new(BlockingJobGate::new());
+        let enqueued = Arc::new(TestEnqueueSignal::new());
 
-        // Signal to confirm job 1's handler has started (worker is occupied).
-        let (started_tx, started_rx) = sync_channel(1);
-
-        // Submit job 1 from a separate thread (long-running, blocks the worker).
+        // Job 1: blocks the worker via a deterministic gate.
         let p1 = pool.clone();
+        let blocker_for_job = blocker.clone();
         let h1 = std::thread::spawn(move || {
             p1.submit(
                 move || {
-                    let _ = started_tx.send(());
-                    std::thread::sleep(Duration::from_millis(500));
+                    blocker_for_job.arrive_and_wait();
                     ToolResponse::success(serde_json::json!({}), Some("test"))
                 },
                 Duration::from_secs(5),
             )
         });
-        // Wait for job 1's handler to be actually running — worker is occupied.
-        let _ = started_rx.recv_timeout(Duration::from_secs(2));
+        blocker.wait_until_started();
 
-        // Submit job 2 from a separate thread (goes into the queue buffer).
+        // Job 2: goes into the queue buffer. Use enqueue signal to confirm
+        // insertion instead of sleeping.
         let p2 = pool.clone();
+        let enqueue_signal = enqueued.clone();
         let h2 = std::thread::spawn(move || {
-            p2.submit(
-                move || {
-                    std::thread::sleep(Duration::from_millis(500));
-                    ToolResponse::success(serde_json::json!({}), Some("test"))
-                },
+            p2.submit_cancellable_with_enqueue_signal(
+                move || ToolResponse::success(serde_json::json!({}), Some("test")),
                 Duration::from_secs(5),
+                Arc::new(AtomicBool::new(false)),
+                enqueue_signal,
             )
         });
-        // Wait for job 2 to land in the buffer.
-        std::thread::sleep(Duration::from_millis(50));
+        enqueued.wait_until_entered();
 
-        // Job 3 from the main thread — worker busy + queue full → QueueFull.
+        // Job 3: worker busy + queue full → QueueFull.
         let r3 = pool.submit(
             move || ToolResponse::success(serde_json::json!({}), Some("test")),
             Duration::from_millis(200),
@@ -453,11 +483,19 @@ mod tests {
             r3
         );
 
-        // Drain the queued jobs so threads don't hang.
+        // Release and drain.
+        blocker.release();
         let r1 = h1.join().expect("h1 panic");
         let r2 = h2.join().expect("h2 panic");
         assert!(r1.expect("job1").ok);
         assert!(r2.expect("job2").ok);
+
+        // Pool remains usable.
+        let r = pool.submit(
+            move || ToolResponse::success(serde_json::json!("sentinel"), Some("test")),
+            Duration::from_secs(5),
+        );
+        assert!(r.unwrap().ok, "pool must remain usable after saturation");
     }
 
     #[test]
@@ -780,84 +818,115 @@ mod tests {
 
     #[test]
     fn timed_out_running_retains_worker() {
-        // After timeout, the worker is still occupied until the handler finishes.
-        let pool = SyncExecutionPool::with_limits(1, 1);
-        let handler_started = Arc::new(AtomicBool::new(false));
-        let started = handler_started.clone();
+        // Pool with 1 worker, queue capacity 1.
+        let pool = Arc::new(SyncExecutionPool::with_limits(1, 1));
+        let gate = Arc::new(BlockingJobGate::new());
 
-        let result = pool.submit_cancellable(
-            move || {
-                started.store(true, Ordering::SeqCst);
-                std::thread::sleep(Duration::from_millis(200));
-                ToolResponse::success(serde_json::json!({}), Some("test"))
-            },
-            Duration::from_millis(10),
-            Arc::new(AtomicBool::new(false)),
-        );
+        // Job 1: blocks the worker.
+        let p1 = pool.clone();
+        let g = gate.clone();
+        let h1 = std::thread::spawn(move || {
+            p1.submit_cancellable(
+                move || {
+                    g.arrive_and_wait();
+                    ToolResponse::success(serde_json::json!({}), Some("test"))
+                },
+                Duration::from_millis(50),
+                Arc::new(AtomicBool::new(false)),
+            )
+        });
 
+        // Wait for the handler to start (worker is occupied).
+        gate.wait_until_started();
+
+        // Wait for the caller to receive timeout.
+        let result = h1.join().expect("submitter must not panic");
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), SyncPoolError::Timeout));
-        assert!(handler_started.load(Ordering::SeqCst));
 
-        // Worker is still busy — a new submission should fail with QueueFull
-        // if the queue is also full.
-        let r2 = pool.submit(
+        // Worker is still busy. Submit a sentinel that goes into the queue.
+        // Use enqueue signal to confirm it's in the queue before submitting job 3.
+        let sentinel_ran = Arc::new(AtomicBool::new(false));
+        let sentinel_flag = sentinel_ran.clone();
+        let sentinel_enqueued = Arc::new(TestEnqueueSignal::new());
+        let p2 = pool.clone();
+        let enqueue_signal = sentinel_enqueued.clone();
+        let sentinel = std::thread::spawn(move || {
+            p2.submit_cancellable_with_enqueue_signal(
+                move || {
+                    sentinel_flag.store(true, Ordering::SeqCst);
+                    ToolResponse::success(serde_json::json!("sentinel"), Some("test"))
+                },
+                Duration::from_secs(5),
+                Arc::new(AtomicBool::new(false)),
+                enqueue_signal,
+            )
+        });
+        sentinel_enqueued.wait_until_entered();
+
+        // Queue is now full (worker busy + sentinel queued).
+        // Submit job 3 → QueueFull.
+        let r3 = pool.submit(
             move || ToolResponse::success(serde_json::json!({}), Some("test")),
             Duration::from_millis(50),
         );
-        // Depending on timing, this may be QueueFull or may succeed if the
-        // handler finished fast. Either is acceptable.
-        let _ = r2;
+        assert!(
+            matches!(r3, Err(SyncPoolError::QueueFull { worker_count: 1 })),
+            "expected QueueFull while timed-out handler still owns the worker, got {:?}",
+            r3
+        );
 
-        // Wait for the handler to finish and the worker to drain queued jobs.
-        std::thread::sleep(Duration::from_millis(500));
+        // Release the handler.
+        gate.release();
 
-        // Pool should be usable again.
-        let r3 = pool.submit(
+        // Wait for sentinel to complete (proves worker finished job 1).
+        let sentinel_result = sentinel.join().expect("sentinel must not panic");
+        assert!(sentinel_result.unwrap().ok);
+        assert!(sentinel_ran.load(Ordering::SeqCst));
+
+        // Pool recovers.
+        let r4 = pool.submit(
             move || ToolResponse::success(serde_json::json!("after"), Some("test")),
             Duration::from_secs(5),
         );
-        assert!(r3.unwrap().ok, "pool must recover after handler finishes");
+        assert!(r4.unwrap().ok, "pool must recover after handler finishes");
     }
 
     #[test]
     fn queue_saturation_does_not_set_cancel() {
         let pool = Arc::new(SyncExecutionPool::with_limits(1, 1));
         let flag = Arc::new(AtomicBool::new(false));
+        let blocker = Arc::new(BlockingJobGate::new());
+        let enqueued = Arc::new(TestEnqueueSignal::new());
 
-        // Signal to confirm h1's handler has started (worker is occupied).
-        let (started_tx, started_rx) = sync_channel(1);
-
-        // Block the worker.
+        // Job 1: blocks the worker.
         let p1 = pool.clone();
+        let blocker_for_job = blocker.clone();
         let h1 = std::thread::spawn(move || {
             p1.submit(
                 move || {
-                    let _ = started_tx.send(());
-                    std::thread::sleep(Duration::from_millis(300));
+                    blocker_for_job.arrive_and_wait();
                     ToolResponse::success(serde_json::json!({}), Some("test"))
                 },
                 Duration::from_secs(5),
             )
         });
-        // Wait until h1's handler is actually running — worker is occupied.
-        let _ = started_rx.recv_timeout(Duration::from_secs(2));
+        blocker.wait_until_started();
 
-        // Fill the queue.
+        // Job 2: fills the queue. Use enqueue signal for deterministic ordering.
         let p2 = pool.clone();
+        let enqueue_signal = enqueued.clone();
         let h2 = std::thread::spawn(move || {
-            p2.submit(
-                move || {
-                    std::thread::sleep(Duration::from_millis(300));
-                    ToolResponse::success(serde_json::json!({}), Some("test"))
-                },
+            p2.submit_cancellable_with_enqueue_signal(
+                move || ToolResponse::success(serde_json::json!({}), Some("test")),
                 Duration::from_secs(5),
+                Arc::new(AtomicBool::new(false)),
+                enqueue_signal,
             )
         });
-        // Give the queue time to fill.
-        std::thread::sleep(Duration::from_millis(20));
+        enqueued.wait_until_entered();
 
-        // This should get QueueFull, NOT Timeout.
+        // Job 3: submit with own flag. Should get QueueFull, flag must NOT be set.
         let flag_clone = flag.clone();
         let r3 = pool.submit_cancellable(
             move || ToolResponse::success(serde_json::json!({}), Some("test")),
@@ -874,9 +943,12 @@ mod tests {
             "cancel flag must NOT be set on QueueFull"
         );
 
-        // Drain.
-        let _ = h1.join();
-        let _ = h2.join();
+        // Release and drain.
+        blocker.release();
+        let r1 = h1.join().expect("h1 panic");
+        let r2 = h2.join().expect("h2 panic");
+        assert!(r1.expect("job1").ok);
+        assert!(r2.expect("job2").ok);
     }
 
     #[test]
