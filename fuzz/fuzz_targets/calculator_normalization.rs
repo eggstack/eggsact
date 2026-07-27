@@ -27,7 +27,9 @@ fuzz_target!(|data: &[u8]| {
         // is not a general idempotence contract. The two full runs above
         // provide the deterministic property for this target.
 
-        // Output bounded
-        assert!(result1.0.len() <= expr.len() * 100 + 1000);
+        // Output bounded: small inputs can produce large numeric results
+        // (e.g. 946! has ~2400 digits), so use a generous bound that still
+        // catches pathological expansion while allowing legitimate large outputs.
+        assert!(result1.0.len() <= expr.len() * 1000 + 10_000);
     }
 });
