@@ -16,8 +16,8 @@ Version: `1.2.0`
 
 ### GitHub CI
 
-Run [30185819114](https://github.com/eggstack/eggsact/actions/runs/30185819114) passed
-with all 12 jobs successful on CODE_SHA `50f9132` (fuzz target fix is non-production).
+Run [30306974684](https://github.com/eggstack/eggsact/actions/runs/30306974684) passed
+with all 12 jobs successful on CODE_SHA `3e5b41c`.
 
 | Job | Result |
 |-----|--------|
@@ -73,19 +73,19 @@ Local normal and AddressSanitizer fuzz-target builds also passed using
 
 ### Latest-compatible dependencies
 
-Run [30285309780](https://github.com/eggstack/eggsact/actions/runs/30285309780) passed
-on CODE_SHA `50f9132`.
+Run [30306975876](https://github.com/eggstack/eggsact/actions/runs/30306975876) passed
+on CODE_SHA `3e5b41c`.
 
 ### Python parity
 
-Run [30285310359](https://github.com/eggstack/eggsact/actions/runs/30285310359) passed
-on CODE_SHA `50f9132`. Parity (latest eggcalc) succeeded. Its report recorded eggsact
+Run [30306976324](https://github.com/eggstack/eggsact/actions/runs/30306976324) passed
+on CODE_SHA `3e5b41c`. Parity (latest eggcalc) succeeded. Its report recorded eggsact
 `1.2.0`, eggcalc `1.1.6`, and Python `3.12.13`.
 
 ## Release verification workflow
 
-Run [30285308354](https://github.com/eggstack/eggsact/actions/runs/30285308354) passed
-on CODE_SHA `50f9132`. Full Release Gate succeeded.
+Run [30306975072](https://github.com/eggstack/eggsact/actions/runs/30306975072) passed
+on CODE_SHA `3e5b41c`. Full Release Gate succeeded.
 
 ### Clean worktree verification
 

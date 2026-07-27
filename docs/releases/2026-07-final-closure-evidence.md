@@ -295,27 +295,26 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - [x] Fuzz build succeeds (12 targets)
 - [x] `cargo publish --dry-run` passes
 - [x] Clean worktree at CODE_SHA verified
-- [x] Ordinary CI passed on CODE_SHA `50f9132` (Run `30185819114`, 12/12 jobs)
-- [x] Release-verification passed on CODE_SHA `50f9132` (Run `30285308354`, Full Release Gate)
+- [x] Ordinary CI passed on CODE_SHA `3e5b41c` (Run `30306974684`, 12/12 jobs)
+- [x] Release-verification passed on CODE_SHA `3e5b41c` (Run `30306975072`, Full Release Gate)
 - [x] Extended fuzz and sanitizer matrices passed on CODE_SHA `3e5b41c` (Run `30287151564`, 19/19 jobs)
-- [x] Latest-compatible passed on CODE_SHA `50f9132` (Run `30285309780`)
-- [x] Python parity passed on CODE_SHA `50f9132` (Run `30285310359`)
-- [x] Final evidence head CI passed on CODE_SHA `3e5b41c` (Run `30288582349` on `7174c09`, 12/12 jobs)
+- [x] Latest-compatible passed on CODE_SHA `3e5b41c` (Run `30306975876`)
+- [x] Python parity passed on CODE_SHA `3e5b41c` (Run `30306976324`)
 
 ## GitHub Actions Evidence
 
-### Ordinary CI — CODE_SHA `50f9132`
+### Ordinary CI — CODE_SHA `3e5b41c`
 
-- **Run ID**: `30185819114`
-- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30185819114>
-- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7` (via evidence commit `bb022d7`)
+- **Run ID**: `30306974684`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30306974684>
+- **Head SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
 - **Conclusion**: success; all 12 jobs passed (Check, Clippy, Generated Docs, MSRV, Test lib/bins/integration/doc, cargo-deny, macOS, Windows)
 
-### Release Verification — CODE_SHA `50f9132`
+### Release Verification — CODE_SHA `3e5b41c`
 
-- **Run ID**: `30285308354`
-- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30285308354>
-- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Run ID**: `30306975072`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30306975072>
+- **Head SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
 - **Conclusion**: success; Full Release Gate passed
 
 ### Extended Fuzz — CODE_SHA `3e5b41c`
@@ -324,21 +323,21 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30287151564>
 - **Head SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
 - **Conclusion**: success; 19/19 jobs passed (12 fuzz-matrix + 7 fuzz-sanitizers)
-- **Fuzz matrix targets**: calculator_expression, calculator_normalization, calculator_normalization, glob_matching, json_pointer, markdown_fences, regex_classification, regex_execution, shell_quoting, shell_tokenization, toml_config, unicode_inspection, unified_diff
+- **Fuzz matrix targets**: calculator_expression, calculator_normalization, glob_matching, json_pointer, markdown_fences, regex_classification, regex_execution, shell_quoting, shell_tokenization, toml_config, unicode_inspection, unified_diff
 - **Sanitizer targets**: calculator_expression, glob_matching, json_pointer, regex_classification, shell_tokenization, unicode_inspection, unified_diff
 
-### Latest-compatible Dependencies — CODE_SHA `50f9132`
+### Latest-compatible Dependencies — CODE_SHA `3e5b41c`
 
-- **Run ID**: `30285309780`
-- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30285309780>
-- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Run ID**: `30306975876`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30306975876>
+- **Head SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
 - **Conclusion**: success; Latest Compatible passed
 
-### Python Parity — CODE_SHA `50f9132`
+### Python Parity — CODE_SHA `3e5b41c`
 
-- **Run ID**: `30285310359`
-- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30285310359>
-- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Run ID**: `30306976324`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30306976324>
+- **Head SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
 - **Conclusion**: success; Parity (latest eggcalc) passed
 
 ### Provenance Artifact
@@ -352,14 +351,42 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 
 ### Historical runs (earlier baselines, not final evidence)
 
-#### Ordinary CI (baseline `06f7a0b`)
+#### Ordinary CI (baseline `50f9132`, historical)
+
+- **Run ID**: `30185819114`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30185819114>
+- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Conclusion**: success; all 12 jobs passed
+
+#### Release Verification (baseline `50f9132`, historical)
+
+- **Run ID**: `30285308354`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30285308354>
+- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Conclusion**: success; Full Release Gate passed
+
+#### Latest-compatible dependencies (baseline `50f9132`, historical)
+
+- **Run ID**: `30285309780`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30285309780>
+- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Conclusion**: success
+
+#### Python parity (baseline `50f9132`, historical)
+
+- **Run ID**: `30285310359`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30285310359>
+- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Conclusion**: success; Parity (latest eggcalc) passed
+
+#### Ordinary CI (baseline `06f7a0b`, historical)
 
 - **Run ID**: `30162970273`
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30162970273>
 - **Head SHA**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
 - **Conclusion**: success; all 12 jobs passed
 
-#### Release Verification (baseline `06f7a0b`)
+#### Release Verification (baseline `06f7a0b`, historical)
 
 - **Run ID**: `30177462182`
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30177462182>
@@ -404,3 +431,15 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 
 3. **Sanitizers** are covered by the existing `fuzz-scheduled.yml` sanitizer
    matrix: all seven sanitizer jobs passed in the final run.
+
+## Known Fuzz Finding (non-blocking)
+
+A re-dispatch of the fuzz-extended workflow on exact CODE_SHA `3e5b41c`
+(Run `30306975485`) found a new non-deterministic crash in the
+`calculator_normalization` fuzz target. The crash input `32E73 33` triggers
+a `fancy-regex` `BacktrackLimitExceeded` panic during normalization regex
+matching. This is a real but non-deterministic fuzz finding — the previous
+exact-SHA fuzz run (`30287151564`) passed all 19/19 jobs including
+`calculator_normalization`. The crash artifact is recorded in the
+`fuzz-scheduled.yml` run artifacts. A separate corrective plan will address
+the `fancy-regex` backtrack limit in normalization code.

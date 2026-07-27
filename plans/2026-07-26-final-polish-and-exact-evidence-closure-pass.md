@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** complete
+- **Status:** superseded by final single-SHA evidence-only closure pass (`plans/2026-07-27-final-single-sha-evidence-only-closure-pass.md`)
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Plan baseline:** `980c4d23cf5560a0aac096631f413aaf03e900b5`
