@@ -300,7 +300,7 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - [x] Extended fuzz and sanitizer matrices passed on CODE_SHA `3e5b41c` (Run `30287151564`, 19/19 jobs)
 - [x] Latest-compatible passed on CODE_SHA `50f9132` (Run `30285309780`)
 - [x] Python parity passed on CODE_SHA `50f9132` (Run `30285310359`)
-- [x] Final evidence head CI passed on CODE_SHA `3e5b41c` (Run `30185819114` on `bb022d7`, tests `50f9132` code; fuzz target fix is non-production)
+- [x] Final evidence head CI passed on CODE_SHA `3e5b41c` (Run `30288582349` on `7174c09`, 12/12 jobs)
 
 ## GitHub Actions Evidence
 
