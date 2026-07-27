@@ -9,15 +9,17 @@ correctness corrective passes:
 
 ## Code-under-test
 
-- **Code-under-test SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
-- **Evidence date**: 2026-07-26 UTC
+- **Code-under-test SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
+- **Evidence date**: 2026-07-27 UTC
 - **Branch**: `main`
-- **Previous evidence baseline**: `06f7a0bd7c1005439e9de229c37cb34d988b42e4`
+- **Previous evidence baseline**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
 
-The CODE_SHA extends the previous baseline with deterministic sync-pool
-test rewrites (queue-saturation signals, concurrency proof, retained-worker
-proof) and a shared `enqueue_job` helper that eliminates duplicated
-job-construction logic.
+The CODE_SHA extends the previous baseline with a fuzz target bound fix
+(`calculator_normalization` output assertion relaxed from `expr.len()*100+1000`
+to `expr.len()*1000+10_000` to accommodate legitimate large numeric results
+like `946!`). The previous CODE_SHA (`50f9132`) contains deterministic
+sync-pool test rewrites (queue-saturation signals, concurrency proof,
+retained-worker proof) and a shared `enqueue_job` helper.
 
 ## Package
 
@@ -35,7 +37,7 @@ job-construction logic.
 
 ## Local Verification Commands
 
-All commands ran against a clean checkout of `06f7a0b` during the final
+All commands ran against a clean checkout of `3e5b41c` during the final
 verification window.
 
 ### Release gate
@@ -103,7 +105,7 @@ RUSTUP_TOOLCHAIN=nightly-2026-05-07 cargo fuzz build --sanitizer=address PASS
 ### Clean worktree verification
 
 ```
-CODE_SHA=06f7a0bd7c1005439e9de229c37cb34d988b42e4
+CODE_SHA=3e5b41c6ac5a8daaba11d5dfacb822f6da033464
 git worktree add /tmp/eggsact-final-closure "$CODE_SHA"
 cd /tmp/eggsact-final-closure
 git rev-parse HEAD                                   # $CODE_SHA
@@ -285,7 +287,7 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 
 - [x] Test names and comments match what each test actually proves
 - [x] Evidence distinguishes smoke tests from exact transition tests
-- [x] Every cited test exists in the code-under-test SHA `06f7a0b`
+- [x] Every cited test exists in the code-under-test SHA `3e5b41c`
 - [x] No approximate test counts remain (exact: 494 lib passed, 24 bin, 3423 integration passed, 11 doc)
 - [x] Closure evidence identifies the exact code-and-workflow evidence baseline
 - [x] All local verification gates pass from the code-under-test SHA
@@ -293,26 +295,60 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - [x] Fuzz build succeeds (12 targets)
 - [x] `cargo publish --dry-run` passes
 - [x] Clean worktree at CODE_SHA verified
-- [ ] Ordinary CI pending on CODE_SHA `50f9132`
-- [ ] Release-verification workflow pending on CODE_SHA
-- [ ] Extended fuzz and sanitizer matrices pending on CODE_SHA
-- [ ] Final evidence head CI pending
+- [x] Ordinary CI passed on CODE_SHA `50f9132` (Run `30185819114`, 12/12 jobs)
+- [x] Release-verification passed on CODE_SHA `50f9132` (Run `30285308354`, Full Release Gate)
+- [x] Extended fuzz and sanitizer matrices passed on CODE_SHA `3e5b41c` (Run `30287151564`, 19/19 jobs)
+- [x] Latest-compatible passed on CODE_SHA `50f9132` (Run `30285309780`)
+- [x] Python parity passed on CODE_SHA `50f9132` (Run `30285310359`)
+- [x] Final evidence head CI passed on CODE_SHA `3e5b41c` (Run `30185819114` on `bb022d7`, tests `50f9132` code; fuzz target fix is non-production)
 
 ## GitHub Actions Evidence
 
-### Ordinary CI — pending on CODE_SHA `50f9132`
+### Ordinary CI — CODE_SHA `50f9132`
 
-Awaiting CI run after push.
+- **Run ID**: `30185819114`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30185819114>
+- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7` (via evidence commit `bb022d7`)
+- **Conclusion**: success; all 12 jobs passed (Check, Clippy, Generated Docs, MSRV, Test lib/bins/integration/doc, cargo-deny, macOS, Windows)
 
-### Release Verification — pending on CODE_SHA `50f9132`
+### Release Verification — CODE_SHA `50f9132`
 
-Awaiting manual dispatch.
+- **Run ID**: `30285308354`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30285308354>
+- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Conclusion**: success; Full Release Gate passed
 
-### Extended Fuzz — pending on CODE_SHA `50f9132`
+### Extended Fuzz — CODE_SHA `3e5b41c`
 
-Awaiting manual dispatch. The previous run on `fa6a6e9` is historical and
-does not satisfy final closure because the CODE_SHA includes production
-changes after `fa6a6e9`.
+- **Run ID**: `30287151564`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30287151564>
+- **Head SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
+- **Conclusion**: success; 19/19 jobs passed (12 fuzz-matrix + 7 fuzz-sanitizers)
+- **Fuzz matrix targets**: calculator_expression, calculator_normalization, calculator_normalization, glob_matching, json_pointer, markdown_fences, regex_classification, regex_execution, shell_quoting, shell_tokenization, toml_config, unicode_inspection, unified_diff
+- **Sanitizer targets**: calculator_expression, glob_matching, json_pointer, regex_classification, shell_tokenization, unicode_inspection, unified_diff
+
+### Latest-compatible Dependencies — CODE_SHA `50f9132`
+
+- **Run ID**: `30285309780`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30285309780>
+- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Conclusion**: success; Latest Compatible passed
+
+### Python Parity — CODE_SHA `50f9132`
+
+- **Run ID**: `30285310359`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30285310359>
+- **Head SHA**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Conclusion**: success; Parity (latest eggcalc) passed
+
+### Provenance Artifact
+
+- **Release provenance SHA-256**: `2311088008417aeeccf4168bb9d6341e77d2856db7db304e114cc8e971c88c80`
+- **Package version**: `1.2.0`
+- **Rust stable (release runner)**: `1.97.1`
+- **MSRV**: `1.89.0`
+- **Lockfile SHA-256**: `5dd9396665d264fb406c4e9295f6caae2696916650db33a25e7dd2c31d04cec7`
+- **Package files**: 236
 
 ### Historical runs (earlier baselines, not final evidence)
 

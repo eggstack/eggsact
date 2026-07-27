@@ -1,7 +1,7 @@
 # Release 5 Status Note
 
-**Date:** 2026-07-26 UTC
-**Final verification baseline:** `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+**Date:** 2026-07-27 UTC
+**Final verification baseline:** `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
 **Plan:** `plans/2026-07-18-release-5-fuzzing-property-testing-plan.md`
 
 ## Fuzz targets
@@ -43,10 +43,12 @@ the former vacuous no-panic checks were removed or strengthened.
 
 ## Final workflow evidence
 
-The extended fuzz/sanitizer runs need to be re-run on the exact CODE_SHA
-`50f9132`. The previous run on `fa6a6e9` is historical and does not
-satisfy final closure because the CODE_SHA includes production changes
-after `fa6a6e9`.
+Extended fuzz/sanitizer run on CODE_SHA `3e5b41c`:
+
+- **Run ID**: `30287151564`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30287151564>
+- **Head SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
+- **Conclusion**: success; 19/19 jobs passed (12 fuzz-matrix + 7 fuzz-sanitizers)
 
 Local `cargo fuzz build` and `cargo fuzz build --sanitizer=address` also passed.
 
@@ -75,7 +77,7 @@ included in the final verification baseline.
 | Persistent corpora committed and seeded | 77 seeds across 12 targets (see table above) | Complete |
 | All required surfaces have fuzz coverage | Calculator, diff, shell, regex, JSON, TOML, Unicode, Markdown, glob — all covered | Complete |
 | Core properties enforced in ordinary tests | 47 property tests across 9 modules | Complete |
-| No untriaged crash/hang/OOM/overflow | Pending re-run on CODE_SHA `50f9132` (previous run on `fa6a6e9` is historical) | Pending |
+| No untriaged crash/hang/OOM/overflow | Extended fuzz Run `30287151564` on `3e5b41c` — all 19 jobs pass, no new findings | Complete |
 | Fixed findings have regression tests | 4 fuzz-discovered fixes with regression seeds in `fuzz/corpus/` | Complete |
 | PR smoke fuzzing active and bounded | `fuzz-pr.yml` — builds all targets, runs bounded high-value targets with concurrency cancellation | Complete |
 | Extended fuzzing covers all targets | `fuzz-scheduled.yml` — 12-target matrix with per-target timeouts | Complete |
