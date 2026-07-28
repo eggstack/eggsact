@@ -342,6 +342,9 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - **Parity artifact ID**: `8669074995`
 - **Parity artifact name**: `parity-report`
 - **Parity artifact size**: 258 bytes
+- **Parity GitHub archive digest**: `sha256:58f11b98fa24889456aca7c19588b427cd4e858e522ecdae24a488ae09d7cee9`
+- **Parity extracted filename**: `parity-report.json`
+- **Parity extracted-file SHA-256**: `05a133fafd8c4b34f62c8997e13dd0ad79d871b1c0120c8b3a33261f528886a9`
 
 ### Provenance Artifact
 
@@ -349,6 +352,7 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - **Artifact name**: `release-provenance`
 - **Artifact size**: 347 bytes
 - **Workflow head SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
+- **GitHub archive digest**: `sha256:105cdd6171b93cddd36b82b9a0bfc88fea2f129802f801548b61a66d0cc0885a`
 - **Extracted filename**: `release-provenance.json`
 - **Extracted provenance SHA-256**: `2311088008417aeeccf4168bb9d6341e77d2856db7db304e114cc8e971c88c80`
 - **Package version**: `1.2.0`

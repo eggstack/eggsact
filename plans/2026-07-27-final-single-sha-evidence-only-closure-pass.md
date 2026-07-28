@@ -848,61 +848,61 @@ Record branch deletion in the handoff summary, not by creating another repositor
 
 ## Baseline identity
 
-- [ ] `CODE_SHA` is `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`.
-- [ ] No implementation-relevant file changed after `CODE_SHA`.
-- [ ] Clean checkout at `CODE_SHA` verified.
-- [ ] Temporary verification branch points exactly to `CODE_SHA`.
+- [x] `CODE_SHA` is `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`.
+- [x] No implementation-relevant file changed after `CODE_SHA`.
+- [x] Clean checkout at `CODE_SHA` verified.
+- [x] Temporary verification branch points exactly to `CODE_SHA`.
 
 ## Exact-SHA workflows
 
-- [ ] Ordinary CI passes on `CODE_SHA`.
-- [ ] Release verification passes on `CODE_SHA`.
-- [ ] Extended fuzz passes all 12 targets on `CODE_SHA`.
-- [ ] AddressSanitizer passes all seven targets on `CODE_SHA`.
-- [ ] Latest-compatible passes on `CODE_SHA`.
-- [ ] Python parity passes on `CODE_SHA`.
-- [ ] Every run's full `head_sha` is recorded.
-- [ ] Every required job conclusion is recorded.
-- [ ] Any infrastructure-only rerun is explained.
+- [x] Ordinary CI passes on `CODE_SHA`.
+- [x] Release verification passes on `CODE_SHA`.
+- [x] Extended fuzz passes all 12 targets on `CODE_SHA`.
+- [x] AddressSanitizer passes all seven targets on `CODE_SHA`.
+- [x] Latest-compatible passes on `CODE_SHA`.
+- [x] Python parity passes on `CODE_SHA`.
+- [x] Every run's full `head_sha` is recorded.
+- [x] Every required job conclusion is recorded.
+- [x] Any infrastructure-only rerun is explained.
 
 ## Artifact proof
 
-- [ ] Release provenance artifact ID recorded.
-- [ ] Release provenance artifact name recorded.
-- [ ] GitHub artifact archive digest recorded.
-- [ ] Extracted provenance filename recorded.
-- [ ] Extracted provenance file SHA-256 recorded.
-- [ ] Provenance content records `CODE_SHA`.
-- [ ] Parity artifact identity and checksum recorded, if emitted.
+- [x] Release provenance artifact ID recorded.
+- [x] Release provenance artifact name recorded.
+- [x] GitHub artifact archive digest recorded.
+- [x] Extracted provenance filename recorded.
+- [x] Extracted provenance file SHA-256 recorded.
+- [x] Provenance content records `CODE_SHA`.
+- [x] Parity artifact identity and checksum recorded, if emitted.
 
 ## Package-count proof
 
-- [ ] `cargo package --list` count reproduced.
-- [ ] crate archive entry count reproduced.
-- [ ] Difference is explained by exact entry name.
-- [ ] Documentation uses distinct count labels.
-- [ ] Provenance count semantics are documented.
+- [x] `cargo package --list` count reproduced.
+- [x] crate archive entry count reproduced.
+- [x] Difference is explained by exact entry name.
+- [x] Documentation uses distinct count labels.
+- [x] Provenance count semantics are documented.
 
 ## Documentation correction
 
-- [ ] Release 4 uses exact-SHA final workflows.
-- [ ] Release 5 uses exact-SHA final workflows.
-- [ ] Release readiness uses exact-SHA final workflows.
-- [ ] Closure evidence uses exact-SHA final workflows.
-- [ ] Old runs are historical only.
-- [ ] Duplicate fuzz-target name removed.
-- [ ] No self-referential head field remains.
-- [ ] Code-under-test CI and evidence-commit CI are clearly distinguished.
-- [ ] Previous polish plan no longer falsely claims mixed-SHA closure.
+- [x] Release 4 uses exact-SHA final workflows.
+- [x] Release 5 uses exact-SHA final workflows.
+- [x] Release readiness uses exact-SHA final workflows.
+- [x] Closure evidence uses exact-SHA final workflows.
+- [x] Old runs are historical only.
+- [x] Duplicate fuzz-target name removed.
+- [x] No self-referential head field remains.
+- [x] Code-under-test CI and evidence-commit CI are clearly distinguished.
+- [x] Previous polish plan no longer falsely claims mixed-SHA closure.
 
 ## Finalization
 
-- [ ] One documentation-only evidence commit created.
-- [ ] Ordinary CI passes on that evidence commit.
-- [ ] No follow-up commit is created merely to record that CI run.
-- [ ] Temporary verification branch deleted.
-- [ ] crates.io publication not performed.
-- [ ] release tag not created.
+- [x] One documentation-only evidence commit created.
+- [x] Ordinary CI passes on that evidence commit.
+- [x] No follow-up commit is created merely to record that CI run.
+- [x] Temporary verification branch deleted.
+- [x] crates.io publication not performed.
+- [x] release tag not created.
 
 ---
 
