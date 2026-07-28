@@ -65,34 +65,37 @@ binary tests (24 passed), and doc tests (11 passed).
 
 ### Fuzz and sanitizer verification
 
-Extended fuzz/sanitizer run on CODE_SHA `3e5b41c`:
-Run [30287151564](https://github.com/eggstack/eggsact/actions/runs/30287151564) —
-all 19 jobs passed (12 fuzz-matrix + 7 fuzz-sanitizers), no new findings.
+Extended fuzz/sanitizer run on corrective SHA `75ea503`:
+Run [30373991584](https://github.com/eggstack/eggsact/actions/runs/30373991584) —
+all 19 jobs passed (12 fuzz-matrix + 7 fuzz-sanitizers), no crash artifacts.
 Local normal and AddressSanitizer fuzz-target builds also passed using
 `nightly-2026-05-07` and cargo-fuzz `0.13.2`.
 
-A re-dispatch of the extended fuzz workflow on `3e5b41c` (Run
-`30306975485`) found a `calculator_normalization` backtrack-limit crash
-(`32E73 33`). This was fixed in corrective pass `75ea503` (see
-`docs/release-5-status.md` and `plans/2026-07-28-calculator-normalization-backtrack-limit-corrective-pass.md`).
+The earlier extended fuzz run on `3e5b41c` (Run `30287151564`) passed all
+19/19 jobs. A re-dispatch on `3e5b41c` (Run `30306975485`) found a
+`calculator_normalization` backtrack-limit crash (`32E73 33`). This was
+fixed in corrective pass `75ea503` (see `docs/release-5-status.md` and
+`plans/2026-07-28-calculator-normalization-backtrack-limit-corrective-pass.md`).
 
 ### Latest-compatible dependencies
 
-Run [30306975876](https://github.com/eggstack/eggsact/actions/runs/30306975876) passed
-on CODE_SHA `3e5b41c`.
+Run [30373996030](https://github.com/eggstack/eggsact/actions/runs/30373996030) passed
+on corrective SHA `75ea503`.
 
 ### Python parity
 
-Run [30306976324](https://github.com/eggstack/eggsact/actions/runs/30306976324) passed
-on CODE_SHA `3e5b41c`. Parity (latest eggcalc) succeeded. Its report recorded eggsact
-`1.2.0`, eggcalc `1.1.6`, and Python `3.12.13`.
+Run [30373998127](https://github.com/eggstack/eggsact/actions/runs/30373998127) passed
+on corrective SHA `75ea503`. Parity (latest eggcalc) succeeded. Its report
+recorded eggsact `1.2.0`, eggcalc `1.1.6`, and Python `3.12.13`.
 
 ## Release verification workflow
 
-Run [30306975072](https://github.com/eggstack/eggsact/actions/runs/30306975072) passed
-on CODE_SHA `3e5b41c`. Full Release Gate succeeded. The corrective pass
-`75ea503` was verified via the local release gate (fmt, clippy, lib, bins,
-integration, doc, generate-docs, cargo-deny, package).
+Run [30373993751](https://github.com/eggstack/eggsact/actions/runs/30373993751) passed
+on corrective SHA `75ea503`. Full Release Gate succeeded. The provenance
+artifact records commit `75ea503`, package version `1.2.0`, Rust stable
+`1.97.1`, MSRV `1.89.0`, lockfile SHA-256
+`5dd9396665d264fb406c4e9295f6caae2696916650db33a25e7dd2c31d04cec7`, and
+236 package files.
 
 ### Clean worktree verification
 

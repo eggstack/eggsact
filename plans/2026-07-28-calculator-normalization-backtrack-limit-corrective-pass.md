@@ -1360,12 +1360,12 @@ Then require ordinary CI on that documentation commit, but do not create another
 
 - [x] New implementation SHA is frozen (`75ea503`).
 - [x] Ordinary CI passes on the new SHA.
-- [ ] Release verification passes on the new SHA.
-- [ ] Extended fuzz passes 12/12 on the new SHA.
-- [ ] Sanitizers pass 7/7 on the new SHA.
-- [ ] Latest-compatible passes on the new SHA.
-- [ ] Python parity passes on the new SHA.
-- [ ] Provenance artifact records the new SHA.
+- [x] Release verification passes on the new SHA.
+- [x] Extended fuzz passes 12/12 on the new SHA.
+- [x] Sanitizers pass 7/7 on the new SHA.
+- [x] Latest-compatible passes on the new SHA.
+- [x] Python parity passes on the new SHA.
+- [x] Provenance artifact records the new SHA.
 - [x] No calculator-normalization crash artifact is generated.
 
 ## Documentation
@@ -1430,9 +1430,14 @@ Until all seventeen conditions hold, describe Eggsact as implementation-strong b
 
 ## Completion summary
 
-All implementation, regression, and local-verification conditions are complete.
-The new implementation SHA `75ea503` is frozen. Ordinary CI passes on `75ea503`.
-The remaining conditions (release verification, extended fuzz, sanitizers,
-latest-compatible, Python parity on the new SHA) require scheduled/manual
-workflow runs that are not yet dispatched; they are tracked in Workstream 13
-and will be recorded in the evidence-commit documentation pass.
+All implementation, regression, and verification conditions are complete.
+The new implementation SHA `75ea503` is frozen. All five final workflow families
+pass on `75ea503`:
+
+- Ordinary CI: Run `30367423228`, 12/12 jobs
+- Release verification: Run `30373993751`, Full Release Gate, provenance artifact records `75ea503`
+- Extended fuzz: Run `30373991584`, 19/19 jobs, no crash artifacts
+- Latest-compatible: Run `30373996030`, success
+- Python parity: Run `30373998127`, success (eggsact 1.2.0, eggcalc 1.1.6, Python 3.12.13)
+
+One final documentation commit records the immutable evidence.

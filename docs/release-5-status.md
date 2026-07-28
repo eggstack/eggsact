@@ -97,8 +97,9 @@ that exhausted the `fancy-regex` backtrack limit when matched against the
 - Regression tests and a persistent fuzz corpus seed added.
 
 **Verification:** `calc::run("32E73 33")` no longer panics; output matches
-Python/eggcalc parity (`32E73+33` → 3.2e74). Full CI, MSRV, and release gate
-pass on the new SHA `75ea503`.
+Python/eggcalc parity (`32E73+33` → 3.2e74). All final workflows pass on the
+new SHA `75ea503`: ordinary CI (12/12), release verification (Full Release
+Gate), extended fuzz (19/19), latest-compatible, and Python parity.
 
 ## Closure criteria
 
@@ -117,7 +118,10 @@ pass on the new SHA `75ea503`.
 | Fuzz dependencies excluded from runtime | `fuzz/Cargo.toml` isolated workspace; not in root `Cargo.toml` | Complete |
 | Fuzzing documentation current | `docs/fuzzing.md` — reproduce, minimize, fix, promote, security handling | Complete |
 | Full CI, cargo-deny, docs, package gates pass | CI run [30367423228](https://github.com/eggstack/eggsact/actions/runs/30367423228) — all 12 jobs success on `75ea503` | Complete |
-| Release verification on exact CODE_SHA | Release verification [30306975072](https://github.com/eggstack/eggsact/actions/runs/30306975072) — Full Release Gate success on `3e5b41c`; corrective pass `75ea503` verified via local release gate | Complete |
+| Release verification on exact CODE_SHA | Release verification [30373993751](https://github.com/eggstack/eggsact/actions/runs/30373993751) — Full Release Gate success on `75ea503`; provenance artifact records `75ea503` | Complete |
+| Extended fuzz and sanitizer matrices pass on corrective SHA | Extended fuzz [30373991584](https://github.com/eggstack/eggsact/actions/runs/30373991584) — 19/19 jobs success (12 fuzz-matrix + 7 fuzz-sanitizers), no crash artifacts | Complete |
+| Latest-compatible dependencies pass on corrective SHA | [30373996030](https://github.com/eggstack/eggsact/actions/runs/30373996030) — success on `75ea503` | Complete |
+| Python parity passes on corrective SHA | [30373998127](https://github.com/eggstack/eggsact/actions/runs/30373998127) — success on `75ea503`; parity report records eggsact 1.2.0, eggcalc 1.1.6, Python 3.12.13 | Complete |
 
 ## Publication status
 

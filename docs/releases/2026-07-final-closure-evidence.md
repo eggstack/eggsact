@@ -301,10 +301,12 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - [x] `cargo publish --dry-run` passes
 - [x] Clean worktree at CODE_SHA verified
 - [x] Ordinary CI passed on corrective SHA `75ea503` (Run `30367423228`, 12/12 jobs)
-- [x] Release-verification passed on CODE_SHA `3e5b41c` (Run `30306975072`, Full Release Gate)
-- [x] Extended fuzz and sanitizer matrices passed on CODE_SHA `3e5b41c` (Run `30287151564`, 19/19 jobs)
-- [x] Latest-compatible passed on CODE_SHA `3e5b41c` (Run `30306975876`)
-- [x] Python parity passed on CODE_SHA `3e5b41c` (Run `30306976324`)
+- [x] Release-verification passed on corrective SHA `75ea503` (Run `30373993751`, Full Release Gate)
+- [x] Extended fuzz and sanitizer matrices passed on corrective SHA `75ea503` (Run `30373991584`, 19/19 jobs)
+- [x] Latest-compatible passed on corrective SHA `75ea503` (Run `30373996030`)
+- [x] Python parity passed on corrective SHA `75ea503` (Run `30373998127`)
+- [x] Provenance artifact records the new SHA (`30373993751`, provenance SHA-256 `3d5170e6...`)
+- [x] No calculator-normalization crash artifact is generated (Run `30373991584`, all crash-upload steps skipped)
 - [x] Calculator normalization backtrack limit corrective pass closed on `75ea503`
 
 ## GitHub Actions Evidence
@@ -323,7 +325,54 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - **Head SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
 - **Conclusion**: success; all 12 jobs passed (Check, Clippy, Generated Docs, MSRV, Test lib/bins/integration/doc, cargo-deny, macOS, Windows)
 
-### Release Verification — CODE_SHA `3e5b41c`
+### Release Verification — corrective SHA `75ea503`
+
+- **Run ID**: `30373993751`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30373993751>
+- **Head SHA**: `75ea50369510d98617741d4025fc626a0983b2e0`
+- **Conclusion**: success; Full Release Gate passed
+- **Provenance artifact ID**: `8694888993`
+- **Provenance artifact name**: `release-provenance`
+- **Extracted filename**: `release-provenance.json`
+- **Extracted provenance SHA-256**: `3d5170e662a42e5a3ab1cb0f45d751fe243eac67c546ada5f75102ca3563acd8`
+- **Package version**: `1.2.0`
+- **Rust stable (release runner)**: `1.97.1`
+- **MSRV**: `1.89.0`
+- **Lockfile SHA-256**: `5dd9396665d264fb406c4e9295f6caae2696916650db33a25e7dd2c31d04cec7`
+- **Package files**: 236
+
+### Extended Fuzz — corrective SHA `75ea503`
+
+- **Run ID**: `30373991584`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30373991584>
+- **Head SHA**: `75ea50369510d98617741d4025fc626a0983b2e0`
+- **Conclusion**: success; 19/19 jobs passed (12 fuzz-matrix + 7 fuzz-sanitizers)
+- **Fuzz matrix targets**: calculator_expression, calculator_normalization, glob_matching, json_pointer, markdown_fences, regex_classification, regex_execution, shell_quoting, shell_tokenization, toml_config, unicode_inspection, unified_diff
+- **Sanitizer targets**: calculator_expression, glob_matching, json_pointer, regex_classification, shell_tokenization, unicode_inspection, unified_diff
+- **Crash artifacts**: none (all crash-artifact upload steps skipped)
+
+### Latest-Compatible Dependencies — corrective SHA `75ea503`
+
+- **Run ID**: `30373996030`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30373996030>
+- **Head SHA**: `75ea50369510d98617741d4025fc626a0983b2e0`
+- **Conclusion**: success
+
+### Python Parity — corrective SHA `75ea503`
+
+- **Run ID**: `30373998127`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30373998127>
+- **Head SHA**: `75ea50369510d98617741d4025fc626a0983b2e0`
+- **Conclusion**: success; Parity (latest eggcalc) passed
+- **Parity artifact ID**: `8694238039`
+- **Parity artifact name**: `parity-report`
+- **Extracted filename**: `parity-report.json`
+- **Extracted parity SHA-256**: `7718d00673a5fb58e216cf7c2e3378c0e50420afd8921c9a9b98589a72ae379b`
+- **Eggsact version**: `1.2.0`
+- **Eggcalc version**: `1.1.6`
+- **Python version**: `3.12.13`
+
+### Release Verification — CODE_SHA `3e5b41c` (historical, code-under-test for Release 5)
 
 - **Run ID**: `30306975072`
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30306975072>
