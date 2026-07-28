@@ -2,6 +2,34 @@ use fancy_regex::{Captures, Regex};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+/// Map a `fancy_regex::Error` to a deterministic, bounded normalization error
+/// message. The stage name is a compile-time constant so the message is stable
+/// and does not include raw user input.
+fn normalization_regex_error(stage: &'static str, err: fancy_regex::Error) -> String {
+    format!("calculator normalization regex stage '{stage}' failed: {err}")
+}
+
+/// Fallible all-matches replacement for user-driven calculator text.
+///
+/// In `fancy-regex 0.18`, `Regex::replace_all` delegates to infallible
+/// replacement that panics on runtime errors (e.g. `BacktrackLimitExceeded`).
+/// `try_replacen(text, 0, replacement)` performs replace-all behaviour while
+/// returning runtime errors as `Result::Err`, which we propagate as a
+/// deterministic `String` error.
+fn try_replace_all<R>(
+    stage: &'static str,
+    re: &Regex,
+    text: &str,
+    replacement: R,
+) -> Result<String, String>
+where
+    R: fancy_regex::Replacer,
+{
+    re.try_replacen(text, 0, replacement)
+        .map(|value| value.into_owned())
+        .map_err(|err| normalization_regex_error(stage, err))
+}
+
 static PCT_SYMBOL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d+(?:\.\d+)?)\s*%(?!\s*\d)").unwrap());
 static PERCENT_RE: LazyLock<Regex> =
@@ -1090,6 +1118,11 @@ fn parse_simple_number(token: &str) -> Option<f64> {
 /// - Tens + ones combine: [20, 2] -> ["22"]
 /// - Hundreds chain with multiplication: [3, 100, 20, 2] -> ["3", "*", "100", "+", "22"]
 /// - Simple additions stay as-is: [5, 3] -> ["5", "+", "3"]
+///
+/// Scientific notation tokens (e.g. "32e73") are never combined with adjacent
+/// numbers via compound-number logic. They are standalone numeric literals and
+/// are joined with `+` (matching Python/eggcalc parity where "32E73 33"
+/// normalizes to "32E73+33").
 fn combine_number_run(run: &[(String, f64)]) -> Vec<String> {
     if run.is_empty() {
         return vec![];
@@ -1097,10 +1130,18 @@ fn combine_number_run(run: &[(String, f64)]) -> Vec<String> {
 
     let values: Vec<f64> = run.iter().map(|(_, v)| *v).collect();
 
+    // Scientific notation numbers (containing 'e') must not be treated as
+    // compound-number components (hundreds, thousands, etc.). Without this
+    // guard, "32e73 33" would combine 3.2e74 with 33 via the large-scale
+    // branch of combine_number_parts, producing a 74-digit literal that
+    // exhausts the fancy-regex backtrack limit in later normalization stages.
+    let has_scientific = run.iter().any(|(s, _)| s.contains('e'));
+
     // Check if this is a compound number (has tens >= 20 or hundreds)
-    let has_compound = values
-        .iter()
-        .any(|&v| v >= 100.0 || ((20.0..100.0).contains(&v) && v % 10.0 == 0.0));
+    let has_compound = !has_scientific
+        && values
+            .iter()
+            .any(|&v| v >= 100.0 || ((20.0..100.0).contains(&v) && v % 10.0 == 0.0));
 
     if has_compound && values.len() > 1 {
         combine_number_parts(&values)
@@ -1167,24 +1208,33 @@ fn format_number(v: f64) -> String {
 /// but conversion words are replaced before token handling. A phrase like
 /// "100 c in f" otherwise collapses into "100cINf" and the conversion detector
 /// never sees separate source/target unit tokens.
-fn normalize_lowercase_temperature_conversion(expr: &str) -> String {
-    TEMP_CONVERSION_RE
-        .replace_all(expr, |caps: &Captures| {
+fn normalize_lowercase_temperature_conversion(expr: &str) -> Result<String, String> {
+    try_replace_all(
+        "normalize_lowercase_temperature_conversion",
+        &TEMP_CONVERSION_RE,
+        expr,
+        |caps: &Captures| {
             let from_unit = caps[2].to_uppercase();
             let to_unit = caps[4].to_uppercase();
             let conv_word = caps[3].to_uppercase();
             format!("{} {} {} {}", &caps[1], from_unit, conv_word, to_unit)
-        })
-        .to_string()
+        },
+    )
 }
 
 /// NZ-7: Check for ambiguous binary word usage like "5 not 6" or "1 in 2".
 /// These words are reserved for unary bitwise NOT or unit conversion. When
 /// they appear between two numeric values, the meaning is ambiguous.
 fn binary_word_check(expr: &str) -> Result<(), String> {
-    if let Some(m) = BINARY_WORD_RE.find(expr).unwrap() {
+    let m = BINARY_WORD_RE
+        .find(expr)
+        .map_err(|err| normalization_regex_error("binary_word_check", err))?;
+    if let Some(m) = m {
         let matched = m.as_str();
-        if let Some(wm) = BINARY_WORD_INNER_RE.find(matched).unwrap() {
+        let wm = BINARY_WORD_INNER_RE
+            .find(matched)
+            .map_err(|err| normalization_regex_error("binary_word_check_inner", err))?;
+        if let Some(wm) = wm {
             let word = wm.as_str().to_lowercase();
             return Err(format!(
                 "Syntax error: '{}' is not a binary operator in this context. \
@@ -1213,106 +1263,119 @@ pub fn normalize(expr: &str) -> Result<String, String> {
     binary_word_check(&result)?;
 
     // NZ-2: Normalize lowercase temperature conversions before operator word replacement
-    let result = normalize_lowercase_temperature_conversion(&result);
+    let result = normalize_lowercase_temperature_conversion(&result)?;
 
     // M18: Convert hyphens between number words to spaces
     // e.g., "twenty-one" -> "twenty one" (prevents hyphen being treated as minus)
-    let mut result = HYPHEN_RE.replace_all(&result, "$1 $2").to_string();
+    let mut result = try_replace_all("hyphen_between_number_words", &HYPHEN_RE, &result, "$1 $2")?;
 
     // Strip long filler phrases first (e.g., "what's the value of", "what is the result of")
     // These must be stripped before operator conversion to avoid partial matches
     for re in STRIPPED_LONG_PATTERNS.iter() {
-        result = re.replace_all(&result, "").to_string();
+        result = try_replace_all("strip_long_phrases", re, &result, "")?;
     }
 
     // M19: Handle "N to the M" power phrases BEFORE "to" is converted to operator
-    result = TO_THE_POWER_RE.replace_all(&result, "$1**$2").to_string();
+    result = try_replace_all("to_the_power", &TO_THE_POWER_RE, &result, "$1**$2")?;
 
     // NZ-8 + M24: Handle degrees → radian conversion BEFORE operator word replacement
     // Skip conversion for temperature units: "100 degrees in fahrenheit" stays as temperature
     // Temperature units that should NOT trigger angle conversion
     // First handle "N degrees in/to <temp_unit>" - keep as temperature, strip degrees
     for tu_re in TEMP_DEG_CONV_PATTERNS.iter() {
-        result = tu_re.replace_all(&result, "$1").to_string();
+        result = try_replace_all("temp_deg_conv", tu_re, &result, "$1")?;
     }
     // Handle "N degrees <temp_unit>" (without in/to keyword) - keep as temperature
     for tu_re in TEMP_DEG_UNIT_PATTERNS.iter() {
-        result = tu_re.replace_all(&result, "$1").to_string();
+        result = try_replace_all("temp_deg_unit", tu_re, &result, "$1")?;
     }
     // Handle "N degrees <non-temp-unit>" → convert angle to radians
     // e.g., "5 degrees radians" → "(5*pi/180)*radian"
-    result = DEGREES_NON_TEMP_RE
-        .replace_all(&result, "($1*pi/180)*$2")
-        .to_string();
+    result = try_replace_all(
+        "degrees_non_temp",
+        &DEGREES_NON_TEMP_RE,
+        &result,
+        "($1*pi/180)*$2",
+    )?;
     // Then handle remaining "N degrees" → radian conversion
-    result = DEGREES_RE.replace_all(&result, "($1*pi/180)").to_string();
+    result = try_replace_all("degrees", &DEGREES_RE, &result, "($1*pi/180)")?;
 
     // NZ-4: Normalize spaced unit caret exponents: "5 m ^ 2" → "5 m2"
     // "5 m ^ 2" → "5 m2" (attached quantity with unit)
-    result = UNIT_CARET_ATTACH_RE
-        .replace_all(&result, |caps: &Captures| {
+    result = try_replace_all(
+        "unit_caret_attach",
+        &UNIT_CARET_ATTACH_RE,
+        &result,
+        |caps: &Captures| {
             let unit = &caps[2];
             let power = &caps[3];
             format!("{} {}{}", &caps[1], unit, power)
-        })
-        .to_string();
+        },
+    )?;
     // "/ m ^ 2" → "/m**2" (denominator form)
-    result = UNIT_CARET_DENOM_RE
-        .replace_all(&result, |caps: &Captures| {
+    result = try_replace_all(
+        "unit_caret_denom",
+        &UNIT_CARET_DENOM_RE,
+        &result,
+        |caps: &Captures| {
             let unit = caps[1].to_lowercase();
             format!("/{}**{}", unit, &caps[2])
-        })
-        .to_string();
+        },
+    )?;
     // "/(m) ^ 2" → "/(m)**2" (parenthesized denominator)
-    result = UNIT_CARET_PAREN_RE
-        .replace_all(&result, |caps: &Captures| {
+    result = try_replace_all(
+        "unit_caret_paren",
+        &UNIT_CARET_PAREN_RE,
+        &result,
+        |caps: &Captures| {
             let unit = caps[1].to_lowercase();
             format!("/({})**{}", unit, &caps[2])
-        })
-        .to_string();
+        },
+    )?;
 
     // M23: Handle "N thousand" scale words (evaluate to product)
     for (re, sv) in DIGIT_SCALE_PATTERNS.iter() {
-        result = re
-            .replace_all(&result, |caps: &Captures| {
-                let v: f64 = caps[1].parse().unwrap_or(0.0);
-                let product = v * sv;
-                if product.fract() == 0.0 && product.abs() < 1e15 {
-                    format!("{}", product as i64)
-                } else {
-                    format!("{}", product)
-                }
-            })
-            .to_string();
+        result = try_replace_all("digit_scale", re, &result, |caps: &Captures| {
+            let v: f64 = caps[1].parse().unwrap_or(0.0);
+            let product = v * sv;
+            if product.fract() == 0.0 && product.abs() < 1e15 {
+                format!("{}", product as i64)
+            } else {
+                format!("{}", product)
+            }
+        })?;
     }
 
     // Handle "N%" -> N/100
-    result = PCT_SYMBOL_RE.replace_all(&result, "($1/100)").to_string();
+    result = try_replace_all("pct_symbol", &PCT_SYMBOL_RE, &result, "($1/100)")?;
 
     // Handle "N percent" -> N/100
-    result = PERCENT_RE.replace_all(&result, "($1/100)").to_string();
+    result = try_replace_all("percent", &PERCENT_RE, &result, "($1/100)")?;
 
     // Convert constant phrases (e.g., "gas constant" -> "R")
     // Sort by phrase length descending so multi-word phrases match before shorter ones
     for (re, canonical) in CONSTANT_PATTERNS.iter() {
-        result = re.replace_all(&result, *canonical).to_string();
+        result = try_replace_all("constant_phrases", re, &result, *canonical)?;
     }
 
     // NZ-6: Replace multi-word fraction numbers before individual word replacement
     // e.g., "one half" -> "0.5", "two thirds" -> "0.666..."
     for (re, replacement) in MULTI_WORD_PATTERNS.iter() {
-        result = re.replace_all(&result, *replacement).to_string();
+        result = try_replace_all("multi_word_fractions", re, &result, *replacement)?;
     }
 
     // Convert number words
-    result = NUMBER_WORD_RE
-        .replace_all(&result, |caps: &Captures| {
+    result = try_replace_all(
+        "number_words",
+        &NUMBER_WORD_RE,
+        &result,
+        |caps: &Captures| {
             NUMBER_WORDS
                 .get(caps.get(1).map(|m| m.as_str()).unwrap_or(""))
                 .copied()
                 .unwrap_or("")
-        })
-        .to_string();
+        },
+    )?;
 
     // M20: Handle "point" as decimal separator: "5 point 3" -> "5.3"
     // Only when preceded by a digit or ')'
@@ -1321,7 +1384,7 @@ pub fn normalize(expr: &str) -> Result<String, String> {
     // decimal point are absorbed into the fractional part rather than being
     // treated as a separate number ("three point one four" -> "3.14",
     // not "3.1 + 4").
-    result = POINT_RE.replace_all(&result, ".").to_string();
+    result = try_replace_all("point_decimal", &POINT_RE, &result, ".")?;
 
     // Merge digits following a decimal point: "3.1 4" -> "3.14"
     // After "point" replacement, space-separated digit words after the decimal
@@ -1330,7 +1393,7 @@ pub fn normalize(expr: &str) -> Result<String, String> {
     let mut prev_result = String::new();
     while prev_result != result {
         prev_result = result.clone();
-        result = MERGE_DECIMAL_RE.replace_all(&result, "$1$2").to_string();
+        result = try_replace_all("merge_decimal", &MERGE_DECIMAL_RE, &result, "$1$2")?;
     }
 
     // Combine consecutive number words: "twenty one" -> "21", "one hundred twenty two" -> "122"
@@ -1340,35 +1403,36 @@ pub fn normalize(expr: &str) -> Result<String, String> {
     // Must run BEFORE the operator-word replacement (which converts "per"
     // into "/") and BEFORE the bare-unit "*" insertion below so the full
     // phrase is collapsed into a canonical compound unit first.
-    result = PER_UNIT_RE
-        .replace_all(&result, |caps: &Captures| {
-            let num = &caps[1];
-            let distance = caps[2].to_lowercase();
-            let time = caps[3].to_lowercase();
-            let dist_unit: &str = match distance.as_str() {
-                "kilometer" | "kilometers" | "kilometre" | "kilometres" | "km" => "km",
-                "mile" | "miles" | "mi" => "mi",
-                "meter" | "meters" | "metre" | "metres" | "m" => "m",
-                "foot" | "feet" | "ft" => "ft",
-                "inch" | "inches" => "in",
-                "yard" | "yards" | "yd" => "yd",
-                _ => return caps[0].to_string(),
-            };
-            let time_unit: &str = match time.as_str() {
-                "hour" | "hours" | "hr" | "h" => "h",
-                "minute" | "minutes" | "min" => "min",
-                "second" | "seconds" | "sec" | "s" => "s",
-                _ => return caps[0].to_string(),
-            };
-            format!("{}*{}/{}", num, dist_unit, time_unit)
-        })
-        .to_string();
+    result = try_replace_all("per_unit", &PER_UNIT_RE, &result, |caps: &Captures| {
+        let num = &caps[1];
+        let distance = caps[2].to_lowercase();
+        let time = caps[3].to_lowercase();
+        let dist_unit: &str = match distance.as_str() {
+            "kilometer" | "kilometers" | "kilometre" | "kilometres" | "km" => "km",
+            "mile" | "miles" | "mi" => "mi",
+            "meter" | "meters" | "metre" | "metres" | "m" => "m",
+            "foot" | "feet" | "ft" => "ft",
+            "inch" | "inches" => "in",
+            "yard" | "yards" | "yd" => "yd",
+            _ => return caps[0].to_string(),
+        };
+        let time_unit: &str = match time.as_str() {
+            "hour" | "hours" | "hr" | "h" => "h",
+            "minute" | "minutes" | "min" => "min",
+            "second" | "seconds" | "sec" | "s" => "s",
+            _ => return caps[0].to_string(),
+        };
+        format!("{}*{}/{}", num, dist_unit, time_unit)
+    })?;
 
     // BUG-009 / parity B9: "<num> <unit1> / <unit2>" split-rate forms.
     // "60 km / h" -> "(60*km)/h" so the right-hand unit isn't consumed as
     // the Planck constant `h` by the evaluator.
-    result = SPLIT_UNIT_DIV_RE
-        .replace_all(&result, |caps: &Captures| {
+    result = try_replace_all(
+        "split_unit_div",
+        &SPLIT_UNIT_DIV_RE,
+        &result,
+        |caps: &Captures| {
             let num = caps.get(1).map(|m| m.as_str()).unwrap_or("0");
             let u1 = caps.get(2).map(|m| m.as_str()).unwrap_or("");
             let u2 = caps.get(3).map(|m| m.as_str()).unwrap_or("");
@@ -1376,125 +1440,122 @@ pub fn normalize(expr: &str) -> Result<String, String> {
             // can still see the full compound unit when scanning the joined
             // expression. BUG-009 / parity B9.
             format!("{}*{}/{}", num, u1, u2)
-        })
-        .to_string();
+        },
+    )?;
 
     // BUG-009 / parity B9: bare compound unit forms. Insert "*" between
     // number and a compound unit ("60 km/h" -> "60*km/h") so the operator
     // splitter doesn't turn the embedded "/" into division.
-    result = BARE_COMPOUND_UNIT_RE
-        .replace_all(&result, "$1*$3")
-        .to_string();
+    result = try_replace_all(
+        "bare_compound_unit",
+        &BARE_COMPOUND_UNIT_RE,
+        &result,
+        "$1*$3",
+    )?;
 
     // BUG-009 / parity B9: bare simple unit forms. Insert "*" between a
     // number and a known spaced unit ("60 mph" -> "60*mph") so the token
     // survives operator splitting. Limited to long unit names to avoid
     // false positives with short identifiers.
-    result = BARE_SIMPLE_UNIT_RE
-        .replace_all(&result, "$1*$3")
-        .to_string();
+    result = try_replace_all("bare_simple_unit", &BARE_SIMPLE_UNIT_RE, &result, "$1*$3")?;
 
     // M17: Split compact function forms: "sin30" -> "sin 30"
     // Guard names that already end in digits so "log10" remains as-is
     if let Some(ref compact_re) = *COMPACT_FUNC_RE {
-        result = compact_re.replace_all(&result, "$1 $2").to_string();
+        result = try_replace_all("compact_func", compact_re, &result, "$1 $2")?;
     }
 
     // Convert operator words - sort by length descending to ensure longer patterns match first
     for (re, symbol) in OPERATOR_PATTERNS.iter() {
-        result = re.replace_all(&result, *symbol).to_string();
+        result = try_replace_all("operator_words", re, &result, *symbol)?;
     }
 
     // Convert function names - sort by length descending to ensure longer patterns match first
     for (re, standard) in FUNC_NAME_PATTERNS.iter() {
-        result = re.replace_all(&result, *standard).to_string();
+        result = try_replace_all("function_names", re, &result, *standard)?;
     }
 
     // Fix "func * expr" patterns caused by "of" → "*" conversion
     // Convert "cbrt * 8" → "cbrt(8)" for known function names
     // For multi-arg functions like "mean * 1+2+3", convert +/- to commas: "mean(1,2,3)"
     for (re, is_multi, func) in FUNC_FIX_PATTERNS.iter() {
-        result = re
-            .replace_all(&result, |caps: &Captures| {
-                let arg = caps[1].trim();
-                if arg.is_empty() {
-                    format!("{} *", func)
-                } else if *is_multi {
-                    // Replace top-level +/- with commas, preserving signs on numbers
-                    // e.g., "1+2+3" → "1,2,3", "-1+2" → "-1,2"
-                    let mut comma_parts = Vec::new();
-                    let mut current = String::new();
-                    let mut paren_depth = 0;
-                    let chars: Vec<char> = arg.chars().collect();
-                    let mut i = 0;
-                    while i < chars.len() {
-                        match chars[i] {
-                            '(' => {
-                                paren_depth += 1;
-                                current.push(chars[i]);
-                                i += 1;
-                            }
-                            ')' => {
-                                paren_depth -= 1;
-                                current.push(chars[i]);
-                                i += 1;
-                            }
-                            '+' | '-' if paren_depth == 0 && !current.is_empty() => {
-                                // Check if this +/- is a sign (after operator or at start) or separator
-                                let last_non_space = current.trim_end().chars().last();
-                                match last_non_space {
-                                    Some('(') | Some('+') | Some('-') | Some('*') | Some('/')
-                                    | Some(',') => {
-                                        // This is a sign character, not a separator
-                                        current.push(chars[i]);
-                                        i += 1;
+        result = try_replace_all("func_fix", re, &result, |caps: &Captures| {
+            let arg = caps[1].trim();
+            if arg.is_empty() {
+                format!("{} *", func)
+            } else if *is_multi {
+                // Replace top-level +/- with commas, preserving signs on numbers
+                // e.g., "1+2+3" → "1,2,3", "-1+2" → "-1,2"
+                let mut comma_parts = Vec::new();
+                let mut current = String::new();
+                let mut paren_depth = 0;
+                let chars: Vec<char> = arg.chars().collect();
+                let mut i = 0;
+                while i < chars.len() {
+                    match chars[i] {
+                        '(' => {
+                            paren_depth += 1;
+                            current.push(chars[i]);
+                            i += 1;
+                        }
+                        ')' => {
+                            paren_depth -= 1;
+                            current.push(chars[i]);
+                            i += 1;
+                        }
+                        '+' | '-' if paren_depth == 0 && !current.is_empty() => {
+                            // Check if this +/- is a sign (after operator or at start) or separator
+                            let last_non_space = current.trim_end().chars().last();
+                            match last_non_space {
+                                Some('(') | Some('+') | Some('-') | Some('*') | Some('/')
+                                | Some(',') => {
+                                    // This is a sign character, not a separator
+                                    current.push(chars[i]);
+                                    i += 1;
+                                }
+                                _ => {
+                                    // This is a separator
+                                    let trimmed = current.trim().to_string();
+                                    if !trimmed.is_empty() {
+                                        comma_parts.push(trimmed);
                                     }
-                                    _ => {
-                                        // This is a separator
-                                        let trimmed = current.trim().to_string();
-                                        if !trimmed.is_empty() {
-                                            comma_parts.push(trimmed);
-                                        }
-                                        current = String::new();
-                                        // Include the sign as part of the next number
-                                        if chars[i] == '-' {
-                                            current.push('-');
-                                        }
-                                        i += 1;
+                                    current = String::new();
+                                    // Include the sign as part of the next number
+                                    if chars[i] == '-' {
+                                        current.push('-');
                                     }
+                                    i += 1;
                                 }
                             }
-                            _ => {
-                                current.push(chars[i]);
-                                i += 1;
-                            }
+                        }
+                        _ => {
+                            current.push(chars[i]);
+                            i += 1;
                         }
                     }
-                    let trimmed = current.trim().to_string();
-                    if !trimmed.is_empty() {
-                        comma_parts.push(trimmed);
-                    }
-                    format!("{}({})", func, comma_parts.join(","))
-                } else {
-                    format!("{}({})", func, arg)
                 }
-            })
-            .to_string();
+                let trimmed = current.trim().to_string();
+                if !trimmed.is_empty() {
+                    comma_parts.push(trimmed);
+                }
+                format!("{}({})", func, comma_parts.join(","))
+            } else {
+                format!("{}({})", func, arg)
+            }
+        })?;
     }
 
     // NZ-9 + M25: Postfix unit power words: "m squared" -> "m2", "cm cubed" -> "cm3"
     // Uses full UNIT_ALIASES to match any known unit before "squared"/"cubed"
-    result = UNIT_POWER_RE
-        .replace_all(&result, |caps: &Captures| {
-            let unit = &caps[1];
-            let power = if caps[2].eq_ignore_ascii_case("squared") {
-                "2"
-            } else {
-                "3"
-            };
-            format!("{}{}", unit, power)
-        })
-        .to_string();
+    result = try_replace_all("unit_power", &UNIT_POWER_RE, &result, |caps: &Captures| {
+        let unit = &caps[1];
+        let power = if caps[2].eq_ignore_ascii_case("squared") {
+            "2"
+        } else {
+            "3"
+        };
+        format!("{}{}", unit, power)
+    })?;
 
     // BUG-009 / parity B9 patterns moved earlier in the pipeline (see the
     // pass inserted after `combine_consecutive_number_words()` above) so
@@ -1502,13 +1563,19 @@ pub fn normalize(expr: &str) -> Result<String, String> {
 
     // NZ-10 + M26: Spelled unit conversions with full unit list
     // "30 km/h in mph" -> "convert(30*km/h,mph)"
-    result = UNIT_SPELLED_RE
-        .replace_all(&result, "convert($1*$2,$3)")
-        .to_string();
+    result = try_replace_all(
+        "unit_spelled",
+        &UNIT_SPELLED_RE,
+        &result,
+        "convert($1*$2,$3)",
+    )?;
 
     // NZ-10 + M27: Compound unit conversions: "60mi/h in m/s" -> "convert(60*mi/h,m/s)"
-    result = UNIT_COMPOUND_RE
-        .replace_all(&result, |caps: &Captures| {
+    result = try_replace_all(
+        "unit_compound",
+        &UNIT_COMPOUND_RE,
+        &result,
+        |caps: &Captures| {
             let num = &caps[1];
             let from_num = &caps[2];
             let from_den = &caps[3];
@@ -1518,19 +1585,19 @@ pub fn normalize(expr: &str) -> Result<String, String> {
                 "convert({}*{}/{},{}/{})",
                 num, from_num, from_den, to_num, to_den
             )
-        })
-        .to_string();
+        },
+    )?;
 
     // Strip short filler phrases AFTER operator conversion (e.g., "the ", "please ")
     for re in STRIPPED_SHORT_PATTERNS.iter() {
-        result = re.replace_all(&result, "").to_string();
+        result = try_replace_all("strip_short_phrases", re, &result, "")?;
     }
 
     // M20 (relocated): "point" and decimal-merge have already been applied
     // before `combine_consecutive_number_words()` above (BUG-006 / parity B6).
 
     // Handle complex numbers: 3+4i -> 3+4j, 3 + 4i -> 3+4j, 3 + 4 i -> 3+4j
-    result = COMPLEX_RE.replace_all(&result, "($1$2$3j)").to_string();
+    result = try_replace_all("complex_number", &COMPLEX_RE, &result, "($1$2$3j)")?;
 
     // Normalize whitespace
     let mut result = result.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -1539,19 +1606,23 @@ pub fn normalize(expr: &str) -> Result<String, String> {
     // Handle: digit/)/(func, func/digit/)(, )(, digit)(
 
     // Insert * between digit/ ) and function name: "5sin" -> "5*sin", "(2+3)sin" -> "(2+3)*sin"
-    result = IMPLICIT_MUL_FUNC_RE
-        .replace_all(&result, "$1*$2")
-        .to_string();
+    result = try_replace_all("implicit_mul_func", &IMPLICIT_MUL_FUNC_RE, &result, "$1*$2")?;
 
     // Insert * between ) and digit/(: "(2+3)4" -> "(2+3)*4", "(2+3)(4+5)" -> "(2+3)*(4+5)"
-    result = IMPLICIT_MUL_PAREN_RE
-        .replace_all(&result, "$1*$2")
-        .to_string();
+    result = try_replace_all(
+        "implicit_mul_paren",
+        &IMPLICIT_MUL_PAREN_RE,
+        &result,
+        "$1*$2",
+    )?;
 
     // Insert * between digit and (: "3(4+5)" -> "3*(4+5)"
-    result = IMPLICIT_MUL_DIGIT_PAREN_RE
-        .replace_all(&result, "$1*(")
-        .to_string();
+    result = try_replace_all(
+        "implicit_mul_digit_paren",
+        &IMPLICIT_MUL_DIGIT_PAREN_RE,
+        &result,
+        "$1*(",
+    )?;
 
     // NZ-13 + M21: Factorial postfix: "5!" -> "factorial(5)"
     // Iteratively handle nested factorial: "5!!" -> "factorial(5)!" -> "factorial(factorial(5))"
@@ -1559,17 +1630,15 @@ pub fn normalize(expr: &str) -> Result<String, String> {
     let mut prev_fact = String::new();
     while prev_fact != result {
         prev_fact = result.clone();
-        result = FACTORIAL_RE
-            .replace_all(&result, |caps: &Captures| {
-                let content = &caps[1];
-                let bangs = &caps[2];
-                let mut out = format!("factorial({})", content);
-                if bangs.len() > 1 {
-                    out.push_str(&"!".repeat(bangs.len() - 1));
-                }
-                out
-            })
-            .to_string();
+        result = try_replace_all("factorial", &FACTORIAL_RE, &result, |caps: &Captures| {
+            let content = &caps[1];
+            let bangs = &caps[2];
+            let mut out = format!("factorial({})", content);
+            if bangs.len() > 1 {
+                out.push_str(&"!".repeat(bangs.len() - 1));
+            }
+            out
+        })?;
     }
 
     Ok(result)
@@ -1709,16 +1778,28 @@ pub fn split_at_operators(expr: &str) -> Vec<String> {
 }
 
 /// Check if token matches pattern: digit-sequence minus digit-sequence (e.g., "4-5-3").
+///
+/// `unwrap_or(false)` is safe here: `SPLIT_NUM_MINUS_RE` is a static pattern
+/// (`^\d+(?:-\d+)+$`) with no fancy features and no backtracking ambiguity,
+/// so a runtime error cannot occur in practice. Treating a hypothetical error
+/// as "no match" does not alter normalization semantics for this anchored,
+/// linear-time pattern.
 fn should_split_number_minus(token: &str) -> bool {
     SPLIT_NUM_MINUS_RE.is_match(token).unwrap_or(false)
 }
 
 /// Check if token matches pattern: digit-sequence -- digit-sequence (e.g., "4--5").
+///
+/// Same justification as `should_split_number_minus`: the pattern
+/// (`^\d+--\d+`) is static, linear-time, and cannot produce a runtime error.
 fn should_split_double_minus(token: &str) -> bool {
     SPLIT_DOUBLE_MINUS_RE.is_match(token).unwrap_or(false)
 }
 
 /// Check if token ends with a trailing minus (e.g., "5-" when followed by parenthesized expr).
+///
+/// Same justification as `should_split_number_minus`: the pattern
+/// (`^\d+-$`) is static, linear-time, and cannot produce a runtime error.
 fn should_split_trailing_minus(token: &str) -> bool {
     SPLIT_TRAILING_MINUS_RE.is_match(token).unwrap_or(false)
 }
@@ -1746,7 +1827,7 @@ fn should_split_number_sequence(token: &str) -> bool {
 }
 
 #[doc(hidden)]
-pub fn preprocess_units(tokens: &[String]) -> (Vec<String>, Option<String>) {
+pub fn preprocess_units(tokens: &[String]) -> Result<(Vec<String>, Option<String>), String> {
     // BUG-009 / parity B9: After split_at_operators(), unit-bearing tokens
     // like "60*mph" may have been broken into ["60", "*", "mph"]. We need to
     // operate on the joined string so the regex can see contiguous
@@ -1760,8 +1841,7 @@ pub fn preprocess_units(tokens: &[String]) -> (Vec<String>, Option<String>) {
     // avoid misreading `17 % 5` as `<num>=17, unit=%`).
     let mut detected_unit: Option<String> = UNIT_INLINE_RE
         .captures(&joined)
-        .ok()
-        .flatten()
+        .map_err(|err| normalization_regex_error("preprocess_units_detect", err))?
         .and_then(|caps| {
             let unit = caps.name("unit").map(|m| m.as_str()).unwrap_or("");
             // Accept known aliases OR compound forms (e.g. "mi/min"). Python
@@ -1794,45 +1874,50 @@ pub fn preprocess_units(tokens: &[String]) -> (Vec<String>, Option<String>) {
 
     let target_unit = match detected_unit.clone() {
         Some(u) => u,
-        None => return (tokens.to_vec(), None),
+        None => return Ok((tokens.to_vec(), None)),
     };
 
     // Second pass: convert every "<num>*<unit>" segment to the target unit.
     // We rewrite the joined string, leaving non-unit text untouched.
-    let rewritten = UNIT_INLINE_RE.replace_all(&joined, |caps: &Captures| {
-        let num_str = caps.name("num").map(|m| m.as_str()).unwrap_or("0");
-        let unit = caps.name("unit").map(|m| m.as_str()).unwrap_or("");
-        match resolve_unit_alias(unit) {
-            None => caps[0].to_string(),
-            Some(canon) if canon == target_unit => num_str.to_string(),
-            Some(canon) => {
-                // BUG-009 / parity B9: preserve compound units (e.g.,
-                // "mi/min", "km/s") that aren't tracked in UNIT_ALIASES as
-                // plain display strings rather than mangling them. Python
-                // parity preserves "1 mi/min" verbatim.
-                if canon.contains('/')
-                    && !crate::calc::units::UNIT_ALIASES.contains_key(canon.as_str())
-                {
-                    return caps[0].to_string();
-                }
-                match crate::calc::units::get_conversion_factor(&canon, &target_unit) {
-                    Ok(factor) => {
-                        if let Ok(num) = num_str.parse::<f64>() {
-                            let converted = num * factor;
-                            if converted.fract() == 0.0 && converted.abs() < 1e15 {
-                                format!("{}", converted as i64)
-                            } else {
-                                format!("{}", converted)
-                            }
-                        } else {
-                            num_str.to_string()
-                        }
+    let rewritten = try_replace_all(
+        "preprocess_units_convert",
+        &UNIT_INLINE_RE,
+        &joined,
+        |caps: &Captures| {
+            let num_str = caps.name("num").map(|m| m.as_str()).unwrap_or("0");
+            let unit = caps.name("unit").map(|m| m.as_str()).unwrap_or("");
+            match resolve_unit_alias(unit) {
+                None => caps[0].to_string(),
+                Some(canon) if canon == target_unit => num_str.to_string(),
+                Some(canon) => {
+                    // BUG-009 / parity B9: preserve compound units (e.g.,
+                    // "mi/min", "km/s") that aren't tracked in UNIT_ALIASES as
+                    // plain display strings rather than mangling them. Python
+                    // parity preserves "1 mi/min" verbatim.
+                    if canon.contains('/')
+                        && !crate::calc::units::UNIT_ALIASES.contains_key(canon.as_str())
+                    {
+                        return caps[0].to_string();
                     }
-                    Err(_) => caps[0].to_string(),
+                    match crate::calc::units::get_conversion_factor(&canon, &target_unit) {
+                        Ok(factor) => {
+                            if let Ok(num) = num_str.parse::<f64>() {
+                                let converted = num * factor;
+                                if converted.fract() == 0.0 && converted.abs() < 1e15 {
+                                    format!("{}", converted as i64)
+                                } else {
+                                    format!("{}", converted)
+                                }
+                            } else {
+                                num_str.to_string()
+                            }
+                        }
+                        Err(_) => caps[0].to_string(),
+                    }
                 }
             }
-        }
-    });
+        },
+    )?;
 
     // Re-tokenize the rewritten string so downstream consumers (which expect
     // a Vec<String>) see the converted values.
@@ -1845,7 +1930,7 @@ pub fn preprocess_units(tokens: &[String]) -> (Vec<String>, Option<String>) {
         re_tokens.retain(|t| t != "%");
     }
 
-    (re_tokens, Some(target_unit))
+    Ok((re_tokens, Some(target_unit)))
 }
 
 fn resolve_unit_alias(unit: &str) -> Option<String> {
@@ -1887,15 +1972,18 @@ impl std::error::Error for RunError {}
 /// Detects patterns like "5*m/3*s" or "10*km/5*hr" where the right
 /// operand of a division has a trailing unit, and wraps the entire
 /// right operand in parens to preserve correct operator precedence.
-pub fn add_same_unit_division_parens(expr: &str) -> String {
-    SAME_UNIT_DIV_RE
-        .replace_all(expr, |caps: &Captures| {
+pub fn add_same_unit_division_parens(expr: &str) -> Result<String, String> {
+    try_replace_all(
+        "add_same_unit_division_parens",
+        &SAME_UNIT_DIV_RE,
+        expr,
+        |caps: &Captures| {
             let left_unit = &caps[1];
             let denom = &caps[2];
             let right_unit = &caps[3];
             format!("{}/({}*{})", left_unit, denom, right_unit)
-        })
-        .to_string()
+        },
+    )
 }
 
 /// Run natural language expression through the full pipeline.
@@ -1932,10 +2020,10 @@ pub fn run(expr: &str) -> Result<RunResult, RunError> {
     }
 
     let tokens = split_at_operators(&normalized);
-    let (tokens, detected_unit) = preprocess_units(&tokens);
+    let (tokens, detected_unit) = preprocess_units(&tokens).map_err(RunError::Internal)?;
     let processed = tokens.join("");
 
-    let processed = add_same_unit_division_parens(&processed);
+    let processed = add_same_unit_division_parens(&processed).map_err(RunError::Internal)?;
 
     let (value, value_type) =
         crate::calc::evaluator::evaluate(&processed).map_err(RunError::Evaluation)?;
@@ -1965,12 +2053,12 @@ pub fn run_with_context(
     }
 
     let tokens = split_at_operators(&normalized);
-    let (tokens, detected_unit) = preprocess_units(&tokens);
+    let (tokens, detected_unit) = preprocess_units(&tokens).map_err(RunError::Internal)?;
     let processed = tokens.join("");
 
     // NZ-3: Wrap denominator in parens for unit-on-division-right patterns
     // "5*m/3*s" → "5*m/(3*s)" so trailing units bind to the right operand
-    let processed = add_same_unit_division_parens(&processed);
+    let processed = add_same_unit_division_parens(&processed).map_err(RunError::Internal)?;
 
     let (value, value_type) = crate::calc::evaluator::evaluate_with_context(&processed, ctx)
         .map_err(RunError::Evaluation)?;

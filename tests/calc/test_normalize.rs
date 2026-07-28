@@ -1,5 +1,7 @@
 use eggsact::calc::normalize::{add_same_unit_division_parens, normalize, preprocess_units};
-use eggsact::calc::{evaluate, run, split_at_operators};
+use eggsact::calc::{
+    evaluate, run, run_with_context, split_at_operators, EvalContext, RunError, RunResult,
+};
 
 // ─── split_at_operators ─────────────────────────────────────────────
 
@@ -90,7 +92,7 @@ fn test_split_at_operators_multiple_operators() {
 #[test]
 fn test_preprocess_units_no_unit() {
     let tokens = vec!["5".to_string(), "+".to_string(), "3".to_string()];
-    let (processed, unit) = preprocess_units(&tokens);
+    let (processed, unit) = preprocess_units(&tokens).unwrap();
     assert_eq!(processed, vec!["5", "+", "3"]);
     assert!(unit.is_none());
 }
@@ -98,7 +100,7 @@ fn test_preprocess_units_no_unit() {
 #[test]
 fn test_preprocess_units_with_unit() {
     let tokens = vec!["30m".to_string()];
-    let (processed, unit) = preprocess_units(&tokens);
+    let (processed, unit) = preprocess_units(&tokens).unwrap();
     assert_eq!(processed, vec!["30"]);
     assert_eq!(unit.as_deref(), Some("m"));
 }
@@ -106,7 +108,7 @@ fn test_preprocess_units_with_unit() {
 #[test]
 fn test_preprocess_units_decimal() {
     let tokens = vec!["3.14km".to_string()];
-    let (processed, unit) = preprocess_units(&tokens);
+    let (processed, unit) = preprocess_units(&tokens).unwrap();
     assert_eq!(processed, vec!["3.14"]);
     assert_eq!(unit.as_deref(), Some("km"));
 }
@@ -115,7 +117,7 @@ fn test_preprocess_units_decimal() {
 fn test_preprocess_units_only_first() {
     // Rust preprocess_units only detects the first unit token
     let tokens = vec!["30m".to_string(), "+".to_string(), "100ft".to_string()];
-    let (processed, unit) = preprocess_units(&tokens);
+    let (processed, unit) = preprocess_units(&tokens).unwrap();
     assert_eq!(unit.as_deref(), Some("m"));
     // Second unit is left as-is (not stripped)
     assert_eq!(processed.len(), 3);
@@ -124,7 +126,7 @@ fn test_preprocess_units_only_first() {
 #[test]
 fn test_preprocess_units_percent() {
     let tokens = vec!["50%".to_string()];
-    let (processed, unit) = preprocess_units(&tokens);
+    let (processed, unit) = preprocess_units(&tokens).unwrap();
     assert_eq!(processed, vec!["50"]);
     assert_eq!(unit.as_deref(), Some("%"));
 }
@@ -919,7 +921,7 @@ fn test_nz3_unit_division_parens() {
     // The Rust evaluator handles "5m/(3*m)" via preprocess_units
     // Test that the function correctly wraps denominator in parens
     let input = "5*m/3*m";
-    let result = add_same_unit_division_parens(input);
+    let result = add_same_unit_division_parens(input).unwrap();
     assert_eq!(
         result, "5*m/(3*m)",
         "NZ-3: '{}' should become '5*m/(3*m)', got: {}",
@@ -1171,5 +1173,162 @@ fn test_function_mappings_self_identify() {
             "BUG-006: '{}' should map to itself",
             func
         );
+    }
+}
+
+// ─── Calculator normalization backtrack-limit corrective pass ─────────
+// Regression for fuzz artifact 8669774633 (run 30306975485).
+// Input "32E73 33" previously caused a fancy-regex BacktrackLimitExceeded
+// panic in the UNIT_SPELLED_RE normalization stage because
+// combine_consecutive_number_words treated the scientific-notation token
+// "32e73" as a compound-number component, producing a 74-digit literal that
+// exhausted the backtrack limit when matched against the 715-unit alternation.
+
+const BACKTRACK_ARTIFACT: &str = "32E73 33";
+
+/// Helper: snapshot a run() outcome for deterministic comparison.
+fn snapshot_run_outcome(result: Result<RunResult, RunError>) -> (bool, String, String) {
+    match result {
+        Ok((val, typ)) => (true, val, typ),
+        Err(e) => (false, e.to_string(), e.to_string()),
+    }
+}
+
+#[test]
+fn calculator_normalization_backtrack_artifact_is_bounded_and_deterministic() {
+    let input = BACKTRACK_ARTIFACT;
+
+    // 1. run() under catch_unwind — must not panic
+    let first = std::panic::catch_unwind(|| run(input));
+    assert!(
+        first.is_ok(),
+        "run must not panic for fuzz regression input"
+    );
+    let first = first.unwrap();
+
+    // 2. second run must also not panic
+    let second = std::panic::catch_unwind(|| run(input));
+    assert!(second.is_ok(), "repeated run must not panic");
+    let second = second.unwrap();
+
+    // 3. both calls must produce identical outcomes
+    let snap1 = snapshot_run_outcome(first.clone());
+    let snap2 = snapshot_run_outcome(second.clone());
+    assert_eq!(snap1, snap2, "run outcomes must be deterministic");
+
+    // 4. assert the exact intended contract: success with value 3.2e74
+    //    (Python/eggcalc normalizes "32E73 33" → "32E73+33" → 3.2e+74)
+    let (val, typ) = first.expect("32E73 33 should succeed");
+    assert_eq!(typ, "float", "32E73 33 should produce a float");
+    // The value is 3.2e74 = 32 * 10^73, represented as a full decimal string
+    let expected_val = format!("{}", 3.2e74_f64);
+    assert_eq!(val, expected_val, "32E73 33 should evaluate to 3.2e74");
+
+    // 5. run_with_context must agree
+    let mut ctx = EvalContext::default();
+    let contextual = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        run_with_context(input, &mut ctx)
+    }));
+    assert!(contextual.is_ok(), "run_with_context must not panic");
+    let contextual = contextual.unwrap();
+    let snap_ctx = snapshot_run_outcome(contextual);
+    assert_eq!(snap2, snap_ctx, "run and run_with_context must agree");
+}
+
+#[test]
+fn calculator_normalization_backtrack_artifact_repeats_deterministically() {
+    let expected = snapshot_run_outcome(run(BACKTRACK_ARTIFACT));
+    for _ in 0..1_000 {
+        assert_eq!(snapshot_run_outcome(run(BACKTRACK_ARTIFACT)), expected);
+    }
+}
+
+#[test]
+fn calculator_normalization_backtrack_artifact_normalize_no_panic() {
+    // Direct normalize() regression: must not panic and must produce a
+    // deterministic result.
+    let first = std::panic::catch_unwind(|| normalize(BACKTRACK_ARTIFACT));
+    assert!(first.is_ok(), "normalize must not panic");
+    let first = first.unwrap();
+    let second = std::panic::catch_unwind(|| normalize(BACKTRACK_ARTIFACT));
+    assert!(second.is_ok(), "repeated normalize must not panic");
+    let second = second.unwrap();
+    assert_eq!(first, second, "normalize must be deterministic");
+}
+
+#[test]
+fn scientific_notation_adjacent_cases_match_python() {
+    // Python/eggcalc parity: space-separated scientific notation numbers
+    // are joined with "+" (addition), not combined via compound-number logic.
+    let cases = [
+        (
+            "32E73",
+            "320000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        (
+            "32e73",
+            "320000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        (
+            "32E+73",
+            "320000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        (
+            "32E-73",
+            "0.0000000000000000000000000000000000000000000000000000000000000000000000032",
+        ),
+        (
+            "32E73 33",
+            "320000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        (
+            "32e73 33",
+            "320000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        (
+            "32E73 + 33",
+            "320000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        (
+            "32E73 * 33",
+            "10560000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        ("1e2 3", "103"),
+        ("1e2 + 3", "103"),
+    ];
+
+    for (input, expected_val) in &cases {
+        let result = run(input);
+        assert!(
+            result.is_ok(),
+            "input {:?} should succeed, got: {:?}",
+            input,
+            result
+        );
+        let (val, _typ) = result.unwrap();
+        assert_eq!(
+            val, *expected_val,
+            "input {:?} should produce {:?}, got {:?}",
+            input, expected_val, val
+        );
+    }
+}
+
+#[test]
+fn scientific_notation_no_panic_under_catch_unwind() {
+    // Verify that no scientific-notation variant panics.
+    let inputs = [
+        "32E73 33",
+        "32e73 33",
+        "1e2 3",
+        "1e2 3 4",
+        "1e2 3e4",
+        "1e2 3e4 5",
+        "999e999 33",
+        "1e308 33",
+    ];
+    for input in &inputs {
+        let result = std::panic::catch_unwind(|| run(input));
+        assert!(result.is_ok(), "input {:?} must not panic", input);
     }
 }
