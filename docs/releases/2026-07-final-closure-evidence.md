@@ -505,9 +505,10 @@ evidence. Code-under-test evidence is the run whose `head_sha` equals `CODE_SHA`
 
 ## Intentionally Deferred Items
 
-1. **Actual crates.io publication and tag creation** remain direct maintainer
-   actions. The release gate proves the package and publish dry run but does
-   not publish.
+1. ~~**Actual crates.io publication and tag creation** remain direct maintainer
+   actions.~~ **Done.** `eggsact 1.2.0` was published to crates.io on
+   2026-07-28T19:10:10.018107Z from detached commit `75ea503`. Annotated tag
+   `v1.2.0` dereferences to the exact publish SHA.
 
 2. **Accepted Python parity differences** remain documented in `docs/parity.md`;
    the final parity workflow passed with those accepted cases ignored.

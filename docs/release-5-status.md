@@ -125,4 +125,7 @@ Gate), extended fuzz (19/19), latest-compatible, and Python parity.
 
 ## Publication status
 
-Actual crates.io publication and annotated tag creation remain direct maintainer actions; this note records proof and release readiness, not publication itself.
+`eggsact 1.2.0` was published to crates.io on 2026-07-28T19:10:10.018107Z
+from detached commit `75ea50369510d98617741d4025fc626a0983b2e0`. Annotated
+tag `v1.2.0` dereferences to the same SHA. Current `main` has advanced to
+unreleased version `1.2.1`.

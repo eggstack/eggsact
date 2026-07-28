@@ -106,9 +106,16 @@ commands.
 
 ## Actual publish
 
-`cargo publish --locked` has not been run by this workflow. Publication and
-annotated tag creation remain direct maintainer actions, following the policy
-in `docs/release.md`.
+`cargo publish --locked` was executed from a detached worktree at exactly
+`75ea50369510d98617741d4025fc626a0983b2e0` on 2026-07-28. crates.io accepted
+the upload and `eggsact 1.2.0` is live (non-yanked).
+
+- **Publication timestamp**: 2026-07-28T19:10:10.018107Z
+- **crates.io checksum**: `4aaf92c56c3b7d468364cfbb7d88631d9f9c4c06e5cfa6ede447c90d2fd6a83f`
+- **Annotated tag**: `v1.2.0` pointing to `75ea50369510d98617741d4025fc626a0983b2e0`
+
+The annotated tag `v1.2.0` was created and pushed after publication verification.
+Tag dereferences to the exact publish SHA both locally and on the remote.
 
 ## Package metadata
 
@@ -131,5 +138,5 @@ in `docs/release.md`.
 - [x] `cargo publish --dry-run --locked` passes
 - [x] `docs/release.md` remains the canonical release policy
 - [x] Calculator normalization backtrack limit corrective pass closed (`75ea503`)
-- [ ] `cargo publish --locked` — direct maintainer action
-- [ ] `git tag v1.2.0 && git push origin v1.2.0` — after successful publication
+- [x] `cargo publish --locked` — direct maintainer action (2026-07-28T19:10:10Z)
+- [x] `git tag v1.2.0 && git push origin v1.2.0` — after successful publication
