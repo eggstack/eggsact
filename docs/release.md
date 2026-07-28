@@ -1,14 +1,14 @@
 # Release Checklist
 
-This is the canonical release document for the eggsact crate. Crates.io publishing is a manual maintainer action — GitHub CI verifies release readiness but does not publish.
+This is the canonical release document for the eggsact crate. Crates.io publishing is a manual maintainer action -- GitHub CI verifies merge correctness but does not publish, create release tags, or determine release cadence.
 
 ## Release policy
 
-- GitHub CI verifies release readiness.
-- GitHub CI does not publish to crates.io.
-- The maintainer publishes directly with `cargo publish` from a local authenticated environment.
-- Crates.io tokens must not be placed in GitHub Actions secrets for this release line.
-- Tags are created only after `cargo publish --dry-run` succeeds and the publish decision is made.
+- GitHub CI establishes merge correctness (Tier 1).
+- The maintainer runs the local release check against the selected source revision.
+- The maintainer publishes directly to crates.io with `cargo publish --locked`.
+- The maintainer creates the annotated version tag after successful publication.
+- No GitHub Actions workflow publishes to crates.io, creates a release tag, or approves a release candidate.
 
 ## Pre-release
 
@@ -25,56 +25,33 @@ This is the canonical release document for the eggsact crate. Crates.io publishi
    cargo run --bin generate-docs
    ```
 
-## Canonical release gate
+## Release verification
 
-Run the following commands in order. All must pass before proceeding.
+Run the local release check from a clean worktree:
 
 ```bash
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-features --lib
-cargo test --locked --all-features --bins
-cargo test --locked --all-features --tests -- --skip parity
-cargo test --locked --doc
-cargo run --locked --bin generate-docs -- --check
-cargo deny check advisories bans licenses sources
-cargo package --locked --list
-cargo package --locked --verbose
-cargo publish --locked --dry-run
+scripts/release-check.sh
 ```
 
-`./release.sh` runs the same pipeline (including confusables and docs regeneration) in one step.
+This runs formatting, generated-docs, Clippy, tests, cargo-deny, package, and publish dry-run. It refuses a dirty worktree and never publishes or tags.
 
-## Optional parity gate
-
-Local only. Requires the Python `eggcalc` package at `../eggcalc`.
+Optional parity gate (requires Python `eggcalc` at `../eggcalc`):
 
 ```bash
 cargo build
 cargo test --test lib parity
 ```
 
-As of 2026-07-08, the Rust `full` profile ships 80 tools while Python defines 67. There are 33 accepted parity failures out of 418 tests. These are tracked for follow-up and are not regressions. See `docs/parity.md` for the full breakdown.
-
 ## Manual crates.io publishing
 
-Publishing is a direct maintainer action. Do not run from CI for this release line.
+Publishing is a direct maintainer action. Do not run from CI.
 
 ### Prerequisites
 
 - Maintainer logged in locally with `cargo login` or has a valid local crates.io token.
 - Do not commit tokens.
-- Do not store the crates.io token in GitHub Actions for this release.
 - Clean working tree on `main` at the verified commit.
 - Local Rust toolchain stable and current.
-
-### Pre-publish
-
-```bash
-cargo publish --dry-run --locked
-```
-
-Must succeed before proceeding.
 
 ### Publish
 
@@ -82,33 +59,30 @@ Must succeed before proceeding.
 cargo publish --locked
 ```
 
-Run from a clean worktree on `main` at the verified commit, after the dry run passes.
-
 ### Tagging order
 
-Recommended:
-
 1. Ensure version in `Cargo.toml` is final.
-2. Run the full local release gate.
-3. Run `cargo publish --dry-run`.
-4. Publish with `cargo publish`.
-5. On success, create and push the tag:
+2. Run the local release check: `scripts/release-check.sh`.
+3. Publish with `cargo publish --locked`.
+4. On success, create and push the annotated tag:
    ```bash
-   git tag vX.Y.Z
+   git tag -a vX.Y.Z -m "eggsact vX.Y.Z"
    git push origin vX.Y.Z
    ```
 
 crates.io releases are immutable. Tagging after publish avoids a tag pointing at a failed attempt.
 
-Alternative: tag before publish if the maintainer explicitly prefers that convention and is prepared to fix failures with a patch version bump. Document the chosen policy.
+### Immutable version guidance
 
-## Scheduled workflows
+- crates.io does not permit replacing an uploaded version.
+- After a successful upload, any correction requires a new version.
+- Do not move a published version tag to different source.
+- If publication fails before acceptance, correct the cause and rerun only after confirming whether crates.io accepted the version.
 
-| Workflow | Trigger | Purpose |
-|----------|---------|---------|
-| Latest Compatible | Weekly (Monday 04:00 UTC) + manual | Detects upcoming semver-compatible breakage |
-| Python Parity | Weekly (Monday 06:00 UTC) + manual | Tracks eggcalc drift |
-| Release Verification | Manual only | Full release gate without publish credentials |
+## Post-release
+
+1. Verify the crate appears on [crates.io](https://crates.io/crates/eggsact).
+2. Bump version to next development version if needed.
 
 ## Package contents
 
@@ -120,30 +94,23 @@ Verify with:
 cargo package --locked --list
 ```
 
-The Release Verification workflow asserts structural package invariants (core source files present, excluded paths absent) and uploads a `release-provenance.json` artifact containing commit SHA, package version, Rust version, MSRV, lockfile checksum, and file count.
-
-## Post-release
-
-1. Verify the crate appears on [crates.io](https://crates.io/crates/eggsact).
-2. Bump version to next development version if needed.
-
 ## CI
 
-GitHub Actions runs 12 jobs on push/PR to `main` (plus manual `workflow_dispatch`):
+GitHub Actions runs 3 jobs on push/PR to `main` (plus `workflow_dispatch`):
 
-| Job | Command |
-|-----|---------|
-| Check | `cargo fmt --all -- --check` |
-| Generated Docs | `cargo run --locked --bin generate-docs -- --check` |
-| Clippy | `cargo clippy --locked --all-targets --all-features -- -D warnings` |
-| Test (lib) | `cargo test --locked --all-features --lib` |
-| Test (bins) | `cargo test --locked --all-features --bins` |
-| Test (integration) | `cargo test --locked --all-features --tests -- --skip parity` |
-| Test (doc) | `cargo test --locked --doc` |
-| MSRV | `cargo check --locked --all-targets --all-features` + tests on Rust 1.89.0 |
-| Windows | build + full non-parity tests |
-| macOS | build + full non-parity tests |
-| cargo-deny | `cargo deny check advisories bans licenses sources` |
-| Package | `cargo package --locked --verbose` |
+| Job | Platform | What It Runs |
+|-----|----------|-------------|
+| Linux correctness | Linux | fmt, generated-docs, clippy, tests (parity excluded), doc tests, package |
+| Check (windows-latest) | Windows | `cargo check --locked --all-targets --all-features` |
+| Check (macos-latest) | macOS | `cargo check --locked --all-targets --all-features` |
 
-CI mirrors the local release gate except parity. CI is verification only — it does not publish to crates.io.
+Scheduled/manual workflows:
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| Maintenance (MSRV + cargo-deny) | Weekly + manual | MSRV compilation and dependency policy |
+| Latest Compatible Dependencies | Weekly + manual | Ecosystem drift detection |
+| Python Parity | Weekly + manual | Reference implementation drift |
+| Fuzz Extended | Manual only | Hardening: fuzz + sanitizer matrices |
+
+See `docs/verification.md` for the full verification doctrine and failure ownership.

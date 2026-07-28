@@ -1,8 +1,6 @@
 name: Fuzz Extended
 
 on:
-  schedule:
-    - cron: '0 3 * * 1'  # Weekly Monday 03:00 UTC
   workflow_dispatch:
 
 concurrency:
@@ -59,26 +57,13 @@ jobs:
       - name: Fuzz ${{ matrix.target }}
         run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=240 -timeout=10
 
-      - name: Record fuzz metadata
-        if: always()
-        run: |
-          NIGHTLY_VERSION=$(rustc --version)
-          FUZZ_VERSION=$(cargo fuzz --version || echo "unknown")
-          CORPUS_COUNT=$(find fuzz/corpus/${{ matrix.target }} -type f 2>/dev/null | wc -l || echo 0)
-          echo "## Fuzz: ${{ matrix.target }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Commit: $(git rev-parse HEAD)" >> $GITHUB_STEP_SUMMARY
-          echo "- Nightly: ${NIGHTLY_VERSION}" >> $GITHUB_STEP_SUMMARY
-          echo "- cargo-fuzz: ${FUZZ_VERSION}" >> $GITHUB_STEP_SUMMARY
-          echo "- Corpus seeds: ${CORPUS_COUNT}" >> $GITHUB_STEP_SUMMARY
-          echo "- Duration: 240s" >> $GITHUB_STEP_SUMMARY
-
       - name: Upload crash artifacts
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fuzz-crashes-${{ matrix.target }}
           path: fuzz/artifacts/${{ matrix.target }}/
-          retention-days: 90
+          retention-days: 30
 
   fuzz-sanitizers:
     runs-on: ubuntu-latest
@@ -126,4 +111,4 @@ jobs:
         with:
           name: fuzz-crashes-san-${{ matrix.target }}
           path: fuzz/artifacts/${{ matrix.target }}/
-          retention-days: 90
+          retention-days: 30

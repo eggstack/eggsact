@@ -15,52 +15,15 @@ jobs:
   parity:
     name: Parity (latest eggcalc)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v5
         with:
           python-version: "3.12"
-      - name: Install eggcalc (latest, drift detection)
-        run: pip install eggcalc
-      - name: Record eggcalc version
-        run: |
-          pip show eggcalc | head -5
-          echo "eggcalc-policy=latest (drift detection)" >> $GITHUB_STEP_SUMMARY
-      - name: Build eggsact
-        run: cargo build --locked
-      - name: Run parity tests
-        run: cargo test --test lib parity -- --nocapture
-      - name: Generate parity report
-        if: always()
-        run: |
-          EGGSACT_SHA=$(git rev-parse HEAD)
-          EGGCALC_VERSION=$(pip show eggcalc | grep Version | awk '{print $2}')
-          PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
-          PACKAGE_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-
-          cat > parity-report.json <<EOF
-          {
-            "eggsact_sha": "${EGGSACT_SHA}",
-            "eggsact_version": "${PACKAGE_VERSION}",
-            "eggcalc_version": "${EGGCALC_VERSION}",
-            "python_version": "${PYTHON_VERSION}"
-          }
-          EOF
-
-          echo "eggsact-sha=${EGGSACT_SHA}" >> $GITHUB_STEP_SUMMARY
-          echo "eggsact-version=${PACKAGE_VERSION}" >> $GITHUB_STEP_SUMMARY
-          echo "eggcalc-version=${EGGCALC_VERSION}" >> $GITHUB_STEP_SUMMARY
-          echo "python-version=${PYTHON_VERSION}" >> $GITHUB_STEP_SUMMARY
-
-      - name: Upload parity artifact
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: parity-report
-          path: parity-report.json
-          retention-days: 90
+      - run: pip install eggcalc
+      - run: python -m pip show eggcalc
+      - run: cargo test --locked --test lib parity -- --nocapture

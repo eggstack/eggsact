@@ -1,0 +1,40 @@
+name: Maintenance
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"  # Weekly on Monday at 05:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (toolchain param)
+        with:
+          toolchain: "1.89.0"
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          key: msrv-1.89.0
+      - run: cargo check --locked --all-targets --all-features
+      - run: cargo test --locked --all-features --lib
+
+  cargo-deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
+        with:
+          toolchain: stable
+      - run: cargo install cargo-deny --version 0.19.0 --locked
+      - run: cargo deny check advisories bans licenses sources

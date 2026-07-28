@@ -1,3 +1,7 @@
+> **Historical document.** This records evidence from the v1.2.0 release cycle.
+> Future releases follow `docs/release.md` and do not require equivalent evidence
+> ledgers. See `docs/verification.md` for the current verification doctrine.
+
 # Final Closure Evidence
 
 This document records the exact evidence supporting closure of the runtime

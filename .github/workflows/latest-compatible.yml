@@ -28,33 +28,8 @@ jobs:
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
           key: latest-compatible-${{ runner.os }}-stable
-
-      - name: Update within semver-compatible constraints
-        run: cargo update
-
-      - name: Check
-        id: check
-        run: cargo check --all-targets --all-features
-
-      - name: Unit tests
-        id: test-lib
-        run: cargo test --all-features --lib
-
-      - name: Binary tests
-        id: test-bins
-        run: cargo test --all-features --bins
-
-      - name: Integration tests
-        id: test-int
-        run: cargo test --all-features --tests -- --skip parity
-
-      - name: Summary
-        if: always()
-        run: |
-          echo "## Latest Compatible Dependencies" >> $GITHUB_STEP_SUMMARY
-          echo "- Commit: $(git rev-parse HEAD)" >> $GITHUB_STEP_SUMMARY
-          echo "- Rust stable: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- Check: ${{ steps.check.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Lib tests: ${{ steps.test-lib.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Bin tests: ${{ steps.test-bins.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Integration tests: ${{ steps.test-int.outcome }}" >> $GITHUB_STEP_SUMMARY
+      - run: cargo update
+      - run: cargo check --all-targets --all-features
+      - run: cargo test --all-features --lib
+      - run: cargo test --all-features --bins
+      - run: cargo test --all-features --tests -- --skip parity

@@ -38,7 +38,7 @@ cargo +1.89.0 test --locked --doc
 - MSRV may be raised in a MINOR release with a changelog entry.
 - An MSRV increase must be justified by a dependency requirement or language feature need.
 - The locked dependency graph must resolve on MSRV.
-- CI blocks on MSRV test failures.
+- MSRV is checked weekly by the scheduled `maintenance.yml` workflow.
 - MSRV covers the library, all binaries, and the supported test subset.
 
 See `docs/compatibility-policy.md` for the full compatibility policy.

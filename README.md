@@ -9,11 +9,11 @@ Deterministic MCP and in-process utility tools for coding agents. 80 tools acros
 
 | Tier | Platform | Status |
 |------|----------|--------|
-| 1 | Ubuntu latest (x86_64) | Full CI gate |
-| 2 | Windows latest (x86_64) | Build + test |
-| 2 | macOS latest (ARM64) | Build + test |
+| 1 | Ubuntu latest (x86_64) | Full CI gate (fmt, clippy, tests, package) |
+| 2 | Windows latest (x86_64) | Compile check |
+| 2 | macOS latest (ARM64) | Compile check |
 
-**MSRV**: Rust 1.89.0 (declared in `Cargo.toml`, tested in CI).
+**MSRV**: Rust 1.89.0 (declared in `Cargo.toml`, tested weekly in scheduled CI).
 
 ## Key Features
 

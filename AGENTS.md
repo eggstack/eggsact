@@ -19,29 +19,33 @@ cargo package --locked                # crates.io packaging dry run
 cargo deny check advisories bans licenses sources  # supply-chain audit
 cargo run --bin generate-docs        # regenerate docs from ToolSpec registry
 cargo run --bin generate-docs -- --check  # verify generated docs are current (CI)
-./release.sh                         # full pipeline: regenerate data, fmt, clippy, test, generate-docs check, package
+scripts/release-check.sh               # full local release gate (no publish, no tag)
+./release.sh                           # regenerate confusables + docs + full gate
 ```
 
 ## CI
 
 GitHub Actions CI runs on push/PR to `main` (plus manual `workflow_dispatch`):
+
+**Linux correctness** (single job, one cache):
 - `cargo fmt --all -- --check`
+- `cargo run --locked --bin generate-docs -- --check`
 - `cargo clippy --locked --all-targets --all-features -- -D warnings`
-- `cargo test --locked --all-features --lib` (unit tests)
-- `cargo test --locked --all-features --bins` (binary tests)
-- `cargo test --locked --all-features --tests -- --skip parity` (integration tests, parity excluded)
-- `cargo test --locked --doc` (doc tests)
-- `cargo run --locked --bin generate-docs -- --check` (generated docs freshness)
-- `cargo package --locked --verbose` (after all checks pass)
-- MSRV job: `cargo check --locked --all-targets --all-features` + tests on Rust 1.89.0
-- Windows job: build + full non-parity tests
-- macOS job: build + full non-parity tests
-- cargo-deny job: `cargo deny check advisories bans licenses sources`
+- `cargo test --locked --all-features -- --skip parity`
+- `cargo test --locked --doc`
+- `cargo package --locked`
+
+**Supported-platform compilation** (matrix):
+- Windows: `cargo check --locked --all-targets --all-features`
+- macOS: `cargo check --locked --all-targets --all-features`
+
+MSRV, cargo-deny, parity, latest-compatible, and fuzz/sanitizer checks are
+scheduled/manual (not merge-blocking). See `docs/verification.md`.
 
 Parity tests are excluded from CI because Python `eggcalc` is not available in
 the CI environment. Run parity locally with `cargo test --test lib parity`.
 
-GitHub Actions CI verifies release readiness but does **not** publish to crates.io. The maintainer publishes manually per `docs/release.md`.
+GitHub CI verifies merge correctness but does **not** publish to crates.io. The maintainer publishes manually per `docs/release.md`.
 
 ## Verification order
 
@@ -264,6 +268,7 @@ See `docs/fuzzing.md` for corpus policy, crash triage, and regression promotion 
 - **Generation-aware request cleanup**: `ActiveRequest` now has a `generation: u64` field. `NEXT_GENERATION` AtomicU64 assigns monotonically increasing generations. `register_request()` returns `(RequestGuard, RequestRegistration)`. `complete_request()` is async and removes entries only when generation matches. `RequestGuard::Drop` is debug-only assertion, NOT a correctness mechanism. Server uses outer/inner task pattern: `tokio::spawn` for inner handler, awaited `complete_request` after.
 - **Runtime metrics**: `RUNTIME_METRICS` provides live atomic counters (`active_requests`, `active_blocking_handlers`, `timed_out_handlers`, `total_timeouts`, `peak_blocking_concurrency`). RAII `MetricGuard` ensures correct decrement on panic/unwind. `snapshot_metrics()` returns a point-in-time snapshot. At synchronized snapshots, `timed_out_handlers <= active_blocking_handlers`. The handler lifecycle is a mutex-backed state machine in `src/mcp/execution.rs` (see "Timeout lifecycle" gotcha below).
 - **Panic safety net**: `math_eval`, `validate_regex`, `regex_finditer`, and `dotenv_validate` use `std::panic::catch_unwind` to convert panics to error responses instead of letting them propagate as JoinErrors.
+- **Release verification**: `scripts/release-check.sh` runs the full local release gate (fmt, clippy, tests, cargo-deny, package, publish dry-run). It refuses a dirty worktree and never publishes or tags. `./release.sh` additionally regenerates confusables and docs.
 - **Timeout lifecycle**: `Mutex<HandlerPhase>` with five phases: `Queued`, `Running`, `TimedOutQueued`, `TimedOutRunning`, `Finished`. Queued timeout increments only `total_timeouts`, NOT `timed_out_handlers`. Running timeout: lock → `Running → TimedOutRunning` → increment `timed_out_handlers`. Completion after timeout: lock → `TimedOutRunning → Finished` → decrement `timed_out_handlers`. All transitions are linearizable under a single lock acquisition.
 - **Client capabilities retained**: `NegotiatedProtocol` includes `client_capabilities: ClientCapabilities` field. Client capabilities are stored for the entire session lifetime. Not yet used for capability-dependent behavior — just retained.
 - **MCP lifecycle required**: The server requires `initialize` → `notifications/initialized` before `tools/list`, `tools/call`, `profiles/list`. Methods before initialization return `-32600` with `NOT_INITIALIZED` data code. Ping is always allowed.

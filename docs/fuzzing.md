@@ -119,19 +119,13 @@ cargo test --locked --all-features property
 
 ## CI Integration
 
-### PR Smoke Fuzzing
+Fuzz and sanitizer workflows are manual-only (`workflow_dispatch`). They do not run on every pull request or push to `main`.
 
-A lightweight job runs selected targets for 30 seconds each on every PR:
-- `calculator_expression`
-- `unified_diff`
-- `shell_tokenization`
-- `regex_classification`
-- `json_pointer`
-- `unicode_inspection`
+### Extended Fuzzing
 
-### Scheduled Extended Fuzzing
+The `fuzz-scheduled.yml` workflow runs all 12 targets in a matrix with per-target timeouts. It also runs a 7-target AddressSanitizer matrix. Dispatch manually before material releases or after changes to parser, regex, normalization, or concurrency surfaces.
 
-A weekly workflow runs all targets for 5 minutes each with full sanitizer coverage.
+### Passing runs produce no provenance artifacts. Failed runs preserve crash reproducers.
 
 ## Sanitizers
 

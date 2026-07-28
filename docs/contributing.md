@@ -213,4 +213,4 @@ the project's MIT license.
 
 ## Release Process
 
-The canonical release process is documented in `docs/release.md`. Key points: GitHub CI verifies release readiness but does not publish; the maintainer publishes manually with `cargo publish` from a local authenticated environment.
+The canonical release process is documented in `docs/release.md`. Key points: GitHub CI verifies merge correctness but does not publish; the maintainer runs `scripts/release-check.sh` locally, publishes manually with `cargo publish --locked`, and creates the version tag after successful publication. See `docs/verification.md` for the full verification doctrine.

@@ -1,3 +1,7 @@
+> **Historical document.** This records the v1.2.0 Release 5 verification status and fuzz findings.
+> Future releases follow `docs/release.md` and do not require equivalent evidence
+> ledgers. See `docs/verification.md` for the current verification doctrine.
+
 # Release 5 Status Note
 
 **Date:** 2026-07-28 UTC

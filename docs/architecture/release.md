@@ -10,29 +10,29 @@ This document defines the release process for eggsact. Use it as a gate before t
 - [ ] Architecture docs reflect current tool count (80) and profile count (11)
 - [ ] Route-critical fixture tests pass
 - [ ] Schema-boundary invariant tests pass
-- [ ] Package contents are correct (`cargo package --list`)
+- [ ] Package contents are correct (`cargo package --locked --list`)
 - [ ] Doc tests pass
 - [ ] Parity tests run locally or explicitly skipped with rationale
 
 ## Canonical Release Gate
 
-Run these commands in order. All must pass before release.
+Run the release check script:
+
+```bash
+scripts/release-check.sh
+```
+
+Or run commands manually:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features --lib
-cargo test --all-features --bins
-cargo test --all-features --tests -- --skip parity
-cargo test --doc
-cargo run --bin generate-docs -- --check
-cargo package --verbose
-```
-
-Or use the release script:
-
-```bash
-./release.sh
+cargo run --locked --bin generate-docs -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features -- --skip parity
+cargo test --locked --doc
+cargo deny check advisories bans licenses sources
+cargo package --locked
+cargo publish --locked --dry-run
 ```
 
 ## Optional: Parity Gate
@@ -45,28 +45,12 @@ cargo test --test lib parity
 
 See `docs/parity.md` for known gaps and verification status.
 
-## Optional: Full Verification
-
-```bash
-cargo run --bin verify-eggsact
-```
-
-Emits a Markdown report with pass/fail per step and timing.
-
-## Publish Dry Run
-
-```bash
-cargo publish --dry-run
-```
-
-Only add to CI if credentials are not required and runtime is acceptable.
-
 ## Tagging and Changelog
 
-1. Confirm `CHANGELOG.md` is updated (or document that GitHub releases serve as the changelog).
-2. Tag the release: `git tag vX.Y.Z`
-3. Push tag: `git push origin vX.Y.Z`
-4. Publish: `cargo publish`
+1. Confirm `CHANGELOG.md` is updated.
+2. Publish: `cargo publish --locked`
+3. On success, tag the release: `git tag -a vX.Y.Z -m "eggsact vX.Y.Z"`
+4. Push tag: `git push origin vX.Y.Z`
 
 If publishing fails, do not tag. Fix the issue, re-run the full gate, and only then tag and publish.
 
@@ -78,18 +62,20 @@ If publishing fails after tagging, the tag must not be deleted from crates.io (i
 
 CI runs on GitHub Actions on push/PR to `main` (plus `workflow_dispatch`):
 
-| Job | Command |
-|-----|---------|
-| Check | `cargo fmt --all -- --check` |
-| Clippy | `cargo clippy --all-targets --all-features -- -D warnings` |
-| Test (lib) | `cargo test --all-features --lib` |
-| Test (bins) | `cargo test --all-features --bins` |
-| Test (integration) | `cargo test --all-features --tests -- --skip parity` |
-| Test (doc) | `cargo test --doc` |
-| Generated Docs | `cargo run --bin generate-docs -- --check` |
-| Package | `cargo package --verbose` (gates on all above) |
+| Job | Platform | What It Runs |
+|-----|----------|-------------|
+| Linux correctness | Linux | fmt, generated-docs, clippy, tests (parity excluded), doc tests, package |
+| Check (windows-latest) | Windows | `cargo check --locked --all-targets --all-features` |
+| Check (macos-latest) | macOS | `cargo check --locked --all-targets --all-features` |
 
-All jobs run in parallel except `package`, which requires all others to pass first.
+Scheduled/manual workflows:
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| Maintenance | Weekly + manual | MSRV and cargo-deny checks |
+| Latest Compatible | Weekly + manual | Ecosystem drift detection |
+| Python Parity | Weekly + manual | Reference implementation drift |
+| Fuzz Extended | Manual only | Hardening: fuzz + sanitizer matrices |
 
 Parity tests are excluded from CI (Python `eggcalc` is not available in CI).
 
@@ -102,4 +88,4 @@ Version is defined in `Cargo.toml` and referenced in:
 
 ## Cargo.lock
 
-`Cargo.lock` is tracked in the repository because eggsact ships binaries and requires reproducible CI and packaging evidence. CI uses `--locked` for reproducible builds.
+`Cargo.lock` is tracked in the repository because eggsact ships binaries and requires reproducible CI and packaging. CI uses `--locked` for reproducible builds.
