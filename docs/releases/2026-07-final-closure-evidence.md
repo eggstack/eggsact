@@ -339,15 +339,32 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30306976324>
 - **Head SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
 - **Conclusion**: success; Parity (latest eggcalc) passed
+- **Parity artifact ID**: `8669074995`
+- **Parity artifact name**: `parity-report`
+- **Parity artifact size**: 258 bytes
 
 ### Provenance Artifact
 
-- **Release provenance SHA-256**: `2311088008417aeeccf4168bb9d6341e77d2856db7db304e114cc8e971c88c80`
+- **Artifact ID**: `8669443360`
+- **Artifact name**: `release-provenance`
+- **Artifact size**: 347 bytes
+- **Workflow head SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
+- **Extracted filename**: `release-provenance.json`
+- **Extracted provenance SHA-256**: `2311088008417aeeccf4168bb9d6341e77d2856db7db304e114cc8e971c88c80`
 - **Package version**: `1.2.0`
 - **Rust stable (release runner)**: `1.97.1`
 - **MSRV**: `1.89.0`
 - **Lockfile SHA-256**: `5dd9396665d264fb406c4e9295f6caae2696916650db33a25e7dd2c31d04cec7`
-- **Package files**: 236
+- **Package files (provenance)**: 236 (crate archive entry count)
+- **Package files (`cargo package --list`)**: 236 (source-path count; both `cargo package --list` and `cargo package --verbose` agree on 236)
+
+### Evidence-commit CI (handoff)
+
+After all evidence was committed, ordinary CI ran on the documentation-only
+evidence commit `7274dde` (Run `30311454592`, 12/12 jobs success). This run
+validated that the documentation edits did not break CI; it is not code-under-test
+evidence. Code-under-test evidence is the run whose `head_sha` equals `CODE_SHA`
+(`3e5b41c`), recorded above.
 
 ### Historical runs (earlier baselines, not final evidence)
 

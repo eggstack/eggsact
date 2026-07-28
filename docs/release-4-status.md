@@ -15,7 +15,7 @@
 | cargo-deny policy blocking and green | CI run [30185819114](https://github.com/eggstack/eggsact/actions/runs/30185819114): cargo-deny — success | Complete |
 | latest-compatible dependency verification | CI run [30306975876](https://github.com/eggstack/eggsact/actions/runs/30306975876) on `3e5b41c` — success | Complete |
 | Python parity verification | CI run [30306976324](https://github.com/eggstack/eggsact/actions/runs/30306976324) on `3e5b41c` — success | Complete |
-| Package contents inspected and constrained | `cargo package --locked --verbose` — 235 files, 4.8 MiB | Complete |
+| Package contents inspected and constrained | `cargo package --locked --verbose` — 236 files, 4.8 MiB | Complete |
 | Package provenance | SHA-256 `23110880...`; records version 1.2.0, commit `3e5b41c`, MSRV 1.89.0, Rust 1.97.1, lockfile, 236 files | Complete |
 | `cargo publish --dry-run --locked` passes | Local gate: pass | Complete |
 | No auto-publish path or credentials in CI | `docs/release.md` documents manual maintainer action; no publish step in workflows | Complete |

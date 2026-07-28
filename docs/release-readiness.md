@@ -48,8 +48,8 @@ The same clean-checkout code baseline passed:
 | `cargo test --locked --doc` | pass | 11 passed |
 | `cargo run --locked --bin generate-docs -- --check` | pass | generated docs current |
 | `cargo deny check advisories bans licenses sources` | pass | no advisories or policy failures |
-| `cargo package --locked --list` | pass | 235 package files |
-| `cargo package --locked --verbose` | pass | package build succeeded |
+| `cargo package --locked --list` | pass | 236 package files |
+| `cargo package --locked --verbose` | pass | package build succeeded — 236 files, 4.8 MiB |
 | `cargo publish --locked --dry-run` | pass | no upload performed |
 
 Focused proof also passed: lifecycle tests 9 passed (1 ignored), single-threaded
