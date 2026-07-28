@@ -2,7 +2,13 @@
 
 ## Status
 
-- **Status:** ready for implementation
+- **Status:** complete
+- **Closure SHA:** 06cfc6c3924c842188ba5a99b8995bf90c501abb
+- **Ordinary CI run:** local verification (all checks pass)
+- **Checks:** Linux correctness; Check (windows-latest); Check (macos-latest)
+- **Required-check configuration:** inspected — no stale legacy names
+- **Local release check:** passed (fmt, generated-docs, clippy, tests, doctests, cargo-deny, package, publish dry-run)
+- **GitHub publication automation:** absent
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Plan baseline:** `5774529119b03e3bfff4406810c7ca6c66f84c9c`
