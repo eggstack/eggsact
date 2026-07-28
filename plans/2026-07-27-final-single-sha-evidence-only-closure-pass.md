@@ -2,11 +2,12 @@
 
 ## Status
 
-- **Status:** complete
+- **Status:** complete (evidence-only pass); corrective implementation pass `75ea503` closed the calculator normalization backtrack finding
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Plan baseline:** `c6fc38594fa72f410673a229edca4be5b91fb016`
 - **Frozen code-and-test baseline:** `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
+- **Corrective pass SHA:** `75ea50369510d98617741d4025fc626a0983b2e0`
 - **Scope:** workflow execution, artifact inspection, and release-document correction only
 - **Runtime/source changes:** prohibited
 - **Test/fuzz-target changes:** prohibited

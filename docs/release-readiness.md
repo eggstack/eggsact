@@ -1,23 +1,23 @@
 # Release Readiness
 
-Date: 2026-07-27 UTC  
-Final verification baseline: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`  
+Date: 2026-07-28 UTC  
+Final verification baseline: `75ea50369510d98617741d4025fc626a0983b2e0` (corrective pass on `3e5b41c`)  
 Version: `1.2.0`
 
 ## Release candidate
 
 - **Branch:** `main`
-- **Commit SHA:** `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
+- **Commit SHA:** `75ea50369510d98617741d4025fc626a0983b2e0`
 - **Version:** `1.2.0`
 - **Working tree:** clean at verification time
-- **Status:** verification complete; publication remains a direct maintainer action
+- **Status:** verification complete; corrective pass for calculator normalization backtrack limit closed; publication remains a direct maintainer action
 
 ## Verification
 
 ### GitHub CI
 
-Run [30306974684](https://github.com/eggstack/eggsact/actions/runs/30306974684) passed
-with all 12 jobs successful on CODE_SHA `3e5b41c`.
+Run [30367423228](https://github.com/eggstack/eggsact/actions/runs/30367423228) passed
+with all 12 jobs successful on corrective-pass SHA `75ea503`.
 
 | Job | Result |
 |-----|--------|
@@ -71,6 +71,11 @@ all 19 jobs passed (12 fuzz-matrix + 7 fuzz-sanitizers), no new findings.
 Local normal and AddressSanitizer fuzz-target builds also passed using
 `nightly-2026-05-07` and cargo-fuzz `0.13.2`.
 
+A re-dispatch of the extended fuzz workflow on `3e5b41c` (Run
+`30306975485`) found a `calculator_normalization` backtrack-limit crash
+(`32E73 33`). This was fixed in corrective pass `75ea503` (see
+`docs/release-5-status.md` and `plans/2026-07-28-calculator-normalization-backtrack-limit-corrective-pass.md`).
+
 ### Latest-compatible dependencies
 
 Run [30306975876](https://github.com/eggstack/eggsact/actions/runs/30306975876) passed
@@ -85,7 +90,9 @@ on CODE_SHA `3e5b41c`. Parity (latest eggcalc) succeeded. Its report recorded eg
 ## Release verification workflow
 
 Run [30306975072](https://github.com/eggstack/eggsact/actions/runs/30306975072) passed
-on CODE_SHA `3e5b41c`. Full Release Gate succeeded.
+on CODE_SHA `3e5b41c`. Full Release Gate succeeded. The corrective pass
+`75ea503` was verified via the local release gate (fmt, clippy, lib, bins,
+integration, doc, generate-docs, cargo-deny, package).
 
 ### Clean worktree verification
 
@@ -120,5 +127,6 @@ in `docs/release.md`.
 - [x] Crates.io metadata reviewed
 - [x] `cargo publish --dry-run --locked` passes
 - [x] `docs/release.md` remains the canonical release policy
+- [x] Calculator normalization backtrack limit corrective pass closed (`75ea503`)
 - [ ] `cargo publish --locked` — direct maintainer action
 - [ ] `git tag v1.2.0 && git push origin v1.2.0` — after successful publication

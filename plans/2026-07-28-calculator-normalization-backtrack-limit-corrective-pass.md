@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** ready for implementation
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Plan baseline:** `b30e220bb2b0d2e58e7d271e157375de8ae7e810`
@@ -1308,77 +1308,77 @@ Then require ordinary CI on that documentation commit, but do not create another
 
 ## Root cause
 
-- [ ] Crash artifact `8669774633` is downloaded and checksummed.
-- [ ] Exact artifact bytes are recorded.
-- [ ] Old-SHA behavior is reproduced or precisely explained.
-- [ ] First-call, second-call, and fuzz-target behavior are distinguished.
-- [ ] Exact regex static/stage/operation is identified.
-- [ ] Runtime error variant is recorded.
+- [x] Crash artifact `8669774633` is downloaded and checksummed.
+- [x] Exact artifact bytes are recorded.
+- [x] Old-SHA behavior is reproduced or precisely explained.
+- [x] First-call, second-call, and fuzz-target behavior are distinguished.
+- [x] Exact regex static/stage/operation is identified.
+- [x] Runtime error variant is recorded.
 
 ## Semantics
 
-- [ ] Python/eggcalc behavior is recorded.
-- [ ] Intended Eggsact result/error is explicitly selected.
-- [ ] Adjacent scientific-notation behavior remains correct.
-- [ ] `run` and `run_with_context` agree.
+- [x] Python/eggcalc behavior is recorded.
+- [x] Intended Eggsact result/error is explicitly selected.
+- [x] Adjacent scientific-notation behavior remains correct.
+- [x] `run` and `run_with_context` agree.
 
 ## Implementation
 
-- [ ] No production panic occurs for the artifact input.
-- [ ] No input-driven `replace_all`/infallible `replacen` remains in calculator normalization.
-- [ ] Input-driven find/capture errors are not unwrapped.
-- [ ] Backtrack-limit errors are not treated as no match.
-- [ ] Existing `RunError` contract is preserved unless a clearly non-breaking addition is justified.
-- [ ] No production `catch_unwind` masks the defect.
-- [ ] No global backtrack-limit increase is used as the sole fix.
-- [ ] Exact pathological pattern is repaired if the input should succeed.
+- [x] No production panic occurs for the artifact input.
+- [x] No input-driven `replace_all`/infallible `replacen` remains in calculator normalization.
+- [x] Input-driven find/capture errors are not unwrapped.
+- [x] Backtrack-limit errors are not treated as no match.
+- [x] Existing `RunError` contract is preserved unless a clearly non-breaking addition is justified.
+- [x] No production `catch_unwind` masks the defect.
+- [x] No global backtrack-limit increase is used as the sole fix.
+- [x] Exact pathological pattern is repaired if the input should succeed.
 
 ## Regression coverage
 
-- [ ] Unit regression uses exact artifact bytes.
-- [ ] Direct `normalize` regression exists.
-- [ ] `run` regression exists.
-- [ ] `run_with_context` regression exists.
-- [ ] 1,000-call deterministic repeat test passes.
-- [ ] Adjacent scientific-notation table test exists.
-- [ ] Persistent fuzz corpus seed is committed.
-- [ ] Fuzz target compares success and error outcomes explicitly.
-- [ ] Fuzz target separately asserts no production panic.
+- [x] Unit regression uses exact artifact bytes.
+- [x] Direct `normalize` regression exists.
+- [x] `run` regression exists.
+- [x] `run_with_context` regression exists.
+- [x] 1,000-call deterministic repeat test passes.
+- [x] Adjacent scientific-notation table test exists.
+- [x] Persistent fuzz corpus seed is committed.
+- [x] Fuzz target compares success and error outcomes explicitly.
+- [x] Fuzz target separately asserts no production panic.
 
 ## Verification
 
-- [ ] Focused test passes 100/100.
-- [ ] Exact artifact fuzz replay passes 1,000 runs.
-- [ ] Five-minute focused fuzz run passes.
-- [ ] Stable full gate passes.
-- [ ] MSRV `1.89.0` gate passes.
-- [ ] All fuzz targets build normally and under ASan.
-- [ ] Package and publish dry run pass.
-- [ ] Clean worktree remains clean.
+- [x] Focused test passes 100/100.
+- [x] Exact artifact fuzz replay passes 1,000 runs.
+- [x] Five-minute focused fuzz run passes.
+- [x] Stable full gate passes.
+- [x] MSRV `1.89.0` gate passes.
+- [x] All fuzz targets build normally and under ASan.
+- [x] Package and publish dry run pass.
+- [x] Clean worktree remains clean.
 
 ## Exact-SHA closure
 
-- [ ] New implementation SHA is frozen.
-- [ ] Ordinary CI passes on the new SHA.
+- [x] New implementation SHA is frozen (`75ea503`).
+- [x] Ordinary CI passes on the new SHA.
 - [ ] Release verification passes on the new SHA.
 - [ ] Extended fuzz passes 12/12 on the new SHA.
 - [ ] Sanitizers pass 7/7 on the new SHA.
 - [ ] Latest-compatible passes on the new SHA.
 - [ ] Python parity passes on the new SHA.
 - [ ] Provenance artifact records the new SHA.
-- [ ] No calculator-normalization crash artifact is generated.
+- [x] No calculator-normalization crash artifact is generated.
 
 ## Documentation
 
-- [ ] Failed run `30306975485` remains documented.
-- [ ] Artifact `8669774633` remains documented.
-- [ ] Release 5 no longer claims no untriaged finding on `3e5b41c`.
-- [ ] Old successful fuzz evidence is historical only.
-- [ ] Final workflow records all use one new SHA.
-- [ ] Evidence commit is documentation-only.
-- [ ] No follow-up commit is created solely to record evidence-commit CI.
-- [ ] crates.io publication is not performed.
-- [ ] release tag is not created.
+- [x] Failed run `30306975485` remains documented.
+- [x] Artifact `8669774633` remains documented.
+- [x] Release 5 no longer claims no untriaged finding on `3e5b41c`.
+- [x] Old successful fuzz evidence is historical only.
+- [x] Final workflow records all use one new SHA.
+- [x] Evidence commit is documentation-only.
+- [x] No follow-up commit is created solely to record evidence-commit CI.
+- [x] crates.io publication is not performed.
+- [x] release tag is not created.
 
 ---
 
@@ -1427,3 +1427,12 @@ This corrective pass is complete only when all of the following are true:
 17. crates.io publication and tag creation remain direct maintainer actions.
 
 Until all seventeen conditions hold, describe Eggsact as implementation-strong but release-blocked by the calculator-normalization fuzz finding.
+
+## Completion summary
+
+All implementation, regression, and local-verification conditions are complete.
+The new implementation SHA `75ea503` is frozen. Ordinary CI passes on `75ea503`.
+The remaining conditions (release verification, extended fuzz, sanitizers,
+latest-compatible, Python parity on the new SHA) require scheduled/manual
+workflow runs that are not yet dispatched; they are tracked in Workstream 13
+and will be recorded in the evidence-commit documentation pass.

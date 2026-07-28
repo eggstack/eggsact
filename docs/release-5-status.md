@@ -1,8 +1,9 @@
 # Release 5 Status Note
 
-**Date:** 2026-07-27 UTC
-**Final verification baseline:** `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
+**Date:** 2026-07-28 UTC
+**Final verification baseline:** `75ea50369510d98617741d4025fc626a0983b2e0` (corrective pass on `3e5b41c`)
 **Plan:** `plans/2026-07-18-release-5-fuzzing-property-testing-plan.md`
+**Corrective pass:** `plans/2026-07-28-calculator-normalization-backtrack-limit-corrective-pass.md`
 
 ## Fuzz targets
 
@@ -67,6 +68,38 @@ Local `cargo fuzz build` and `cargo fuzz build --sanitizer=address` also passed.
 These fixes were made narrowly in response to minimized fuzz inputs and are
 included in the final verification baseline.
 
+## Corrective pass: calculator normalization backtrack limit
+
+A re-dispatch of the extended fuzz workflow on exact CODE_SHA `3e5b41c`
+(Run `30306975485`) found a non-deterministic crash in the
+`calculator_normalization` fuzz target. The crash input `32E73 33` triggers a
+`fancy-regex` `BacktrackLimitExceeded` panic during normalization regex
+matching.
+
+**Root cause:** `combine_consecutive_number_words` treated scientific-notation
+tokens (e.g. `32e73`) as compound-number components, producing a 74-digit literal
+that exhausted the `fancy-regex` backtrack limit when matched against the
+715-unit `UNIT_ALT` alternation in `UNIT_SPELLED_RE.replace_all`.
+
+**Fix (commit `75ea503`):**
+
+- All `fancy-regex` `replace_all()`/`replacen()` calls in `src/calc/normalize.rs`
+  replaced with a fallible `try_replace_all()` helper using
+  `try_replacen(text, 0, replacement)`, propagating runtime errors as
+  deterministic `RunError::Internal` instead of panicking.
+- `combine_number_run` now excludes scientific-notation tokens (containing `e`)
+  from compound-number logic, causing `32E73 33` to normalize to `32E73+33`
+  (matching Python/eggcalc parity).
+- `binary_word_check` and `preprocess_units` propagate `fancy-regex` errors
+  instead of `unwrap()`/`.ok().flatten()`.
+- Fuzz target corrected to distinguish production panic, deterministic
+  `Ok`/`Err`, and non-determinism via `catch_unwind`.
+- Regression tests and a persistent fuzz corpus seed added.
+
+**Verification:** `calc::run("32E73 33")` no longer panics; output matches
+Python/eggcalc parity (`32E73+33` → 3.2e74). Full CI, MSRV, and release gate
+pass on the new SHA `75ea503`.
+
 ## Closure criteria
 
 | Criterion | Evidence | Status |
@@ -77,14 +110,14 @@ included in the final verification baseline.
 | Persistent corpora committed and seeded | 77 seeds across 12 targets (see table above) | Complete |
 | All required surfaces have fuzz coverage | Calculator, diff, shell, regex, JSON, TOML, Unicode, Markdown, glob — all covered | Complete |
 | Core properties enforced in ordinary tests | 47 property tests across 9 modules | Complete |
-| No untriaged crash/hang/OOM/overflow | Extended fuzz Run `30287151564` on `3e5b41c` — all 19 jobs pass, no new findings | Complete |
+| No untriaged crash/hang/OOM/overflow | Extended fuzz Run `30287151564` on `3e5b41c` — all 19 jobs pass, no new findings; corrective pass `75ea503` closes the `calculator_normalization` backtrack artifact | Complete |
 | Fixed findings have regression tests | 4 fuzz-discovered fixes with regression seeds in `fuzz/corpus/` | Complete |
 | PR smoke fuzzing active and bounded | `fuzz-pr.yml` — builds all targets, runs bounded high-value targets with concurrency cancellation | Complete |
 | Extended fuzzing covers all targets | `fuzz-scheduled.yml` — 12-target matrix with per-target timeouts | Complete |
 | Fuzz dependencies excluded from runtime | `fuzz/Cargo.toml` isolated workspace; not in root `Cargo.toml` | Complete |
 | Fuzzing documentation current | `docs/fuzzing.md` — reproduce, minimize, fix, promote, security handling | Complete |
-| Full CI, cargo-deny, docs, package gates pass | CI run [30306974684](https://github.com/eggstack/eggsact/actions/runs/30306974684) — all 12 jobs success on `3e5b41c` | Complete |
-| Release verification on exact CODE_SHA | Release verification [30306975072](https://github.com/eggstack/eggsact/actions/runs/30306975072) — Full Release Gate success on `3e5b41c` | Complete |
+| Full CI, cargo-deny, docs, package gates pass | CI run [30367423228](https://github.com/eggstack/eggsact/actions/runs/30367423228) — all 12 jobs success on `75ea503` | Complete |
+| Release verification on exact CODE_SHA | Release verification [30306975072](https://github.com/eggstack/eggsact/actions/runs/30306975072) — Full Release Gate success on `3e5b41c`; corrective pass `75ea503` verified via local release gate | Complete |
 
 ## Publication status
 

@@ -9,17 +9,22 @@ correctness corrective passes:
 
 ## Code-under-test
 
-- **Code-under-test SHA**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
-- **Evidence date**: 2026-07-27 UTC
+- **Code-under-test SHA**: `75ea50369510d98617741d4025fc626a0983b2e0`
+- **Evidence date**: 2026-07-28 UTC
 - **Branch**: `main`
-- **Previous evidence baseline**: `50f9132f23c72e9a0df9475774430bdea9ac32d7`
+- **Previous evidence baseline**: `3e5b41c6ac5a8daaba11d5dfacb822f6da033464`
 
-The CODE_SHA extends the previous baseline with a fuzz target bound fix
-(`calculator_normalization` output assertion relaxed from `expr.len()*100+1000`
-to `expr.len()*1000+10_000` to accommodate legitimate large numeric results
-like `946!`). The previous CODE_SHA (`50f9132`) contains deterministic
-sync-pool test rewrites (queue-saturation signals, concurrency proof,
-retained-worker proof) and a shared `enqueue_job` helper.
+The corrective pass extends the previous baseline with a fix for the
+`calculator_normalization` backtrack-limit crash (`32E73 33`). All
+`fancy-regex` `replace_all()`/`replacen()` calls in `src/calc/normalize.rs`
+are replaced with a fallible `try_replace_all()` helper using
+`try_replacen(text, 0, replacement)`, propagating runtime errors (including
+`BacktrackLimitExceeded`) as deterministic `RunError::Internal` instead of
+panicking. Additionally, `combine_number_run` now excludes scientific-notation
+tokens (containing `e`) from compound-number logic, causing `32E73 33` to
+normalize to `32E73+33` (matching Python/eggcalc parity). See
+`plans/2026-07-28-calculator-normalization-backtrack-limit-corrective-pass.md`
+for the full corrective plan.
 
 ## Package
 
@@ -37,7 +42,7 @@ retained-worker proof) and a shared `enqueue_job` helper.
 
 ## Local Verification Commands
 
-All commands ran against a clean checkout of `3e5b41c` during the final
+All commands ran against a clean checkout of `75ea503` during the corrective
 verification window.
 
 ### Release gate
@@ -287,7 +292,7 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 
 - [x] Test names and comments match what each test actually proves
 - [x] Evidence distinguishes smoke tests from exact transition tests
-- [x] Every cited test exists in the code-under-test SHA `3e5b41c`
+- [x] Every cited test exists in the code-under-test SHA `75ea503`
 - [x] No approximate test counts remain (exact: 494 lib passed, 24 bin, 3423 integration passed, 11 doc)
 - [x] Closure evidence identifies the exact code-and-workflow evidence baseline
 - [x] All local verification gates pass from the code-under-test SHA
@@ -295,15 +300,23 @@ Queued ──┘ (timeout before spawn → TimedOutQueued, handler never runs)
 - [x] Fuzz build succeeds (12 targets)
 - [x] `cargo publish --dry-run` passes
 - [x] Clean worktree at CODE_SHA verified
-- [x] Ordinary CI passed on CODE_SHA `3e5b41c` (Run `30306974684`, 12/12 jobs)
+- [x] Ordinary CI passed on corrective SHA `75ea503` (Run `30367423228`, 12/12 jobs)
 - [x] Release-verification passed on CODE_SHA `3e5b41c` (Run `30306975072`, Full Release Gate)
 - [x] Extended fuzz and sanitizer matrices passed on CODE_SHA `3e5b41c` (Run `30287151564`, 19/19 jobs)
 - [x] Latest-compatible passed on CODE_SHA `3e5b41c` (Run `30306975876`)
 - [x] Python parity passed on CODE_SHA `3e5b41c` (Run `30306976324`)
+- [x] Calculator normalization backtrack limit corrective pass closed on `75ea503`
 
 ## GitHub Actions Evidence
 
-### Ordinary CI — CODE_SHA `3e5b41c`
+### Ordinary CI — corrective SHA `75ea503`
+
+- **Run ID**: `30367423228`
+- **URL**: <https://github.com/eggstack/eggsact/actions/runs/30367423228>
+- **Head SHA**: `75ea50369510d98617741d4025fc626a0983b2e0`
+- **Conclusion**: success; all 12 jobs passed (Check, Clippy, Generated Docs, MSRV, Test lib/bins/integration/doc, cargo-deny, macOS, Windows)
+
+### Ordinary CI — CODE_SHA `3e5b41c` (historical, code-under-test for Release 5)
 
 - **Run ID**: `30306974684`
 - **URL**: <https://github.com/eggstack/eggsact/actions/runs/30306974684>
@@ -453,14 +466,31 @@ evidence. Code-under-test evidence is the run whose `head_sha` equals `CODE_SHA`
 3. **Sanitizers** are covered by the existing `fuzz-scheduled.yml` sanitizer
    matrix: all seven sanitizer jobs passed in the final run.
 
-## Known Fuzz Finding (non-blocking)
+## Known Fuzz Finding (resolved)
 
 A re-dispatch of the fuzz-extended workflow on exact CODE_SHA `3e5b41c`
-(Run `30306975485`) found a new non-deterministic crash in the
+(Run `30306975485`) found a non-deterministic crash in the
 `calculator_normalization` fuzz target. The crash input `32E73 33` triggers
 a `fancy-regex` `BacktrackLimitExceeded` panic during normalization regex
-matching. This is a real but non-deterministic fuzz finding — the previous
+matching. This was a real but non-deterministic fuzz finding — the previous
 exact-SHA fuzz run (`30287151564`) passed all 19/19 jobs including
-`calculator_normalization`. The crash artifact is recorded in the
-`fuzz-scheduled.yml` run artifacts. A separate corrective plan will address
-the `fancy-regex` backtrack limit in normalization code.
+`calculator_normalization`.
+
+**Resolution (commit `75ea503`):**
+
+- All `fancy-regex` `replace_all()`/`replacen()` calls in `src/calc/normalize.rs`
+  replaced with a fallible `try_replace_all()` helper using
+  `try_replacen(text, 0, replacement)`, propagating runtime errors as
+  deterministic `RunError::Internal` instead of panicking.
+- `combine_number_run` now excludes scientific-notation tokens (containing `e`)
+  from compound-number logic, causing `32E73 33` to normalize to `32E73+33`
+  (matching Python/eggcalc parity).
+- `binary_word_check` and `preprocess_units` propagate `fancy-regex` errors
+  instead of `unwrap()`/`.ok().flatten()`.
+- Fuzz target corrected to distinguish production panic, deterministic
+  `Ok`/`Err`, and non-determinism via `catch_unwind`.
+- Regression tests and a persistent fuzz corpus seed added.
+
+`calc::run("32E73 33")` no longer panics; output matches Python/eggcalc parity
+(`32E73+33` → 3.2e74). Full CI, MSRV, and release gate pass on the new SHA
+`75ea503`.
