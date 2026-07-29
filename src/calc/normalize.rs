@@ -223,20 +223,29 @@ static NUMBER_WORD_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!("\\b({})\\b", nwa)).unwrap()
 });
 
-static UNIT_CARET_ATTACH_RE: LazyLock<Regex> = LazyLock::new(|| {
-    let ua = &*UNIT_ALT;
-    Regex::new(&format!(r"(?i)(\d+(?:\.\d+)?)\s+({ua})\s*\^\s*([23])\b")).unwrap()
-});
+fn unit_caret_attach_re() -> &'static Regex {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        let ua = &*UNIT_ALT;
+        Regex::new(&format!(r"(?i)(\d+(?:\.\d+)?)\s+({ua})\s*\^\s*([23])\b")).unwrap()
+    });
+    &RE
+}
 
-static UNIT_CARET_DENOM_RE: LazyLock<Regex> = LazyLock::new(|| {
-    let ua = &*UNIT_ALT;
-    Regex::new(&format!(r"(?i)/\s*({ua})\s*\^\s*(\d+)\b")).unwrap()
-});
+fn unit_caret_denom_re() -> &'static Regex {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        let ua = &*UNIT_ALT;
+        Regex::new(&format!(r"(?i)/\s*({ua})\s*\^\s*(\d+)\b")).unwrap()
+    });
+    &RE
+}
 
-static UNIT_CARET_PAREN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    let ua = &*UNIT_ALT;
-    Regex::new(&format!(r"(?i)/\(\s*({ua})\s*\)\s*\^\s*(\d+)\b")).unwrap()
-});
+fn unit_caret_paren_re() -> &'static Regex {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        let ua = &*UNIT_ALT;
+        Regex::new(&format!(r"(?i)/\(\s*({ua})\s*\)\s*\^\s*(\d+)\b")).unwrap()
+    });
+    &RE
+}
 
 static UNIT_POWER_RE: LazyLock<Regex> = LazyLock::new(|| {
     let ua = &*UNIT_ALT;
@@ -1248,7 +1257,7 @@ fn binary_word_check(expr: &str) -> Result<(), String> {
 }
 
 pub fn normalize(expr: &str) -> Result<String, String> {
-    if expr.len() > MAX_TEXT_LENGTH {
+    if expr.chars().count() > MAX_TEXT_LENGTH {
         return Err(format!("Input exceeds {} characters", MAX_TEXT_LENGTH));
     }
 
@@ -1302,36 +1311,38 @@ pub fn normalize(expr: &str) -> Result<String, String> {
 
     // NZ-4: Normalize spaced unit caret exponents: "5 m ^ 2" → "5 m2"
     // "5 m ^ 2" → "5 m2" (attached quantity with unit)
-    result = try_replace_all(
-        "unit_caret_attach",
-        &UNIT_CARET_ATTACH_RE,
-        &result,
-        |caps: &Captures| {
-            let unit = &caps[2];
-            let power = &caps[3];
-            format!("{} {}{}", &caps[1], unit, power)
-        },
-    )?;
-    // "/ m ^ 2" → "/m**2" (denominator form)
-    result = try_replace_all(
-        "unit_caret_denom",
-        &UNIT_CARET_DENOM_RE,
-        &result,
-        |caps: &Captures| {
-            let unit = caps[1].to_lowercase();
-            format!("/{}**{}", unit, &caps[2])
-        },
-    )?;
-    // "/(m) ^ 2" → "/(m)**2" (parenthesized denominator)
-    result = try_replace_all(
-        "unit_caret_paren",
-        &UNIT_CARET_PAREN_RE,
-        &result,
-        |caps: &Captures| {
-            let unit = caps[1].to_lowercase();
-            format!("/({})**{}", unit, &caps[2])
-        },
-    )?;
+    if result.contains('^') {
+        result = try_replace_all(
+            "unit_caret_attach",
+            unit_caret_attach_re(),
+            &result,
+            |caps: &Captures| {
+                let unit = &caps[2];
+                let power = &caps[3];
+                format!("{} {}{}", &caps[1], unit, power)
+            },
+        )?;
+        // "/ m ^ 2" → "/m**2" (denominator form)
+        result = try_replace_all(
+            "unit_caret_denom",
+            unit_caret_denom_re(),
+            &result,
+            |caps: &Captures| {
+                let unit = caps[1].to_lowercase();
+                format!("/{}**{}", unit, &caps[2])
+            },
+        )?;
+        // "/(m) ^ 2" → "/(m)**2" (parenthesized denominator)
+        result = try_replace_all(
+            "unit_caret_paren",
+            unit_caret_paren_re(),
+            &result,
+            |caps: &Captures| {
+                let unit = caps[1].to_lowercase();
+                format!("/({})**{}", unit, &caps[2])
+            },
+        )?;
+    }
 
     // M23: Handle "N thousand" scale words (evaluate to product)
     for (re, sv) in DIGIT_SCALE_PATTERNS.iter() {

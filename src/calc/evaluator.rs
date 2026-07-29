@@ -302,7 +302,7 @@ const MAX_USER_VARIABLES_CTX: usize = 1000;
 /// and function permission checks.
 pub fn evaluate_with_context(expr: &str, ctx: &mut EvalContext) -> Result<EvaluateResult, String> {
     let expr = expr.trim();
-    if expr.len() > MAX_INPUT_LENGTH {
+    if expr.chars().count() > MAX_INPUT_LENGTH {
         return Err(format!("Input exceeds {} characters", MAX_INPUT_LENGTH));
     }
     match parse_expression_with(expr, &mut 0, ctx) {
@@ -325,7 +325,7 @@ pub fn evaluate_with_context(expr: &str, ctx: &mut EvalContext) -> Result<Evalua
 /// For per-evaluation isolated state, use [`evaluate_with_context`].
 pub fn evaluate(expr: &str) -> Result<EvaluateResult, String> {
     let expr = expr.trim();
-    if expr.len() > MAX_INPUT_LENGTH {
+    if expr.chars().count() > MAX_INPUT_LENGTH {
         return Err(format!("Input exceeds {} characters", MAX_INPUT_LENGTH));
     }
     match parse_expression(expr, &mut 0) {
