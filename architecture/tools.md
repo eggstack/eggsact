@@ -406,14 +406,19 @@ Route-critical tools **must** always emit `machine_code` and `verdict` in their 
 | `diff_risk_classify` | Classify diff risk level | Uses `classify_diff_path` to bucket files. |
 | `patch_contract_check` | Classify diff by contract-relevant categories | Detects scope_escape, lockfile_change, manifest_change, ci_change, config_change, generated_change, vendor_change, source_change. Checks for large deletions (>200 lines). |
 
-### Config (4 tools)
+### Config (3 tools)
 
 | Tool | Description | Notable Details |
 |------|-------------|-----------------|
 | `dotenv_validate` | Validate .env files | Custom key_pattern regex (safety-checked), allow_export, duplicate_policy (warn/error/allow). Runs on dedicated thread with 5s timeout (ReDoS protection). |
 | `ini_validate` | Validate INI files | Reports sections, keys_by_section, duplicates, invalid_lines. |
 | `config_preflight` | Pre-check config files (composite) | See [Composite Tools](#composite-tools) section above. |
-| `toml_shape_tool` | Describe TOML structure | Reports top_level_keys, tables, truncated, summary. |
+
+### TOML (1 tool)
+
+| Tool | Description | Notable Details |
+|------|-------------|-----------------|
+| `toml_shape_tool` | Describe TOML structure | Reports top_level_keys, tables, truncated, summary. Handler is in `src/tools/config.rs` but tool spec declares `toml` category. |
 
 ### Identifier (3 tools)
 

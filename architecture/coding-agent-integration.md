@@ -27,7 +27,7 @@ Starts a JSON-RPC 2.0 server over stdin/stdout. The agent sends `tools/list` and
 |----------|-------|
 | Transport | stdio (stdin/stdout) |
 | Protocol | JSON-RPC 2.0 |
-| MCP version | `2024-11-05` |
+| MCP version | `2025-11-25` (preferred), `2024-11-05` (legacy) |
 | Max in-flight requests | 32 |
 | Rate limit | 10 req/s |
 | Tool concurrency | 16 workers |

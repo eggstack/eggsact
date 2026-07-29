@@ -158,7 +158,7 @@ The `run()` function orchestrates the full pipeline:
 └─────────────┘    └──────────────────┘    └───────────────────┘    └──────────────┘    └───────────────┘
 ```
 
-### The Complete 30-Step `normalize()` Pipeline
+### The Complete 31-Step `normalize()` Pipeline
 
 Every input passes through these steps in order. Steps marked with a reference ID correspond to specific bug fixes or parity requirements.
 

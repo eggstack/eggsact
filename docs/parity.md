@@ -174,12 +174,12 @@ tests that previously differed (Python emitted only `valid_pattern`,
 `matches`, `truncated`, `match_count`, `error` while Rust also emits
 `engine_used`, `dialect`, `unsupported_features`) were resolved 2026-07-09
 by switching them to the existing superset comparator (`compare_tool_parity_superset`)
-in `tests/parity/mod.rs`. Categories C1–C6 (35 accepted failures) remain
+in `tests/parity/mod.rs`. Categories C1–C6 (34 accepted failures) remain
 documented in `tests/fixtures/accepted_parity_failures.txt`.
 
 ## Known parity gaps
 
-The 33 remaining parity failures are classified below (down from 56 after
+The 34 remaining parity failures are classified below (down from 56 after
 fixing Category A). None are regressions from a single change; they
 accumulated across the phase 06–09 line of work. The concurrent-ordering
 failures (old Category D) were resolved 2026-07-07 by switching
@@ -305,10 +305,10 @@ calls a HarnessOnly tool without proper audience setup.
 | C1 — Shell tokenization | 9 | Defer: accepted Rust behavioral difference | No |
 | C2 — Prompt input inspect | 4 | Defer: Rust has richer findings | No |
 | C3 — Unicode policy check | 3 | Defer: Rust has different finding structure | No |
-| C4 — Tool output drift | 7 | Defer: cosmetic or intentional Rust differences | No |
+| C4 — Tool output drift | 8 | Defer: cosmetic or intentional Rust differences | No |
 | C5 — Tools/list ordering | 8 | Defer: Rust superset (80 vs 67 tools) | No |
 | C6 — Error handling | 2 | Defer: needs Harness audience in test | No |
-| **Total** | **56** | **383 passed, 33 failed, 2 ignored** | **None** |
+| **Total** | **56** | **383 passed, 34 failed, 2 ignored** | **None** |
 
 ### Known tool-set gap: 80 vs 67 tools
 

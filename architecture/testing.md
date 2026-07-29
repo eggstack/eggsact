@@ -16,7 +16,7 @@ tests/
   parity/                         # Python/Rust parity tests (11 files)
   property/                       # property-based tests (9 files, 47 tests)
   fixtures/
-    accepted_parity_failures.txt  # 33 known parity failures for regression detection
+    accepted_parity_failures.txt  # 34 known parity failures for regression detection
 fuzz/
   Cargo.toml                      # isolated fuzz workspace (libfuzzer-sys)
   fuzz_targets/                   # 12 fuzz targets
@@ -139,6 +139,7 @@ Walks every tool's input schema recursively and collects violations. This preven
 | `test_diagnostics.rs` | Runtime diagnostics, profile inspect |
 | `test_lifecycle_and_gaps.rs` | Tool lifecycle testing |
 | `test_runtime_helpers.rs` | Runtime helper functions |
+| `test_execution_safety.rs` | Worker containment, timeout leaks, duplicate IDs, shutdown drain |
 | `test_repo_diff_path_tools.rs` | Repository/diff/path tools |
 | `test_analysis_tools.rs` | Import/export, code blocks, symbol diff, lockfile |
 | `test_schema_boundaries.rs` | Schema keyword enforcement |
@@ -208,9 +209,9 @@ Each parity helper spawns a fresh MCP process per call (single-request sessions)
 
 ### Known Failures
 
-As of 2026-07-08, there are **33 known failures** out of 418 parity tests. These are accepted behavioral differences, not regressions. See `docs/parity.md` for the full breakdown.
+As of 2026-07-08, there are **34 known failures** out of 418 parity tests. These are accepted behavioral differences, not regressions. See `docs/parity.md` for the full breakdown.
 
-The fixture file `tests/fixtures/accepted_parity_failures.txt` lists all 33 test names:
+The fixture file `tests/fixtures/accepted_parity_failures.txt` lists all 34 test names:
 
 ```
 # Accepted parity failures (categories C1–C6 from docs/parity.md decision table).
@@ -281,33 +282,21 @@ cargo test --locked --bins                            # tests for bin/ targets
 
 ## CI Pipeline
 
-GitHub Actions runs on push/PR to `main` (plus manual `workflow_dispatch`) across a **12-job CI matrix**:
+GitHub Actions runs on push/PR to `main` (plus manual `workflow_dispatch`):
 
-| Job | Platform | Steps |
-|-----|----------|-------|
-| Format check | Linux | `cargo fmt --all -- --check` |
-| Clippy | Linux | `cargo clippy --locked --all-targets --all-features -- -D warnings` |
-| Unit tests | Linux | `cargo test --locked --all-features --lib` |
-| Binary tests | Linux | `cargo test --locked --all-features --bins` |
-| Integration tests | Linux | `cargo test --locked --all-features --tests -- --skip parity` |
-| Doc tests | Linux | `cargo test --locked --doc` |
-| Generated docs | Linux | `cargo run --locked --bin generate-docs -- --check` |
-| Package | Linux | `cargo package --locked --verbose` |
-| MSRV | Linux | `cargo check --locked --all-targets --all-features` + tests on Rust 1.89.0 |
-| Windows | Windows | Build + full non-parity tests |
-| macOS | macOS | Build + full non-parity tests |
-| cargo-deny | Linux | `cargo deny check advisories bans licenses sources` |
+**Linux correctness** (single job, one cache):
+- `cargo fmt --all -- --check`
+- `cargo run --locked --bin generate-docs -- --check`
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`
+- `cargo test --locked --all-features -- --skip parity`
+- `cargo test --locked --doc`
+- `cargo package --locked`
 
-| Step | Command | What It Checks |
-|------|---------|---------------|
-| 1 | `cargo fmt --all -- --check` | Code formatting |
-| 2 | `cargo clippy --locked --all-targets --all-features -- -D warnings` | Lint warnings as errors |
-| 3 | `cargo test --locked --all-features --lib` | Unit tests in `src/` |
-| 4 | `cargo test --locked --all-features --bins` | Binary target tests |
-| 5 | `cargo test --locked --all-features --tests -- --skip parity` | Integration tests (parity excluded) |
-| 6 | `cargo test --locked --doc` | Doc tests |
-| 7 | `cargo run --locked --bin generate-docs -- --check` | Generated docs freshness |
-| 8 | `cargo package --locked --verbose` | Crates.io packaging dry run |
+**Supported-platform compilation** (matrix):
+- Windows: `cargo check --locked --all-targets --all-features`
+- macOS: `cargo check --locked --all-targets --all-features`
+
+MSRV, cargo-deny, parity, latest-compatible, and fuzz/sanitizer checks are scheduled/manual (not merge-blocking). See `docs/verification.md`.
 
 Parity tests are excluded from CI because Python `eggcalc` is not available in the CI environment. Run locally with `cargo test --locked --test lib parity`.
 

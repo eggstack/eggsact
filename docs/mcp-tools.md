@@ -6,7 +6,7 @@ Complete reference for all registered tools exposed by the `eggsact` MCP server.
 
 | Property | Value |
 |----------|-------|
-| Protocol version | 2024-11-05 |
+| Protocol version | `2025-11-25` (preferred), `2024-11-05` (legacy) |
 | Server name | `eggsact` |
 | Server version | 1.2.1 |
 | Transport | stdio JSON-RPC 2.0 |
@@ -1317,3 +1317,13 @@ Explain why a tool is or is not available for a given profile and audience, with
 | 68 | `runtime_diagnostics` | Diagnostics | _(none)_ |
 | 69 | `profile_inspect` | Diagnostics | `profile` |
 | 70 | `tool_availability_explain` | Diagnostics | `tool` |
+| 71 | `path_batch_scope_check` | Path | `root`, `targets` |
+| 72 | `diff_risk_classify` | Patch | `diff_text` |
+| 73 | `patch_contract_check` | Patch | `diff_text` |
+| 74 | `repo_tree_summarize` | Repo | `paths` |
+| 75 | `test_command_suggest` | Repo | `paths` |
+| 76 | `repo_language_detect` | Repo | `paths` |
+| 77 | `import_export_inspect` | Analysis | `text`, `language` |
+| 78 | `code_block_map` | Analysis | `text`, `source_type` |
+| 79 | `symbol_name_diff` | Analysis | `old_text`, `new_text` |
+| 80 | `lockfile_inspect` | Analysis | `before_text`, `after_text` |

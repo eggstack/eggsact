@@ -49,7 +49,7 @@ eggsact is a deterministic MCP (Model Context Protocol) server and in-process ut
 │                                                                   │
 │  80 tools across 20 categories:                                   │
 │  math(4) text(18) json(6) regex(3) validation(4) path(6)        │
-│  shell(4) list(3) markdown(2) patch(5) config(4) toml(1)        │
+│  shell(4) list(3) markdown(2) patch(5) config(3) toml(1)        │
 │  identifier(3) unicode(2) version(2) cargo(1) dependency(1)     │
 │  repo(5) diagnostics(3) analysis(4)                              │
 │                                                                   │
@@ -79,11 +79,11 @@ Each major component has a dedicated architecture doc. The table below serves as
 
 | Component | Doc | What It Covers | Key Files |
 |-----------|-----|----------------|-----------|
-| **Calculator Core** | [calculator.md](calculator.md) | NL normalization pipeline (30-step), AST evaluator (recursive descent, 8 precedence levels), 150+ unit definitions, 50+ physical/math constants, EvalContext for mutable per-call state, big-integer factorial/perm/comb, sentinel-based return protocol | `src/calc/{normalize,evaluator,units,context}.rs` |
+| **Calculator Core** | [calculator.md](calculator.md) | NL normalization pipeline (31-step), AST evaluator (recursive descent, 8 precedence levels), 150+ unit definitions, 50+ physical/math constants, EvalContext for mutable per-call state, big-integer factorial/perm/comb, sentinel-based return protocol | `src/calc/{normalize,evaluator,units,context}.rs` |
 | **MCP Server** | [mcp-server.md](mcp-server.md) | JSON-RPC 2.0 over stdio, tokio concurrent dispatch via JoinSet, protocol negotiation, request lifecycle, schema validation (JSON Schema subset), rate limiting, cancellation model, python-compatible JSON serialization | `src/mcp/{server,protocol,response,compat,machine_codes}.rs` |
 | **Registry & Profiles** | [registry-profiles.md](registry-profiles.md) | `ToolSpec` single source of truth, `ALL_TOOLS_VEC` aggregation, 11 named profiles, `ToolAudience` (Model/Harness/Debug), `ToolExposure` levels, route-critical tools, schema compaction, Levenshtein suggestions | `src/mcp/registry/{types,all_tools,listing}.rs`, `src/mcp/specs/` |
 | **Budget & Concurrency** | [budget-concurrency.md](budget-concurrency.md) | `ToolBudget` (3 tiers), `BudgetContext` with cooperative cancellation, `SyncExecutionPool` (8 workers, 32-slot queue), `HandlerPhase` state machine, runtime metrics, timeout lifecycle, thread-local bridges | `src/mcp/{budget,execution,sync_pool,runtime}.rs` |
-| **Machine Codes** | [machine-codes.md](machine-codes.md) | ~125 machine-readable response code constants (UPPER_SNAKE_CASE), severity/disposition/verdict constants, `finding()` helper functions for constructing structured findings, route-critical tool contract | `src/mcp/machine_codes.rs` |
+| **Machine Codes** | [machine-codes.md](machine-codes.md) | ~145 machine-readable response code constants (UPPER_SNAKE_CASE), severity/disposition/verdict constants, `finding()` helper functions for constructing structured findings, route-critical tool contract | `src/mcp/machine_codes.rs` |
 | **Text Library** | [text-library.md](text-library.md) | 25 text processing modules: primitives (grapheme-aware), diff/similarity (Levenshtein, LCS), validation (JSON/brackets/regex/TOML), transforms (case/normalize/escape), shell tokenizer, regex engine auto-selection (rust-regex vs fancy-regex), Unicode policy engine, confusables detection, prompt injection detection, composite tool orchestration | `src/text/*.rs` (25 files) |
 | **Compatibility** | [compatibility.md](compatibility.md) | `EggcalcPython` vs `StrictNative` validation modes — Python-parity error messages vs strict JSON Schema enforcement, how compat mode propagates through MCP server and agent API | `src/mcp/compat.rs` |
 | **Agent API** | [agent-api.md](agent-api.md) | In-process `ToolRegistry` (synchronous dispatch), 11 named `Profile` variants + Custom, `ToolAudience` (Model/Harness/Debug), `ExecutionContext` with builder pattern, 4 dispatch levels (`call_json` → `call_json_with_execution_context`), tool listing methods, `prepare_tool_call()` shared core | `src/agent/mod.rs` |
@@ -232,7 +232,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | **list** | 3 | Compare (ordered/set/multiset), dedupe, sort | [tools.md](tools.md) |
 | **markdown** | 2 | Structure parse, code fence extract | [tools.md](tools.md) |
 | **patch** | 5 | Apply check, summary, edit preflight (composite, route-critical), diff risk, contract check | [tools.md](tools.md) |
-| **config** | 4 | dotenv validate, INI validate, config preflight (composite, route-critical) | [tools.md](tools.md) |
+| **config** | 3 | dotenv validate, INI validate, config preflight (composite, route-critical) | [tools.md](tools.md) |
 | **toml** | 1 | TOML structure analysis | [tools.md](tools.md) |
 | **identifier** | 3 | Analyze, inspect, table inspect (collision detection) | [tools.md](tools.md) |
 | **unicode** | 2 | Policy check, canonicalize | [text-library.md](text-library.md) |
@@ -253,15 +253,15 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 |---------|---------|------------|
 | `full` | All non-hidden tools | ~80 |
 | `default` | Essential + common tools | ~50 |
-| `codegg_core_min` | Minimal coder-agent set | ~20 |
-| `codegg_core` | Standard coder-agent set | ~35 |
-| `codegg_preflight` | Preflight-focused set | ~15 |
-| `codegg_patch` | Patch editing set | ~12 |
-| `codegg_config` | Config inspection set | ~10 |
-| `codegg_unicode_security` | Unicode/security set | ~8 |
-| `codegg_shell` | Shell command set | ~10 |
-| `codegg_repo_audit` | Repository audit set | ~12 |
-| `human_math` | Human-readable math | ~10 |
+| `codegg_core_min` | Minimal coder-agent set | 6 |
+| `codegg_core` | Standard coder-agent set | 19 |
+| `codegg_preflight` | Preflight-focused set | 7 (Model) / 13 (Harness) |
+| `codegg_patch` | Patch editing set | 10 (Model) / 12 (Harness) |
+| `codegg_config` | Config inspection set | 14 |
+| `codegg_unicode_security` | Unicode/security set | 6 (Model) / 8 (Harness) |
+| `codegg_shell` | Shell command set | 5 (Model) / 6 (Harness) |
+| `codegg_repo_audit` | Repository audit set | 18 |
+| `human_math` | Human-readable math | 4 |
 
 **Audience levels**: `Model` (excludes HarnessOnly+Hidden), `Harness` (excludes Hidden), `Debug` (all non-hidden).
 
@@ -276,7 +276,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | `src/main.rs` | 268 | CLI entry point, arg parsing, dispatch |
 | `src/lib.rs` | 82 | Library root, re-exports |
 | `src/calc/mod.rs` | — | Calculator module re-exports |
-| `src/calc/normalize.rs` | ~2100 | Natural language tokenization (30-step pipeline) |
+| `src/calc/normalize.rs` | ~2100 | Natural language tokenization (31-step pipeline) |
 | `src/calc/evaluator.rs` | ~3700 | AST-based expression evaluator (100+ functions) |
 | `src/calc/units.rs` | ~2350 | Unit definitions (150+), aliases (500+), conversions |
 | `src/calc/context.rs` | 77 | EvalContext (mutable per-call state) |
@@ -289,7 +289,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | `src/mcp/sync_pool.rs` | ~1140 | SyncExecutionPool (bounded worker pool) |
 | `src/mcp/schema_validation.rs` | — | Argument validation against tool schemas |
 | `src/mcp/compat.rs` | ~300 | CompatibilityMode (EggcalcPython vs StrictNative) |
-| `src/mcp/machine_codes.rs` | ~350 | ~125 machine-readable response code constants |
+| `src/mcp/machine_codes.rs` | ~600 | ~145 machine-readable response code constants |
 | `src/mcp/registry/types.rs` | ~100 | ToolDefinition, ToolSpec, enums |
 | `src/mcp/registry/all_tools.rs` | ~60 | ALL_TOOLS aggregation, PROFILE_NAMES |
 | `src/mcp/registry/listing.rs` | ~530 | Filtering, audience, schema compaction, suggestions |

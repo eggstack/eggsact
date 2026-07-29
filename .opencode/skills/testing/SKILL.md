@@ -35,10 +35,10 @@ tests/
     test_units.rs            # unit conversion tests
     test_bug_regression.rs   # regression tests for bugs
   mcp/
-    mod.rs                   # re-exports 27 modules
+    mod.rs                   # re-exports 28 modules
     test_protocol.rs         # JSON-RPC protocol tests
     test_mcp_tools.rs        # tool behavior tests
-    test_edge_cases.rs       # edge case coverage (168 tests)
+    test_edge_cases.rs       # edge case coverage (218 tests)
     test_response_structure.rs
     test_golden_fixtures.rs
     test_determinism_concurrency.rs
@@ -62,6 +62,7 @@ tests/
     test_preflight_wrappers.rs
     test_runtime_helpers.rs
     test_analysis_tools.rs
+    test_execution_safety.rs
     test_schema_boundaries.rs
   parity/
     mod.rs                   # ParityTestResult, run_python_request, run_rust_tool helpers
@@ -135,7 +136,7 @@ Existing truncation tests live in `src/mcp/response.rs` (`truncate_*` tests) and
 
 ## Edge Case Test Coverage
 
-`tests/mcp/test_edge_cases.rs` (168 tests) covers:
+`tests/mcp/test_edge_cases.rs` (218 tests) covers:
 - Math: division by zero, overflow, nested parens, factorial big-int, polar, rect
 - Units: NaN/Inf rejection, temperature extremes, cross-category
 - Text: NFC/NFD/NFKC normalization, casefold, trim, emoji, combining chars

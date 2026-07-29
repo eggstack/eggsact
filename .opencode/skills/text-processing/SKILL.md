@@ -41,7 +41,7 @@ Plus `confusables_generated.rs` — auto-generated data file (never edit directl
 - Error types use snake_case strings: `"input_too_large"`, `"invalid_arguments"`, etc.
 - Re-export key functions from `src/text/mod.rs`
 - Unit tests go in `#[cfg(test)]` modules at the bottom of each file
-- Integration tests go in `tests/text/test_<module>.rs`
+- Integration tests go in `tests/text/test_<module>.rs` (not all modules have a dedicated test file; `regex_engine` is tested via property tests in `tests/property/test_regex_properties.rs`)
 
 ## Adding a New Text Module
 

@@ -67,13 +67,13 @@ eggsact --diagnostics --format json  # JSON output
 #### Text output example
 
 ```
-eggsact diagnostics (v0.3.0)
+eggsact diagnostics (v1.2.1)
 
 Tools: 80 total
 
 Profiles:
-  codegg_core: 42 tools
-  codegg_core_min: 25 tools
+  codegg_core: 19 tools
+  codegg_core_min: 6 tools
   full: 80 tools
   ...
 
@@ -117,19 +117,19 @@ tool-cards.md exists:            yes
 
 ```json
 {
-  "version": "0.3.0",
+  "version": "1.2.1",
   "tool_count": 80,
   "profiles": {
     "full": 80,
-    "default": 25,
-    "codegg_core_min": 25,
-    "codegg_core": 42,
-    "codegg_preflight": 28,
-    "codegg_patch": 31,
-    "codegg_config": 30,
-    "codegg_unicode_security": 28,
-    "codegg_shell": 29,
-    "codegg_repo_audit": 34
+    "default": 50,
+    "codegg_core_min": 6,
+    "codegg_core": 19,
+    "codegg_preflight": 13,
+    "codegg_patch": 12,
+    "codegg_config": 14,
+    "codegg_unicode_security": 8,
+    "codegg_shell": 6,
+    "codegg_repo_audit": 18
   },
   "generated_doc_command": "cargo run --bin generate-docs",
   "verification_command": "cargo run --bin verify-eggsact",
