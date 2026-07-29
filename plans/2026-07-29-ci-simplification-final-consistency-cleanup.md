@@ -2,10 +2,16 @@
 
 ## Status
 
-- **Status:** ready for implementation
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Plan baseline:** `3077d210c3ef4bcf2aecd181aa96599c33dbe90a`
+- **Plan commit:** ef8d905ace2e5e9a1e98508327b94d0c61102b74
+- **Implementation commit:** 4f6780fd0b4768307d10de18ee9d6c6c47a86d89
+- **Ordinary CI run:** 30418424791 — success
+- **Maintenance run:** 30418110835 — success
+- **Parity run:** 30418110943 — success
+- **Repository settings:** branch protection not enabled; no rulesets; no stale required contexts
 - **Parent implementation plan:** `plans/2026-07-28-ci-verification-release-simplification.md`
 - **Parent closure plan:** `plans/2026-07-28-ci-simplification-closure-pass.md`
 - **Scope:** documentation-only reconciliation of already-completed CI simplification work
@@ -475,47 +481,47 @@ Do not produce another status-only follow-up commit after this one.
 
 ## Evidence consistency
 
-- [ ] Ordinary CI run `30418424791` was directly reconfirmed.
-- [ ] Its three rendered jobs and conclusions were directly reconfirmed.
-- [ ] Maintenance run `30418110835` was directly reconfirmed.
-- [ ] Parity run `30418110943` was directly reconfirmed.
-- [ ] No new workflow run was created solely for documentation evidence.
+- [x] Ordinary CI run `30418424791` was directly reconfirmed.
+- [x] Its three rendered jobs and conclusions were directly reconfirmed.
+- [x] Maintenance run `30418110835` was directly reconfirmed.
+- [x] Parity run `30418110943` was directly reconfirmed.
+- [x] No new workflow run was created solely for documentation evidence.
 
 ## Repository settings
 
-- [ ] Classic branch protection for `main` was directly inspected.
-- [ ] Repository rulesets were directly inspected.
-- [ ] No stale legacy required-check context remains.
-- [ ] The written repository-settings disposition exactly matches the observed configuration.
+- [x] Classic branch protection for `main` was directly inspected.
+- [x] Repository rulesets were directly inspected.
+- [x] No stale legacy required-check context remains.
+- [x] The written repository-settings disposition exactly matches the observed configuration.
 
 ## Closure plan
 
-- [ ] The authoritative ordinary CI run is `30418424791`.
-- [ ] All evidence-backed checklist items are checked.
-- [ ] No unsupported checklist item is checked.
-- [ ] Operational closure SHA `a376e7c` remains semantically distinct from the final cleanup commit.
+- [x] The authoritative ordinary CI run is `30418424791`.
+- [x] All evidence-backed checklist items are checked.
+- [x] No unsupported checklist item is checked.
+- [x] Operational closure SHA `a376e7c` remains semantically distinct from the final cleanup commit.
 
 ## Parent plan
 
-- [ ] Stale run `30406093095` was replaced with `30418424791`.
-- [ ] The completion record matches the closure plan.
-- [ ] All evidence-backed final checklist items are checked.
-- [ ] No duplicate completion record was added.
+- [x] Stale run `30406093095` was replaced with `30418424791`.
+- [x] The completion record matches the closure plan.
+- [x] All evidence-backed final checklist items are checked.
+- [x] No duplicate completion record was added.
 
 ## Scope control
 
-- [ ] No CI workflow was redesigned.
-- [ ] No product code or test changed.
-- [ ] No publication or tag action occurred.
-- [ ] No artifact, checksum ledger, or evidence bundle was introduced.
-- [ ] The cleanup landed in one narrow commit unless an actual repository-setting correction required otherwise.
+- [x] No CI workflow was redesigned.
+- [x] No product code or test changed.
+- [x] No publication or tag action occurred.
+- [x] No artifact, checksum ledger, or evidence bundle was introduced.
+- [x] The cleanup landed in one narrow commit unless an actual repository-setting correction required otherwise.
 
 ## Final closure
 
-- [ ] Both plans are internally consistent and remain accurately marked complete.
-- [ ] The final diff passes `git diff --check` / `git show --check`.
-- [ ] The final commit is pushed to `origin/main`.
-- [ ] No further CI-simplification closure pass is required.
+- [x] Both plans are internally consistent and remain accurately marked complete.
+- [x] The final diff passes `git diff --check` / `git show --check`.
+- [x] The final commit is pushed to `origin/main`.
+- [x] No further CI-simplification closure pass is required.
 
 ---
 

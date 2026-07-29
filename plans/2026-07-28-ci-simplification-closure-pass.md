@@ -4,7 +4,8 @@
 
 - **Status:** complete
 - **Closure SHA:** a376e7c
-- **Final consistency cleanup:** ef8d905 — synchronized plan records and completed evidence-backed checklists
+- **Final consistency plan:** ef8d905
+- **Final consistency implementation:** 4f6780f — synchronized plan records and completed evidence-backed checklists
 - **Ordinary CI run:** [30418424791](https://github.com/eggstack/eggsact/actions/runs/30418424791) — success
 - **Maintenance workflow dispatch:** [30418110835](https://github.com/eggstack/eggsact/actions/runs/30418110835) — success (MSRV + cargo-deny)
 - **Parity workflow dispatch:** [30418110943](https://github.com/eggstack/eggsact/actions/runs/30418110943) — success

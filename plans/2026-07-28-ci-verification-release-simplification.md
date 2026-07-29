@@ -3,7 +3,8 @@
 ## Status
 
 - **Status:** complete
-- **Final consistency cleanup:** ef8d905 — synchronized plan records and completed evidence-backed checklists
+- **Final consistency plan:** ef8d905
+- **Final consistency implementation:** 4f6780f — synchronized plan records and completed evidence-backed checklists
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Plan baseline:** `4b0bed63930e99b352d17c482b5e59dab366d7c5`
