@@ -33,23 +33,23 @@ eggsact is a deterministic MCP (Model Context Protocol) server and in-process ut
 │  units.rs            │ │  response.rs       │ │  ToolAudience      │
 │  context.rs          │ │  runtime.rs        │ │  ExecutionContext   │
 │                      │ │  budget.rs         │ │  ToolCallError     │
-│  NL → tokens → AST   │ │  schema_valid.     │ │  ToolView          │
-│  → evaluation        │ │  compat.rs         │ │                    │
-│                      │ │  machine_codes.rs  │ │  call_json()       │
-│  100+ math functions │ │  registry/         │ │  call_json_        │
-│  30+ unit categories │ │  specs/            │ │    with_budget()   │
-│  50+ constants       │ │  schemas/          │ │  call_json_        │
-└─────────┬───────────┘ └────────┬──────────┘ │    with_execution_  │
-          │                      │             │    context()        │
-          │                      │             └─────────┬──────────┘
-          │                      │                       │
-          ▼                      ▼                       ▼
+│  NL → tokens → AST   │ │  execution.rs      │ │                    │
+│  → evaluation        │ │  sync_pool.rs      │ │  call_json()       │
+│                      │ │  schema_valid.     │ │  call_json_        │
+│  100+ math functions │ │  compat.rs         │ │    with_budget()   │
+│  30+ unit categories │ │  machine_codes.rs  │ │  call_json_        │
+│  50+ constants       │ │  registry/         │ │    with_execution_  │
+│                      │ │  specs/            │ │    context()        │
+└─────────┬───────────┘ │  schemas/          └─────────┬──────────┘
+          │             └────────┬──────────┘           │
+          │                      │                      │
+          ▼                      ▼                      ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     tools/ — Tool Implementations                │
 │                                                                   │
 │  80 tools across 20 categories:                                   │
 │  math(4) text(18) json(6) regex(3) validation(4) path(6)        │
-│  shell(4) list(3) markdown(2) patch(5) config(3) toml(1)        │
+│  shell(4) list(3) markdown(2) patch(5) config(4) toml(1)        │
 │  identifier(3) unicode(2) version(2) cargo(1) dependency(1)     │
 │  repo(5) diagnostics(3) analysis(4)                              │
 │                                                                   │
@@ -80,7 +80,9 @@ Each major component has a dedicated architecture doc. The table below serves as
 | Component | Doc | What It Covers | Key Files |
 |-----------|-----|----------------|-----------|
 | **Calculator Core** | [calculator.md](calculator.md) | NL normalization pipeline (30-step), AST evaluator (recursive descent, 8 precedence levels), 150+ unit definitions, 50+ physical/math constants, EvalContext for mutable per-call state, big-integer factorial/perm/comb, sentinel-based return protocol | `src/calc/{normalize,evaluator,units,context}.rs` |
-| **MCP Server** | [mcp-server.md](mcp-server.md) | JSON-RPC 2.0 over stdio, tokio concurrent dispatch via JoinSet, tool registration via ToolSpec (single source of truth), profile/audience filtering, schema validation (JSON Schema subset), rate limiting, cancellation model, python-compatible JSON serialization | `src/mcp/{server,protocol,response,runtime,budget,schema_validation,compat,machine_codes}.rs`, `src/mcp/registry/`, `src/mcp/specs/`, `src/mcp/schemas/` |
+| **MCP Server** | [mcp-server.md](mcp-server.md) | JSON-RPC 2.0 over stdio, tokio concurrent dispatch via JoinSet, protocol negotiation, request lifecycle, schema validation (JSON Schema subset), rate limiting, cancellation model, python-compatible JSON serialization | `src/mcp/{server,protocol,response,compat,machine_codes}.rs` |
+| **Registry & Profiles** | [registry-profiles.md](registry-profiles.md) | `ToolSpec` single source of truth, `ALL_TOOLS_VEC` aggregation, 11 named profiles, `ToolAudience` (Model/Harness/Debug), `ToolExposure` levels, route-critical tools, schema compaction, Levenshtein suggestions | `src/mcp/registry/{types,all_tools,listing}.rs`, `src/mcp/specs/` |
+| **Budget & Concurrency** | [budget-concurrency.md](budget-concurrency.md) | `ToolBudget` (3 tiers), `BudgetContext` with cooperative cancellation, `SyncExecutionPool` (8 workers, 32-slot queue), `HandlerPhase` state machine, runtime metrics, timeout lifecycle, thread-local bridges | `src/mcp/{budget,execution,sync_pool,runtime}.rs` |
 | **Machine Codes** | [machine-codes.md](machine-codes.md) | ~125 machine-readable response code constants (UPPER_SNAKE_CASE), severity/disposition/verdict constants, `finding()` helper functions for constructing structured findings, route-critical tool contract | `src/mcp/machine_codes.rs` |
 | **Text Library** | [text-library.md](text-library.md) | 25 text processing modules: primitives (grapheme-aware), diff/similarity (Levenshtein, LCS), validation (JSON/brackets/regex/TOML), transforms (case/normalize/escape), shell tokenizer, regex engine auto-selection (rust-regex vs fancy-regex), Unicode policy engine, confusables detection, prompt injection detection, composite tool orchestration | `src/text/*.rs` (25 files) |
 | **Compatibility** | [compatibility.md](compatibility.md) | `EggcalcPython` vs `StrictNative` validation modes — Python-parity error messages vs strict JSON Schema enforcement, how compat mode propagates through MCP server and agent API | `src/mcp/compat.rs` |
@@ -89,6 +91,8 @@ Each major component has a dedicated architecture doc. The table below serves as
 | **Tool Implementations** | [tools.md](tools.md) | Per-category tool handler details, composite tool orchestration pattern (edit/command/config preflight), route-critical tools, command policy engine, dependency ecosystem detection, repo analysis, source analysis | `src/tools/*.rs` (20 files) |
 | **Testing** | [testing.md](testing.md) | Test structure (70+ files across 4 suites), parity test framework (Python/Rust comparison), CI pipeline, how to add tests, fixture-backed route contract tests | `tests/` |
 | **CLI & Binaries** | [cli-binaries.md](cli-binaries.md) | `main.rs` CLI modes, `generate-docs` binary (README/profile/tool-cards generation), `verify-eggsact` binary (9-step verification pipeline), `--diagnostics` flag | `src/main.rs`, `src/bin/{generate_docs,verify_eggsact}.rs` |
+| **Generated Assets** | [generated-assets.md](generated-assets.md) | Doc generation pipeline, confusables data, diagnostics, verification, profile tool cards | `src/bin/generate_docs.rs`, `scripts/generate_confusables.py` |
+| **Coding-Agent Integration** | [coding-agent-integration.md](coding-agent-integration.md) | MCP stdio vs in-process transport, profile selection, audience selection, concurrency, budget tuning, integration examples | `src/agent/`, `src/mcp/server.rs` |
 
 ---
 
@@ -228,7 +232,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | **list** | 3 | Compare (ordered/set/multiset), dedupe, sort | [tools.md](tools.md) |
 | **markdown** | 2 | Structure parse, code fence extract | [tools.md](tools.md) |
 | **patch** | 5 | Apply check, summary, edit preflight (composite, route-critical), diff risk, contract check | [tools.md](tools.md) |
-| **config** | 3 | dotenv validate, INI validate, config preflight (composite, route-critical) | [tools.md](tools.md) |
+| **config** | 4 | dotenv validate, INI validate, config preflight (composite, route-critical) | [tools.md](tools.md) |
 | **toml** | 1 | TOML structure analysis | [tools.md](tools.md) |
 | **identifier** | 3 | Analyze, inspect, table inspect (collision detection) | [tools.md](tools.md) |
 | **unicode** | 2 | Policy check, canonicalize | [text-library.md](text-library.md) |
@@ -243,11 +247,11 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 
 ## Profile System
 
-11 named profiles control which tools are exposed:
+11 named profiles control which tools are exposed. See [registry-profiles.md](registry-profiles.md) for the full reference.
 
 | Profile | Purpose | Tool Count |
 |---------|---------|------------|
-| `full` | All non-hidden tools | 80 |
+| `full` | All non-hidden tools | ~80 |
 | `default` | Essential + common tools | ~50 |
 | `codegg_core_min` | Minimal coder-agent set | ~20 |
 | `codegg_core` | Standard coder-agent set | ~35 |
@@ -276,24 +280,26 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | `src/calc/evaluator.rs` | ~3700 | AST-based expression evaluator (100+ functions) |
 | `src/calc/units.rs` | ~2350 | Unit definitions (150+), aliases (500+), conversions |
 | `src/calc/context.rs` | 77 | EvalContext (mutable per-call state) |
-| `src/mcp/server.rs` | — | Protocol orchestration, stdio loop, concurrent dispatch |
-| `src/mcp/protocol.rs` | — | JSON-RPC types |
+| `src/mcp/server.rs` | ~1100 | Protocol orchestration, stdio loop, concurrent dispatch |
+| `src/mcp/protocol.rs` | ~350 | JSON-RPC types |
 | `src/mcp/response.rs` | — | ToolResponse, python_json_dumps, finding helpers, truncation |
-| `src/mcp/runtime.rs` | — | Rate limiter, constants, profile/audience management |
-| `src/mcp/budget.rs` | — | ToolBudget (3 tiers), BudgetContext, composite sub-budgets |
+| `src/mcp/runtime.rs` | ~770 | Rate limiter, constants, profile/audience management, metrics |
+| `src/mcp/budget.rs` | ~950 | ToolBudget (3 tiers), BudgetContext, thread-local bridges |
+| `src/mcp/execution.rs` | ~2100 | HandlerPhase state machine, execute_tool_handler, test hooks |
+| `src/mcp/sync_pool.rs` | ~1140 | SyncExecutionPool (bounded worker pool) |
 | `src/mcp/schema_validation.rs` | — | Argument validation against tool schemas |
-| `src/mcp/compat.rs` | — | CompatibilityMode (EggcalcPython vs StrictNative) |
-| `src/mcp/machine_codes.rs` | — | ~125 machine-readable response code constants |
-| `src/mcp/registry/types.rs` | — | ToolDefinition, ToolSpec, enums |
-| `src/mcp/registry/all_tools.rs` | — | ALL_TOOLS aggregation, PROFILE_NAMES |
-| `src/mcp/registry/listing.rs` | — | Filtering, audience, schema compaction, suggestions |
+| `src/mcp/compat.rs` | ~300 | CompatibilityMode (EggcalcPython vs StrictNative) |
+| `src/mcp/machine_codes.rs` | ~350 | ~125 machine-readable response code constants |
+| `src/mcp/registry/types.rs` | ~100 | ToolDefinition, ToolSpec, enums |
+| `src/mcp/registry/all_tools.rs` | ~60 | ALL_TOOLS aggregation, PROFILE_NAMES |
+| `src/mcp/registry/listing.rs` | ~530 | Filtering, audience, schema compaction, suggestions |
 | `src/mcp/specs/*.rs` | — | ToolSpec declarations (20 files, one per category) |
 | `src/mcp/schemas/*.rs` | — | JSON-schema builders (20 files, one per category) |
-| `src/tools/helpers.rs` | 1778 | Shared constants, utilities |
+| `src/tools/helpers.rs` | ~1430 | Shared constants, utilities |
 | `src/tools/*.rs` | — | Tool implementations (19 files) |
 | `src/text/*.rs` | — | Text processing library (25 files) |
 | `src/agent/mod.rs` | ~1400 | ToolRegistry, Profile, ExecutionContext |
-| `src/preflight/mod.rs` | ~3000 | Typed preflight wrappers |
+| `src/preflight/mod.rs` | ~2400 | Typed preflight wrappers |
 
 ### Tests
 
@@ -303,6 +309,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | `tests/mcp/` | 28 | MCP protocol, tool tests, route contracts, concurrency, hardening |
 | `tests/text/` | 25 | Text processing module tests (one per module + regression) |
 | `tests/parity/` | 12 | Python/Rust parity tests (requires `eggcalc` at `../eggcalc`) |
+| `tests/property/` | 9 | Property-based tests (round-trip, idempotence, determinism, symmetry) |
 | `tests/test_context_isolation.rs` | 1 | Context isolation integration test |
 
 ### Generated & Config
@@ -340,7 +347,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | `MAX_PATTERN_LENGTH` | 1,000 | `src/tools/helpers.rs` |
 | `MAX_METADATA_FIELD_LENGTH` | 1,000 | `src/tools/helpers.rs` |
 | `MAX_FACTORIAL` | 1,000 | `src/calc/evaluator.rs` |
-| `MCP_PROTOCOL_VERSION` | `"2024-11-05"` | `src/mcp/runtime.rs` |
+| `MCP_PROTOCOL_VERSION` | `"2025-11-25"` | `src/mcp/runtime.rs` |
 | `MCP_SERVER_NAME` | `"eggsact"` | `src/mcp/runtime.rs` |
 
 ---
@@ -352,7 +359,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | `EGGCALC_NO_CONFIG` | Disables config file loading (set in main.rs) |
 | `EGGCALC_MCP_PROFILE` | Active profile for MCP server (set at startup) |
 | `EGGCALC_MCP_AUDIENCE` | Active audience for MCP server (`Model`/`Harness`/`Debug`) |
-| `EGGCALC_MCP_SCHEMA_DETAIL` | Schema compaction control (`compact`, `normal`, `full`; default: `full`). Invalid values warn to stderr and default to `full` |
+| `EGGCALC_MCP_SCHEMA_DETAIL` | Schema compaction control (`compact`, `normal`, `full`; default: `full`) |
 
 ---
 
@@ -388,4 +395,5 @@ cargo run --bin generate-docs -- --check  # verify docs are current
 | Parity status | `docs/parity.md` |
 | Compatibility policy | `docs/compatibility-policy.md` |
 | Release process | `docs/release.md` |
+| Fuzzing | `docs/fuzzing.md` |
 | Agent skills | `.opencode/skills/*/SKILL.md` |
