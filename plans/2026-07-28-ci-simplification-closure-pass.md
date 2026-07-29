@@ -4,6 +4,7 @@
 
 - **Status:** complete
 - **Closure SHA:** a376e7c
+- **Final consistency cleanup:** ef8d905 — synchronized plan records and completed evidence-backed checklists
 - **Ordinary CI run:** [30418424791](https://github.com/eggstack/eggsact/actions/runs/30418424791) — success
 - **Maintenance workflow dispatch:** [30418110835](https://github.com/eggstack/eggsact/actions/runs/30418110835) — success (MSRV + cargo-deny)
 - **Parity workflow dispatch:** [30418110943](https://github.com/eggstack/eggsact/actions/runs/30418110943) — success
@@ -554,54 +555,54 @@ This is enough. Do not add checksums, artifact identities, archive digests, comp
 
 ## Ordinary CI
 
-- [ ] Current `main` and all post-`5774529` workflow changes were inspected.
-- [ ] `.github/workflows/ci.yml` contains one Linux job and one two-entry platform matrix.
-- [ ] Linux runs fmt, generated-doc check, Clippy, normal tests, doctests, and package construction.
-- [ ] Windows and macOS run compile checks only.
-- [ ] One real reduced-CI run completed successfully.
-- [ ] The run emitted exactly the intended three rendered checks.
-- [ ] No legacy ordinary CI job ran.
+- [x] Current `main` and all post-`5774529` workflow changes were inspected.
+- [x] `.github/workflows/ci.yml` contains one Linux job and one two-entry platform matrix.
+- [x] Linux runs fmt, generated-doc check, Clippy, normal tests, doctests, and package construction.
+- [x] Windows and macOS run compile checks only.
+- [x] One real reduced-CI run completed successfully.
+- [x] The run emitted exactly the intended three rendered checks.
+- [x] No legacy ordinary CI job ran.
 
 ## Maintenance and deep verification
 
-- [ ] MSRV and cargo-deny are not ordinary merge gates.
-- [ ] Latest-compatible and parity are scheduled/manual drift checks.
-- [ ] Extended fuzz/sanitizer work is manual or deliberately low-frequency and non-blocking.
-- [ ] PR fuzz smoke remains deleted.
-- [ ] Routine provenance and parity artifacts remain removed.
+- [x] MSRV and cargo-deny are not ordinary merge gates.
+- [x] Latest-compatible and parity are scheduled/manual drift checks.
+- [x] Extended fuzz/sanitizer work is manual or deliberately low-frequency and non-blocking.
+- [x] PR fuzz smoke remains deleted.
+- [x] Routine provenance and parity artifacts remain removed.
 
 ## Release ownership
 
-- [ ] No workflow publishes to crates.io.
-- [ ] No workflow creates tags or GitHub Releases.
-- [ ] No workflow determines release cadence.
-- [ ] `scripts/release-check.sh` was exercised in non-publishing mode.
-- [ ] Manual release documentation is current and concise.
+- [x] No workflow publishes to crates.io.
+- [x] No workflow creates tags or GitHub Releases.
+- [x] No workflow determines release cadence.
+- [x] `scripts/release-check.sh` was exercised in non-publishing mode.
+- [x] Manual release documentation is current and concise.
 
 ## Repository settings
 
-- [ ] Classic branch protection was inspected.
-- [ ] Repository rulesets were inspected.
-- [ ] Deleted job names are not required.
-- [ ] Current required checks, if enabled, exactly match emitted check names.
-- [ ] A PR is not blocked by nonexistent status contexts.
+- [x] Classic branch protection was inspected.
+- [x] Repository rulesets were inspected.
+- [x] Deleted job names are not required.
+- [x] Current required checks, if enabled, exactly match emitted check names.
+- [x] A PR is not blocked by nonexistent status contexts.
 
 ## Documentation
 
-- [ ] Current documentation distinguishes logical jobs from rendered matrix checks.
-- [ ] Badges reference existing workflows.
-- [ ] Normative docs do not reference the removed release-verification model.
-- [ ] Historical release evidence is clearly non-normative.
-- [ ] No new evidence ledger or artifact manifest was created.
+- [x] Current documentation distinguishes logical jobs from rendered matrix checks.
+- [x] Badges reference existing workflows.
+- [x] Normative docs do not reference the removed release-verification model.
+- [x] Historical release evidence is clearly non-normative.
+- [x] No new evidence ledger or artifact manifest was created.
 
 ## Closure
 
-- [ ] Parent plan marked complete.
-- [ ] Closure plan marked complete.
-- [ ] One successful ordinary CI run recorded.
-- [ ] Required-check disposition recorded.
-- [ ] Local release-check disposition recorded.
-- [ ] No additional closure pass is needed.
+- [x] Parent plan marked complete.
+- [x] Closure plan marked complete.
+- [x] One successful ordinary CI run recorded.
+- [x] Required-check disposition recorded.
+- [x] Local release-check disposition recorded.
+- [x] No additional closure pass is needed.
 
 ---
 

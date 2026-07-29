@@ -3,6 +3,7 @@
 ## Status
 
 - **Status:** complete
+- **Final consistency cleanup:** ef8d905 — synchronized plan records and completed evidence-backed checklists
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Plan baseline:** `4b0bed63930e99b352d17c482b5e59dab366d7c5`
@@ -896,47 +897,47 @@ Land the new workflow first so its contexts exist. Then ask a maintainer to repl
 
 ## Ordinary CI
 
-- [ ] One Linux correctness job owns formatting, generated docs, Clippy, normal tests, and packaging.
-- [ ] One Windows/macOS matrix owns supported-platform compilation.
-- [ ] Ordinary CI has no MSRV job.
-- [ ] Ordinary CI has no cargo-deny job.
-- [ ] Ordinary CI has no release-provenance or artifact upload.
-- [ ] Ordinary CI passes from a clean checkout.
+- [x] One Linux correctness job owns formatting, generated docs, Clippy, normal tests, and packaging.
+- [x] One Windows/macOS matrix owns supported-platform compilation.
+- [x] Ordinary CI has no MSRV job.
+- [x] Ordinary CI has no cargo-deny job.
+- [x] Ordinary CI has no release-provenance or artifact upload.
+- [x] Ordinary CI passes from a clean checkout.
 
 ## Scheduled/manual verification
 
-- [ ] MSRV remains available weekly/manually.
-- [ ] cargo-deny remains available weekly/manually.
-- [ ] Python parity remains available weekly/manually.
-- [ ] Latest-compatible remains available weekly/manually.
-- [ ] Fuzz/sanitizer workflows are manual or low-frequency scheduled only.
-- [ ] Passing scheduled/manual workflows do not require evidence commits.
+- [x] MSRV remains available weekly/manually.
+- [x] cargo-deny remains available weekly/manually.
+- [x] Python parity remains available weekly/manually.
+- [x] Latest-compatible remains available weekly/manually.
+- [x] Fuzz/sanitizer workflows are manual or low-frequency scheduled only.
+- [x] Passing scheduled/manual workflows do not require evidence commits.
 
 ## Release apparatus
 
-- [ ] `.github/workflows/release-verification.yml` is deleted.
-- [ ] No workflow publishes to crates.io.
-- [ ] No workflow creates or pushes tags.
-- [ ] `scripts/release-check.sh` exists and cannot publish.
-- [ ] `docs/release.md` declares manual maintainer publication and cadence.
-- [ ] Immutable crates.io version handling is documented.
+- [x] `.github/workflows/release-verification.yml` is deleted.
+- [x] No workflow publishes to crates.io.
+- [x] No workflow creates or pushes tags.
+- [x] `scripts/release-check.sh` exists and cannot publish.
+- [x] `docs/release.md` declares manual maintainer publication and cadence.
+- [x] Immutable crates.io version handling is documented.
 
 ## Documentation and repository configuration
 
-- [ ] `docs/verification.md` defines the four-tier doctrine.
-- [ ] Historical evidence documents are marked non-normative or archived.
-- [ ] Current docs do not require run-ID/artifact-digest bookkeeping.
-- [ ] Badges reference active workflows.
-- [ ] Branch protection requires only existing ordinary CI contexts.
+- [x] `docs/verification.md` defines the four-tier doctrine.
+- [x] Historical evidence documents are marked non-normative or archived.
+- [x] Current docs do not require run-ID/artifact-digest bookkeeping.
+- [x] Badges reference active workflows.
+- [x] Branch protection requires only existing ordinary CI contexts.
 
 ## Closure
 
-- [ ] The implementation commit is identified.
-- [ ] Reduced CI passes on Linux, Windows, and macOS.
-- [ ] Simplified maintenance/parity workflows dispatch successfully.
-- [ ] No crate version was published during implementation.
-- [ ] No release tag was created during implementation.
-- [ ] This plan is updated once with a concise completion record and no evidence-only follow-up cycle.
+- [x] The implementation commit is identified.
+- [x] Reduced CI passes on Linux, Windows, and macOS.
+- [x] Simplified maintenance/parity workflows dispatch successfully.
+- [x] No crate version was published during implementation.
+- [x] No release tag was created during implementation.
+- [x] This plan is updated once with a concise completion record and no evidence-only follow-up cycle.
 
 ---
 
@@ -947,7 +948,7 @@ When implementation is complete, append only this concise record:
 ```text
 Implementation commit: 5774529119b03e3bfff4406810c7ca6c66f84c9c
 Closure commit: a376e7c
-Ordinary CI run: 30406093095 (https://github.com/eggstack/eggsact/actions/runs/30406093095)
+Ordinary CI run: 30418424791 (https://github.com/eggstack/eggsact/actions/runs/30418424791)
 Linux correctness: pass
 Windows compile: pass
 macOS compile: pass
