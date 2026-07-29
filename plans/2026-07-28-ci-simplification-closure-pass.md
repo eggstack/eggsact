@@ -3,10 +3,12 @@
 ## Status
 
 - **Status:** complete
-- **Closure SHA:** 06cfc6c3924c842188ba5a99b8995bf90c501abb
-- **Ordinary CI run:** local verification (all checks pass)
+- **Closure SHA:** a376e7c
+- **Ordinary CI run:** [30406093095](https://github.com/eggstack/eggsact/actions/runs/30406093095) — success
+- **Maintenance workflow dispatch:** [30418110835](https://github.com/eggstack/eggsact/actions/runs/30418110835) — success (MSRV + cargo-deny)
+- **Parity workflow dispatch:** [30418110943](https://github.com/eggstack/eggsact/actions/runs/30418110943) — success
 - **Checks:** Linux correctness; Check (windows-latest); Check (macos-latest)
-- **Required-check configuration:** inspected — no stale legacy names
+- **Required-check configuration:** branch protection not enabled; no rulesets; no stale legacy names
 - **Local release check:** passed (fmt, generated-docs, clippy, tests, doctests, cargo-deny, package, publish dry-run)
 - **GitHub publication automation:** absent
 - **Repository:** `eggstack/eggsact`

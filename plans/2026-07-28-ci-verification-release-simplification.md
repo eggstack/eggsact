@@ -945,14 +945,16 @@ Land the new workflow first so its contexts exist. Then ask a maintainer to repl
 When implementation is complete, append only this concise record:
 
 ```text
-Implementation commit: <SHA>
-Ordinary CI run: <URL or run ID>
+Implementation commit: 5774529119b03e3bfff4406810c7ca6c66f84c9c
+Closure commit: a376e7c
+Ordinary CI run: 30406093095 (https://github.com/eggstack/eggsact/actions/runs/30406093095)
 Linux correctness: pass
 Windows compile: pass
 macOS compile: pass
-Maintenance workflow dispatch: pass
-Python parity dispatch: pass
+Maintenance workflow dispatch: pass (30418110835 — MSRV + cargo-deny)
+Python parity dispatch: pass (30418110943)
 Release workflow present: no
+Branch protection: not enabled; no rulesets
 Publication performed: no
 Tag created: no
 Result: complete
