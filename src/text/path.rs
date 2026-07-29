@@ -50,8 +50,13 @@ fn _detect_windows_path(path: &str) -> bool {
     if path.len() < 2 {
         return false;
     }
-    if path.chars().nth(1) == Some(':') {
-        return true;
+    if let Some(first) = path.chars().next() {
+        if first.is_ascii_alphabetic() {
+            let second_byte = first.len_utf8();
+            if second_byte < path.len() && path.as_bytes()[second_byte] == b':' {
+                return true;
+            }
+        }
     }
     if path.starts_with("\\\\") {
         return true;
@@ -85,16 +90,19 @@ fn _split_windows_components(path: &str) -> (Vec<&str>, Option<String>) {
         return (vec![], None);
     }
 
-    if path.chars().count() >= 2 {
-        let chars: Vec<char> = path.chars().collect();
-        if chars[1] == ':' {
-            let root = path[..2].to_string();
-            let rest = &path[2..];
-            if rest.is_empty() {
-                return (vec![], Some(root));
+    if let Some(first) = path.chars().next() {
+        if first.is_ascii_alphabetic() {
+            let second_byte = first.len_utf8();
+            if second_byte < path.len() && path.as_bytes()[second_byte] == b':' {
+                let root_end = second_byte + 1; // include the ':'
+                let root = path[..root_end].to_string();
+                let rest = &path[root_end..];
+                if rest.is_empty() {
+                    return (vec![], Some(root));
+                }
+                let parts: Vec<&str> = rest.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
+                return (parts, Some(root));
             }
-            let parts: Vec<&str> = rest.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
-            return (parts, Some(root));
         }
     }
 
@@ -395,14 +403,17 @@ pub fn path_normalize(
     } else if actual_platform == "windows" {
         if is_unc_track {
             normalized = format!("\\\\{}", normalized);
-        } else if path.len() >= 2 && path.chars().nth(1) == Some(':') {
-            // The drive letter is already embedded as the first component; strip
-            // it from the joined string before prepending so we don't duplicate.
-            let drive = &path[..2];
-            let tail = normalized
-                .strip_prefix(drive)
-                .unwrap_or(normalized.as_str());
-            normalized = format!("{}{}", drive, tail);
+        } else if let Some(first) = path.chars().next() {
+            if first.is_ascii_alphabetic() {
+                let second_byte = first.len_utf8();
+                if second_byte < path.len() && path.as_bytes()[second_byte] == b':' {
+                    let drive = &path[..=second_byte];
+                    let tail = normalized
+                        .strip_prefix(drive)
+                        .unwrap_or(normalized.as_str());
+                    normalized = format!("{}{}", drive, tail);
+                }
+            }
         }
     }
 
@@ -417,7 +428,21 @@ pub fn path_normalize(
     let is_absolute = if actual_platform == "posix" {
         path.starts_with('/')
     } else {
-        (path.len() >= 2 && path.chars().nth(1) == Some(':')) || is_unc_track
+        // Windows absolute: drive letter + separator (C:\foo), or UNC (\\server\share)
+        let has_drive_root = if let Some(first) = path.chars().next() {
+            if first.is_ascii_alphabetic() {
+                let second_byte = first.len_utf8();
+                second_byte < path.len()
+                    && path.as_bytes()[second_byte] == b':'
+                    && second_byte + 1 < path.len()
+                    && matches!(path.as_bytes()[second_byte + 1], b'/' | b'\\')
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        has_drive_root || is_unc_track
     };
 
     if has_dot && !collapse_dot_segments {

@@ -577,8 +577,17 @@ fn test_context_audience_override() {
         serde_json::json!({"command": "echo hello"}),
         &ctx_harness,
     );
-    assert!(r1.is_ok());
-    assert!(r1.unwrap().ok);
+    match &r1 {
+        Ok(resp) => assert!(
+            resp.ok,
+            "shell_split returned ok=false under Harness context: {:?}",
+            resp
+        ),
+        Err(e) => panic!(
+            "shell_split failed under Harness context (may be pool contention): {:?}",
+            e
+        ),
+    }
 
     // Without context override, Model audience rejects shell_split
     let ctx_model = ExecutionContext::test_default();

@@ -573,7 +573,12 @@ pub fn path_batch_scope_check(args: &Value) -> ToolResponse {
             ));
         }
 
-        if !target.is_empty() && target.starts_with('/') {
+        let is_abs = if !target.is_empty() {
+            crate::text::path::path_normalize(target, platform, false, false).is_absolute
+        } else {
+            false
+        };
+        if is_abs {
             absolute_targets.push(target.to_string());
             if !allow_absolute {
                 findings.push(finding(

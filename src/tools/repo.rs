@@ -616,11 +616,34 @@ fn ini_key_values(text: &str) -> Vec<(String, String)> {
 /// Check if a URL value uses http:// where https:// is expected.
 fn is_insecure_url(val: &str) -> bool {
     let lower = val.to_lowercase();
-    lower.starts_with("http://")
-        && !lower.starts_with("http://localhost")
-        && !lower.starts_with("http://127.")
-        && !lower.starts_with("http://0.0.0.0")
-        && !lower.starts_with("http://[::1]")
+    if !lower.starts_with("http://") {
+        return false;
+    }
+    let after_scheme = &lower[7..]; // skip "http://"
+                                    // Extract host: up to first /, :, ?, or #
+    let host = after_scheme
+        .split(['/', ':', '?', '#'])
+        .next()
+        .unwrap_or("");
+
+    if host == "localhost" {
+        return false;
+    }
+    // IPv4 loopback: 127.x.y.z where x,y,z are valid decimal octets
+    if host.starts_with("127.") {
+        let parts: Vec<&str> = host.split('.').collect();
+        if parts.len() == 4 && parts[1..].iter().all(|s| s.parse::<u8>().is_ok()) {
+            return false;
+        }
+    }
+    if host == "0.0.0.0" {
+        return false;
+    }
+    if host == "[::1]" || host == "::1" {
+        return false;
+    }
+
+    true
 }
 
 /// Check if a value looks like a TLS verification disable.

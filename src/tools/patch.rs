@@ -1190,20 +1190,23 @@ pub fn patch_contract_check(args: &Value) -> ToolResponse {
 
         // Check scope escape
         if let Some(wr) = workspace_root {
-            if !path.starts_with(wr) && (path.starts_with("../") || path.contains("/../")) {
-                scope_escape_detected = true;
-                categories.push("scope_escape".to_string());
-                files_by_category
-                    .entry("scope_escape".to_string())
-                    .or_default()
-                    .push(path.to_string());
-                findings.push(finding(
-                    machine_codes::PATCH_SCOPE_ESCAPE,
-                    severity::HIGH,
-                    &format!("File path escapes workspace root: {}", path),
-                    Some(disposition::BLOCKING),
-                    None,
-                ));
+            if path != "/dev/null" {
+                let scope = crate::text::path_scope_check(wr, path, "posix", true);
+                if !scope.inside_root {
+                    scope_escape_detected = true;
+                    categories.push("scope_escape".to_string());
+                    files_by_category
+                        .entry("scope_escape".to_string())
+                        .or_default()
+                        .push(path.to_string());
+                    findings.push(finding(
+                        machine_codes::PATCH_SCOPE_ESCAPE,
+                        severity::HIGH,
+                        &format!("File path escapes workspace root: {}", path),
+                        Some(disposition::BLOCKING),
+                        None,
+                    ));
+                }
             }
         }
 
