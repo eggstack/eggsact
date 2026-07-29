@@ -140,9 +140,11 @@ Detailed architecture documentation is in `architecture/`:
 
 ### MCP Server & Tools
 
-- `architecture/mcp-server.md` — JSON-RPC 2.0, tokio dispatch, tool registration, profiles, schemas
-- `architecture/machine-codes.md` — ~100 response codes, finding helpers, severity/disposition/verdict
-- `architecture/tools.md` — 80 tools across 20 categories, handler conventions, budget integration
+- `architecture/mcp-server.md` — JSON-RPC 2.0, tokio dispatch, protocol negotiation, schemas
+- `architecture/registry-profiles.md` — ToolSpec single source of truth, ALL_TOOLS_VEC, 11 profiles, ToolAudience/exposure, route-critical tools
+- `architecture/budget-concurrency.md` — ToolBudget tiers, BudgetContext, cooperative cancellation, SyncExecutionPool, HandlerPhase state machine, runtime metrics
+- `architecture/machine-codes.md` — ~125 response codes, finding helpers, severity/disposition/verdict
+- `architecture/tools.md` — 80 tools across 20 categories, handler conventions, composite tools
 - `architecture/compatibility.md` — `EggcalcPython` vs `StrictNative` modes, behavior differences
 
 ### Agent Integration
