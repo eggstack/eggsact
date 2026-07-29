@@ -4,7 +4,7 @@
 
 - **Status:** complete
 - **Closure SHA:** a376e7c
-- **Ordinary CI run:** [30406093095](https://github.com/eggstack/eggsact/actions/runs/30406093095) — success
+- **Ordinary CI run:** [30418424791](https://github.com/eggstack/eggsact/actions/runs/30418424791) — success
 - **Maintenance workflow dispatch:** [30418110835](https://github.com/eggstack/eggsact/actions/runs/30418110835) — success (MSRV + cargo-deny)
 - **Parity workflow dispatch:** [30418110943](https://github.com/eggstack/eggsact/actions/runs/30418110943) — success
 - **Checks:** Linux correctness; Check (windows-latest); Check (macos-latest)
