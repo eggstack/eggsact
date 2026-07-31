@@ -48,6 +48,10 @@ The schema validator in `schema_validation.rs` implements a **strict subset** of
 
 `description`, `title`, `default`, `examples`, `$schema` — present in schemas for documentation/tooling but not validated at runtime.
 
+#### Deterministic Output
+
+Tool responses are semantically deterministic for identical inputs. Public JSON object fields use `BTreeMap` for stable key ordering. See [text-library.md](text-library.md#deterministic-output) for the full contract. MCP clients must still correlate concurrent responses by JSON-RPC ID.
+
 #### Explicitly unsupported keywords
 
 The following keywords must **never** appear in registered tool schemas:

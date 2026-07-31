@@ -14,6 +14,10 @@ pub fn tool_name(args: &Value) -> ToolResponse
 
 Handlers cannot receive an `ExecutionContext` directly. State isolation is applied at the orchestration layer (`call_json_with_execution_context` clones `EvalContext` into a thread-local). High-risk handlers create a `BudgetContext` internally for cooperative budget checks by calling `crate::mcp::budget::for_handler(ToolBudget::HEAVY)` at the top of the function.
 
+### Deterministic Output
+
+Public serialized map fields use `BTreeMap` for stable lexicographic key ordering. Internal lookup maps remain `HashMap`. See [text-library.md](text-library.md#deterministic-output) for the full contract. TOML tools report tables (excluding scalars) and character-based (not byte-based) column positions — see [text-library.md TOML](text-library.md#toml-tomlrs).
+
 ### File Listing
 
 | File | Category | Tool Count | Notes |

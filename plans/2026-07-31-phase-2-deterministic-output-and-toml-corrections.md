@@ -484,13 +484,14 @@ Run focused Python parity if TOML/JSON positional behavior is parity-covered. Do
 # Completion record
 
 - **Status:** complete
-- **Implementation commit:** pending commit
+- **Implementation commit:** 0a3ace9
 - **Public maps converted:** 13 fields across 7 structs (RegexMatch.groupdict, JsonShapeKey.keys, RegexFindIterMatch.group_dict, IdentifierAnalyzeResult.suggestions, DependencySection.dependencies/dev_dependencies/build_dependencies/target_specific, IniValidateResult.keys_by_section, TextHashResult.hashes, TextFingerprintResult.normalization, CommandPolicyConfig.allow_subcommands/deny_subcommands) + 3 local HashMaps (char_frequency, files_by_category x2)
 - **Internal maps intentionally retained:** bracket validation pairs, JSON comparison key sets, cargo.rs seen_keys, config.rs seen_keys/seen_sections, identifier.rs casefold/norm maps, transform.rs mode_names, shell.rs deny_subcommands lookup, list.rs count_deltas (already serde_json::Map/BTreeMap), patch.rs internal lookups
 - **TOML table contract:** only Item::Table and Item::ArrayOfTables included; scalar keys excluded; inline tables excluded; summary reports total table count
 - **TOML position contract:** byte_offset_to_line_col counts Unicode characters via char iteration; CRLF handled as single line ending via peekable iterator; bare CR resets line
 - **Focused tests:** 530 unit tests, 55 property tests, 8 new serialization determinism tests, 7 new TOML structure tests — all pass
 - **Full verification:** fmt ✓, clippy ✓, tests ✓ (skip parity), doc ✓, generate-docs --check ✓
+- **Documentation updated:** architecture/text-library.md (determinism contract, TOML contracts, 4 stale HashMap refs), architecture/preflight.md (4 stale HashMap refs), architecture/tools.md (determinism/TOML contract references), architecture/mcp-server.md (determinism contract reference), docs/library-api.md (1 stale HashMap ref)
 - **Deferred findings:** none
 
 Do not create a separate evidence-only plan. Record concise closure here.

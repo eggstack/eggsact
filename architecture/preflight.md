@@ -333,8 +333,8 @@ Structured overrides that refine or override the built-in policy. Deny beats all
 pub struct CommandPolicyConfig {
     pub allow_commands: Option<Vec<String>>,
     pub deny_commands: Option<Vec<String>>,
-    pub allow_subcommands: Option<HashMap<String, Vec<String>>>,
-    pub deny_subcommands: Option<HashMap<String, Vec<String>>>,
+    pub allow_subcommands: Option<BTreeMap<String, Vec<String>>>,
+    pub deny_subcommands: Option<BTreeMap<String, Vec<String>>>,
     pub allow_network: Option<bool>,
     pub allow_filesystem_write: Option<bool>,
     pub allow_process_control: Option<bool>,
@@ -347,8 +347,8 @@ pub struct CommandPolicyConfig {
 |-------|------|---------|-------------|
 | `allow_commands` | `Option<Vec<String>>` | none | Explicit allow list of program names |
 | `deny_commands` | `Option<Vec<String>>` | none | Explicit deny list (overrides allow) |
-| `allow_subcommands` | `Option<HashMap<String, Vec<String>>>` | none | Per-program allowed subcommands |
-| `deny_subcommands` | `Option<HashMap<String, Vec<String>>>` | none | Per-program denied subcommands (overrides allow) |
+| `allow_subcommands` | `Option<BTreeMap<String, Vec<String>>>` | none | Per-program allowed subcommands |
+| `deny_subcommands` | `Option<BTreeMap<String, Vec<String>>>` | none | Per-program denied subcommands (overrides allow) |
 | `allow_network` | `Option<bool>` | `false` | Allow network access |
 | `allow_filesystem_write` | `Option<bool>` | `false` | Allow filesystem writes |
 | `allow_process_control` | `Option<bool>` | `false` | Allow process control |

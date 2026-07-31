@@ -162,7 +162,7 @@ use eggsact::text::{text_length, word_count, line_count, char_frequency};
 | `text_length` | `(text: &str) -> usize` | Character count |
 | `word_count` | `(text: &str) -> usize` | Word count (whitespace-delimited) |
 | `line_count` | `(text: &str) -> usize` | Newline-separated line count |
-| `char_frequency` | `(text: &str) -> HashMap<char, usize>` | Frequency map of each character |
+| `char_frequency` | `(text: &str) -> BTreeMap<char, usize>` | Frequency map of each character (deterministic key order) |
 
 ### Diff and Similarity
 

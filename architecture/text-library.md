@@ -106,7 +106,7 @@ Text metrics: character counts, word counts, line counts, frequency analysis, an
 | `text_length(text)` | Character (codepoint) count |
 | `word_count(text)` | Whitespace-delimited word count |
 | `line_count(text)` | Line count (normalizes `\r\n` and `\r` to `\n` first) |
-| `char_frequency(text)` | `HashMap<char, usize>` — count of each character |
+| `char_frequency(text)` | `BTreeMap<char, usize>` — count of each character (deterministic key order) |
 | `word_metrics(text)` | Returns `WordMetrics { words, unique_words_casefolded }` — filters to alphabetic-only words, uses caseless folding for unique count |
 | `char_category_metrics(text)` | Returns `CharCategoryMetrics` with counts for letters, digits, punctuation, symbols, spaces, control chars, combining marks |
 
@@ -232,7 +232,7 @@ pub struct JsonShapeResult {
 
 pub struct JsonShapeKey {
     pub key_type: String,                           // "object", "array", "string", "integer", etc.
-    pub keys: Option<HashMap<String, JsonShapeKey>>, // nested shape for objects
+    pub keys: Option<BTreeMap<String, JsonShapeKey>>, // nested shape for objects (deterministic key order)
     pub key_count: Option<usize>,
     pub item_types: Option<Vec<String>>,             // element types for arrays
     pub item_count: Option<usize>,
@@ -305,7 +305,7 @@ Compute hashes over encoded text bytes.
 
 **Algorithms**: `sha256`, `sha1`, `md5` (with non-crypto warning), `crc32`.
 
-Returns `TextHashResult { encoding, bytes, codepoints, hashes: HashMap<String, String>, warnings, summary }`.
+Returns `TextHashResult { encoding, bytes, codepoints, hashes: BTreeMap<String, String>, warnings, summary }`.
 
 ### `text_fingerprint(text, unicode_norm, newline_style, trim_final_newline, casefold)`
 
@@ -790,9 +790,13 @@ TOML validation and shape analysis using `toml_edit`.
 
 Returns `valid`, `error` (Python-compatible format: `"message (at line N, column M)"`), `top_level_keys`, `tables`.
 
+**Table contract**: `tables` contains only paths to actual TOML tables and arrays of tables (`Item::Table` and `Item::ArrayOfTables`). Scalar values under tables (e.g., `package.name`) are excluded. Summary reports total table count before any truncation.
+
+**Position contract**: `line` and `column` are one-based Unicode scalar-value positions (character count, not byte count). `position` is zero-based character offset. CRLF is treated as a single line ending. `byte_offset_to_line_col()` iterates `char()` for correct multibyte handling.
+
 ### `toml_shape(text, max_tables) -> TomlShapeResult`
 
-Returns top-level keys, full table list (with truncation at `max_tables`), and summary string.
+Returns top-level keys, full table list (with truncation at `max_tables`), and summary string. Summary counts reflect total discovered tables, not truncated list length.
 
 ## Patch (`patch.rs`)
 
@@ -920,7 +924,7 @@ Documentation-only module mapping Python `synthesis` functions to their Rust sou
 - `text_length(text)` → character count
 - `word_count(text)` → whitespace-delimited word count
 - `line_count(text)` → newline-separated line count
-- `char_frequency(text)` → `HashMap<char, usize>`
+- `char_frequency(text)` → `BTreeMap<char, usize>`
 - `word_metrics(text)` → `WordMetrics { words, unique_words_casefolded }`
 - `char_category_metrics(text)` → `CharCategoryMetrics`
 
@@ -997,6 +1001,19 @@ Documentation-only module mapping Python `synthesis` functions to their Rust sou
 ### Version
 - `version_compare(a, b, scheme)` → `VersionCompareResult`
 - `check_version_constraint(version, constraint, scheme)` → `VersionConstraintResult`
+
+## Deterministic Output
+
+Public tool responses are semantically deterministic for identical inputs and execution options within one eggsact version. Public JSON object fields generated from unordered internal collections are serialized in stable (lexicographic) key order unless the tool explicitly documents source-order preservation.
+
+Key design decisions:
+- Public `HashMap` fields in serialized structs use `BTreeMap` for lexical key ordering (e.g., `RegexMatch.groupdict`, `JsonShapeKey.keys`, `DependencySection.dependencies`, `IniValidateResult.keys_by_section`, `TextHashResult.hashes`, `CommandPolicyConfig.allow_subcommands`/`deny_subcommands`).
+- Internal-only lookup maps (e.g., bracket validation, seen-keys tracking) remain `HashMap`.
+- `char_frequency()` returns `BTreeMap<char, usize>` for deterministic text_count output.
+- `serde_json::Map` construction iterates sorted key sequences where output is public.
+- Arrays preserving source or discovery order (findings, diffs, matches) are not reordered.
+
+This contract applies to tool response payloads, not to internal cache layout, thread scheduling, MCP response arrival order, or error text from external parsers.
 
 ## Testing Approach
 
