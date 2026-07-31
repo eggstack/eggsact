@@ -397,28 +397,6 @@ fn test_handler_fast(_args: &Value) -> ToolResponse {
 
 // ── Test handler for mutable-context commit/rollback tests ─────────────
 //
-// Mutates the eval context via the thread-local reference (through
-// `evaluate_with_context` which uses `ctx.memory_registers`), then returns
-// success or failure based on args["fail"].
-
-#[cfg(test)]
-pub(crate) fn test_handler_mutate_then_controlled_response(args: &Value) -> ToolResponse {
-    if let Some(ctx) = crate::mcp::budget::current_eval_context() {
-        let _ = crate::calc::evaluate_with_context("store(42, 99)", ctx);
-    }
-    if args.get("fail").and_then(|v| v.as_bool()).unwrap_or(false) {
-        ToolResponse::error_with_code(
-            "test_failure",
-            machine_codes::INVALID_INPUT,
-            "intentional failure for commit test",
-            None,
-            None,
-        )
-    } else {
-        ToolResponse::success(serde_json::json!("mutated"), None)
-    }
-}
-
 // ── Public interface ────────────────────────────────────────────────────
 
 /// Outcome of an `execute_tool_bounded` invocation.

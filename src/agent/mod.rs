@@ -45,7 +45,7 @@ use crate::mcp::schema_validation;
 use serde_json::Value;
 use std::fmt;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::calc::context::EvalContext;
@@ -489,46 +489,17 @@ impl ToolRegistry {
     /// Returns a [`ToolCallOutcome`] that the caller can match on to decide
     /// how to handle pre-execution errors vs. ready-to-execute handlers.
     /// This is the shared core used by both `call_json` and the MCP server.
+    ///
+    /// Delegates to [`prepare_tool_call_with_policy`](Self::prepare_tool_call_with_policy)
+    /// using the registry's stored profile, audience, and compatibility mode.
     pub fn prepare_tool_call(&self, name: &str, args: &Value) -> ToolCallOutcome {
-        // 1. Look up the handler
-        let handler = match registry::tool_handler_for(name) {
-            Some(h) => h,
-            None => {
-                return ToolCallOutcome::PreExecutionError(ToolCallError::UnknownTool(
-                    name.to_string(),
-                ))
-            }
-        };
-
-        // 2. Check profile availability
-        let profile_tools = registry::tools_for_profile(self.profile.as_str());
-        if !profile_tools.iter().any(|s| s.name == name) {
-            return ToolCallOutcome::PreExecutionError(ToolCallError::ToolUnavailable {
-                tool: name.to_string(),
-                profile: self.profile.to_string(),
-            });
-        }
-
-        // 3. Check audience/exposure compatibility
-        if let Some(spec) = registry::get_tool(name) {
-            if !self.audience.can_execute_exposure(spec.exposure) {
-                return ToolCallOutcome::PreExecutionError(
-                    ToolCallError::ToolNotAllowedForAudience {
-                        tool: name.to_string(),
-                        profile: self.profile.to_string(),
-                        audience: format!("{:?}", self.audience),
-                        exposure: spec.exposure.as_str().to_string(),
-                    },
-                );
-            }
-        }
-
-        // 4. Validate arguments
-        if let Some(msg) = schema_validation::validate_arguments(name, args, self.compat_mode) {
-            return ToolCallOutcome::PreExecutionError(ToolCallError::InvalidArguments(msg));
-        }
-
-        ToolCallOutcome::Ready { handler }
+        self.prepare_tool_call_with_policy(
+            name,
+            args,
+            &self.profile,
+            self.audience,
+            self.compat_mode,
+        )
     }
 
     /// Prepare a tool call with explicit effective policy, performing lookup,
@@ -646,63 +617,16 @@ impl ToolRegistry {
         args: Value,
         budget: Option<ToolBudget>,
     ) -> Result<ToolResponse, ToolCallError> {
-        // 1. Prepare policy on caller thread using self's profile/audience/compat
         let outcome = self.prepare_tool_call(name, &args);
         let handler = match outcome {
             ToolCallOutcome::Ready { handler } => handler,
             ToolCallOutcome::PreExecutionError(e) => return Err(e),
         };
-
-        // 2. Resolve budget
-        let spec =
-            registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
-        let effective_budget = match budget {
-            Some(b) => b,
-            None => budget_for_tool_resolved(name, spec),
-        };
-
-        // 3. Check input size
-        let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
-        if serialized_len > effective_budget.max_input_bytes {
-            return Ok(ToolResponse::error_with_code(
-                "input_too_large",
-                crate::mcp::machine_codes::INPUT_TOO_LARGE,
-                &format!(
-                    "Serialized arguments ({} bytes) exceed budget max_input_bytes ({} bytes)",
-                    serialized_len, effective_budget.max_input_bytes
-                ),
-                None,
-                Some(name),
-            ));
+        let effective_budget = Self::resolve_budget(name, budget)?;
+        if let Some(resp) = Self::check_input_size(&args, &effective_budget, name) {
+            return Ok(resp);
         }
-
-        // 4. Create cancel flag and submit approved handler to pool.
-        //    The same flag is used for both pool timeout and handler
-        //    thread-local cancellation so that the handler can observe
-        //    cancellation set by the pool.
-        let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
-        let args_clone = args.clone();
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let handler_cancel = cancel_flag.clone();
-        let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
-            move || {
-                budget::with_cancel_flag(Some(handler_cancel), || {
-                    let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
-                    crate::mcp::budget::with_eval_context(&mut mcp_eval_ctx, || {
-                        handler(&args_clone)
-                    })
-                })
-            },
-            timeout,
-            cancel_flag,
-        );
-        match result {
-            Ok(mut response) => {
-                truncate_response(&mut response, &effective_budget);
-                Ok(response)
-            }
-            Err(pool_error) => Ok(pool_error.to_tool_response(name)),
-        }
+        self.run_bounded(handler, args, None, &effective_budget, name)
     }
 
     /// Call a tool with an explicit budget and cancellation flag, applying resource
@@ -720,62 +644,16 @@ impl ToolRegistry {
         budget: Option<ToolBudget>,
         cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     ) -> Result<ToolResponse, ToolCallError> {
-        // 1. Prepare policy on caller thread using self's profile/audience/compat
         let outcome = self.prepare_tool_call(name, &args);
         let handler = match outcome {
             ToolCallOutcome::Ready { handler } => handler,
             ToolCallOutcome::PreExecutionError(e) => return Err(e),
         };
-
-        // 2. Resolve budget
-        let spec =
-            registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
-        let effective_budget = match budget {
-            Some(b) => b,
-            None => budget_for_tool_resolved(name, spec),
-        };
-
-        // 3. Check input size
-        let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
-        if serialized_len > effective_budget.max_input_bytes {
-            return Ok(ToolResponse::error_with_code(
-                "input_too_large",
-                crate::mcp::machine_codes::INPUT_TOO_LARGE,
-                &format!(
-                    "Serialized arguments ({} bytes) exceed budget max_input_bytes ({} bytes)",
-                    serialized_len, effective_budget.max_input_bytes
-                ),
-                None,
-                Some(name),
-            ));
+        let effective_budget = Self::resolve_budget(name, budget)?;
+        if let Some(resp) = Self::check_input_size(&args, &effective_budget, name) {
+            return Ok(resp);
         }
-
-        // 4. Use provided cancel_flag or create internal one
-        let flag = cancel_flag.unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
-
-        // 5. Submit approved handler to pool with cancellation
-        let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
-        let args_clone = args.clone();
-        let flag_for_handler = flag.clone();
-        let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
-            move || {
-                crate::mcp::budget::with_cancel_flag(Some(flag_for_handler), || {
-                    let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
-                    crate::mcp::budget::with_eval_context(&mut mcp_eval_ctx, || {
-                        handler(&args_clone)
-                    })
-                })
-            },
-            timeout,
-            flag,
-        );
-        match result {
-            Ok(mut response) => {
-                truncate_response(&mut response, &effective_budget);
-                Ok(response)
-            }
-            Err(pool_error) => Ok(pool_error.to_tool_response(name)),
-        }
+        self.run_bounded(handler, args, cancel_flag, &effective_budget, name)
     }
 
     /// Call a tool with a full execution context, applying all dispatch-scoped state.
@@ -801,12 +679,10 @@ impl ToolRegistry {
         args: Value,
         ctx: &ExecutionContext,
     ) -> Result<ToolResponse, ToolCallError> {
-        // 1. Resolve effective policy from context
         let effective_profile = ctx.profile.clone().unwrap_or_else(|| self.profile.clone());
         let effective_audience = ctx.audience.unwrap_or(self.audience);
         let effective_compat = ctx.compatibility_mode;
 
-        // 2. Prepare policy on caller thread with explicit policy
         let outcome = self.prepare_tool_call_with_policy(
             name,
             &args,
@@ -818,58 +694,24 @@ impl ToolRegistry {
             ToolCallOutcome::Ready { handler } => handler,
             ToolCallOutcome::PreExecutionError(e) => return Err(e),
         };
-
-        // 3. Resolve budget
-        let spec =
-            registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
-        let effective_budget = match ctx.budget {
-            Some(b) => b,
-            None => budget_for_tool_resolved(name, spec),
-        };
-
-        // 4. Check input size
-        let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
-        if serialized_len > effective_budget.max_input_bytes {
-            return Ok(ToolResponse::error_with_code(
-                "input_too_large",
-                crate::mcp::machine_codes::INPUT_TOO_LARGE,
-                &format!(
-                    "Serialized arguments ({} bytes) exceed budget max_input_bytes ({} bytes)",
-                    serialized_len, effective_budget.max_input_bytes
-                ),
-                None,
-                Some(name),
-            ));
+        let effective_budget = Self::resolve_budget(name, ctx.budget)?;
+        if let Some(resp) = Self::check_input_size(&args, &effective_budget, name) {
+            return Ok(resp);
         }
 
-        // 5. Get cancel flag, clone eval context, submit to pool.
-        //    The same effective flag is used for both pool timeout and
-        //    handler thread-local cancellation.
-        let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
-        let args_clone = args.clone();
         let eval_ctx_clone = ctx.eval_ctx.clone();
         let cancel_flag = ctx
             .cancellation
             .clone()
             .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
-        let handler_cancel = cancel_flag.clone();
-        let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
-            move || {
-                budget::with_cancel_flag(Some(handler_cancel), || {
-                    let mut eval_ctx = eval_ctx_clone;
-                    crate::mcp::budget::with_eval_context(&mut eval_ctx, || handler(&args_clone))
-                })
-            },
-            timeout,
+        self.run_bounded_with_ctx(
+            handler,
+            args,
+            eval_ctx_clone,
             cancel_flag,
-        );
-        match result {
-            Ok(mut response) => {
-                truncate_response(&mut response, &effective_budget);
-                Ok(response)
-            }
-            Err(pool_error) => Ok(pool_error.to_tool_response(name)),
-        }
+            &effective_budget,
+            name,
+        )
     }
 
     /// Call a tool with an immutable execution template.
@@ -945,68 +787,9 @@ impl ToolRegistry {
         args: Value,
         ctx: &mut ExecutionContext,
     ) -> Result<ToolResponse, ToolCallError> {
-        // 1. Resolve effective policy from context
-        let effective_profile = ctx.profile.clone().unwrap_or_else(|| self.profile.clone());
-        let effective_audience = ctx.audience.unwrap_or(self.audience);
-        let effective_compat = ctx.compatibility_mode;
-
-        // 2. Prepare policy on caller thread with explicit policy
-        let outcome = self.prepare_tool_call_with_policy(
-            name,
-            &args,
-            &effective_profile,
-            effective_audience,
-            effective_compat,
-        );
-        let handler = match outcome {
-            ToolCallOutcome::Ready { handler } => handler,
-            ToolCallOutcome::PreExecutionError(e) => return Err(e),
-        };
-
-        // 3. Resolve budget
-        let spec =
-            registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
-        let effective_budget = match ctx.budget {
-            Some(b) => b,
-            None => budget_for_tool_resolved(name, spec),
-        };
-
-        // 4. Check input size
-        let serialized_len = serde_json::to_string(&args).map(|s| s.len()).unwrap_or(0);
-        if serialized_len > effective_budget.max_input_bytes {
-            return Ok(ToolResponse::error_with_code(
-                "input_too_large",
-                crate::mcp::machine_codes::INPUT_TOO_LARGE,
-                &format!(
-                    "Serialized arguments ({} bytes) exceed budget max_input_bytes ({} bytes)",
-                    serialized_len, effective_budget.max_input_bytes
-                ),
-                None,
-                Some(name),
-            ));
-        }
-
-        // 5. Get cancel flag and delegate to the shared commit-slot helper.
-        //    On success (response.ok AND cancellation flag still false), the
-        //    worker's eval_ctx is committed back to the caller. On timeout,
-        //    cancellation, saturation, or tool-failure, the slot is never
-        //    read — late worker writes go to the detached slot and are
-        //    silently discarded.
-        let timeout = Duration::from_millis(effective_budget.max_elapsed_ms);
-        let cancel_flag = ctx
-            .cancellation
-            .clone()
-            .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
-
-        execute_handler_with_commit_slot(
-            handler,
-            args,
-            &mut ctx.eval_ctx,
-            cancel_flag,
-            timeout,
-            &effective_budget,
-            name,
-        )
+        // Deprecated: delegate to immutable dispatch. Calculator state does not
+        // persist through math_eval regardless of commit-slot machinery.
+        self.call_json_with_execution_context(name, args, ctx)
     }
 
     /// Call a tool and return only the result `Value`, or `null` on error.
@@ -1017,6 +800,90 @@ impl ToolRegistry {
         match self.call_json(name, args) {
             Ok(response) => response.result.unwrap_or(Value::Null),
             Err(_) => Value::Null,
+        }
+    }
+
+    /// Resolve effective budget: use the explicit override if provided,
+    /// otherwise look up the tool's default budget from its declared cost.
+    fn resolve_budget(
+        name: &str,
+        budget_override: Option<ToolBudget>,
+    ) -> Result<ToolBudget, ToolCallError> {
+        match budget_override {
+            Some(b) => Ok(b),
+            None => {
+                let spec = registry::get_tool(name)
+                    .ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
+                Ok(budget_for_tool_resolved(name, spec))
+            }
+        }
+    }
+
+    /// Check that serialized args fit within the budget's max_input_bytes.
+    /// Returns `Some(response)` if the check fails (caller should return it),
+    /// or `None` if args are within budget.
+    fn check_input_size(args: &Value, budget: &ToolBudget, name: &str) -> Option<ToolResponse> {
+        let serialized_len = serde_json::to_string(args).map(|s| s.len()).unwrap_or(0);
+        if serialized_len > budget.max_input_bytes {
+            Some(ToolResponse::error_with_code(
+                "input_too_large",
+                crate::mcp::machine_codes::INPUT_TOO_LARGE,
+                &format!(
+                    "Serialized arguments ({} bytes) exceed budget max_input_bytes ({} bytes)",
+                    serialized_len, budget.max_input_bytes
+                ),
+                None,
+                Some(name),
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Shared bounded dispatch: resolve eval context from registry defaults,
+    /// submit handler to sync pool with budget/timeout/cancellation, truncate.
+    fn run_bounded(
+        &self,
+        handler: registry::ToolHandler,
+        args: Value,
+        cancel_flag: Option<Arc<AtomicBool>>,
+        budget: &ToolBudget,
+        name: &str,
+    ) -> Result<ToolResponse, ToolCallError> {
+        let eval_ctx = crate::calc::EvalContext::mcp_mode();
+        let flag = cancel_flag.unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
+        self.run_bounded_with_ctx(handler, args, eval_ctx, flag, budget, name)
+    }
+
+    /// Shared bounded dispatch with a caller-provided eval context clone.
+    fn run_bounded_with_ctx(
+        &self,
+        handler: registry::ToolHandler,
+        args: Value,
+        eval_ctx: EvalContext,
+        cancel_flag: Arc<AtomicBool>,
+        budget: &ToolBudget,
+        name: &str,
+    ) -> Result<ToolResponse, ToolCallError> {
+        let timeout = Duration::from_millis(budget.max_elapsed_ms);
+        let args_clone = args.clone();
+        let handler_cancel = cancel_flag.clone();
+        let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
+            move || {
+                budget::with_cancel_flag(Some(handler_cancel), || {
+                    let mut eval_ctx = eval_ctx;
+                    crate::mcp::budget::with_eval_context(&mut eval_ctx, || handler(&args_clone))
+                })
+            },
+            timeout,
+            cancel_flag,
+        );
+        match result {
+            Ok(mut response) => {
+                truncate_response(&mut response, budget);
+                Ok(response)
+            }
+            Err(pool_error) => Ok(pool_error.to_tool_response(name)),
         }
     }
 }
@@ -1042,66 +909,6 @@ impl Default for ToolRegistry {
 /// with any tool-specific overrides from the budget module.
 fn budget_for_tool_resolved(name: &str, spec: &ToolSpec) -> ToolBudget {
     budget::budget_for_tool(name, spec.cost)
-}
-
-/// Execute a handler with commit/rollback semantics through the sync pool.
-///
-/// The handler runs in the sync pool with a commit slot. On success
-/// (`response.ok && cancel flag is still false`), the worker's `eval_ctx`
-/// is committed back to the caller. On failure, cancellation, timeout,
-/// or pool saturation, the slot is never read — late worker writes go
-/// to the detached slot and are silently discarded.
-///
-/// This is the shared production helper used by both
-/// `call_json_with_execution_context_mut` and the mutable-context tests.
-/// Tests must call this helper, not reproduce its body.
-fn execute_handler_with_commit_slot(
-    handler: registry::ToolHandler,
-    args: Value,
-    eval_ctx: &mut EvalContext,
-    cancel_flag: Arc<AtomicBool>,
-    timeout: Duration,
-    effective_budget: &ToolBudget,
-    tool_name: &str,
-) -> Result<ToolResponse, ToolCallError> {
-    let args_clone = args.clone();
-    let eval_ctx_clone = eval_ctx.clone();
-    let handler_cancel = cancel_flag.clone();
-    let commit_cancel = cancel_flag.clone();
-    let commit_slot: Arc<Mutex<Option<EvalContext>>> = Arc::new(Mutex::new(None));
-    let commit_slot_clone = commit_slot.clone();
-
-    let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
-        move || {
-            budget::with_cancel_flag(Some(handler_cancel), || {
-                let mut worker_ctx = eval_ctx_clone;
-                let resp = budget::with_eval_context(&mut worker_ctx, || handler(&args_clone));
-                if let Ok(mut slot) = commit_slot_clone.lock() {
-                    *slot = Some(worker_ctx);
-                }
-                resp
-            })
-        },
-        timeout,
-        cancel_flag,
-    );
-
-    match result {
-        Ok(mut response) => {
-            truncate_response(&mut response, effective_budget);
-            let commit_allowed =
-                response.ok && !commit_cancel.load(std::sync::atomic::Ordering::Acquire);
-            if commit_allowed {
-                if let Ok(mut slot) = commit_slot.lock() {
-                    if let Some(worker_ctx) = slot.take() {
-                        *eval_ctx = worker_ctx;
-                    }
-                }
-            }
-            Ok(response)
-        }
-        Err(pool_error) => Ok(pool_error.to_tool_response(tool_name)),
-    }
 }
 
 /// Re-export budget types for convenience.
@@ -1993,148 +1800,5 @@ mod tests {
             ToolCallError::ToolUnavailable { tool, .. } => assert_eq!(tool, "text_equal"),
             other => panic!("expected ToolUnavailable, got {:?}", other),
         }
-    }
-
-    // ── Mutable-context commit/rollback tests (WS6) ────────────────────
-    //
-    // These tests use a custom handler that mutates the eval context via
-    // `evaluate_with_context("store(99, 42)", ctx)` — which writes to
-    // `ctx.memory_registers` — then verify the commit-slot predicate
-    // (`response.ok && !cancel_flag`) by checking whether `recall(99)`
-    // returns 42 after the call.
-    //
-    // All tests delegate to the shared production helper
-    // `execute_handler_with_commit_slot` — no test helper reproduces
-    // the commit-slot algorithm.
-
-    /// Thin wrapper that calls the shared production helper.
-    fn execute_with_commit_slot(
-        handler: crate::mcp::registry::ToolHandler,
-        args: serde_json::Value,
-        eval_ctx: &mut crate::calc::EvalContext,
-        cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-        timeout: std::time::Duration,
-    ) -> Result<crate::mcp::response::ToolResponse, ToolCallError> {
-        super::execute_handler_with_commit_slot(
-            handler,
-            args,
-            eval_ctx,
-            cancel_flag,
-            timeout,
-            &crate::mcp::budget::ToolBudget::CHEAP,
-            "test_tool",
-        )
-    }
-
-    #[test]
-    fn mutable_context_commit_on_success() {
-        use crate::calc::evaluate_with_context;
-        use crate::mcp::execution::test_handler_mutate_then_controlled_response;
-
-        let mut ctx = crate::calc::EvalContext::new();
-        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-        let result = execute_with_commit_slot(
-            test_handler_mutate_then_controlled_response,
-            serde_json::json!({}),
-            &mut ctx,
-            cancel,
-            std::time::Duration::from_secs(5),
-        );
-
-        assert!(result.is_ok());
-        assert!(result.unwrap().ok);
-
-        // Verify mutation was committed: recall(99) should return 42
-        let recall = evaluate_with_context("recall(99)", &mut ctx);
-        assert!(recall.is_ok());
-        let (val, _unit) = recall.unwrap();
-        assert_eq!(
-            val, "42",
-            "store(42, 99) should be committed via recall(99)"
-        );
-    }
-
-    #[test]
-    fn mutable_context_rollback_on_failure() {
-        use crate::calc::evaluate_with_context;
-        use crate::mcp::execution::test_handler_mutate_then_controlled_response;
-
-        let mut ctx = crate::calc::EvalContext::new();
-        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-        let result = execute_with_commit_slot(
-            test_handler_mutate_then_controlled_response,
-            serde_json::json!({"fail": true}),
-            &mut ctx,
-            cancel,
-            std::time::Duration::from_secs(5),
-        );
-
-        assert!(result.is_ok());
-        assert!(!result.unwrap().ok, "response.ok must be false on failure");
-
-        // Verify mutation was NOT committed: recall(99) should return 0
-        let recall = evaluate_with_context("recall(99)", &mut ctx);
-        assert!(recall.is_ok());
-        let (val, _unit) = recall.unwrap();
-        assert_eq!(val, "0", "recall(99) must be 0 — commit was rolled back");
-    }
-
-    #[test]
-    fn mutable_context_rollback_on_cancel() {
-        use crate::calc::evaluate_with_context;
-        use crate::mcp::execution::test_handler_mutate_then_controlled_response;
-
-        let mut ctx = crate::calc::EvalContext::new();
-        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-
-        let result = execute_with_commit_slot(
-            test_handler_mutate_then_controlled_response,
-            serde_json::json!({}),
-            &mut ctx,
-            cancel,
-            std::time::Duration::from_secs(5),
-        );
-
-        // Pre-cancelled jobs are rejected by worker preflight (WS2)
-        assert!(result.is_ok());
-        let resp = result.unwrap();
-        assert!(!resp.ok, "pre-cancelled job must not succeed");
-
-        // Verify mutation was NOT committed
-        let recall = evaluate_with_context("recall(99)", &mut ctx);
-        assert!(recall.is_ok());
-        let (val, _unit) = recall.unwrap();
-        assert_eq!(val, "0", "recall(99) must be 0 — commit was rolled back");
-    }
-
-    #[test]
-    fn mutable_context_rollback_on_timeout() {
-        use crate::calc::evaluate_with_context;
-        use crate::mcp::response::ToolResponse;
-
-        let mut ctx = crate::calc::EvalContext::new();
-        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-        let result = execute_with_commit_slot(
-            |_args| {
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                ToolResponse::success(serde_json::json!("late"), None)
-            },
-            serde_json::json!({}),
-            &mut ctx,
-            cancel,
-            std::time::Duration::from_millis(10),
-        );
-
-        // Timeout returns an error via pool
-        assert!(result.is_ok());
-
-        // Verify mutation was NOT committed (timeout = no commit)
-        let recall = evaluate_with_context("recall(99)", &mut ctx);
-        assert!(recall.is_ok());
-        let (val, _unit) = recall.unwrap();
-        assert_eq!(val, "0", "recall(99) must be 0 — timeout prevented commit");
     }
 }
