@@ -189,14 +189,20 @@ fn print_diagnostics(format: &str) {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     env::set_var("EGGCALC_NO_CONFIG", "1");
 
     match parse_args(env::args().skip(1)) {
         CliCommand::Help => print_usage(),
         CliCommand::Version => println!("eggsact {}", env!("CARGO_PKG_VERSION")),
-        CliCommand::Mcp => eggsact::mcp::server::main().await,
+        CliCommand::Mcp => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("eggsact-mcp")
+                .build()
+                .expect("failed to create Tokio runtime");
+            rt.block_on(eggsact::mcp::server::main());
+        }
         CliCommand::Diagnostics { format } => print_diagnostics(&format),
         CliCommand::Evaluate(expression) => match eggsact::calc::run(&expression) {
             Ok((result, _type)) => println!("{}", result),

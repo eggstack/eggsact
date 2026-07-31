@@ -43,7 +43,7 @@ unicode-general-category = "1.1"
 caseless = "0.2"
 toml = "0.8"
 toml_edit = "0.22"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "sync", "time"] }
 
 [dev-dependencies]
 

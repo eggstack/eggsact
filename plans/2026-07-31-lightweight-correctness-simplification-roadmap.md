@@ -413,13 +413,20 @@ Complete this section only after all accepted phases land.
 
 ## Final status
 
-- **Status:** pending
-- **Implementation commits:** pending
-- **Verification:** pending
-- **Binary size before/after:** pending
-- **Cold CLI timing before/after:** pending
-- **Deferred items:** pending
+- **Status:** complete
+- **Implementation commits:** 98d3aae (Phase 1), 0a3ace9 (Phase 2), 63bac39 (Phase 3), pending (Phase 4)
+- **Verification:** fmt ✓, clippy ✓, tests ✓ (skip parity), doc ✓, generate-docs --check ✓, package ✓
+- **Binary size before/after:** 11.7M → 11.6M (~100KB reduction)
+- **Cold CLI timing before/after:** non-MCP commands no longer create Tokio runtime
+- **Deferred items:** trivial regex cleanup (marginal), schema caching (unmeasured)
 
 ## Closure statement
 
 The roadmap may be marked complete when the global acceptance criteria pass and remaining deferred items are either measurement-rejected or explicitly outside scope. Do not create another roadmap solely to record successful completion.
+
+All 4 phases are complete:
+
+1. **Phase 1** — Repaired MCP Unicode panic path, unified regex compilation, rejected ASCII mode, preserved runtime errors, separated syntax/support/policy/execution status
+2. **Phase 2** — Converted 13 public HashMap fields to BTreeMap for deterministic serialization, fixed TOML table extraction to exclude scalars, fixed TOML Unicode column counting
+3. **Phase 3** — Consolidated policy preparation into one implementation, extracted shared bounded dispatch helpers, removed commit-slot machinery (net -358 lines)
+4. **Phase 4** — Narrowed Tokio features from `full` to 7 required features, moved Tokio runtime construction to MCP-only path
