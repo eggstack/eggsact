@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 use toml::Value;
 use unicode_normalization::UnicodeNormalization;
@@ -114,10 +114,10 @@ pub struct DependencyForm {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DependencySection {
-    pub dependencies: HashMap<String, DependencyForm>,
-    pub dev_dependencies: HashMap<String, DependencyForm>,
-    pub build_dependencies: HashMap<String, DependencyForm>,
-    pub target_specific: HashMap<String, HashMap<String, DependencyForm>>,
+    pub dependencies: BTreeMap<String, DependencyForm>,
+    pub dev_dependencies: BTreeMap<String, DependencyForm>,
+    pub build_dependencies: BTreeMap<String, DependencyForm>,
+    pub target_specific: BTreeMap<String, BTreeMap<String, DependencyForm>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -323,7 +323,7 @@ pub fn cargo_toml_inspect(
         for (table_key, section_key) in dep_tables.iter() {
             if let Some(raw_deps) = parsed.get(*table_key) {
                 if let Value::Table(table) = raw_deps {
-                    let mut parsed_deps: HashMap<String, DependencyForm> = HashMap::new();
+                    let mut parsed_deps: BTreeMap<String, DependencyForm> = BTreeMap::new();
                     for (dep_name, dep_value) in table.iter() {
                         let form = parse_dep_value(dep_value);
                         parsed_deps.insert(dep_name.clone(), form.clone());
@@ -356,7 +356,7 @@ pub fn cargo_toml_inspect(
         if let Some(target_section) = parsed.get("target").and_then(|t| t.as_table()) {
             for (target_key, target_val) in target_section.iter() {
                 if let Value::Table(target_table) = target_val {
-                    let mut target_deps: HashMap<String, DependencyForm> = HashMap::new();
+                    let mut target_deps: BTreeMap<String, DependencyForm> = BTreeMap::new();
 
                     for dep_table_key in
                         ["dependencies", "dev-dependencies", "build-dependencies"].iter()

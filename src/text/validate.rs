@@ -1,6 +1,6 @@
 use fancy_regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::text::primitives::byte_offset_to_char_index;
 use crate::text::regex_engine::{classify_pattern, compile_regex, CompileError, CompiledRegex};
@@ -48,7 +48,7 @@ pub struct RegexMatch {
     pub fullmatch: bool,
     pub span: Option<Vec<i32>>,
     pub groups: Vec<String>,
-    pub groupdict: HashMap<String, String>,
+    pub groupdict: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,7 +75,7 @@ pub struct RegexTestResult {
 pub struct JsonShapeKey {
     #[serde(rename = "type")]
     pub key_type: String,
-    pub keys: Option<HashMap<String, JsonShapeKey>>,
+    pub keys: Option<BTreeMap<String, JsonShapeKey>>,
     pub key_count: Option<usize>,
     pub item_types: Option<Vec<String>>,
     pub item_count: Option<usize>,
@@ -688,7 +688,7 @@ pub fn regex_test(
                     fullmatch: false,
                     span: None,
                     groups: vec![],
-                    groupdict: HashMap::new(),
+                    groupdict: BTreeMap::new(),
                 });
                 continue;
             }
@@ -729,7 +729,7 @@ pub fn regex_test(
         };
 
         let mut groups = Vec::new();
-        let mut groupdict = HashMap::new();
+        let mut groupdict = BTreeMap::new();
 
         if let Some(caps) = caps {
             for i in 1..caps.len() {
@@ -1043,7 +1043,7 @@ pub fn json_shape(
                     };
                 }
 
-                let mut keys = HashMap::new();
+                let mut keys = BTreeMap::new();
                 let mut shown = 0;
                 for (k, v) in obj.iter() {
                     if shown >= max_keys {
@@ -1212,7 +1212,7 @@ pub struct RegexFindIterMatch {
     pub column: Option<i32>,
     pub groups: Vec<String>,
     #[serde(rename = "groupdict")]
-    pub group_dict: HashMap<String, String>,
+    pub group_dict: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1442,7 +1442,7 @@ pub fn regex_finditer(
             }
 
             let mut groups = Vec::new();
-            let mut group_dict = HashMap::new();
+            let mut group_dict = BTreeMap::new();
 
             if include_groups {
                 for i in 1..caps.len() {
@@ -1546,7 +1546,7 @@ pub fn regex_finditer(
             }
 
             let mut groups = Vec::new();
-            let mut group_dict = HashMap::new();
+            let mut group_dict = BTreeMap::new();
 
             if include_groups {
                 for i in 1..caps.len() {

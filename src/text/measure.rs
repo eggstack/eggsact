@@ -81,8 +81,8 @@ pub fn line_count(text: &str) -> usize {
     normalized.lines().count()
 }
 
-pub fn char_frequency(text: &str) -> std::collections::HashMap<char, usize> {
-    let mut freq = std::collections::HashMap::new();
+pub fn char_frequency(text: &str) -> std::collections::BTreeMap<char, usize> {
+    let mut freq = std::collections::BTreeMap::new();
     for c in text.chars() {
         *freq.entry(c).or_insert(0) += 1;
     }

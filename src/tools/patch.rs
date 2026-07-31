@@ -2,7 +2,7 @@ use crate::mcp::machine_codes;
 use crate::mcp::schemas::{disposition, finding, severity, verdict, ToolResponse};
 use crate::tools::helpers::*;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 pub fn patch_apply_check(args: &Value) -> ToolResponse {
     let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::MODERATE);
@@ -1175,7 +1175,7 @@ pub fn patch_contract_check(args: &Value) -> ToolResponse {
     }
 
     let mut categories: Vec<String> = Vec::new();
-    let mut files_by_category: HashMap<String, Vec<String>> = HashMap::new();
+    let mut files_by_category: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut findings = Vec::new();
     let mut scope_escape_detected = false;
     let mut large_deletions_detected = false;
@@ -1452,7 +1452,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
 
     // Classify each file
     let mut risk_categories: Vec<String> = Vec::new();
-    let mut files_by_category: HashMap<String, Vec<String>> = HashMap::new();
+    let mut files_by_category: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut review_focus: Vec<serde_json::Value> = Vec::new();
     let mut findings = Vec::new();
     let mut all_paths = Vec::new();

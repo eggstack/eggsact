@@ -462,35 +462,35 @@ Run focused Python parity if TOML/JSON positional behavior is parity-covered. Do
 
 # Acceptance checklist
 
-- [ ] Public serialized maps have an explicit stable ordering.
-- [ ] Internal-only hash maps were not mechanically replaced.
-- [ ] Regex named groups serialize stably.
-- [ ] JSON shape keys serialize stably.
-- [ ] Cargo dependency maps serialize stably.
-- [ ] Representative full tool responses are byte-stable.
-- [ ] TOML scalar fields are not listed as tables.
-- [ ] Nested tables are correctly listed.
-- [ ] Arrays of tables follow the documented contract.
-- [ ] TOML table truncation and summary counts are truthful.
-- [ ] TOML Unicode columns count characters rather than bytes.
-- [ ] LF, CRLF, and lone CR behavior is tested.
-- [ ] No ordered-map dependency was added.
-- [ ] Existing values and meaningful array order remain unchanged.
-- [ ] Generated docs and schemas are current.
-- [ ] Full verification passes.
+- [x] Public serialized maps have an explicit stable ordering.
+- [x] Internal-only hash maps were not mechanically replaced.
+- [x] Regex named groups serialize stably.
+- [x] JSON shape keys serialize stably.
+- [x] Cargo dependency maps serialize stably.
+- [x] Representative full tool responses are byte-stable.
+- [x] TOML scalar fields are not listed as tables.
+- [x] Nested tables are correctly listed.
+- [x] Arrays of tables follow the documented contract.
+- [x] TOML table truncation and summary counts are truthful.
+- [x] TOML Unicode columns count characters rather than bytes.
+- [x] LF, CRLF, and lone CR behavior is tested.
+- [x] No ordered-map dependency was added.
+- [x] Existing values and meaningful array order remain unchanged.
+- [x] Generated docs and schemas are current.
+- [x] Full verification passes.
 
 ---
 
 # Completion record
 
-- **Status:** pending
-- **Implementation commit:** pending
-- **Public maps converted:** pending
-- **Internal maps intentionally retained:** pending
-- **TOML table contract:** pending
-- **TOML position contract:** pending
-- **Focused tests:** pending
-- **Full verification:** pending
-- **Deferred findings:** pending
+- **Status:** complete
+- **Implementation commit:** pending commit
+- **Public maps converted:** 13 fields across 7 structs (RegexMatch.groupdict, JsonShapeKey.keys, RegexFindIterMatch.group_dict, IdentifierAnalyzeResult.suggestions, DependencySection.dependencies/dev_dependencies/build_dependencies/target_specific, IniValidateResult.keys_by_section, TextHashResult.hashes, TextFingerprintResult.normalization, CommandPolicyConfig.allow_subcommands/deny_subcommands) + 3 local HashMaps (char_frequency, files_by_category x2)
+- **Internal maps intentionally retained:** bracket validation pairs, JSON comparison key sets, cargo.rs seen_keys, config.rs seen_keys/seen_sections, identifier.rs casefold/norm maps, transform.rs mode_names, shell.rs deny_subcommands lookup, list.rs count_deltas (already serde_json::Map/BTreeMap), patch.rs internal lookups
+- **TOML table contract:** only Item::Table and Item::ArrayOfTables included; scalar keys excluded; inline tables excluded; summary reports total table count
+- **TOML position contract:** byte_offset_to_line_col counts Unicode characters via char iteration; CRLF handled as single line ending via peekable iterator; bare CR resets line
+- **Focused tests:** 530 unit tests, 55 property tests, 8 new serialization determinism tests, 7 new TOML structure tests — all pass
+- **Full verification:** fmt ✓, clippy ✓, tests ✓ (skip parity), doc ✓, generate-docs --check ✓
+- **Deferred findings:** none
 
-Record concise closure here. Do not add an evidence-only follow-up plan.
+Do not create a separate evidence-only plan. Record concise closure here.

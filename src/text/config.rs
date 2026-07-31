@@ -1,6 +1,6 @@
 use regex::Regex;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
 const _DEFAULT_KEY_PATTERN: &str = r"^[A-Za-z_][A-Za-z0-9_]*$";
@@ -61,7 +61,7 @@ pub struct DotenvValidateResult {
 pub struct IniValidateResult {
     pub parse_ok: bool,
     pub sections: Vec<String>,
-    pub keys_by_section: HashMap<String, Vec<String>>,
+    pub keys_by_section: BTreeMap<String, Vec<String>>,
     pub duplicates: Vec<DuplicateEntry>,
     pub invalid_lines: Vec<InvalidLine>,
     pub findings: Vec<String>,
@@ -223,7 +223,7 @@ pub fn ini_validate(text: &str, duplicate_policy: &str) -> IniValidateResult {
     let mut seen_keys: HashMap<(Option<String>, String), usize> = HashMap::new();
     let mut seen_sections: HashMap<String, usize> = HashMap::new();
     let mut sections: Vec<String> = Vec::new();
-    let mut keys_by_section: HashMap<String, Vec<String>> = HashMap::new();
+    let mut keys_by_section: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut duplicates: Vec<DuplicateEntry> = Vec::new();
     let mut invalid_lines: Vec<InvalidLine> = Vec::new();
     let mut findings: Vec<String> = Vec::new();

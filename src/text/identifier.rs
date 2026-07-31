@@ -1,6 +1,6 @@
 use fancy_regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 use crate::text::confusables::find_confusables;
@@ -186,7 +186,7 @@ pub struct IdentifierAnalyzeResult {
     pub rust_valid: Option<bool>,
     pub javascript_valid: Option<bool>,
     pub env_valid: bool,
-    pub suggestions: HashMap<String, String>,
+    pub suggestions: BTreeMap<String, String>,
     pub warnings: Vec<String>,
     pub summary: String,
 }
@@ -640,7 +640,7 @@ pub fn identifier_analyze(text: &str, languages: Option<Vec<&str>>) -> Identifie
         );
     }
 
-    let mut suggestions = HashMap::new();
+    let mut suggestions = BTreeMap::new();
     suggestions.insert("snake_case".to_string(), to_snake_case(text));
     suggestions.insert("kebab_case".to_string(), to_kebab_case(text));
     suggestions.insert("pascal_case".to_string(), to_pascal_case(text));

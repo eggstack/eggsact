@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 const ZERO_WIDTH_CHARS: &[(char, &str)] = &[
     ('\u{200b}', "ZERO WIDTH SPACE"),
@@ -625,7 +625,7 @@ pub struct TextHashResult {
     pub encoding: String,
     pub bytes: usize,
     pub codepoints: usize,
-    pub hashes: HashMap<String, String>,
+    pub hashes: BTreeMap<String, String>,
     pub warnings: Vec<String>,
     pub summary: String,
 }
@@ -691,7 +691,7 @@ pub fn text_hash(text: &str, algorithms: &[String], encoding: &str) -> TextHashR
         }
     };
 
-    let mut hashes: HashMap<String, String> = HashMap::new();
+    let mut hashes: BTreeMap<String, String> = BTreeMap::new();
 
     for algo in algorithms {
         match algo.to_lowercase().as_str() {
@@ -764,7 +764,7 @@ pub struct TextFingerprintResult {
     pub codepoints: usize,
     pub graphemes: usize,
     pub newline_style: String,
-    pub normalization: HashMap<String, serde_json::Value>,
+    pub normalization: BTreeMap<String, serde_json::Value>,
     pub summary: String,
 }
 
@@ -823,7 +823,7 @@ pub fn text_fingerprint(
         }
     };
 
-    let mut norm_map: HashMap<String, serde_json::Value> = HashMap::new();
+    let mut norm_map: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     norm_map.insert("input_is_nfc".to_string(), serde_json::json!(is_nfc));
     norm_map.insert("applied".to_string(), serde_json::json!(unicode_norm));
 

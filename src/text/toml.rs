@@ -6,23 +6,25 @@ const MAX_INPUT_LENGTH: usize = 100_000;
 fn byte_offset_to_line_col(text: &str, offset: usize) -> (i32, i32) {
     let mut line = 1i32;
     let mut col = 1i32;
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i < offset && i < bytes.len() {
-        if bytes[i] == b'\r' {
-            if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
-                i += 2;
-            } else {
-                i += 1;
+    let mut byte_pos = 0;
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if byte_pos >= offset {
+            break;
+        }
+        let char_len = c.len_utf8();
+        byte_pos += char_len;
+        if c == '\r' {
+            if byte_pos < text.len() && text.as_bytes()[byte_pos] == b'\n' {
+                byte_pos += 1;
+                chars.next();
             }
             line += 1;
             col = 1;
-        } else if bytes[i] == b'\n' {
-            i += 1;
+        } else if c == '\n' {
             line += 1;
             col = 1;
         } else {
-            i += 1;
             col += 1;
         }
     }
@@ -62,9 +64,18 @@ fn extract_tables_recursive<'a>(
         } else {
             format!("{}.{}", prefix, key)
         };
-        tables.push(full_name.clone());
-        if let Some(table) = item.as_table() {
-            tables.extend(extract_tables_recursive(table.iter(), &full_name));
+        match item {
+            Item::Table(table) => {
+                tables.push(full_name.clone());
+                tables.extend(extract_tables_recursive(table.iter(), &full_name));
+            }
+            Item::ArrayOfTables(aot) => {
+                tables.push(full_name.clone());
+                if let Some(first) = aot.iter().next() {
+                    tables.extend(extract_tables_recursive(first.iter(), &full_name));
+                }
+            }
+            _ => {}
         }
     }
     tables
@@ -157,15 +168,17 @@ pub fn toml_shape(text: &str, max_tables: usize) -> Result<TomlShapeResult, Stri
     match text.parse::<DocumentMut>() {
         Ok(doc) => {
             let top_level_keys: Vec<String> = doc.iter().map(|(k, _)| k.to_string()).collect();
-            let mut tables = extract_tables_recursive(doc.iter(), "");
+            let all_tables = extract_tables_recursive(doc.iter(), "");
 
-            let truncated = tables.len() > max_tables;
-            if truncated {
-                tables.truncate(max_tables);
-            }
+            let total_table_count = all_tables.len();
+            let truncated = total_table_count > max_tables;
+            let tables = if truncated {
+                all_tables.into_iter().take(max_tables).collect()
+            } else {
+                all_tables
+            };
 
             let key_count = top_level_keys.len();
-            let table_count = tables.len();
             Ok(TomlShapeResult {
                 valid: true,
                 top_level_keys: Some(top_level_keys),
@@ -173,7 +186,7 @@ pub fn toml_shape(text: &str, max_tables: usize) -> Result<TomlShapeResult, Stri
                 truncated,
                 summary: format!(
                     "Valid TOML with {} top-level keys and {} tables",
-                    key_count, table_count
+                    key_count, total_table_count
                 ),
             })
         }
@@ -282,5 +295,102 @@ mod tests {
         let result = toml_shape("", 100).unwrap();
         assert!(result.valid);
         assert!(result.top_level_keys.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_toml_tables_excludes_scalar_keys() {
+        let input =
+            "[package]\nname = \"test\"\nversion = \"1.0\"\n\n[dependencies]\nserde = \"1\"";
+        let result = validate_toml(input).unwrap();
+        let tables = result.tables.unwrap();
+        assert!(
+            tables.contains(&"package".to_string()),
+            "package should be a table"
+        );
+        assert!(
+            tables.contains(&"dependencies".to_string()),
+            "dependencies should be a table"
+        );
+        assert!(
+            !tables.contains(&"package.name".to_string()),
+            "package.name is a scalar, not a table"
+        );
+        assert!(
+            !tables.contains(&"package.version".to_string()),
+            "package.version is a scalar"
+        );
+        assert!(
+            !tables.contains(&"dependencies.serde".to_string()),
+            "dependencies.serde is a scalar"
+        );
+    }
+
+    #[test]
+    fn test_toml_shape_scalar_excluded() {
+        let input = "[package]\nname = \"test\"\nversion = \"1.0\"";
+        let result = toml_shape(input, 100).unwrap();
+        let tables = result.tables.unwrap();
+        assert_eq!(tables, vec!["package"]);
+    }
+
+    #[test]
+    fn test_toml_arrays_of_tables() {
+        let input = "[[products]]\nname = \"hammer\"\n[[products]]\nname = \"nail\"";
+        let result = validate_toml(input).unwrap();
+        let tables = result.tables.unwrap();
+        assert!(
+            tables.contains(&"products".to_string()),
+            "array of tables should appear once"
+        );
+        assert_eq!(
+            tables.iter().filter(|t| *t == "products").count(),
+            1,
+            "array of tables should appear exactly once"
+        );
+    }
+
+    #[test]
+    fn test_toml_dotted_table_names() {
+        let input = "[a.b.c]\nkey = \"value\"";
+        let result = validate_toml(input).unwrap();
+        let tables = result.tables.unwrap();
+        assert!(tables.contains(&"a".to_string()));
+        assert!(tables.contains(&"a.b".to_string()));
+        assert!(tables.contains(&"a.b.c".to_string()));
+    }
+
+    #[test]
+    fn test_toml_unicode_column_after_multibyte() {
+        let input = "key = \"\u{00e9}\"\nbad = = =";
+        let result = validate_toml(input).unwrap();
+        assert!(!result.valid);
+        if let (Some(line), Some(col)) = (result.line, result.column) {
+            assert_eq!(line, 2, "Error should be on line 2");
+            assert!(col >= 1, "Column should be >= 1, got {}", col);
+        }
+    }
+
+    #[test]
+    fn test_toml_shape_summary_uses_total_table_count() {
+        let input = "[a]\nx=1\n[b]\ny=2\n[c]\nz=3";
+        let result = toml_shape(input, 1).unwrap();
+        assert!(result.truncated);
+        assert_eq!(result.tables.as_ref().unwrap().len(), 1);
+        assert!(
+            result.summary.contains("3 tables"),
+            "Summary should report total count, not truncated: {}",
+            result.summary
+        );
+    }
+
+    #[test]
+    fn test_toml_inline_table_not_listed() {
+        let input = "config = {key = \"value\"}";
+        let result = validate_toml(input).unwrap();
+        let tables = result.tables.unwrap();
+        assert!(
+            tables.is_empty(),
+            "inline table should not be listed as a table"
+        );
     }
 }

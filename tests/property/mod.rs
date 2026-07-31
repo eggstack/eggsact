@@ -5,5 +5,6 @@ pub mod test_json_properties;
 pub mod test_markdown_properties;
 pub mod test_path_glob_properties;
 pub mod test_regex_properties;
+pub mod test_serialization_determinism;
 pub mod test_shell_properties;
 pub mod test_unicode_properties;

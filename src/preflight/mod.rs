@@ -734,10 +734,10 @@ pub struct CommandPolicyConfig {
     pub deny_commands: Option<Vec<String>>,
     /// Per-program allowed subcommands.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub allow_subcommands: Option<std::collections::HashMap<String, Vec<String>>>,
+    pub allow_subcommands: Option<std::collections::BTreeMap<String, Vec<String>>>,
     /// Per-program denied subcommands (overrides allow).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub deny_subcommands: Option<std::collections::HashMap<String, Vec<String>>>,
+    pub deny_subcommands: Option<std::collections::BTreeMap<String, Vec<String>>>,
     /// Allow network access (default false — network findings are emitted).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_network: Option<bool>,

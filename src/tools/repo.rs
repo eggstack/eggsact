@@ -1523,8 +1523,8 @@ pub fn repo_language_detect(args: &Value) -> ToolResponse {
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    let mut lang_counts: std::collections::HashMap<String, (usize, Vec<String>)> =
-        std::collections::HashMap::new();
+    let mut lang_counts: std::collections::BTreeMap<String, (usize, Vec<String>)> =
+        std::collections::BTreeMap::new();
 
     for p in &path_strings {
         let basename = p.rsplit('/').next().unwrap_or(p);
