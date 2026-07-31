@@ -1,7 +1,7 @@
 use regex::Regex;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use super::unicode_tools::detect_newline_style;
 
@@ -90,7 +90,7 @@ pub struct PatchSummaryResult {
     pub deletions: usize,
     pub renames_detected: Vec<RenamePair>,
     pub binary_patch_detected: bool,
-    pub line_ranges_by_file: HashMap<String, Vec<LineRange>>,
+    pub line_ranges_by_file: BTreeMap<String, Vec<LineRange>>,
     pub findings: Vec<String>,
 }
 
@@ -616,7 +616,7 @@ pub fn patch_summary(patch_text: &str) -> PatchSummaryResult {
             deletions: 0,
             renames_detected: vec![],
             binary_patch_detected: false,
-            line_ranges_by_file: HashMap::new(),
+            line_ranges_by_file: BTreeMap::new(),
             findings: vec![format!(
                 "Patch text exceeds maximum length of {}",
                 MAX_PATCH_LENGTH
@@ -634,7 +634,7 @@ pub fn patch_summary(patch_text: &str) -> PatchSummaryResult {
             deletions: 0,
             renames_detected: vec![],
             binary_patch_detected: false,
-            line_ranges_by_file: HashMap::new(),
+            line_ranges_by_file: BTreeMap::new(),
             findings: vec![format!(
                 "Failed to parse patch: {}",
                 parse_result.error.unwrap_or_default()
@@ -648,7 +648,7 @@ pub fn patch_summary(patch_text: &str) -> PatchSummaryResult {
     let mut deletions = 0;
     let mut renames_detected: Vec<RenamePair> = vec![];
     let mut binary_patch_detected = false;
-    let mut line_ranges_by_file: HashMap<String, Vec<LineRange>> = HashMap::new();
+    let mut line_ranges_by_file: BTreeMap<String, Vec<LineRange>> = BTreeMap::new();
 
     for file_entry in &parse_result.files {
         let old_file = &file_entry.old_file;

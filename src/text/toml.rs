@@ -9,10 +9,10 @@ fn byte_offset_to_line_col(text: &str, offset: usize) -> (i32, i32) {
     let mut byte_pos = 0;
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
-        if byte_pos >= offset {
+        let char_len = c.len_utf8();
+        if byte_pos + char_len > offset {
             break;
         }
-        let char_len = c.len_utf8();
         byte_pos += char_len;
         if c == '\r' {
             if byte_pos < text.len() && text.as_bytes()[byte_pos] == b'\n' {
@@ -368,6 +368,125 @@ mod tests {
             assert_eq!(line, 2, "Error should be on line 2");
             assert!(col >= 1, "Column should be >= 1, got {}", col);
         }
+    }
+
+    #[test]
+    fn test_toml_unicode_column_after_three_byte_char() {
+        // 中 (U+4E2D) is 3-byte UTF-8. toml_edit error at "bad = = =" lands on line 2.
+        let input = "key = \"\u{4E2D}\"\nbad = = =";
+        let result = validate_toml(input).unwrap();
+        assert!(!result.valid);
+        let line = result.line.expect("should have line");
+        let col = result.column.expect("should have column");
+        assert_eq!(line, 2, "Error should be on line 2 after 3-byte char");
+        assert!(col >= 1, "Column should be >= 1, got {}", col);
+    }
+
+    #[test]
+    fn test_toml_unicode_column_after_four_byte_char() {
+        // 😀 (U+1F600) is 4-byte UTF-8. toml_edit error at "bad = = =" lands on line 2.
+        let input = "key = \"\u{1F600}\"\nbad = = =";
+        let result = validate_toml(input).unwrap();
+        assert!(!result.valid);
+        let line = result.line.expect("should have line");
+        let col = result.column.expect("should have column");
+        assert_eq!(line, 2, "Error should be on line 2 after 4-byte char");
+        assert!(col >= 1, "Column should be >= 1, got {}", col);
+    }
+
+    #[test]
+    fn test_toml_unicode_column_with_lf_line_ending() {
+        // "key = "a"\nbad" — toml_edit reports error at end of line 2 (col 4).
+        let input = "key = \"a\"\nbad";
+        let result = validate_toml(input).unwrap();
+        assert!(!result.valid);
+        let line = result.line.expect("should have line");
+        let col = result.column.expect("should have column");
+        assert_eq!(line, 2, "LF: error should be on line 2");
+        assert!(col >= 1, "LF: column should be >= 1, got {}", col);
+    }
+
+    #[test]
+    fn test_toml_unicode_column_with_crlf_line_ending() {
+        // "key = "a"\r\nbad" — CRLF treated as single line ending; error on line 2.
+        let input = "key = \"a\"\r\nbad";
+        let result = validate_toml(input).unwrap();
+        assert!(!result.valid);
+        let line = result.line.expect("should have line");
+        let col = result.column.expect("should have column");
+        assert_eq!(line, 2, "CRLF: error should be on line 2");
+        assert!(col >= 1, "CRLF: column should be >= 1, got {}", col);
+    }
+
+    #[test]
+    fn test_toml_unicode_column_with_lone_cr_line_ending() {
+        // "key = "a"\rbad" — toml_edit treats bare CR as part of string content,
+        // not a line ending. Error reported on line 1. The byte_offset_to_line_col
+        // function converts the byte offset correctly regardless.
+        let input = "key = \"a\"\rbad";
+        let result = validate_toml(input).unwrap();
+        assert!(!result.valid);
+        let line = result.line.expect("should have line");
+        let col = result.column.expect("should have column");
+        assert!(line >= 1, "CR: line should be >= 1, got {}", line);
+        assert!(col >= 1, "CR: column should be >= 1, got {}", col);
+    }
+
+    #[test]
+    fn test_toml_unicode_column_at_end_of_input() {
+        // "key =" with no value — toml_edit reports error at end of document.
+        let input = "key =";
+        let result = validate_toml(input).unwrap();
+        assert!(!result.valid);
+        assert!(
+            result.error.is_some(),
+            "Should have an error for incomplete value"
+        );
+    }
+
+    #[test]
+    fn test_toml_unicode_column_empty_input() {
+        // Empty input is a valid empty TOML document.
+        let result = validate_toml("").unwrap();
+        assert!(result.valid, "Empty input should be valid TOML");
+    }
+
+    #[test]
+    fn test_byte_offset_to_line_col_direct() {
+        // Direct unit tests for the byte-offset-to-line-column converter.
+        // Tests LF line endings.
+        let text = "abc\ndef\nghi";
+        assert_eq!(byte_offset_to_line_col(text, 0), (1, 1)); // 'a'
+        assert_eq!(byte_offset_to_line_col(text, 3), (1, 4)); // 'c'
+        assert_eq!(byte_offset_to_line_col(text, 4), (2, 1)); // 'd' after \n
+        assert_eq!(byte_offset_to_line_col(text, 8), (3, 1)); // 'g' after \n
+        assert_eq!(byte_offset_to_line_col(text, 10), (3, 3)); // 'i'
+
+        // Tests CRLF: \r\n consumed as single line ending.
+        // "abc\r\ndef" — bytes: a(0) b(1) c(2) \r(3) \n(4) d(5) e(6) f(7)
+        let text_crlf = "abc\r\ndef";
+        assert_eq!(byte_offset_to_line_col(text_crlf, 0), (1, 1)); // 'a'
+        assert_eq!(byte_offset_to_line_col(text_crlf, 3), (1, 4)); // 'c'
+        assert_eq!(
+            byte_offset_to_line_col(text_crlf, 4),
+            (2, 1) // after CRLF: \r consumed CRLF pair, so we're on line 2
+        );
+        assert_eq!(byte_offset_to_line_col(text_crlf, 5), (2, 1)); // 'd'
+
+        // Tests multibyte UTF-8 characters (column counts characters, not bytes).
+        let text_mb = "a\u{4E2D}b"; // a=1byte, 中=3bytes, b=1byte
+        assert_eq!(byte_offset_to_line_col(text_mb, 0), (1, 1)); // 'a'
+        assert_eq!(byte_offset_to_line_col(text_mb, 1), (1, 2)); // 中 (byte 1)
+        assert_eq!(byte_offset_to_line_col(text_mb, 4), (1, 3)); // 'b' (byte 4, char 3)
+
+        // Tests 4-byte emoji.
+        let text_emoji = "a\u{1F600}b"; // a=1byte, 😀=4bytes, b=1byte
+        assert_eq!(byte_offset_to_line_col(text_emoji, 0), (1, 1)); // 'a'
+        assert_eq!(byte_offset_to_line_col(text_emoji, 1), (1, 2)); // 😀 (byte 1)
+        assert_eq!(byte_offset_to_line_col(text_emoji, 5), (1, 3)); // 'b' (byte 5, char 3)
+
+        // Tests empty input.
+        assert_eq!(byte_offset_to_line_col("", 0), (1, 1));
     }
 
     #[test]
