@@ -10,7 +10,7 @@ pub fn validate_regex_input() -> Value {
             "ignore_case": {"type": "boolean", "default": false, "description": "Use IGNORECASE flag"},
             "multiline": {"type": "boolean", "default": false, "description": "Use MULTILINE flag"},
             "dotall": {"type": "boolean", "default": false, "description": "Use DOTALL flag"},
-            "ascii": {"type": "boolean", "default": false, "description": "Use ASCII flag"}
+            "ascii": {"type": "boolean", "default": false, "description": "ASCII mode (not supported by eggsact dialect; use \\d, \\w, \\s for ASCII-oriented matches)"}
         },
         "required": ["pattern", "samples"]
     })
@@ -42,11 +42,11 @@ pub fn regex_safety_check_input() -> Value {
 }
 
 pub fn validate_regex_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid_pattern":{"type":"boolean"},"results":{"type":"array"},"error":{"type":["string","null"]},"flags_used":{"type":"object"},"engine_used":{"type":"string","description":"Backend engine used (rust-regex or fancy-regex)"},"dialect":{"type":"string","description":"Regex dialect (eggsact-regex)"},"unsupported_features":{"type":"array","items":{"type":"string"},"description":"Unsupported PCRE constructs detected in pattern"}}})
+    serde_json::json!({"type":"object","properties":{"valid_pattern":{"type":"boolean"},"results":{"type":"array"},"error":{"type":["string","null"]},"flags_used":{"type":"object"},"engine_used":{"type":"string","description":"Backend engine used (rust-regex or fancy-regex)"},"dialect":{"type":"string","description":"Regex dialect (eggsact-regex)"},"unsupported_features":{"type":"array","items":{"type":"string"},"description":"Unsupported PCRE constructs detected in pattern"},"execution_error":{"type":["string","null"],"description":"Runtime execution error from the regex engine (distinct from compilation error)"},"policy_allowed":{"type":["boolean","null"],"description":"Whether the pattern passed safety/policy checks (null if not checked)"}}})
 }
 
 pub fn regex_finditer_output() -> Value {
-    serde_json::json!({"type":"object","properties":{"valid_pattern":{"type":"boolean"},"matches":{"type":"array","description":"List of regex matches with positions and groups"},"truncated":{"type":"boolean"},"match_count":{"type":"integer"},"error":{"type":["string","null"]},"engine_used":{"type":"string","description":"Backend engine used (rust-regex or fancy-regex)"},"dialect":{"type":"string","description":"Regex dialect (eggsact-regex)"},"unsupported_features":{"type":"array","items":{"type":"string"},"description":"Unsupported PCRE constructs detected in pattern"}}})
+    serde_json::json!({"type":"object","properties":{"valid_pattern":{"type":"boolean"},"matches":{"type":"array","description":"List of regex matches with positions and groups"},"truncated":{"type":"boolean"},"match_count":{"type":"integer"},"error":{"type":["string","null"]},"engine_used":{"type":"string","description":"Backend engine used (rust-regex or fancy-regex)"},"dialect":{"type":"string","description":"Regex dialect (eggsact-regex)"},"unsupported_features":{"type":"array","items":{"type":"string"},"description":"Unsupported PCRE constructs detected in pattern"},"execution_error":{"type":["string","null"],"description":"Runtime execution error from the regex engine (distinct from compilation error)"},"policy_allowed":{"type":["boolean","null"],"description":"Whether the pattern passed safety/policy checks (null if not checked)"}}})
 }
 
 pub fn regex_safety_check_output() -> Value {

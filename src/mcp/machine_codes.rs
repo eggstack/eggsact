@@ -145,6 +145,8 @@ pub const SHELL_PARSE_ERROR: &str = "SHELL_PARSE_ERROR";
 pub const SHELL_POLICY_REVIEW: &str = "SHELL_POLICY_REVIEW";
 /// Regex pattern in the command has safety concerns (ReDoS, etc.).
 pub const REGEX_RISK: &str = "REGEX_RISK";
+/// Regex ASCII mode is not supported by the eggsact dialect.
+pub const REGEX_ASCII_NOT_SUPPORTED: &str = "REGEX_ASCII_NOT_SUPPORTED";
 
 // ---------------------------------------------------------------------------
 // JSON
@@ -495,6 +497,7 @@ pub const ALL: &[&str] = &[
     SHELL_PARSE_ERROR,
     SHELL_POLICY_REVIEW,
     REGEX_RISK,
+    REGEX_ASCII_NOT_SUPPORTED,
     JSON_VALID,
     JSON_INVALID,
     DATA_EQUAL,

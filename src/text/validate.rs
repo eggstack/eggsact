@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::text::primitives::byte_offset_to_char_index;
-use crate::text::regex_engine::{classify_pattern, RegexEngineUsed};
+use crate::text::regex_engine::{classify_pattern, compile_regex, CompileError, CompiledRegex};
 
 const MAX_PATTERN_LENGTH: usize = 1000;
 const MAX_PATTERN_NESTING: usize = 5;
@@ -63,6 +63,12 @@ pub struct RegexTestResult {
     pub dialect: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unsupported_features: Option<Vec<String>>,
+    /// Runtime execution error from the regex engine (distinct from compilation error).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_error: Option<String>,
+    /// Whether the pattern passed safety/policy checks (`None` if not checked).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_allowed: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -362,37 +368,15 @@ fn context_at_position(input: &str, position: i32) -> String {
         .unwrap_or_default()
 }
 
-fn apply_flags(
-    pattern: &str,
-    flags: Option<&Vec<String>>,
-    ignore_case: bool,
-    multiline: bool,
-    dotall: bool,
-    _ascii: bool,
-) -> String {
-    let mut result = String::new();
-    if ignore_case {
-        result.push_str("(?i)");
+/// Sanitize a regex engine error message to avoid leaking internal details.
+/// Truncates to a reasonable length and strips memory addresses.
+fn sanitize_engine_error(msg: &str) -> String {
+    let sanitized = msg.replace("0x", "addr");
+    if sanitized.len() > 200 {
+        format!("{}...", &sanitized[..197])
+    } else {
+        sanitized
     }
-    if multiline {
-        result.push_str("(?m)");
-    }
-    if dotall {
-        result.push_str("(?s)");
-    }
-    if let Some(flag_list) = flags {
-        for flag in flag_list {
-            match flag.to_uppercase().as_str() {
-                "IGNORECASE" | "I" => result.push_str("(?i)"),
-                "MULTILINE" | "M" => result.push_str("(?m)"),
-                "DOTALL" | "S" => result.push_str("(?s)"),
-                "VERBOSE" | "X" => result.push_str("(?x)"),
-                _ => {}
-            }
-        }
-    }
-    result.push_str(pattern);
-    result
 }
 
 fn check_pattern_complexity(pattern: &str) -> Result<(), String> {
@@ -554,6 +538,24 @@ pub fn regex_test(
     dotall: bool,
     ascii: bool,
 ) -> RegexTestResult {
+    if ascii {
+        return RegexTestResult {
+            valid_pattern: false,
+            results: vec![],
+            error: Some(
+                "ASCII mode is not supported by the eggsact regex dialect. \
+                 Use \\d, \\w, \\s explicitly for ASCII-oriented matches"
+                    .to_string(),
+            ),
+            flags_used: None,
+            engine_used: None,
+            dialect: Some("eggsact-regex".to_string()),
+            unsupported_features: Some(vec!["ascii_mode".to_string()]),
+            execution_error: None,
+            policy_allowed: None,
+        };
+    }
+
     if let Err(e) = check_pattern_complexity(pattern) {
         return RegexTestResult {
             valid_pattern: false,
@@ -563,6 +565,8 @@ pub fn regex_test(
             engine_used: None,
             dialect: None,
             unsupported_features: None,
+            execution_error: None,
+            policy_allowed: None,
         };
     }
 
@@ -578,40 +582,54 @@ pub fn regex_test(
                 classification.unsupported_features.join(", ")
             )),
             flags_used: None,
-            engine_used: Some(
-                match classification.preferred_engine {
-                    RegexEngineUsed::RustRegex => "rust-regex",
-                    RegexEngineUsed::FancyRegex => "fancy-regex",
-                }
-                .to_string(),
-            ),
+            engine_used: Some(classification.preferred_engine.as_str().to_string()),
             dialect: Some("eggsact-regex".to_string()),
             unsupported_features: Some(classification.unsupported_features),
+            execution_error: None,
+            policy_allowed: None,
         };
     }
 
-    let full_pattern = apply_flags(pattern, flags, ignore_case, multiline, dotall, ascii);
-
-    let re = match Regex::new(&full_pattern) {
-        Ok(r) => r,
-        Err(e) => {
+    let compiled = match compile_regex(
+        pattern,
+        flags.map(|v| v.as_slice()),
+        ignore_case,
+        multiline,
+        dotall,
+    ) {
+        Ok(re) => re,
+        Err(CompileError::Unsupported(features)) => {
             return RegexTestResult {
                 valid_pattern: false,
                 results: vec![],
-                error: Some(e.to_string()),
+                error: Some(format!(
+                    "Pattern uses unsupported constructs: {}",
+                    features.join(", ")
+                )),
                 flags_used: None,
-                engine_used: Some(
-                    match classification.preferred_engine {
-                        RegexEngineUsed::RustRegex => "rust-regex",
-                        RegexEngineUsed::FancyRegex => "fancy-regex",
-                    }
-                    .to_string(),
-                ),
+                engine_used: Some(classification.preferred_engine.as_str().to_string()),
+                dialect: Some("eggsact-regex".to_string()),
+                unsupported_features: Some(features),
+                execution_error: None,
+                policy_allowed: None,
+            };
+        }
+        Err(CompileError::Compile { engine, error }) => {
+            return RegexTestResult {
+                valid_pattern: false,
+                results: vec![],
+                error: Some(error),
+                flags_used: None,
+                engine_used: Some(engine.as_str().to_string()),
                 dialect: Some("eggsact-regex".to_string()),
                 unsupported_features: None,
-            }
+                execution_error: None,
+                policy_allowed: None,
+            };
         }
     };
+
+    let engine_name = compiled.engine_used().as_str().to_string();
 
     let mut results = Vec::new();
 
@@ -626,30 +644,38 @@ pub fn regex_test(
                     sample_chars, MAX_SAMPLE_LENGTH
                 )),
                 flags_used: None,
-                engine_used: Some(
-                    match classification.preferred_engine {
-                        RegexEngineUsed::RustRegex => "rust-regex",
-                        RegexEngineUsed::FancyRegex => "fancy-regex",
-                    }
-                    .to_string(),
-                ),
+                engine_used: Some(engine_name),
                 dialect: Some("eggsact-regex".to_string()),
                 unsupported_features: None,
+                execution_error: None,
+                policy_allowed: None,
             };
         }
-        let find_result = re.find(sample);
+        let find_result = compiled.find(sample);
         let m = match find_result {
             Ok(m) => m,
-            Err(_) => {
-                results.push(RegexMatch {
-                    sample: sample.to_string(),
-                    matches: false,
-                    fullmatch: false,
-                    span: None,
-                    groups: vec![],
-                    groupdict: HashMap::new(),
-                });
-                continue;
+            Err(e) => {
+                let err_msg = format!(
+                    "Runtime execution error on sample {}: {}",
+                    results.len(),
+                    sanitize_engine_error(&e.to_string())
+                );
+                return RegexTestResult {
+                    valid_pattern: true,
+                    results,
+                    error: None,
+                    flags_used: Some(serde_json::json!({
+                        "ignore_case": ignore_case,
+                        "multiline": multiline,
+                        "dotall": dotall,
+                        "ascii": ascii,
+                    })),
+                    engine_used: Some(engine_name),
+                    dialect: Some("eggsact-regex".to_string()),
+                    unsupported_features: None,
+                    execution_error: Some(err_msg),
+                    policy_allowed: None,
+                };
             }
         };
 
@@ -668,14 +694,39 @@ pub fn regex_test(
             }
         };
 
-        let is_fullmatch = m.start() == 0 && m.end() == sample.len();
+        let is_fullmatch = m.start == 0 && m.end == sample.len();
         let span = Some(vec![
-            byte_offset_to_char_index(sample, m.start()).unwrap_or(sample.chars().count()) as i32,
-            byte_offset_to_char_index(sample, m.end()).unwrap_or(sample.chars().count()) as i32,
+            byte_offset_to_char_index(sample, m.start).unwrap_or(sample.chars().count()) as i32,
+            byte_offset_to_char_index(sample, m.end).unwrap_or(sample.chars().count()) as i32,
         ]);
 
-        let caps_result = re.captures(sample);
-        let caps = caps_result.unwrap_or_default();
+        let caps_result = compiled.captures(sample);
+        let caps = match caps_result {
+            Ok(c) => c,
+            Err(e) => {
+                let err_msg = format!(
+                    "Runtime execution error capturing groups on sample {}: {}",
+                    results.len(),
+                    sanitize_engine_error(&e.to_string())
+                );
+                return RegexTestResult {
+                    valid_pattern: true,
+                    results,
+                    error: None,
+                    flags_used: Some(serde_json::json!({
+                        "ignore_case": ignore_case,
+                        "multiline": multiline,
+                        "dotall": dotall,
+                        "ascii": ascii,
+                    })),
+                    engine_used: Some(engine_name),
+                    dialect: Some("eggsact-regex".to_string()),
+                    unsupported_features: None,
+                    execution_error: Some(err_msg),
+                    policy_allowed: None,
+                };
+            }
+        };
 
         let mut groups = Vec::new();
         let mut groupdict = HashMap::new();
@@ -689,7 +740,7 @@ pub fn regex_test(
                 }
             }
 
-            for name in re.capture_names().flatten() {
+            for name in compiled.capture_names().flatten() {
                 if let Some(cap) = caps.name(name) {
                     groupdict.insert(name.to_string(), cap.as_str().to_string());
                 }
@@ -718,15 +769,11 @@ pub fn regex_test(
         results,
         error: None,
         flags_used: Some(flags_used),
-        engine_used: Some(
-            match classification.preferred_engine {
-                RegexEngineUsed::RustRegex => "rust-regex",
-                RegexEngineUsed::FancyRegex => "fancy-regex",
-            }
-            .to_string(),
-        ),
+        engine_used: Some(engine_name),
         dialect: Some("eggsact-regex".to_string()),
         unsupported_features: None,
+        execution_error: None,
+        policy_allowed: None,
     }
 }
 
@@ -1181,6 +1228,12 @@ pub struct RegexFindIterResult {
     pub dialect: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unsupported_features: Option<Vec<String>>,
+    /// Runtime execution error from the regex engine (distinct from compilation error).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_error: Option<String>,
+    /// Whether the pattern passed safety/policy checks (`None` if not checked).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_allowed: Option<bool>,
 }
 
 fn get_line_column_for_index(text: &str, index: usize) -> (i32, i32) {
@@ -1250,6 +1303,8 @@ pub fn regex_finditer(
             engine_used: None,
             dialect: None,
             unsupported_features: None,
+            execution_error: None,
+            policy_allowed: None,
         };
     }
 
@@ -1267,6 +1322,8 @@ pub fn regex_finditer(
             engine_used: None,
             dialect: None,
             unsupported_features: None,
+            execution_error: None,
+            policy_allowed: None,
         };
     }
 
@@ -1280,6 +1337,8 @@ pub fn regex_finditer(
             engine_used: None,
             dialect: None,
             unsupported_features: None,
+            execution_error: None,
+            policy_allowed: None,
         };
     }
 
@@ -1296,69 +1355,60 @@ pub fn regex_finditer(
                 "Pattern uses unsupported constructs: {}",
                 classification.unsupported_features.join(", ")
             )),
-            engine_used: Some(
-                match classification.preferred_engine {
-                    RegexEngineUsed::RustRegex => "rust-regex",
-                    RegexEngineUsed::FancyRegex => "fancy-regex",
-                }
-                .to_string(),
-            ),
+            engine_used: Some(classification.preferred_engine.as_str().to_string()),
             dialect: Some("eggsact-regex".to_string()),
             unsupported_features: Some(classification.unsupported_features),
+            execution_error: None,
+            policy_allowed: None,
         };
     }
 
-    let mut case_insensitive = false;
-    let mut multi_line = false;
-    let mut dot_matches_new_line = false;
-
-    if let Some(flag_list) = flags {
-        for flag in flag_list {
-            match flag.as_str() {
-                "IGNORECASE" => case_insensitive = true,
-                "MULTILINE" => multi_line = true,
-                "DOTALL" => dot_matches_new_line = true,
-                _ => {}
-            }
+    let compiled = match compile_regex(pattern, flags.map(|v| v.as_slice()), false, false, false) {
+        Ok(re) => re,
+        Err(CompileError::Unsupported(features)) => {
+            return RegexFindIterResult {
+                valid_pattern: false,
+                matches: vec![],
+                truncated: false,
+                match_count: 0,
+                error: Some(format!(
+                    "Pattern uses unsupported constructs: {}",
+                    features.join(", ")
+                )),
+                engine_used: Some(classification.preferred_engine.as_str().to_string()),
+                dialect: Some("eggsact-regex".to_string()),
+                unsupported_features: Some(features),
+                execution_error: None,
+                policy_allowed: None,
+            };
         }
-    }
-
-    let pattern_with_flags = if case_insensitive || multi_line || dot_matches_new_line {
-        let mut prefix = "(?".to_string();
-        if case_insensitive {
-            prefix.push('i');
+        Err(CompileError::Compile { engine, error }) => {
+            return RegexFindIterResult {
+                valid_pattern: false,
+                matches: vec![],
+                truncated: false,
+                match_count: 0,
+                error: Some(format!("Invalid pattern: {}", error)),
+                engine_used: Some(engine.as_str().to_string()),
+                dialect: Some("eggsact-regex".to_string()),
+                unsupported_features: None,
+                execution_error: None,
+                policy_allowed: None,
+            };
         }
-        if multi_line {
-            prefix.push('m');
-        }
-        if dot_matches_new_line {
-            prefix.push('s');
-        }
-        prefix.push(')');
-        format!("{}{}", prefix, pattern)
-    } else {
-        pattern.to_string()
     };
 
-    // Route through classifier: use rust-regex for simple patterns, fancy-regex for extended.
-    if classification.preferred_engine == RegexEngineUsed::RustRegex {
-        let std_re = match regex::Regex::new(&pattern_with_flags) {
-            Ok(r) => r,
-            Err(e) => {
-                return RegexFindIterResult {
-                    valid_pattern: false,
-                    matches: vec![],
-                    truncated: false,
-                    match_count: 0,
-                    error: Some(format!("Invalid pattern: {}", e)),
-                    engine_used: Some("rust-regex".to_string()),
-                    dialect: Some("eggsact-regex".to_string()),
-                    unsupported_features: None,
-                };
-            }
+    let engine_name = compiled.engine_used().as_str().to_string();
+
+    // Route to the correct iteration path based on compiled backend
+    if compiled.is_rust() {
+        // Rust-regex path: manual iteration with text slicing
+        let std_re = match &compiled {
+            CompiledRegex::Rust(re) => re.clone(),
+            _ => unreachable!(),
         };
 
-        let mut matches = Vec::new();
+        let mut matches_out = Vec::new();
         let mut match_count = 0;
         let mut truncated = false;
         let mut start_pos = 0;
@@ -1370,7 +1420,7 @@ pub fn regex_finditer(
                 None => break,
             };
             match_count += 1;
-            if matches.len() >= max_matches {
+            if matches_out.len() >= max_matches {
                 truncated = true;
             }
 
@@ -1417,7 +1467,7 @@ pub fn regex_finditer(
                 (None, None)
             };
 
-            matches.push(RegexFindIterMatch {
+            matches_out.push(RegexFindIterMatch {
                 m: first_match.as_str().to_string(),
                 span: vec![
                     byte_offset_to_char_index(text, abs_start).unwrap_or(text.chars().count())
@@ -1431,133 +1481,133 @@ pub fn regex_finditer(
             });
         }
 
-        return RegexFindIterResult {
+        RegexFindIterResult {
             valid_pattern: true,
-            matches,
+            matches: matches_out,
             truncated,
             match_count,
             error: None,
-            engine_used: Some("rust-regex".to_string()),
+            engine_used: Some(engine_name),
             dialect: Some("eggsact-regex".to_string()),
             unsupported_features: None,
+            execution_error: None,
+            policy_allowed: None,
+        }
+    } else {
+        // Fancy-regex path: use captures_from_pos for lookaround/backreference support
+        let fancy_re = match &compiled {
+            CompiledRegex::Fancy(re) => re.clone(),
+            _ => unreachable!(),
         };
-    }
 
-    // Fancy-regex path for patterns needing lookaround/backreferences
-    let compiled = match Regex::new(&pattern_with_flags) {
-        Ok(c) => c,
-        Err(e) => {
-            return RegexFindIterResult {
-                valid_pattern: false,
-                matches: vec![],
-                truncated: false,
-                match_count: 0,
-                error: Some(format!("Invalid pattern: {}", e)),
-                engine_used: Some("fancy-regex".to_string()),
-                dialect: Some("eggsact-regex".to_string()),
-                unsupported_features: None,
+        let mut matches_out = Vec::new();
+        let mut match_count = 0;
+        let mut truncated = false;
+        let mut start_pos = 0;
+        let mut execution_error: Option<String> = None;
+
+        while start_pos <= text.len() {
+            let caps_opt = match fancy_re.captures_from_pos(text, start_pos) {
+                Ok(c) => c,
+                Err(e) => {
+                    execution_error = Some(format!(
+                        "Runtime execution error at position {}: {}",
+                        start_pos,
+                        sanitize_engine_error(&e.to_string())
+                    ));
+                    break;
+                }
             };
-        }
-    };
+            let caps = match caps_opt {
+                Some(c) => c,
+                None => break,
+            };
+            match_count += 1;
+            if matches_out.len() >= max_matches {
+                truncated = true;
+            }
 
-    let mut matches = Vec::new();
-    let mut match_count = 0;
-    let mut truncated = false;
-    let mut start_pos = 0;
-
-    while start_pos <= text.len() {
-        let caps_opt = match compiled.captures_from_pos(text, start_pos) {
-            Ok(c) => c,
-            Err(_) => break,
-        };
-        let caps = match caps_opt {
-            Some(c) => c,
-            None => break,
-        };
-        match_count += 1;
-        if matches.len() >= max_matches {
-            truncated = true;
-        }
-
-        let first_match = caps.get(0);
-        let end_pos = first_match
-            .map(|m| m.end())
-            .unwrap_or_else(|| advance_to_next_char_boundary(text, start_pos));
-        // Advance past this match; if it was zero-length, advance by 1
-        start_pos = if end_pos == start_pos {
-            if start_pos >= text.len() {
-                text.len().saturating_add(1)
+            let first_match = caps.get(0);
+            let end_pos = first_match
+                .map(|m| m.end())
+                .unwrap_or_else(|| advance_to_next_char_boundary(text, start_pos));
+            start_pos = if end_pos == start_pos {
+                if start_pos >= text.len() {
+                    text.len().saturating_add(1)
+                } else {
+                    advance_to_next_char_boundary(text, start_pos)
+                }
             } else {
-                advance_to_next_char_boundary(text, start_pos)
+                end_pos
+            };
+
+            if truncated {
+                continue;
             }
-        } else {
-            end_pos
-        };
 
-        if truncated {
-            continue;
-        }
+            let mut groups = Vec::new();
+            let mut group_dict = HashMap::new();
 
-        let mut groups = Vec::new();
-        let mut group_dict = HashMap::new();
-
-        if include_groups {
-            for i in 1..caps.len() {
-                if let Some(cap) = caps.get(i) {
-                    groups.push(cap.as_str().to_string());
+            if include_groups {
+                for i in 1..caps.len() {
+                    if let Some(cap) = caps.get(i) {
+                        groups.push(cap.as_str().to_string());
+                    }
+                }
+                for name in fancy_re.capture_names().flatten() {
+                    if let Some(cap) = caps.name(name) {
+                        group_dict.insert(name.to_string(), cap.as_str().to_string());
+                    }
                 }
             }
-            for name in compiled.capture_names().flatten() {
-                if let Some(cap) = caps.name(name) {
-                    group_dict.insert(name.to_string(), cap.as_str().to_string());
-                }
-            }
-        }
 
-        let (line, column) = if include_line_column {
-            if let Some(m) = first_match {
-                let (l, c) = get_line_column_for_index(
-                    text,
-                    byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count()),
-                );
-                (Some(l), Some(c))
+            let (line, column) = if include_line_column {
+                if let Some(m) = first_match {
+                    let (l, c) = get_line_column_for_index(
+                        text,
+                        byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count()),
+                    );
+                    (Some(l), Some(c))
+                } else {
+                    (None, None)
+                }
             } else {
                 (None, None)
-            }
-        } else {
-            (None, None)
-        };
+            };
 
-        matches.push(RegexFindIterMatch {
-            m: first_match
-                .map(|m| m.as_str().to_string())
-                .unwrap_or_default(),
-            span: first_match
-                .map(|m| {
-                    vec![
-                        byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count())
-                            as i32,
-                        byte_offset_to_char_index(text, m.end()).unwrap_or(text.chars().count())
-                            as i32,
-                    ]
-                })
-                .unwrap_or_default(),
-            line,
-            column,
-            groups,
-            group_dict,
-        });
-    }
+            matches_out.push(RegexFindIterMatch {
+                m: first_match
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default(),
+                span: first_match
+                    .map(|m| {
+                        vec![
+                            byte_offset_to_char_index(text, m.start())
+                                .unwrap_or(text.chars().count()) as i32,
+                            byte_offset_to_char_index(text, m.end()).unwrap_or(text.chars().count())
+                                as i32,
+                        ]
+                    })
+                    .unwrap_or_default(),
+                line,
+                column,
+                groups,
+                group_dict,
+            });
+        }
 
-    RegexFindIterResult {
-        valid_pattern: true,
-        matches,
-        truncated,
-        match_count,
-        error: None,
-        engine_used: Some("fancy-regex".to_string()),
-        dialect: Some("eggsact-regex".to_string()),
-        unsupported_features: None,
+        RegexFindIterResult {
+            valid_pattern: true,
+            matches: matches_out,
+            truncated,
+            match_count,
+            error: None,
+            engine_used: Some(engine_name),
+            dialect: Some("eggsact-regex".to_string()),
+            unsupported_features: None,
+            execution_error,
+            policy_allowed: None,
+        }
     }
 }
 

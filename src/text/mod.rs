@@ -24,7 +24,10 @@ pub mod unicode_tools;
 pub mod validate;
 pub mod version;
 
-pub use regex_engine::{classify_pattern, RegexClassification, RegexEngineUsed, RegexFeature};
+pub use regex_engine::{
+    classify_pattern, compile_regex, CompileError, CompiledRegex, RegexClassification,
+    RegexEngineUsed, RegexFeature,
+};
 pub use regex_safety::{regex_safety_check, RegexSafetyResult};
 pub use replace::{
     text_replace_check, text_replace_check_with_options, TextReplaceCheckOptions,

@@ -240,6 +240,8 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
         engine_used: None,
         dialect: None,
         unsupported_features: None,
+        execution_error: None,
+        policy_allowed: None,
     });
 
     let flags_used = serde_json::json!({
@@ -266,13 +268,23 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
     if let Some(ref unsupported) = result.unsupported_features {
         result_value["unsupported_features"] = serde_json::json!(unsupported);
     }
+    if let Some(ref exec_err) = result.execution_error {
+        result_value["execution_error"] = serde_json::json!(exec_err);
+    }
+    if let Some(policy) = result.policy_allowed {
+        result_value["policy_allowed"] = serde_json::json!(policy);
+    }
 
-    // Emit REGEX_UNSUPPORTED_FEATURE for unsupported dialect constructs
+    // Emit machine code for unsupported features or ASCII mode
     let mut resp =
         ToolResponse::success(result_value, Some("validate_regex")).with_tool("validate_regex");
     if let Some(ref unsupported) = result.unsupported_features {
         if !unsupported.is_empty() {
-            resp = resp.with_machine_code(machine_codes::REGEX_UNSUPPORTED_FEATURE);
+            if unsupported.contains(&"ascii_mode".to_string()) {
+                resp = resp.with_machine_code(machine_codes::REGEX_ASCII_NOT_SUPPORTED);
+            } else {
+                resp = resp.with_machine_code(machine_codes::REGEX_UNSUPPORTED_FEATURE);
+            }
         }
     }
     resp
@@ -507,6 +519,8 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
         engine_used: None,
         dialect: None,
         unsupported_features: None,
+        execution_error: None,
+        policy_allowed: None,
     });
 
     if budget_ctx.should_stop() {
@@ -541,6 +555,8 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
             "engine_used": result.engine_used,
             "dialect": result.dialect,
             "unsupported_features": result.unsupported_features,
+            "execution_error": result.execution_error,
+            "policy_allowed": result.policy_allowed,
         }),
         Some("regex_finditer"),
     )
@@ -551,6 +567,16 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
         if !unsupported.is_empty() {
             resp = resp.with_machine_code(machine_codes::REGEX_UNSUPPORTED_FEATURE);
         }
+    }
+    // Emit INTERNAL_ERROR for runtime execution errors
+    if resp
+        .result
+        .as_ref()
+        .and_then(|r| r.get("execution_error"))
+        .is_some_and(|v| !v.is_null())
+        && resp.machine_code.is_none()
+    {
+        resp = resp.with_machine_code(machine_codes::INTERNAL_ERROR);
     }
     resp
 }

@@ -21,7 +21,7 @@ The `src/text/` module provides **25 text processing modules** plus auto-generat
 | `position` | `position.rs` | `text_position`, `text_window` | `text_position()`, `text_window()` |
 | `primitives` | `primitives.rs` | (internal) | `codepoints()`, `count_graphemes()`, `truncate_to_grapheme()`, `codepoint_index_to_byte_offset()` |
 | `regex_safety` | `regex_safety.rs` | `regex_safety_check` | `regex_safety_check()` |
-| `regex_engine` | `regex_engine.rs` | (used by `validate_regex`, `regex_safety_check`, `regex_finditer`) | `classify_pattern()` |
+| `regex_engine` | `regex_engine.rs` | (used by `validate_regex`, `regex_safety_check`, `regex_finditer`) | `classify_pattern()`, `compile_regex()`, `normalize_flags()` |
 | `replace` | `replace.rs` | `text_replace_check` | `text_replace_check()`, `text_replace_check_with_options()` |
 | `shell` | `shell.rs` | `shell_split`, `shell_quote_join`, `argv_compare` | `shell_split()`, `shell_quote_join()`, `argv_compare()` |
 | `synthesis` | `synthesis.rs` | composite tools | (maps Python synthesis functions to Rust submodules) |
@@ -215,6 +215,8 @@ pub struct RegexTestResult {
     pub engine_used: Option<String>,    // "rust-regex" or "fancy-regex"
     pub dialect: Option<String>,        // "eggsact-regex"
     pub unsupported_features: Option<Vec<String>>,
+    pub execution_error: Option<String>, // runtime engine error (distinct from compilation error)
+    pub policy_allowed: Option<bool>,   // whether pattern passed safety/policy checks
 }
 ```
 
@@ -330,6 +332,28 @@ pub struct RegexClassification {
     pub unsupported_features: Vec<String>,
 }
 ```
+
+### `compile_regex(pattern, flags, ignore_case, multiline, dotall) -> Result<CompiledRegex, CompileError>`
+
+Unified compilation path used by both `regex_test` and `regex_finditer`. Classifies the pattern, rejects unsupported PCRE constructs, applies flag normalization, and compiles with the appropriate backend.
+
+```rust
+pub enum CompiledRegex {
+    Rust(regex::Regex),
+    Fancy(fancy_regex::Regex),
+}
+
+pub enum CompileError {
+    Unsupported(Vec<String>),
+    Compile { engine: RegexEngineUsed, error: String },
+}
+```
+
+`CompiledRegex` provides `find()`, `captures()`, `captures_from_pos()`, `capture_names()`, `is_match()`, and `engine_used()` — all returning backend-independent types.
+
+### `normalize_flags(flags, ignore_case, multiline, dotall) -> String`
+
+Normalizes flag parameters into an inline flag prefix (e.g., `"(?ims)"`). Recognized flags: `IGNORECASE`/`I`, `MULTILINE`/`M`, `DOTALL`/`S`, `VERBOSE`/`X`.
 
 ### `RegexEngineUsed`
 

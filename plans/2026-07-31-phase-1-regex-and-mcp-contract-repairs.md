@@ -495,34 +495,32 @@ Run Python parity only if this phase changes a behavior covered by parity. Recor
 
 # Acceptance checklist
 
-- [ ] Long Unicode duplicate request IDs cannot panic.
-- [ ] Diagnostic truncation is UTF-8 safe.
-- [ ] Simple regex patterns construct and report `rust-regex`.
-- [ ] Supported fancy patterns construct and report `fancy-regex`.
-- [ ] Unsupported PCRE-only constructs remain explicit.
-- [ ] Validation and iteration share classification/compilation logic.
-- [ ] ASCII mode is implemented or explicitly rejected.
-- [ ] ASCII mode is never silently echoed as applied.
-- [ ] Runtime regex errors are not converted into ordinary no-match.
-- [ ] Runtime regex errors are not mislabeled as truncation.
-- [ ] Safety/complexity policy is not mislabeled as syntax invalidity.
-- [ ] Existing regex functionality remains available.
-- [ ] No PCRE2/FFI dependency was added.
-- [ ] Generated documentation is current.
-- [ ] Full local verification passes.
+- [x] Long Unicode duplicate request IDs cannot panic.
+- [x] Diagnostic truncation is UTF-8 safe.
+- [x] Simple regex patterns construct and report `rust-regex`.
+- [x] Supported fancy patterns construct and report `fancy-regex`.
+- [x] Unsupported PCRE-only constructs remain explicit.
+- [x] Validation and iteration share classification/compilation logic.
+- [x] ASCII mode is implemented or explicitly rejected.
+- [x] ASCII mode is never silently echoed as applied.
+- [x] Runtime regex errors are not converted into ordinary no-match.
+- [x] Runtime regex errors are not mislabeled as truncation.
+- [x] Safety/complexity policy is not mislabeled as syntax invalidity.
+- [x] Existing regex functionality remains available.
+- [x] No PCRE2/FFI dependency was added.
+- [x] Generated documentation is current.
+- [x] Full local verification passes.
 
 ---
 
 # Completion record
 
-Fill only after implementation.
-
-- **Status:** pending
-- **Implementation commit:** pending
-- **Focused tests:** pending
-- **Full verification:** pending
-- **ASCII disposition:** pending
-- **Response-schema changes:** pending
-- **Deferred findings:** pending
+- **Status:** complete
+- **Implementation commit:** (pending commit)
+- **Focused tests:** 523 unit tests, 938 text tests, 47 property tests, 11 doc tests — all pass
+- **Full verification:** fmt ✓, clippy ✓, tests ✓ (skip parity), doc ✓, generate-docs --check ✓, package ✓
+- **ASCII disposition:** explicitly rejected with REGEX_ASCII_NOT_SUPPORTED machine code
+- **Response-schema changes:** added `execution_error` and `policy_allowed` to RegexTestResult/RegexFindIterResult; updated validate_regex_output and regex_finditer_output schemas
+- **Deferred findings:** none
 
 Do not create a separate evidence-only plan. Record concise closure here.

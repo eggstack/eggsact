@@ -28,15 +28,34 @@ pub fn mcp_tool_count() -> usize {
     registry::tool_count()
 }
 
+/// Truncate a string to at most `max_bytes` UTF-8 bytes, appending `suffix`.
+///
+/// Always returns a valid UTF-8 string. If the input fits within `max_bytes`,
+/// it is returned unchanged. Otherwise the content is truncated at a valid
+/// UTF-8 character boundary before `max_bytes` and `suffix` is appended.
+fn truncate_utf8_bytes(input: &str, max_bytes: usize, suffix: &str) -> String {
+    if input.len() <= max_bytes {
+        return input.to_string();
+    }
+    let suffix_bytes = suffix.len();
+    if suffix_bytes >= max_bytes {
+        return suffix.to_string();
+    }
+    let mut end = max_bytes - suffix_bytes;
+    while end > 0 && !input.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut result = String::with_capacity(max_bytes + suffix.len());
+    result.push_str(&input[..end]);
+    result.push_str(suffix);
+    result
+}
+
 /// Truncate a request ID for display in error messages, avoiding DoS via
 /// oversized IDs in log output.
 fn truncate_id_display(id: &Value) -> String {
     let s = id.to_string();
-    if s.len() > 128 {
-        format!("{}...", &s[..124])
-    } else {
-        s
-    }
+    truncate_utf8_bytes(&s, 128, "...")
 }
 
 fn write_json_line(value: &Value) {
@@ -1087,5 +1106,96 @@ mod tests {
             "3000000000.0 should pass multipleOf 3.0, got: {:?}",
             result
         );
+    }
+}
+
+#[cfg(test)]
+mod truncate_utf8_bytes_tests {
+    use super::truncate_utf8_bytes;
+
+    #[test]
+    fn ascii_below_limit() {
+        assert_eq!(truncate_utf8_bytes("hello", 128, "..."), "hello");
+    }
+
+    #[test]
+    fn ascii_above_limit() {
+        let input = "a".repeat(200);
+        let result = truncate_utf8_bytes(&input, 128, "...");
+        assert!(result.len() <= 128 + 3);
+        assert!(result.ends_with("..."));
+        assert_eq!(&result[..125], "a".repeat(125).as_str());
+    }
+
+    #[test]
+    fn multibyte_cut_at_char_boundary() {
+        // "é" is 2 bytes in UTF-8; 124 is even so it is a char boundary
+        let input = "é".repeat(100); // 200 bytes total
+        let result = truncate_utf8_bytes(&input, 128, "...");
+        assert!(result.len() <= 128 + 3);
+        assert!(result.ends_with("..."));
+        // The content before "..." should be valid UTF-8
+        let content_len = result.len() - 3;
+        assert!(result[..content_len].is_char_boundary(content_len));
+    }
+
+    #[test]
+    fn multibyte_cut_inside_codepoint() {
+        // "é" is 2 bytes; 125 is odd, so it falls inside a code point
+        let input = "é".repeat(100); // 200 bytes
+        let result = truncate_utf8_bytes(&input, 125, "...");
+        assert!(result.ends_with("..."));
+        // content_bytes = 125 - 3 = 122, 122 / 2 = 61 "é" chars
+        assert_eq!(&result[..122], "é".repeat(61).as_str());
+    }
+
+    #[test]
+    fn mixed_ascii_and_multibyte() {
+        let mut input = "hello".to_string();
+        for _ in 0..50 {
+            input.push('é');
+        }
+        // "hello" = 5 bytes, 50 * "é" = 100 bytes, total = 105 bytes
+        let result = truncate_utf8_bytes(&input, 50, "...");
+        assert!(result.len() <= 50 + 3);
+        assert!(result.ends_with("..."));
+        // Content before suffix should be valid UTF-8
+        let content = &result[..result.len() - 3];
+        assert!(content.is_char_boundary(content.len()));
+    }
+
+    #[test]
+    fn zero_limit() {
+        assert_eq!(truncate_utf8_bytes("hello", 0, "..."), "...");
+    }
+
+    #[test]
+    fn suffix_larger_than_limit() {
+        assert_eq!(truncate_utf8_bytes("hello", 2, "..."), "...");
+    }
+
+    #[test]
+    fn truncate_id_display_with_unicode() {
+        use super::truncate_id_display;
+        use serde_json::json;
+
+        // Long Unicode string ID should not panic
+        let long_id = json!("id-".to_string() + &"🎉".repeat(100));
+        let result = truncate_id_display(&long_id);
+        assert!(result.len() <= 128 + 3);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn duplicate_unicode_id_produces_error_not_panic() {
+        use super::*;
+        use serde_json::json;
+
+        // Verify that a long Unicode request ID does not panic
+        // when passed through truncate_id_display
+        let long_unicode = json!("id-".to_string() + &"🎉".repeat(100));
+        let result = truncate_id_display(&long_unicode);
+        // Should produce a bounded string, not panic
+        assert!(result.len() < 200);
     }
 }
