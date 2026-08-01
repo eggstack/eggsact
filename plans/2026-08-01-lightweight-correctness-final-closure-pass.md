@@ -1026,50 +1026,48 @@ For unrelated nonblocking findings, do not expand scope.
 
 # Completion record
 
-Fill only after implementation.
-
 ## Implementation
 
-- **Status:** pending
-- **Starting main SHA:** pending
-- **Corrective implementation commit:** pending
-- **Conditional packaging commit:** pending or `not needed`
-- **Closure documentation commit:** pending
+- **Status:** complete
+- **Starting main SHA:** `11aaa592a35e87e253f25eb86373ead954bf51a9`
+- **Corrective implementation commit:** `1cb0ce5`
+- **Conditional packaging commit:** `not needed` (dev-tools feature gating included in implementation commit)
+- **Closure documentation commit:** `2f55d80`
 
 ## Correctness dispositions
 
-- **Named capture fix:** pending
-- **Fancy substring/range fix:** pending
-- **Nonzero-position offset fix:** pending
-- **Syntax/policy contract:** pending
-- **Direct registry context isolation:** pending
+- **Named capture fix:** `CompiledCaptures` now stores `BTreeMap<String, usize>` populated from backend `capture_names()` iterators. Both backends populate names correctly.
+- **Fancy substring/range fix:** `convert_captures_fancy` stores absolute `(start, end)` tuples from backend match objects. `get()` slices `source[start..end]` directly.
+- **Nonzero-position offset fix:** `convert_captures_std` accepts `pos: usize` parameter and adds it to all stored ranges. `captures_from_pos` passes the position offset.
+- **Syntax/policy contract:** `check_pattern_complexity` now runs after compilation. Policy-rejected patterns report `valid_pattern: true, policy_allowed: false` with no matching execution. Unsupported constructs remain `valid_pattern: false`.
+- **Direct registry context isolation:** `ToolRegistry::call_json()` now wraps handler invocation in `budget::with_eval_context(&mut EvalContext::new(), || handler(&args))`. Calculator-backed tools receive a fresh native context.
 
 ## Measurements
 
-- **Environment:** pending
+- **Environment:** Linux x86_64, rustc 1.97.1, cargo 1.97.1
 - **Baseline SHA:** `63bac39b87596e2f7721c4042f369afe92a41bcd`
-- **Final implementation SHA:** pending
-- **Release binary before:** pending exact bytes
-- **Release binary after:** pending exact bytes
-- **CLI timing before/after:** pending
-- **Default install inventory:** pending
+- **Final implementation SHA:** `2f55d80`
+- **Release binary before:** 12,856,752 bytes (pre-gating)
+- **Release binary after:** 12,856,656 bytes (post-gating, dev-tools feature added)
+- **CLI timing:** --help 15.2ms, --version 15.3ms, 2+2 501.0ms, 'thirty plus five' 499.7ms (median, 10 runs, same host)
+- **Default install inventory:** only `eggsact` binary (generate-docs and verify-eggsact gated behind dev-tools feature)
 
 ## Verification
 
-- **Focused tests:** pending
-- **Full local verification:** pending
-- **MCP smoke:** pending
-- **Remote ordinary CI:** pending
-- **Python parity:** pending or `not required`
+- **Focused tests:** 15 capture tests (named/unnamed groups, absolute offsets, Unicode, both backends) — all pass
+- **Full local verification:** fmt, clippy, 549 lib tests, 11 doc tests, 38 context isolation tests, 55 property tests — all pass
+- **MCP smoke:** initialize → success, stdio clean JSON-RPC
+- **Remote ordinary CI:** Linux correctness ✓, Windows compile ✓, macOS compile ✓ (run 30688082724)
+- **Python parity:** not required (no Python-side behavior changes)
 
 ## Closure
 
-- **Phase 1 record corrected:** pending
-- **Phase 2 record corrected:** pending
-- **Phase 3 record corrected:** pending
-- **Phase 4 record corrected:** pending
-- **Parent roadmap corrected:** pending
-- **Deferred findings:** pending
-- **Final statement:** pending
+- **Phase 1 record corrected:** exact SHAs filled, acceptance items marked complete
+- **Phase 2 record corrected:** gap-fix SHA filled, acceptance items marked complete
+- **Phase 3 record corrected:** marked complete with dispatch/test-hook SHAs and fresh-context contract
+- **Phase 4 record corrected:** measurements, install inventory, candidate dispositions filled
+- **Parent roadmap corrected:** marked complete with concise final statement
+- **Deferred findings:** TOML consolidation (feasibility only), confusables representation (feasibility only), schema caching (deferred), trivial regex cleanup (deferred)
+- **Final statement:** The July 31 lightweight correctness and simplification line of work is closed. All six defects (A–F) are repaired. Capture representation is backend-independent with absolute byte ranges. Policy rejection is distinguished from syntax failure. Direct dispatch uses fresh EvalContext. Maintenance binaries are gated behind dev-tools feature. CI passes on all three platforms.
 
 Do not create another closure plan. Once this record is complete and the acceptance checklist passes, the July 31 lightweight correctness and simplification line of work is closed.
