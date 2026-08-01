@@ -53,27 +53,38 @@ impl<'t> CompiledMatch<'t> {
 }
 
 /// A backend-independent representation of captured groups.
+///
+/// Stores one source reference and absolute byte ranges. Every range is
+/// absolute relative to the original input passed to the matching method.
+/// `get()` slices `source[start..end]` directly — no redundant substring
+/// copies are stored per group.
 #[derive(Debug, Clone)]
 pub struct CompiledCaptures<'t> {
-    /// The full match.
-    pub full_match: CompiledMatch<'t>,
-    /// Number of capture groups (including group 0).
-    pub len: usize,
-    /// Individual group matches (index 1..len). `None` means the group didn't participate.
-    groups: Vec<Option<(usize, usize, &'t str)>>,
-    /// Named group indices.
-    names: std::collections::HashMap<String, usize>,
+    /// The original input text.
+    source: &'t str,
+    /// Full match range (group 0). `None` only if the match object had no group 0.
+    full_match_range: Option<(usize, usize)>,
+    /// Per-group byte ranges (index 1..len). `None` means nonparticipating.
+    groups: Vec<Option<(usize, usize)>>,
+    /// Named capture name → group index (0 = full match, 1 = first group, ...).
+    names: std::collections::BTreeMap<String, usize>,
+    /// Total number of capture groups including group 0.
+    len: usize,
 }
 
 impl<'t> CompiledCaptures<'t> {
     /// Get a capture group by index (0 = full match, 1 = first group, ...).
     pub fn get(&self, i: usize) -> Option<CompiledMatch<'t>> {
         if i == 0 {
-            return Some(self.full_match.clone());
+            return self.full_match_range.map(|(start, end)| CompiledMatch {
+                text: &self.source[start..end],
+                start,
+                end,
+            });
         }
         self.groups.get(i - 1).and_then(|opt| {
-            opt.map(|(start, end, text)| CompiledMatch {
-                text: &text[..end - start],
+            opt.map(|(start, end)| CompiledMatch {
+                text: &self.source[start..end],
                 start,
                 end,
             })
@@ -142,14 +153,26 @@ impl CompiledRegex {
         &self,
         text: &'t str,
     ) -> Result<Option<CompiledCaptures<'t>>, fancy_regex::Error> {
-        match self {
+        let name_iter: Box<dyn Iterator<Item = Option<String>> + '_> = match self {
+            CompiledRegex::Rust(re) => {
+                Box::new(re.capture_names().map(|o| o.map(|s| s.to_string())))
+            }
+            CompiledRegex::Fancy(re) => {
+                Box::new(re.capture_names().map(|o| o.map(|s| s.to_string())))
+            }
+        };
+        let mut result = match self {
             CompiledRegex::Rust(re) => Ok(re
                 .captures(text)
-                .map(|caps| convert_captures_std(&caps, text))),
+                .map(|caps| convert_captures_std(&caps, text, 0))),
             CompiledRegex::Fancy(re) => Ok(re
                 .captures(text)?
                 .map(|caps| convert_captures_fancy(&caps, text))),
+        };
+        if let Ok(Some(ref mut caps)) = result {
+            populate_capture_names(&mut caps.names, name_iter);
         }
+        result
     }
 
     /// Capture groups starting from a byte position in `text`.
@@ -158,19 +181,31 @@ impl CompiledRegex {
         text: &'t str,
         pos: usize,
     ) -> Result<Option<CompiledCaptures<'t>>, fancy_regex::Error> {
-        match self {
+        let name_iter: Box<dyn Iterator<Item = Option<String>> + '_> = match self {
+            CompiledRegex::Rust(re) => {
+                Box::new(re.capture_names().map(|o| o.map(|s| s.to_string())))
+            }
+            CompiledRegex::Fancy(re) => {
+                Box::new(re.capture_names().map(|o| o.map(|s| s.to_string())))
+            }
+        };
+        let mut result = match self {
             CompiledRegex::Rust(re) => {
                 if pos >= text.len() {
                     return Ok(None);
                 }
                 Ok(re
                     .captures(&text[pos..])
-                    .map(|caps| convert_captures_std(&caps, text)))
+                    .map(|caps| convert_captures_std(&caps, text, pos)))
             }
             CompiledRegex::Fancy(re) => Ok(re
                 .captures_from_pos(text, pos)?
                 .map(|caps| convert_captures_fancy(&caps, text))),
+        };
+        if let Ok(Some(ref mut caps)) = result {
+            populate_capture_names(&mut caps.names, name_iter);
         }
+        result
     }
 
     /// Iterator over capture group names.
@@ -201,6 +236,9 @@ impl CompiledRegex {
 }
 
 /// Convert fancy_regex captures to our backend-independent form.
+///
+/// fancy_regex returns absolute byte ranges into the original text, so no
+/// position adjustment is needed. Names are populated separately by the caller.
 fn convert_captures_fancy<'t>(
     caps: &fancy_regex::Captures<'t>,
     text: &'t str,
@@ -209,40 +247,53 @@ fn convert_captures_fancy<'t>(
     let mut groups = Vec::new();
 
     for i in 1..caps.len() {
-        groups.push(caps.get(i).map(|m| (m.start(), m.end(), text)));
+        groups.push(caps.get(i).map(|m| (m.start(), m.end())));
     }
 
     CompiledCaptures {
-        full_match: CompiledMatch {
-            text: &text[full.start()..full.end()],
-            start: full.start(),
-            end: full.end(),
-        },
+        source: text,
+        full_match_range: Some((full.start(), full.end())),
         len: caps.len(),
         groups,
-        names: std::collections::HashMap::new(),
+        names: std::collections::BTreeMap::new(),
     }
 }
 
 /// Convert regex::Captures to our backend-independent form.
-fn convert_captures_std<'t>(caps: &regex::Captures<'t>, _text: &'t str) -> CompiledCaptures<'t> {
+///
+/// When called from `captures_from_pos`, `pos` is the byte offset added to
+/// every range so the result uses absolute positions into the original input.
+/// Names are populated separately by the caller.
+fn convert_captures_std<'t>(
+    caps: &regex::Captures<'t>,
+    text: &'t str,
+    pos: usize,
+) -> CompiledCaptures<'t> {
     let full = caps.get(0).unwrap();
-    let full_text = full.as_str();
     let mut groups = Vec::new();
 
     for i in 1..caps.len() {
-        groups.push(caps.get(i).map(|m| (m.start(), m.end(), m.as_str())));
+        groups.push(caps.get(i).map(|m| (m.start() + pos, m.end() + pos)));
     }
 
     CompiledCaptures {
-        full_match: CompiledMatch {
-            text: full_text,
-            start: full.start(),
-            end: full.end(),
-        },
+        source: text,
+        full_match_range: Some((full.start() + pos, full.end() + pos)),
         len: caps.len(),
         groups,
-        names: std::collections::HashMap::new(),
+        names: std::collections::BTreeMap::new(),
+    }
+}
+
+/// Populate named capture indices from the backend's capture_names iterator.
+fn populate_capture_names(
+    names: &mut std::collections::BTreeMap<String, usize>,
+    name_iter: impl Iterator<Item = Option<String>>,
+) {
+    for (idx, name_opt) in name_iter.enumerate() {
+        if let Some(name) = name_opt {
+            names.insert(name, idx);
+        }
     }
 }
 
@@ -776,6 +827,161 @@ mod compile_tests {
         // Lookahead pattern: should be fancy-regex
         let compiled = compile_regex(r"(?=x)x", None, false, false, false).unwrap();
         assert_eq!(compiled.engine_used(), RegexEngineUsed::FancyRegex);
+    }
+}
+
+#[cfg(test)]
+mod capture_tests {
+    use super::*;
+
+    // ── Rust backend captures ──────────────────────────────────────────
+
+    #[test]
+    fn rust_unnamed_captures_at_offset_zero() {
+        let re = compile_regex(r"(\d+)-(\d+)", None, false, false, false).unwrap();
+        let caps = re.captures("123-456").unwrap().unwrap();
+        assert_eq!(caps.get(0).unwrap().as_str(), "123-456");
+        assert_eq!(caps.get(1).unwrap().as_str(), "123");
+        assert_eq!(caps.get(2).unwrap().as_str(), "456");
+    }
+
+    #[test]
+    fn rust_unnamed_captures_after_prefix() {
+        let re = compile_regex(r"prefix(\d+)", None, false, false, false).unwrap();
+        let caps = re.captures("prefix42").unwrap().unwrap();
+        assert_eq!(caps.get(0).unwrap().as_str(), "prefix42");
+        assert_eq!(caps.get(1).unwrap().as_str(), "42");
+    }
+
+    #[test]
+    fn rust_named_captures_via_name_lookup() {
+        let re = compile_regex(r"(?P<word>[A-Za-z]+)", None, false, false, false).unwrap();
+        let caps = re.captures("hello").unwrap().unwrap();
+        let m = caps.name("word").unwrap();
+        assert_eq!(m.as_str(), "hello");
+    }
+
+    #[test]
+    fn rust_two_named_and_optional_nonparticipating() {
+        let re = compile_regex(
+            r"(?P<head>[A-Za-z]+)-(?P<num>\d+)",
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap();
+        let caps = re.captures("abc-123").unwrap().unwrap();
+        assert_eq!(caps.name("head").unwrap().as_str(), "abc");
+        assert_eq!(caps.name("num").unwrap().as_str(), "123");
+    }
+
+    #[test]
+    fn rust_optional_group_nonparticipating() {
+        let re = compile_regex(r"(?P<a>a)?(?P<b>b)", None, false, false, false).unwrap();
+        let caps = re.captures("b").unwrap().unwrap();
+        // "a" group is optional and didn't match
+        assert!(caps.name("a").is_none());
+        assert_eq!(caps.name("b").unwrap().as_str(), "b");
+    }
+
+    #[test]
+    fn rust_captures_from_pos_absolute() {
+        let re = compile_regex(r"(\d+)", None, false, false, false).unwrap();
+        let caps = re.captures_from_pos("abc123def456", 3).unwrap().unwrap();
+        // Should be absolute positions, not relative to slice
+        let m0 = caps.get(0).unwrap();
+        assert_eq!(m0.as_str(), "123");
+        assert_eq!(m0.start, 3);
+        assert_eq!(m0.end, 6);
+        let m1 = caps.get(1).unwrap();
+        assert_eq!(m1.start, 3);
+        assert_eq!(m1.end, 6);
+    }
+
+    #[test]
+    fn rust_unicode_before_capture() {
+        // \p{L}+ matches Unicode letters; verifies Unicode before the match
+        // is handled correctly (offsets into the source are correct).
+        let re = compile_regex(r"\p{L}+", None, false, false, false).unwrap();
+        let text = "üñîçödé hello";
+        let caps = re.captures(text).unwrap().unwrap();
+        assert_eq!(caps.get(0).unwrap().as_str(), "üñîçödé");
+    }
+
+    #[test]
+    fn rust_unicode_inside_capture() {
+        let re = compile_regex(r"\w+", None, false, false, false).unwrap();
+        let text = "café";
+        let caps = re.captures(text).unwrap().unwrap();
+        assert_eq!(caps.get(0).unwrap().as_str(), "café");
+    }
+
+    // ── Fancy backend captures ─────────────────────────────────────────
+
+    #[test]
+    fn fancy_lookbehind_with_unnamed_capture() {
+        let re = compile_regex(r"(?<=prefix)(\d+)", None, false, false, false).unwrap();
+        assert!(re.is_fancy());
+        let caps = re.captures("prefix42").unwrap().unwrap();
+        assert_eq!(caps.get(0).unwrap().as_str(), "42");
+        assert_eq!(caps.get(1).unwrap().as_str(), "42");
+    }
+
+    #[test]
+    fn fancy_lookahead_with_named_capture() {
+        let re = compile_regex(r"(?P<value>\w+)(?=suffix)", None, false, false, false).unwrap();
+        assert!(re.is_fancy());
+        let caps = re.captures("hellosuffix").unwrap().unwrap();
+        assert_eq!(caps.name("value").unwrap().as_str(), "hello");
+    }
+
+    #[test]
+    fn fancy_named_capture_not_at_byte_zero() {
+        // Lookbehind forces fancy-regex; named capture inside lookbehind
+        let re = compile_regex(r"(?<=prefix)(?P<value>\w+)", None, false, false, false).unwrap();
+        assert!(re.is_fancy());
+        let caps = re.captures("prefixhello").unwrap().unwrap();
+        let m = caps.name("value").unwrap();
+        assert_eq!(m.as_str(), "hello");
+        assert!(m.start > 0); // not at byte zero
+    }
+
+    #[test]
+    fn fancy_multibyte_unicode_before_capture() {
+        let re = compile_regex(r"(?<=üñ)(?P<value>[a-z]+)", None, false, false, false).unwrap();
+        assert!(re.is_fancy());
+        let caps = re.captures("üñhello").unwrap().unwrap();
+        assert_eq!(caps.name("value").unwrap().as_str(), "hello");
+    }
+
+    #[test]
+    fn fancy_multibyte_unicode_inside_capture() {
+        let re = compile_regex(r"(?<=prefix)(?P<value>\w+)", None, false, false, false).unwrap();
+        assert!(re.is_fancy());
+        let caps = re.captures("prefixcafé").unwrap().unwrap();
+        assert_eq!(caps.name("value").unwrap().as_str(), "café");
+    }
+
+    #[test]
+    fn fancy_captures_from_pos_absolute() {
+        let re = compile_regex(r"(?<=prefix)(\d+)", None, false, false, false).unwrap();
+        assert!(re.is_fancy());
+        let text = "prefix42more";
+        let caps = re.captures_from_pos(text, 6).unwrap().unwrap();
+        let m0 = caps.get(0).unwrap();
+        assert_eq!(m0.as_str(), "42");
+        assert_eq!(m0.start, 6);
+        assert_eq!(m0.end, 8);
+    }
+
+    #[test]
+    fn fancy_no_panic_for_valid_utf8() {
+        let re = compile_regex(r"(?<=prefix)(?P<value>.+)", None, false, false, false).unwrap();
+        assert!(re.is_fancy());
+        let text = "prefixüñîçödé";
+        let caps = re.captures(text).unwrap().unwrap();
+        assert_eq!(caps.name("value").unwrap().as_str(), "üñîçödé");
     }
 }
 

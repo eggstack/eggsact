@@ -590,7 +590,10 @@ impl ToolRegistry {
     /// `response.ok == false`. Registry-level failures return `Err(ToolCallError)`.
     pub fn call_json(&self, name: &str, args: Value) -> Result<ToolResponse, ToolCallError> {
         match self.prepare_tool_call(name, &args) {
-            ToolCallOutcome::Ready { handler } => Ok(handler(&args)),
+            ToolCallOutcome::Ready { handler } => {
+                let mut eval_ctx = EvalContext::new();
+                Ok(budget::with_eval_context(&mut eval_ctx, || handler(&args)))
+            }
             ToolCallOutcome::PreExecutionError(e) => Err(e),
         }
     }

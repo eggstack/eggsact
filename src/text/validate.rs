@@ -556,20 +556,6 @@ pub fn regex_test(
         };
     }
 
-    if let Err(e) = check_pattern_complexity(pattern) {
-        return RegexTestResult {
-            valid_pattern: false,
-            results: vec![],
-            error: Some(e),
-            flags_used: None,
-            engine_used: None,
-            dialect: None,
-            unsupported_features: None,
-            execution_error: None,
-            policy_allowed: None,
-        };
-    }
-
     let classification = classify_pattern(pattern);
 
     // Reject unsupported PCRE constructs before compilation
@@ -629,7 +615,36 @@ pub fn regex_test(
         }
     };
 
+    // Policy assessment: runs after successful compilation.
+    // Syntactically valid patterns that fail policy are reported as
+    // valid_pattern=true, policy_allowed=false.
+    let policy_result = check_pattern_complexity(pattern);
+    let policy_allowed = match &policy_result {
+        Ok(()) => Some(true),
+        Err(_) => Some(false),
+    };
+
     let engine_name = compiled.engine_used().as_str().to_string();
+
+    // When policy rejects, do not execute matching.
+    if let Some(false) = policy_allowed {
+        return RegexTestResult {
+            valid_pattern: true,
+            results: vec![],
+            error: policy_result.err(),
+            flags_used: Some(serde_json::json!({
+                "ignore_case": ignore_case,
+                "multiline": multiline,
+                "dotall": dotall,
+                "ascii": ascii,
+            })),
+            engine_used: Some(engine_name),
+            dialect: Some("eggsact-regex".to_string()),
+            unsupported_features: None,
+            execution_error: None,
+            policy_allowed,
+        };
+    }
 
     let mut results = Vec::new();
 
@@ -773,7 +788,7 @@ pub fn regex_test(
         dialect: Some("eggsact-regex".to_string()),
         unsupported_features: None,
         execution_error: None,
-        policy_allowed: None,
+        policy_allowed,
     }
 }
 
@@ -969,7 +984,9 @@ mod tests {
     fn test_regex_test_complexity_rejected() {
         let long_pattern = "(".repeat(10).to_string() + "a" + &")".repeat(10);
         let result = regex_test(&long_pattern, &["test"], None, false, false, false, false);
-        assert!(!result.valid_pattern);
+        // Policy-rejected patterns are syntactically valid but fail complexity checks
+        assert!(result.valid_pattern);
+        assert_eq!(result.policy_allowed, Some(false));
         assert!(result.error.is_some());
     }
 
@@ -977,7 +994,9 @@ mod tests {
     fn test_regex_test_backtracking_nested() {
         let pattern = r"(a+)+b";
         let result = regex_test(pattern, &["aaaaaax"], None, false, false, false, false);
-        assert!(!result.valid_pattern);
+        // Nested quantifiers are syntactically valid but fail policy
+        assert!(result.valid_pattern);
+        assert_eq!(result.policy_allowed, Some(false));
     }
 
     #[test]
@@ -1327,21 +1346,6 @@ pub fn regex_finditer(
         };
     }
 
-    if let Err(e) = check_pattern_complexity(pattern) {
-        return RegexFindIterResult {
-            valid_pattern: false,
-            matches: vec![],
-            truncated: false,
-            match_count: 0,
-            error: Some(e),
-            engine_used: None,
-            dialect: None,
-            unsupported_features: None,
-            execution_error: None,
-            policy_allowed: None,
-        };
-    }
-
     let classification = classify_pattern(pattern);
 
     // Reject unsupported PCRE constructs before compilation
@@ -1398,9 +1402,33 @@ pub fn regex_finditer(
         }
     };
 
+    // Policy assessment: runs after successful compilation.
+    let policy_result = check_pattern_complexity(pattern);
+    let policy_allowed = match &policy_result {
+        Ok(()) => Some(true),
+        Err(_) => Some(false),
+    };
+
     let engine_name = compiled.engine_used().as_str().to_string();
 
+    // When policy rejects, do not execute matching.
+    if let Some(false) = policy_allowed {
+        return RegexFindIterResult {
+            valid_pattern: true,
+            matches: vec![],
+            truncated: false,
+            match_count: 0,
+            error: policy_result.err(),
+            engine_used: Some(engine_name),
+            dialect: Some("eggsact-regex".to_string()),
+            unsupported_features: None,
+            execution_error: None,
+            policy_allowed,
+        };
+    }
+
     // Route to the correct iteration path based on compiled backend
+    let engine_name_clone = engine_name.clone();
     if compiled.is_rust() {
         // Rust-regex path: manual iteration with text slicing
         let std_re = match &compiled {
@@ -1491,7 +1519,7 @@ pub fn regex_finditer(
             dialect: Some("eggsact-regex".to_string()),
             unsupported_features: None,
             execution_error: None,
-            policy_allowed: None,
+            policy_allowed,
         }
     } else {
         // Fancy-regex path: use captures_from_pos for lookaround/backreference support
@@ -1602,11 +1630,11 @@ pub fn regex_finditer(
             truncated,
             match_count,
             error: None,
-            engine_used: Some(engine_name),
+            engine_used: Some(engine_name_clone),
             dialect: Some("eggsact-regex".to_string()),
             unsupported_features: None,
             execution_error,
-            policy_allowed: None,
+            policy_allowed,
         }
     }
 }
