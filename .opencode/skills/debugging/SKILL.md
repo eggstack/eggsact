@@ -7,7 +7,7 @@ description: Use when diagnosing issues in the eggsact codebase, troubleshooting
 
 ### Tool Registration Drift
 
-If `tool_registration_tables_are_in_sync` fails, you've modified the ToolSpec registry (`src/mcp/specs/<category>.rs`) without running `cargo run --bin generate-docs`. See `.opencode/skills/mcp-tools/SKILL.md` for the complete list.
+If `tool_registration_tables_are_in_sync` fails, you've modified the ToolSpec registry (`src/mcp/specs/<category>.rs`) without running `cargo run --features dev-tools --bin generate-docs`. See `.opencode/skills/mcp-tools/SKILL.md` for the complete list.
 
 ### Parity Test Failures
 

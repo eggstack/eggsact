@@ -264,7 +264,7 @@ registered tools regardless of policy.
 3. If breaking changes exist, bump MAJOR. If only additions, bump MINOR. If
    only fixes, bump PATCH.
 4. Update `Cargo.toml` version.
-5. Run `cargo run --bin generate-docs` to regenerate docs.
+5. Run `cargo run --features dev-tools --bin generate-docs` to regenerate docs.
 6. Tag the release.
 
 ## References

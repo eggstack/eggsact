@@ -30,7 +30,7 @@ path, so run `cargo build` before running parity tests.
 cargo fmt --all -- --check     # formatting gate (CI-equivalent)
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-features      # all tests (unit, integration, parity)
-cargo run --locked --bin generate-docs -- --check  # generated docs freshness
+cargo run --locked --features dev-tools --bin generate-docs -- --check  # generated docs freshness
 cargo package --locked --verbose        # crates.io package verification
 cargo test --locked --lib                # unit tests within src/ only
 cargo test --locked --test lib parity    # parity tests against Python
@@ -127,7 +127,7 @@ eggsact/
 
 4. **Regenerate docs** from the registry:
    ```bash
-   cargo run --bin generate-docs
+   cargo run --features dev-tools --bin generate-docs
    ```
    This updates README tool tables, architecture profile references, and
    `generated/tool-cards.md`.
@@ -155,7 +155,7 @@ eggsact/
 4. **Add an MCP tool wrapper** if the function should be exposed to MCP clients. Create
    a thin wrapper in `src/tools/<category>.rs` that parses input, calls your function, and
    returns the result as a `ToolResponse`. Add a `ToolSpec` entry in `src/mcp/specs/<category>.rs`
-   and run `cargo run --bin generate-docs` to regenerate docs.
+   and run `cargo run --features dev-tools --bin generate-docs` to regenerate docs.
 
 ## Code Style
 

@@ -17,8 +17,8 @@ cargo fmt --all -- --check            # format check
 cargo clippy --locked --all-targets --all-features  # lint
 cargo package --locked                # crates.io packaging dry run
 cargo deny check advisories bans licenses sources  # supply-chain audit
-cargo run --bin generate-docs        # regenerate docs from ToolSpec registry
-cargo run --bin generate-docs -- --check  # verify generated docs are current (CI)
+cargo run --features dev-tools --bin generate-docs        # regenerate docs from ToolSpec registry
+cargo run --features dev-tools --bin generate-docs -- --check  # verify generated docs are current (CI)
 scripts/release-check.sh               # full local release gate (no publish, no tag)
 ./release.sh                           # regenerate confusables + docs + full gate
 ```
@@ -49,7 +49,7 @@ GitHub CI verifies merge correctness but does **not** publish to crates.io. The 
 
 ## Verification order
 
-`cargo fmt --all -- --check` → `cargo clippy --locked --all-targets --all-features -- -D warnings` → `cargo test --locked --all-features --lib` → `cargo test --locked --all-features --bins` → `cargo test --locked --all-features --tests -- --skip parity` → `cargo test --locked --doc` → `cargo run --locked --bin generate-docs -- --check` → `cargo deny check advisories bans licenses sources` → `cargo package --locked --list` → `cargo package --locked --verbose` → `cargo publish --locked --dry-run`
+`cargo fmt --all -- --check` → `cargo clippy --locked --all-targets --all-features -- -D warnings` → `cargo test --locked --all-features --lib` → `cargo test --locked --all-features --bins` → `cargo test --locked --all-features --tests -- --skip parity` → `cargo test --locked --doc` → `cargo run --locked --features dev-tools --bin generate-docs -- --check` → `cargo deny check advisories bans licenses sources` → `cargo package --locked --list` → `cargo package --locked --verbose` → `cargo publish --locked --dry-run`
 
 ## Structure
 

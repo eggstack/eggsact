@@ -15,7 +15,7 @@ description: Use when preparing or performing a release of eggsact, running the 
 
 1. Ensure clean worktree on `main` at the verified commit.
 2. Regenerate confusables data: `python3 scripts/generate_confusables.py`
-3. Regenerate docs: `cargo run --bin generate-docs`
+3. Regenerate docs: `cargo run --features dev-tools --bin generate-docs`
 4. Run the local release check: `scripts/release-check.sh`
 5. Optional parity gate: `cargo test --test lib parity`
 6. Publish: `cargo publish --locked`
@@ -29,7 +29,7 @@ See `docs/release.md` for the canonical release checklist and `docs/verification
 - [ ] Version bumped in `Cargo.toml`
 - [ ] CHANGELOG.md updated
 - [ ] Confusables data regenerated: `python3 scripts/generate_confusables.py`
-- [ ] Generated docs current: `cargo run --bin generate-docs -- --check`
+- [ ] Generated docs current: `cargo run --features dev-tools --bin generate-docs -- --check`
 - [ ] `scripts/release-check.sh` passes from clean worktree
 
 ## Publishing to crates.io

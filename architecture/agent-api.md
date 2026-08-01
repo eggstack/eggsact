@@ -206,7 +206,7 @@ pub enum ToolCallOutcome {
 
 Methods that accept a budget also perform **input pre-check** (rejects oversized serialized args before dispatch) and **output truncation** (truncates findings and result to fit budget limits).
 
-**Execution routing:** Budget-aware APIs (`call_json_with_budget`, `call_json_with_context`, `call_json_with_execution_context`) route through the `SyncExecutionPool` (8 workers, 32-slot queue) in `src/mcp/sync_pool.rs`, which enforces elapsed-time budgets and provides bounded concurrency. `call_json` dispatches directly without a pool. The MCP server path is unaffected — it uses Tokio `spawn_blocking`.
+**Execution routing:** Budget-aware APIs (`call_json_with_budget`, `call_json_with_context`, `call_json_with_execution_context`) route through the `SyncExecutionPool` (8 workers, 32-slot queue) in `src/mcp/sync_pool.rs`, which enforces elapsed-time budgets and provides bounded concurrency. `call_json` dispatches directly with a fresh native `EvalContext` (no pool, no elapsed-time enforcement). The MCP server path is unaffected — it uses Tokio `spawn_blocking`.
 
 ### `call_json(name, args)` — Basic
 
@@ -216,7 +216,7 @@ The primary entry point for in-process tool execution.
 pub fn call_json(&self, name: &str, args: Value) -> Result<ToolResponse, ToolCallError>
 ```
 
-**Behavior:** Calls `prepare_tool_call`, then invokes the handler directly if ready. No budget enforcement, no output truncation. Returns `Ok(ToolResponse)` with `ok: false` for tool-level failures; `Err(ToolCallError)` for registry-level failures.
+**Behavior:** Calls `prepare_tool_call`, then invokes the handler directly with a fresh native `EvalContext` installed via `budget::with_eval_context`. No budget enforcement, no output truncation. Calculator-backed tools (e.g., `math_eval`) receive a clean context — they never fall back to process-global calculator state. Returns `Ok(ToolResponse)` with `ok: false` for tool-level failures; `Err(ToolCallError)` for registry-level failures.
 
 ### `call_json_with_budget(name, args, budget)` — Budget-Aware
 

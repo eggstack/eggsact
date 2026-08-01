@@ -20,7 +20,7 @@ description: Use when adding a new MCP tool, modifying an existing tool, working
 
 4. **Regenerate docs** from the registry:
    ```bash
-   cargo run --bin generate-docs
+   cargo run --features dev-tools --bin generate-docs
    ```
    This updates README tool tables, architecture profile references, and `generated/tool-cards.md`. Commit the generated files alongside your ToolSpec changes.
 

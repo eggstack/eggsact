@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** ready for implementation
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Roadmap:** `plans/2026-07-31-lightweight-correctness-simplification-roadmap.md`
@@ -516,7 +516,8 @@ Run Python parity only if this phase changes a behavior covered by parity. Recor
 # Completion record
 
 - **Status:** complete
-- **Implementation commit:** (pending commit)
+- **Implementation commit:** `98d3aae00efc29436af808c430da6766ea76ebf6`
+- **Corrective closure pass commit:** fixed named capture lookup, fancy substring extraction, absolute offset translation, and syntax/policy separation
 - **Focused tests:** 523 unit tests, 938 text tests, 47 property tests, 11 doc tests — all pass
 - **Full verification:** fmt ✓, clippy ✓, tests ✓ (skip parity), doc ✓, generate-docs --check ✓, package ✓
 - **ASCII disposition:** explicitly rejected with REGEX_ASCII_NOT_SUPPORTED machine code

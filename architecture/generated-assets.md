@@ -6,9 +6,9 @@ Maintainer reference for generated files, doc generation, confusables data, pari
 
 | File | Source | Generator Command | Purpose |
 |------|--------|-------------------|---------|
-| `README.md` tool tables | `ToolSpec` registry in `src/mcp/specs/` | `cargo run --bin generate-docs` | Category-organized tool catalog with tier, exposure, stability, cost, profiles |
-| `architecture/mcp-server.md` profile reference | `ToolSpec` registry + `available_profiles()` | `cargo run --bin generate-docs` | Per-profile model/harness tool counts and harness-only listings |
-| `generated/tool-cards.md` | `ToolSpec` registry | `cargo run --bin generate-docs` | Per-codegg-profile tool cards with required args, aliases, composite flags |
+| `README.md` tool tables | `ToolSpec` registry in `src/mcp/specs/` | `cargo run --features dev-tools --bin generate-docs` | Category-organized tool catalog with tier, exposure, stability, cost, profiles |
+| `architecture/mcp-server.md` profile reference | `ToolSpec` registry + `available_profiles()` | `cargo run --features dev-tools --bin generate-docs` | Per-profile model/harness tool counts and harness-only listings |
+| `generated/tool-cards.md` | `ToolSpec` registry | `cargo run --features dev-tools --bin generate-docs` | Per-codegg-profile tool cards with required args, aliases, composite flags |
 | `src/text/confusables_generated.rs` | Unicode UTS #39 `confusables.txt` | `python3 scripts/generate_confusables.py` | HashMap of Unicode codepoints to confusable alternatives |
 
 These files are **never hand-edited**. Edit the source of truth and re-run the generator.
@@ -84,7 +84,7 @@ The generator uses HTML comment markers for targeted insertion into existing fil
 ### Check Mode
 
 ```bash
-cargo run --bin generate-docs -- --check
+cargo run --features dev-tools --bin generate-docs -- --check
 ```
 
 Compares current generated output against file contents without writing. Exit code 1 means files are stale. CI runs this as part of the verification pipeline.
@@ -273,8 +273,8 @@ The `runtime_diagnostics` tool returns a JSON object:
     }
   },
   "known_env_vars": ["EGGCALC_NO_CONFIG", "EGGCALC_MCP_PROFILE", ...],
-  "generated_doc_command": "cargo run --bin generate-docs",
-  "verification_command": "cargo run --bin verify-eggsact",
+  "generated_doc_command": "cargo run --features dev-tools --bin generate-docs",
+  "verification_command": "cargo run --features dev-tools --bin verify-eggsact",
   "generated_data": {
     "confusables_generated_rs": true,
     "tool_cards_md": true
@@ -294,25 +294,25 @@ Two companion tools provide deeper introspection:
 
 | Change | Regenerate |
 |--------|------------|
-| Add/remove/rename tool in `src/mcp/specs/` | `cargo run --bin generate-docs` |
-| Change tool metadata (tier, cost, exposure, profiles) | `cargo run --bin generate-docs` |
+| Add/remove/rename tool in `src/mcp/specs/` | `cargo run --features dev-tools --bin generate-docs` |
+| Change tool metadata (tier, cost, exposure, profiles) | `cargo run --features dev-tools --bin generate-docs` |
 | New Unicode version with updated confusables | `python3 scripts/generate_confusables.py` |
-| Change `CATEGORY_ORDER` or `CODEGG_PROFILES` | `cargo run --bin generate-docs` |
+| Change `CATEGORY_ORDER` or `CODEGG_PROFILES` | `cargo run --features dev-tools --bin generate-docs` |
 
 ### Verification Steps
 
 ```bash
 # 1. Regenerate docs
-cargo run --bin generate-docs
+cargo run --features dev-tools --bin generate-docs
 
 # 2. Check for unexpected changes
 git diff README.md architecture/mcp-server.md generated/tool-cards.md
 
 # 3. Verify generated docs are current
-cargo run --bin generate-docs -- --check
+cargo run --features dev-tools --bin generate-docs -- --check
 
 # 4. Run full verification pipeline
-cargo run --bin verify-eggsact
+cargo run --features dev-tools --bin verify-eggsact
 
 # 5. Or run individual gates in order
 cargo fmt --all -- --check
@@ -321,7 +321,7 @@ cargo test --all-features --lib
 cargo test --all-features --bins
 cargo test --all-features --tests -- --skip parity
 cargo test --doc
-cargo run --bin generate-docs -- --check
+cargo run --features dev-tools --bin generate-docs -- --check
 cargo package --verbose
 ```
 
@@ -335,7 +335,7 @@ GitHub Actions CI runs on push/PR to `main`:
 4. `cargo test --all-features --bins` (binary tests)
 5. `cargo test --all-features --tests -- --skip parity` (integration, parity excluded)
 6. `cargo test --doc` (doc tests)
-7. `cargo run --bin generate-docs -- --check` (generated docs freshness)
+7. `cargo run --features dev-tools --bin generate-docs -- --check` (generated docs freshness)
 8. `cargo package --verbose` (after all checks pass)
 
 The `--check` gate in step 7 ensures that any `ToolSpec` change is accompanied by regenerated docs. A failing check means the registry changed but the generated output was not refreshed — the PR must re-run the generator before CI will pass.

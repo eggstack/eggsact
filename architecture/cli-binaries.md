@@ -84,8 +84,8 @@ Route-critical tools:
   patch_apply_check
   text_security_inspect
 
-Generated-doc command: cargo run --bin generate-docs
-Verification command:  cargo run --bin verify-eggsact
+Generated-doc command: cargo run --features dev-tools --bin generate-docs
+Verification command:  cargo run --features dev-tools --bin verify-eggsact
 
 Compatibility mode (default by surface):
   MCP server:       EggcalcPython
@@ -131,8 +131,8 @@ tool-cards.md exists:            yes
     "codegg_shell": 6,
     "codegg_repo_audit": 18
   },
-  "generated_doc_command": "cargo run --bin generate-docs",
-  "verification_command": "cargo run --bin verify-eggsact",
+  "generated_doc_command": "cargo run --features dev-tools --bin generate-docs",
+  "verification_command": "cargo run --features dev-tools --bin verify-eggsact",
   "compatibility_mode": {
     "mcp_server": "EggcalcPython",
     "in_process_api": "StrictNative"
@@ -234,9 +234,9 @@ cargo test --lib main
 Generates documentation from the `ToolSpec` registry. The `ToolSpec` entries in `src/mcp/specs/` are the single source of truth; this binary reads them and produces three output files.
 
 ```bash
-cargo run --bin generate-docs            # regenerate all docs (in-place)
-cargo run --bin generate-docs -- --check  # verify docs are current (CI)
-cargo run --bin generate-docs -- --output-dir /path  # write to a different directory
+cargo run --features dev-tools --bin generate-docs            # regenerate all docs (in-place)
+cargo run --features dev-tools --bin generate-docs -- --check  # verify docs are current (CI)
+cargo run --features dev-tools --bin generate-docs -- --output-dir /path  # write to a different directory
 ```
 
 ### What It Generates
@@ -265,7 +265,7 @@ cargo run --bin generate-docs -- --output-dir /path  # write to a different dire
 Used in CI to verify generated docs are current without modifying files:
 
 ```bash
-cargo run --bin generate-docs -- --check
+cargo run --features dev-tools --bin generate-docs -- --check
 # Exit code 0 = docs are current
 # Exit code 1 = docs are stale (prints which files need updating)
 ```
@@ -276,7 +276,7 @@ In check mode, the generator compares generated content against existing files a
 Stale generated docs:
   README.md
   architecture/mcp-server.md
-Run `cargo run --bin generate-docs` to regenerate.
+Run `cargo run --features dev-tools --bin generate-docs` to regenerate.
 ```
 
 ### Orphan and Triplication Handling
@@ -308,7 +308,7 @@ The binary includes 11 unit tests (`tests` module) plus 4 marker-integrity tests
 
 ### When to Regenerate
 
-Run `cargo run --bin generate-docs` whenever you:
+Run `cargo run --features dev-tools --bin generate-docs` whenever you:
 
 - Add, remove, or rename an MCP tool in `src/mcp/specs/`
 - Change a `ToolSpec`'s `profiles`, `exposure`, `cost`, `stability`, `description`, or `input_schema`
@@ -324,8 +324,8 @@ After regenerating, commit the updated files. CI will fail if generated docs are
 Runs a 9-step verification pipeline and emits a markdown report. Exits with code 0 (all pass) or 1 (any failure).
 
 ```bash
-cargo run --bin verify-eggsact                     # full pipeline
-cargo run --bin verify-eggsact -- --report markdown  # explicit format (only markdown supported)
+cargo run --features dev-tools --bin verify-eggsact                     # full pipeline
+cargo run --features dev-tools --bin verify-eggsact -- --report markdown  # explicit format (only markdown supported)
 ```
 
 ### Pipeline Steps
@@ -338,7 +338,7 @@ cargo run --bin verify-eggsact -- --report markdown  # explicit format (only mar
 | 4 | `cargo test --bins` | `cargo test --locked --all-features --bins` | Binary tests (generate-docs tests, etc.) |
 | 5 | `cargo test --tests` | `cargo test --locked --all-features --tests -- --skip parity` | Integration tests (parity excluded) |
 | 6 | `cargo test --doc` | `cargo test --locked --doc` | Doc tests |
-| 7 | `generate-docs --check` | `cargo run --locked --bin generate-docs -- --check` | Verify generated docs are fresh |
+| 7 | `generate-docs --check` | `cargo run --locked --features dev-tools --bin generate-docs -- --check` | Verify generated docs are fresh |
 | 8 | `cargo package` | `cargo package --locked --verbose` | Crates.io packaging dry run |
 | 9 | parity tests | `cargo test --locked --test lib parity --all-features` | Python/Rust parity (skipped if `../eggcalc` missing) |
 
@@ -437,13 +437,13 @@ cargo run -- --version
 
 ```bash
 # Generate docs (regenerate)
-cargo run --bin generate-docs
+cargo run --features dev-tools --bin generate-docs
 
 # Generate docs (check mode, for CI)
-cargo run --bin generate-docs -- --check
+cargo run --features dev-tools --bin generate-docs -- --check
 
 # Verify eggsact (full pipeline)
-cargo run --bin verify-eggsact
+cargo run --features dev-tools --bin verify-eggsact
 
 # Run main.rs unit tests
 cargo test --locked --lib main
@@ -460,7 +460,7 @@ cargo test --locked --all-features --lib
 cargo test --locked --all-features --bins
 cargo test --locked --all-features --tests -- --skip parity
 cargo test --locked --doc
-cargo run --locked --bin generate-docs -- --check
+cargo run --locked --features dev-tools --bin generate-docs -- --check
 cargo deny check advisories bans licenses sources
 cargo package --locked --verbose
 ```
@@ -468,7 +468,7 @@ cargo package --locked --verbose
 Or equivalently:
 
 ```bash
-cargo run --bin verify-eggsact
+cargo run --features dev-tools --bin verify-eggsact
 ```
 
 ---

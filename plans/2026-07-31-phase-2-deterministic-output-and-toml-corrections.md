@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** ready for implementation after phase 1
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Roadmap:** `plans/2026-07-31-lightweight-correctness-simplification-roadmap.md`
@@ -485,7 +485,7 @@ Run focused Python parity if TOML/JSON positional behavior is parity-covered. Do
 
 - **Status:** complete
 - **Implementation commit:** 0a3ace9
-- **Gap fix commit:** (pending)
+- **Gap fix commit:** `25c4893455719027cdc889a853039a918611ec65`
 - **Public maps converted:** 14 fields across 8 structs (RegexMatch.groupdict, JsonShapeKey.keys, RegexFindIterMatch.group_dict, IdentifierAnalyzeResult.suggestions, DependencySection.dependencies/dev_dependencies/build_dependencies/target_specific, IniValidateResult.keys_by_section, TextHashResult.hashes, TextFingerprintResult.normalization, CommandPolicyConfig.allow_subcommands/deny_subcommands, PatchSummaryResult.line_ranges_by_file) + 3 local HashMaps (char_frequency, files_by_category x2)
 - **Internal maps intentionally retained:** bracket validation pairs, JSON comparison key sets, cargo.rs seen_keys, config.rs seen_keys/seen_sections, identifier.rs casefold/norm maps, transform.rs mode_names, shell.rs deny_subcommands lookup, list.rs count_deltas (already serde_json::Map/BTreeMap), patch.rs internal lookups
 - **TOML table contract:** only Item::Table and Item::ArrayOfTables included; scalar keys excluded; inline tables excluded; summary reports total table count

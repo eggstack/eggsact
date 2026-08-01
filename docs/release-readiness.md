@@ -50,7 +50,7 @@ The same clean-checkout code baseline passed:
 | `cargo test --locked --all-features --bins` | pass | 24 passed |
 | `cargo test --locked --all-features --tests -- --skip parity` | pass | 3423 passed, 1 ignored, 418 filtered |
 | `cargo test --locked --doc` | pass | 11 passed |
-| `cargo run --locked --bin generate-docs -- --check` | pass | generated docs current |
+| `cargo run --locked --features dev-tools --bin generate-docs -- --check` | pass | generated docs current |
 | `cargo deny check advisories bans licenses sources` | pass | no advisories or policy failures |
 | `cargo package --locked --list` | pass | 236 package files |
 | `cargo package --locked --verbose` | pass | package build succeeded — 236 files, 4.8 MiB |

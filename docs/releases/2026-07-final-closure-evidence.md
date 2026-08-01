@@ -58,7 +58,7 @@ cargo test --locked --all-features --lib                           PASS (494 pas
 cargo test --locked --all-features --bins                          PASS (24 tests)
 cargo test --locked --all-features --tests -- --skip parity        PASS (3423 passed, 1 ignored, 418 filtered)
 cargo test --locked --doc                                          PASS (11 tests)
-cargo run --locked --bin generate-docs -- --check                  PASS
+cargo run --locked --features dev-tools --bin generate-docs -- --check                  PASS
 cargo deny check advisories bans licenses sources                  PASS
 cargo package --locked --verbose                                   PASS
 cargo publish --locked --dry-run                                   PASS

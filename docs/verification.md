@@ -12,7 +12,7 @@ Runs on `ubuntu-latest` in a single job with one compilation cache:
 
 ```bash
 cargo fmt --all -- --check
-cargo run --locked --bin generate-docs -- --check
+cargo run --locked --features dev-tools --bin generate-docs -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-features -- --skip parity
 cargo test --locked --doc

@@ -286,7 +286,7 @@ GitHub Actions runs on push/PR to `main` (plus manual `workflow_dispatch`):
 
 **Linux correctness** (single job, one cache):
 - `cargo fmt --all -- --check`
-- `cargo run --locked --bin generate-docs -- --check`
+- `cargo run --locked --features dev-tools --bin generate-docs -- --check`
 - `cargo clippy --locked --all-targets --all-features -- -D warnings`
 - `cargo test --locked --all-features -- --skip parity`
 - `cargo test --locked --doc`

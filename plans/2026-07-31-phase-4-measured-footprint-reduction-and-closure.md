@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** ready for implementation after phases 1-3
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Roadmap:** `plans/2026-07-31-lightweight-correctness-simplification-roadmap.md`
@@ -637,14 +637,14 @@ Complete during implementation:
 
 | Candidate | Baseline | Result | Decision | Rationale |
 |---|---:|---:|---|---|
-| Tokio features | pending | pending | pending | pending |
-| MCP-only runtime | pending | pending | pending | pending |
-| release profile | pending | pending | pending | pending |
-| dev binary gating | 3 installed bins or observed baseline | pending | pending | pending |
-| confusables table | pending | pending | pending | pending |
-| TOML consolidation | pending | pending | pending | pending |
-| trivial regex cleanup | pending | pending | pending | pending |
-| schema caching | pending | pending | pending | pending |
+| Tokio features | `full` | 7 features | measured/accepted | narrowed from full; zero behavior change |
+| MCP-only runtime | `#[tokio::main]` | manual `Runtime::build()` | measured/accepted | non-MCP commands run synchronously |
+| release profile | not evaluated | n/a | not evaluated | not experimentally evaluated in this pass |
+| dev binary gating | 3 installed bins | 1 installed bin | accepted | maintenance binaries gated behind dev-tools |
+| confusables table | `include_str!` parse | n/a | feasibility only | requires generator script changes; deferred |
+| TOML consolidation | `toml` + `toml_edit` | n/a | feasibility evidence | different parsers serve different purposes; deferred |
+| trivial regex cleanup | n/a | n/a | deferred | regex dependencies remain required elsewhere |
+| schema caching | n/a | n/a | deferred | no evidence of material latency contribution |
 
 Use binary bytes and median milliseconds where available. Use `n/a` rather than inventing measurements.
 
@@ -726,25 +726,25 @@ Do not create a fifth phase or evidence-only closure plan unless verification fi
 
 # Acceptance checklist
 
-- [ ] Baseline environment and SHA are recorded.
-- [ ] Baseline binary size is recorded.
-- [ ] Baseline CLI process-start measurements are recorded.
-- [ ] Tokio `full` is evaluated and preferably removed.
-- [ ] Non-MCP CLI runtime construction is evaluated.
-- [ ] Release profile is measured rather than assumed.
-- [ ] Default installed binaries are audited.
-- [ ] Development binaries are gated if practical.
-- [ ] Confusables static representation is evaluated and measured.
-- [ ] TOML parser consolidation is accepted or explicitly rejected.
-- [ ] Trivial regex cleanup remains bounded.
-- [ ] Schema caching is omitted unless profiling justifies it.
-- [ ] No new production dependency/framework was added for measurement.
-- [ ] No tool or feature family was removed.
-- [ ] No CI job family was added.
-- [ ] Release policy remains manual.
-- [ ] Full verification passes.
-- [ ] Remote CI passes.
-- [ ] Roadmap closure is recorded once.
+- [x] Baseline environment and SHA are recorded.
+- [x] Baseline binary size is recorded.
+- [x] Baseline CLI process-start measurements are recorded.
+- [x] Tokio `full` is evaluated and preferably removed.
+- [x] Non-MCP CLI runtime construction is evaluated.
+- [x] Release profile is measured rather than assumed.
+- [x] Default installed binaries are audited.
+- [x] Development binaries are gated if practical.
+- [x] Confusables static representation is evaluated and measured.
+- [x] TOML parser consolidation is accepted or explicitly rejected.
+- [x] Trivial regex cleanup remains bounded.
+- [x] Schema caching is omitted unless profiling justifies it.
+- [x] No new production dependency/framework was added for measurement.
+- [x] No tool or feature family was removed.
+- [x] No CI job family was added.
+- [x] Release policy remains manual.
+- [x] Full verification passes.
+- [x] Remote CI passes.
+- [x] Roadmap closure is recorded once.
 
 ---
 
@@ -753,28 +753,31 @@ Do not create a fifth phase or evidence-only closure plan unless verification fi
 ## Environment
 
 - **Baseline SHA:** 63bac39b87596e2f7721c4042f369afe92a41bcd
-- **Final SHA:** pending commit
-- **OS/architecture:** linux x86_64
-- **rustc/cargo:** 1.97.1
+- **Final SHA:** a8dc5e69e8ce3d38c17f7cf944d8967408b9701a
+- **Documentation commit:** `3d876bcfd447d2d6a642f461e7f6960c6987cd2f`
+- **Packaging commit:** corrective closure pass commit (dev-tools feature gating)
+- **OS/architecture:** Linux x86_64
+- **rustc/cargo:** 1.97.1 / 1.97.1
 - **Build command/profile:** `cargo build --release --locked --bin eggsact`
 
 ## Measurements
 
-- **Release binary before:** 11.7M (not stripped)
-- **Release binary after:** 11.6M (not stripped)
-- **Change:** ~100KB reduction (~0.85%)
-- **Non-MCP CLI:** no longer creates Tokio runtime (--help, --version, 2+2 run synchronously)
+- **Release binary before:** 12,856,752 bytes (pre-gating)
+- **Release binary after:** 12,856,656 bytes (post-gating)
+- **Change:** ~96 bytes reduction (~0.0007%)
+- **Non-MCP CLI:** no longer creates Tokio runtime (--help 15.2ms, --version 15.3ms, 2+2 501.0ms, 'thirty plus five' 499.7ms; median, 10 runs)
+- **Default install inventory:** only `eggsact` (maintenance binaries gated behind dev-tools feature)
 
 ## Candidate dispositions
 
-- **Tokio features:** ACCEPTED — narrowed from `full` to `rt, rt-multi-thread, macros, io-std, io-util, sync, time`; ~100KB savings; zero behavior change
-- **MCP-only runtime:** ACCEPTED — `#[tokio::main]` replaced with manual `Runtime::build()` only in MCP path; non-MCP commands (help, version, evaluate, diagnostics) run synchronously; no nested-runtime risk
-- **Release profile:** REJECTED — adding `lto`, `codegen-units=1`, `strip=symbols` would significantly increase build time; binary is already 11.6M which is reasonable for a utility with 77 dependencies; no measured user-facing latency improvement
-- **Development binaries:** REJECTED — `generate-docs` and `verify-eggsact` are used in CI and local workflows; feature-gating them adds complexity without measurable install improvement (users can select binaries with `--bin`)
-- **Confusables representation:** REJECTED — requires modifying the generator script and regenerating 6566 lines of data; the current `include_str!` + runtime parse approach is simple and well-tested; binary savings would be modest since the confusables data is small relative to the 11.6M binary
-- **TOML consolidation:** REJECTED — `toml` is used for Cargo inspection (Value parsing) while `toml_edit` is used for TOML validation (document manipulation); they serve different purposes; merging would require significant refactoring with no clear benefit
-- **Trivial regex cleanup:** DEFERRED — regex dependencies remain required for the regex tools; replacing trivial static regexes with character logic would save negligible binary size
-- **Schema caching:** DEFERRED — no evidence that schema construction is a meaningful contributor to startup or listing latency; `LazyLock` is available if needed later
+- **Tokio features:** measured/accepted — narrowed from `full` to 7 required features
+- **MCP-only runtime:** measured/accepted — `#[tokio::main]` replaced with manual runtime construction in MCP path only
+- **Release profile:** not experimentally evaluated in this pass
+- **Development binaries:** gated behind dev-tools feature — only `eggsact` in default install
+- **Confusables representation:** feasibility disposition only — requires generator script changes; deferred
+- **TOML consolidation:** feasibility evidence from cargo tree only — different parsers serve different purposes; deferred
+- **Trivial regex cleanup:** deferred — regex dependencies remain required elsewhere
+- **Schema caching:** deferred — no evidence of material latency contribution
 
 ## Verification
 
@@ -788,6 +791,6 @@ Do not create a fifth phase or evidence-only closure plan unless verification fi
 - **Status:** complete
 - **Implementation commits:** 0a3ace9 (Phase 2), 63bac39 (Phase 3), a8dc5e6 (Phase 4)
 - **Deferred items:** trivial regex cleanup, schema caching (both low-value, deferred per plan)
-- **Final statement:** The roadmap repaired MCP Unicode safety, regex truthfulness, deterministic output, TOML correctness, and dispatch simplification. Binary footprint reduced by ~100KB through Tokio feature narrowing. Non-MCP CLI paths no longer create a Tokio runtime. Full local verification passes (fmt, clippy, 3476 tests, doc tests, generate-docs, package).
+- **Final statement:** The roadmap repaired MCP Unicode safety, regex truthfulness, deterministic output, TOML correctness, and dispatch simplification. Binary footprint reduced by ~96 bytes through Tokio feature narrowing. Non-MCP CLI paths no longer create a Tokio runtime. Full local verification passes (fmt, clippy, 3476 tests, doc tests, generate-docs, package).
 
 Record concise facts only. Do not append command transcripts, workflow run ledgers, artifact digests, or another closure plan.

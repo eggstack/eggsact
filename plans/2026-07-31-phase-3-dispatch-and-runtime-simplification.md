@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** ready for implementation after phases 1 and 2
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Roadmap:** `plans/2026-07-31-lightweight-correctness-simplification-roadmap.md`
@@ -529,40 +529,42 @@ No new workflow is required.
 
 # Acceptance checklist
 
-- [ ] Lookup/profile/audience/schema policy has one implementation.
-- [ ] MCP and in-process dispatch share policy preparation.
-- [ ] In-process bounded wrappers share one execution implementation.
-- [ ] Direct dispatch remains low overhead.
-- [ ] Public compatibility methods are thin wrappers.
-- [ ] Generic tool dispatch installs explicit calculator context.
-- [ ] Generic tool dispatch does not use legacy global calculator state.
-- [ ] `math_eval` does not clone the installed context internally.
-- [ ] Stateless tool semantics are reproducible.
-- [ ] Direct calculator context APIs persist state.
-- [ ] Deprecated mutable generic context is a thin non-persistent wrapper.
-- [ ] Commit-slot machinery is removed if no production consumer remains.
-- [ ] Test gates/hooks are excluded from release builds where practical.
-- [ ] MCP bounded concurrency remains.
-- [ ] Cooperative cancellation remains.
-- [ ] Panic conversion remains.
-- [ ] Output budget enforcement remains.
-- [ ] No executor/runtime dependency was added.
-- [ ] Full verification passes.
+- [x] Lookup/profile/audience/schema policy has one implementation.
+- [x] MCP and in-process dispatch share policy preparation.
+- [x] In-process bounded wrappers share one execution implementation.
+- [x] Direct dispatch remains low overhead.
+- [x] Public compatibility methods are thin wrappers.
+- [x] Generic tool dispatch installs explicit calculator context.
+- [x] Generic tool dispatch does not use legacy global calculator state.
+- [x] `math_eval` does not clone the installed context internally.
+- [x] Stateless tool semantics are reproducible.
+- [x] Direct calculator context APIs persist state.
+- [x] Deprecated mutable generic context is a thin non-persistent wrapper.
+- [x] Commit-slot machinery is removed if no production consumer remains.
+- [x] Test gates/hooks are excluded from release builds where practical.
+- [x] MCP bounded concurrency remains.
+- [x] Cooperative cancellation remains.
+- [x] Panic conversion remains.
+- [x] Output budget enforcement remains.
+- [x] No executor/runtime dependency was added.
+- [x] Full verification passes.
 
 ---
 
 # Completion record
 
-- **Status:** pending
-- **Implementation commit:** pending
-- **Public wrappers retained:** pending
-- **Duplicated implementations removed:** pending
-- **Calculator stateless contract:** pending
-- **Calculator stateful contract:** pending
-- **Commit-slot disposition:** pending
-- **Lifecycle state-machine disposition:** pending
-- **Focused tests:** pending
-- **Full verification:** pending
-- **Deferred findings:** pending
+- **Status:** complete
+- **Dispatch consolidation commit:** `63bac39b87596e2f7721c4042f369afe92a41bcd`
+- **Calculator/test-hook completion commit:** `021795bc72eee444510ff9f4472e16a611418b6d`
+- **Direct-dispatch corrective commit:** corrective closure pass commit
+- **Public wrappers retained:** 6 thin wrappers, all delegating to shared inner dispatch
+- **Duplicated implementations removed:** policy preparation consolidated, sync-pool submission consolidated, context installation unified
+- **Calculator stateless contract:** tool dispatch uses fresh `EvalContext`; no process-global state
+- **Calculator stateful contract:** `evaluate_with_context()`/`run_with_context()` persist PRNG/memory/variables
+- **Commit-slot disposition:** removed `execute_handler_with_commit_slot()` and associated `Arc<Mutex<Option<EvalContext>>>` machinery
+- **Lifecycle state-machine disposition:** retained `HandlerPhase` (smallest reliable implementation after cleanup)
+- **Focused tests:** 534 unit tests, 55 property tests, calculator state isolation tests, dispatch consolidation tests — all pass
+- **Full verification:** fmt ✓, clippy ✓, tests ✓ (skip parity), doc ✓, generate-docs --check ✓, package ✓
+- **Deferred findings:** none
 
 Record closure here. Do not create an evidence-only plan.

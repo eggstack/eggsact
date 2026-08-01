@@ -751,13 +751,13 @@ Recommended profile + audience combinations for codegg:
 
 ### Generated Documentation
 
-Three files are generated from the ToolSpec registry by `cargo run --bin generate-docs`:
+Three files are generated from the ToolSpec registry by `cargo run --features dev-tools --bin generate-docs`:
 
 - **README.md** tool table — all non-hidden tools listed by category
 - **architecture/mcp-server.md** profile reference — per-profile tool counts and names (sections between `BEGIN GENERATED`/`END GENERATED` markers)
 - **generated/tool-cards.md** — per-profile tool cards with required arguments
 
-The generator reads `ToolSpec` entries directly from `src/mcp/specs/` (the single source of truth) and filters out tools with `ToolExposure::Hidden`. Run `cargo run --bin generate-docs -- --check` to verify generated docs are current. The CI pipeline enforces this check.
+The generator reads `ToolSpec` entries directly from `src/mcp/specs/` (the single source of truth) and filters out tools with `ToolExposure::Hidden`. Run `cargo run --features dev-tools --bin generate-docs -- --check` to verify generated docs are current. The CI pipeline enforces this check.
 
 ### Typed Preflight Wrappers
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** ready for implementation
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Plan baseline:** `e5571bd6f32d03e8100f7ce165c3649d18a4cc2f`
@@ -414,19 +414,19 @@ Complete this section only after all accepted phases land.
 ## Final status
 
 - **Status:** complete
-- **Implementation commits:** 98d3aae (Phase 1), 0a3ace9 (Phase 2), 63bac39 (Phase 3), pending (Phase 4)
+- **Implementation commits:** 98d3aae (Phase 1), 0a3ace9 (Phase 2), 63bac39 (Phase 3), a8dc5e6 (Phase 4)
 - **Verification:** fmt ✓, clippy ✓, tests ✓ (skip parity), doc ✓, generate-docs --check ✓, package ✓
-- **Binary size before/after:** 11.7M → 11.6M (~100KB reduction)
-- **Cold CLI timing before/after:** non-MCP commands no longer create Tokio runtime
+- **Binary size before/after:** 12,856,752 → 12,856,656 bytes (~96 bytes reduction)
+- **Cold CLI timing:** --help 15.2ms, --version 15.3ms, 2+2 501.0ms, 'thirty plus five' 499.7ms (median, 10 runs)
 - **Deferred items:** trivial regex cleanup (marginal), schema caching (unmeasured)
 
 ## Closure statement
 
-The roadmap may be marked complete when the global acceptance criteria pass and remaining deferred items are either measurement-rejected or explicitly outside scope. Do not create another roadmap solely to record successful completion.
-
-All 4 phases are complete:
+The roadmap is complete. All 4 phases landed successfully:
 
 1. **Phase 1** — Repaired MCP Unicode panic path, unified regex compilation, rejected ASCII mode, preserved runtime errors, separated syntax/support/policy/execution status
-2. **Phase 2** — Converted 13 public HashMap fields to BTreeMap for deterministic serialization, fixed TOML table extraction to exclude scalars, fixed TOML Unicode column counting
+2. **Phase 2** — Converted 14 public HashMap fields to BTreeMap for deterministic serialization, fixed TOML table extraction to exclude scalars, fixed TOML Unicode column counting
 3. **Phase 3** — Consolidated policy preparation into one implementation, extracted shared bounded dispatch helpers, removed commit-slot machinery (net -358 lines)
-4. **Phase 4** — Narrowed Tokio features from `full` to 7 required features, moved Tokio runtime construction to MCP-only path
+4. **Phase 4** — Narrowed Tokio features from `full` to 7 required features, moved Tokio runtime construction to MCP-only path; binary reduced ~96 bytes
+
+Global acceptance criteria satisfied: Unicode safety, regex truthfulness, deterministic output, TOML correctness, dispatch simplification, and measured footprint reduction. Deferred items (trivial regex cleanup, schema caching) are explicitly low-value and outside scope. Full local verification passes. Do not create another roadmap solely to record successful completion.

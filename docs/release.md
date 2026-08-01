@@ -22,7 +22,7 @@ This is the canonical release document for the eggsact crate. Crates.io publishi
    ```
 6. Generated docs regenerated:
    ```bash
-   cargo run --bin generate-docs
+   cargo run --features dev-tools --bin generate-docs
    ```
 
 ## Release verification
