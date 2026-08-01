@@ -9,7 +9,7 @@ See also: [MCP Server](mcp-server.md), [Agent API](agent-api.md), [Tool Implemen
 | File | Purpose |
 |------|---------|
 | `src/mcp/budget.rs` | `ToolBudget`, `BudgetTier`, `BudgetContext`, thread-local eval-context bridge, cooperative cancellation |
-| `src/mcp/execution.rs` | `HandlerPhase` state machine, `execute_tool_handler()`, `execute_tool_bounded()`, runtime metrics, test hooks |
+| `src/mcp/execution.rs` | `HandlerPhase` state machine, `execute_tool_handler()`, `execute_tool_bounded()`, runtime metrics, test hooks (`#[cfg(test)]`) |
 | `src/mcp/sync_pool.rs` | `SyncExecutionPool` — bounded synchronous worker pool for in-process budget-aware APIs |
 | `src/mcp/runtime.rs` | `RuntimeMetrics`, `RUNTIME_METRICS` global, `RateLimiter`, request tracking, protocol negotiation |
 

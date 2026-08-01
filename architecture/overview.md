@@ -285,7 +285,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | `src/mcp/response.rs` | — | ToolResponse, python_json_dumps, finding helpers, truncation |
 | `src/mcp/runtime.rs` | ~770 | Rate limiter, constants, profile/audience management, metrics |
 | `src/mcp/budget.rs` | ~950 | ToolBudget (3 tiers), BudgetContext, thread-local bridges |
-| `src/mcp/execution.rs` | ~2100 | HandlerPhase state machine, execute_tool_handler, test hooks |
+| `src/mcp/execution.rs` | ~2100 | HandlerPhase state machine, execute_tool_handler, test hooks (`#[cfg(test)]`) |
 | `src/mcp/sync_pool.rs` | ~1140 | SyncExecutionPool (bounded worker pool) |
 | `src/mcp/schema_validation.rs` | — | Argument validation against tool schemas |
 | `src/mcp/compat.rs` | ~300 | CompatibilityMode (EggcalcPython vs StrictNative) |

@@ -767,9 +767,10 @@ impl ToolRegistry {
     ///
     /// # Limitation: `math_eval` does not persist calculator state
     ///
-    /// `math_eval` internally clones the eval context. PRNG draws, memory
-    /// mutations, and variable assignments from `math_eval` therefore do **not**
-    /// persist back into `ctx.eval_ctx`. To persist calculator state, use
+    /// The dispatch layer clones `ctx.eval_ctx` before the handler runs.
+    /// PRNG draws, memory mutations, and variable assignments from `math_eval`
+    /// therefore do **not** persist back into `ctx.eval_ctx`. To persist
+    /// calculator state, use
     /// [`evaluate_with_context`](crate::calc::evaluate_with_context) or
     /// [`run_with_context`](crate::calc::run_with_context) directly.
     ///
@@ -951,12 +952,12 @@ pub enum ExecutionSource {
 /// user-defined variables). Only calculator-backed tools that opt into the
 /// eval-context bridge read from it; the sole current consumer is **`math_eval`**.
 ///
-/// `eval_ctx` is **always cloned at dispatch** — both `call_json_with_execution_context`
-/// (explicitly) and `call_json_with_execution_context_mut` (the handler reads
-/// from a thread-local clone). All PRNG draws, memory mutations, and variable
-/// assignments inside `math_eval` operate on the clone and **do not persist
-/// back** to the caller's `ExecutionContext`. Two calls with the same seed
-/// produce the same first random value.
+/// `eval_ctx` is **always cloned at dispatch** — `call_json_with_execution_context`
+/// clones explicitly before submitting to the sync pool. All PRNG draws,
+/// memory mutations, and variable assignments inside `math_eval` operate on
+/// the dispatch-owned clone and **do not persist back** to the caller's
+/// `ExecutionContext`. Two calls with the same seed produce the same first
+/// random value.
 ///
 /// To persist calculator state across calls, use
 /// [`evaluate_with_context`](crate::calc::evaluate_with_context) or

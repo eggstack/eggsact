@@ -58,9 +58,9 @@ pub fn evaluate_with_context(expr: &str, ctx: &mut EvalContext) -> Result<(Strin
 // Tokenizer used by normalize pipeline and MCP pre-checks
 pub fn split_at_operators(expr: &str) -> Vec<String>
 
-// MCP-safe mode control (legacy, idempotent one-shot)
-pub fn set_mcp_mode()
-pub fn is_mcp_mode() -> bool
+// MCP-safe mode control (legacy, idempotent one-shot) — deprecated
+pub fn set_mcp_mode() // deprecated: use EvalContext::mcp_mode() instead
+pub fn is_mcp_mode() -> bool // deprecated
 
 // Type aliases
 pub type EvaluateResult = (String, String); // (value, type)
@@ -1071,7 +1071,7 @@ Returns `(canonical_name, category)` for a unit, or `None` if unknown.
 
 ### Dual API Paths
 
-Every function exists in two variants: legacy (global statics) and context-aware (per-call `EvalContext`). Legacy wrappers create a default `EvalContext` internally and delegate to the context-aware version. New code should use context-aware APIs.
+Every function exists in two variants: legacy (global statics) and context-aware (per-call `EvalContext`). Legacy `evaluate()`/`run()` use process-global mutable statics (`PRNG_STATE`, `MEMORY_REGISTERS`, etc.) and do not accept an `EvalContext` parameter. Context-aware `evaluate_with_context()`/`run_with_context()` operate directly on the caller's `&mut EvalContext`. New code should use context-aware APIs.
 
 ### Sentinel Protocol
 

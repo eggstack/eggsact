@@ -5,6 +5,7 @@ use crate::mcp::response::{python_json_dumps, sanitize_error, truncate_response,
 use crate::mcp::runtime::{self, MAX_OUTPUT_BYTES, RUNTIME_METRICS};
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[allow(unused_imports)]
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -132,17 +133,14 @@ impl HandlerLifecycle {
     }
 }
 
-// ── Test gates ───────────────────────────────────────────────────────────
+// ── Test gates (cfg(test) — excluded from release builds) ────────────────
 
+#[cfg(test)]
 /// Blocking-side test gate for hook sites inside `spawn_blocking`.
 ///
 /// `arrive_and_wait` signals arrival and then blocks the calling thread
 /// until the test releases it. `wait_until_entered` is async and uses
 /// a `Notify` so tests can poll it from a Tokio runtime.
-///
-/// This type is always available (not cfg(test)) so that `ExecutionHooks`
-/// can hold it without conditional compilation, but it is only constructed
-/// in test code.
 #[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct BlockingTestGate {
@@ -150,6 +148,7 @@ pub(crate) struct BlockingTestGate {
     state: Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
 }
 
+#[cfg(test)]
 #[allow(dead_code)]
 impl BlockingTestGate {
     pub fn new() -> Self {
@@ -183,12 +182,14 @@ impl BlockingTestGate {
     }
 }
 
+#[cfg(test)]
 impl Default for BlockingTestGate {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(test)]
 /// One-way notification emitted when a blocking execution closure exits.
 ///
 /// This is used only by deterministic tests. `Notify` retains one permit when
@@ -199,6 +200,7 @@ pub(crate) struct ClosureExitSignal {
     exited: Arc<tokio::sync::Notify>,
 }
 
+#[cfg(test)]
 #[allow(dead_code)]
 impl ClosureExitSignal {
     pub fn new() -> Self {
@@ -216,6 +218,7 @@ impl ClosureExitSignal {
     }
 }
 
+#[cfg(test)]
 /// Async-side test gate for hook sites in async code (e.g. the timeout path).
 ///
 /// `arrive_and_wait` is async and must not be called from `spawn_blocking`.
@@ -226,6 +229,7 @@ pub(crate) struct AsyncTestGate {
     release: Arc<tokio::sync::Notify>,
 }
 
+#[cfg(test)]
 #[allow(dead_code)]
 impl AsyncTestGate {
     pub fn new() -> Self {
@@ -261,34 +265,44 @@ impl AsyncTestGate {
 /// that lifecycle boundary until the test releases it. `None` means no
 /// waiting — the production no-op path.
 ///
-/// This struct is always available (not cfg(test)) so that
-/// `execute_tool_bounded` can construct `ExecutionHooks::none()` without
-/// conditional compilation.
+/// In non-test builds all fields are compiled away (zero-sized struct),
+/// so `ExecutionHooks::none()` is a no-op constructor and none of the
+/// gate types are linked into the binary.
 #[derive(Clone)]
 pub(crate) struct ExecutionHooks {
     /// Diagnostic-only notification after permit acquisition (async side).
+    #[cfg(test)]
     pub permit_acquired: Option<Arc<tokio::sync::Notify>>,
     /// Inside the blocking closure, after closure entry but before
     /// `begin_running`.
+    #[cfg(test)]
     pub before_begin_running: Option<Arc<BlockingTestGate>>,
     /// After `begin_running` and active-handler accounting are complete.
+    #[cfg(test)]
     pub running_established: Option<Arc<BlockingTestGate>>,
     /// Immediately before invoking the handler, after the cancellation check.
+    #[cfg(test)]
     pub before_handler: Option<Arc<BlockingTestGate>>,
     /// After caller timeout and cancellation signaling, but before
     /// `record_timeout` takes the lifecycle lock (async side).
+    #[cfg(test)]
     pub before_timeout_record: Option<Arc<AsyncTestGate>>,
     /// After `record_timeout` completes (async side).
+    #[cfg(test)]
     pub timeout_recorded: Option<Arc<AsyncTestGate>>,
     /// After handler return or caught panic, but before lifecycle `finish`.
+    #[cfg(test)]
     pub before_finish: Option<Arc<BlockingTestGate>>,
     /// After lifecycle completion and gauge correction.
+    #[cfg(test)]
     pub finished: Option<Arc<BlockingTestGate>>,
     /// Signalled exactly once when the blocking closure exits.
+    #[cfg(test)]
     pub closure_exited: Option<Arc<ClosureExitSignal>>,
 }
 
 impl ExecutionHooks {
+    #[cfg(test)]
     pub fn none() -> Self {
         Self {
             permit_acquired: None,
@@ -301,6 +315,11 @@ impl ExecutionHooks {
             finished: None,
             closure_exited: None,
         }
+    }
+
+    #[cfg(not(test))]
+    pub fn none() -> Self {
+        Self {}
     }
 }
 
@@ -453,7 +472,7 @@ async fn execute_tool_bounded_inner(
     budget: ToolBudget,
     cancel_flag: std::sync::Arc<AtomicBool>,
     semaphore: std::sync::Arc<tokio::sync::Semaphore>,
-    hooks: ExecutionHooks,
+    _hooks: ExecutionHooks,
     metrics: &'static runtime::RuntimeMetrics,
 ) -> ExecutionOutcome {
     let timeout_ms = budget.max_elapsed_ms;
@@ -477,28 +496,32 @@ async fn execute_tool_bounded_inner(
             }
         };
 
-        if let Some(ref notify) = hooks.permit_acquired {
+        #[cfg(test)]
+        if let Some(ref notify) = _hooks.permit_acquired {
             notify.notify_one();
         }
 
         let lifecycle_block = lifecycle.clone();
         let cancel_flag_block = cancel_flag.clone();
         let tool_name_block = tool_name.clone();
+        #[cfg(test)]
         let hooks_for_block = ExecutionHooks {
             permit_acquired: None,
-            before_begin_running: hooks.before_begin_running.clone(),
-            running_established: hooks.running_established.clone(),
-            before_handler: hooks.before_handler.clone(),
+            before_begin_running: _hooks.before_begin_running.clone(),
+            running_established: _hooks.running_established.clone(),
+            before_handler: _hooks.before_handler.clone(),
             before_timeout_record: None,
             timeout_recorded: None,
-            before_finish: hooks.before_finish.clone(),
-            finished: hooks.finished.clone(),
-            closure_exited: hooks.closure_exited.clone(),
+            before_finish: _hooks.before_finish.clone(),
+            finished: _hooks.finished.clone(),
+            closure_exited: _hooks.closure_exited.clone(),
         };
 
         tokio::task::spawn_blocking(move || {
+            #[cfg(test)]
             struct ClosureExitGuard(Option<Arc<ClosureExitSignal>>);
 
+            #[cfg(test)]
             impl Drop for ClosureExitGuard {
                 fn drop(&mut self) {
                     if let Some(signal) = self.0.take() {
@@ -507,12 +530,14 @@ async fn execute_tool_bounded_inner(
                 }
             }
 
+            #[cfg(test)]
             let _closure_exit = ClosureExitGuard(hooks_for_block.closure_exited.clone());
             let _permit = permit;
 
             // Signal that the blocking closure has been entered, before
             // any lifecycle transition. Tests use this to coordinate
             // exactly when the closure starts vs. when the outer timeout fires.
+            #[cfg(test)]
             if let Some(ref gate) = hooks_for_block.before_begin_running {
                 gate.arrive_and_wait();
             }
@@ -538,6 +563,7 @@ async fn execute_tool_bounded_inner(
                 BeginRunning::Run => {}
             }
 
+            #[cfg(test)]
             if let Some(ref gate) = hooks_for_block.running_established {
                 gate.arrive_and_wait();
             }
@@ -553,6 +579,7 @@ async fn execute_tool_bounded_inner(
                 );
             }
 
+            #[cfg(test)]
             if let Some(ref gate) = hooks_for_block.before_handler {
                 gate.arrive_and_wait();
             }
@@ -566,12 +593,14 @@ async fn execute_tool_bounded_inner(
                 })
             }));
 
+            #[cfg(test)]
             if let Some(ref gate) = hooks_for_block.before_finish {
                 gate.arrive_and_wait();
             }
 
             lifecycle_block.finish(metrics);
 
+            #[cfg(test)]
             if let Some(ref gate) = hooks_for_block.finished {
                 gate.arrive_and_wait();
             }
@@ -611,7 +640,8 @@ async fn execute_tool_bounded_inner(
             cancel_flag_for_timeout.store(true, Ordering::Relaxed);
             metrics.total_timeouts.fetch_add(1, Ordering::Relaxed);
 
-            if let Some(ref gate) = hooks.before_timeout_record {
+            #[cfg(test)]
+            if let Some(ref gate) = _hooks.before_timeout_record {
                 gate.arrive_and_wait().await;
             }
 
@@ -620,7 +650,8 @@ async fn execute_tool_bounded_inner(
                 TimeoutDisposition::AlreadyFinished => {}
             }
 
-            if let Some(ref gate) = hooks.timeout_recorded {
+            #[cfg(test)]
+            if let Some(ref gate) = _hooks.timeout_recorded {
                 gate.arrive_and_wait().await;
             }
 

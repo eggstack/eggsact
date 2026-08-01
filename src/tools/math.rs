@@ -33,10 +33,9 @@ pub fn math_eval(args: &Value) -> ToolResponse {
     let has_true_division = contains_true_division(expression);
 
     let expr_owned = expression.to_string();
-    let current_ctx = current_eval_context().map(|ctx| ctx.clone());
     let eval_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        if let Some(mut ctx) = current_ctx {
-            run_with_context(&expr_owned, &mut ctx)
+        if let Some(ctx) = current_eval_context() {
+            run_with_context(&expr_owned, ctx)
         } else {
             run(&expr_owned)
         }

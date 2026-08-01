@@ -1,6 +1,4 @@
 use crate::agent::ToolAudience;
-#[allow(deprecated)]
-use crate::calc::set_mcp_mode;
 use crate::mcp::registry;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
@@ -413,8 +411,6 @@ static ACTIVE_AUDIENCE: LazyLock<RwLock<ToolAudience>> = LazyLock::new(|| {
     RwLock::new(parse_audience(&audience_str))
 });
 
-static MCP_DEFAULTS_CONFIGURED: AtomicBool = AtomicBool::new(false);
-
 pub fn set_active_profile(name: &str) -> Result<(), String> {
     if !registry::PROFILE_NAMES.contains(&name) {
         let available: Vec<&str> = registry::PROFILE_NAMES.to_vec();
@@ -456,16 +452,6 @@ pub fn get_schema_detail() -> String {
 pub fn get_active_audience() -> ToolAudience {
     let audience = ACTIVE_AUDIENCE.read().unwrap_or_else(|e| e.into_inner());
     *audience
-}
-
-#[deprecated(
-    note = "use EvalContext::mcp_mode() through the thread-local eval context bridge instead"
-)]
-#[allow(deprecated)]
-pub fn ensure_mcp_defaults() {
-    if !MCP_DEFAULTS_CONFIGURED.swap(true, Ordering::SeqCst) {
-        set_mcp_mode();
-    }
 }
 
 pub fn truncate_2000(s: &str) -> String {
