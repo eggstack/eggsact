@@ -778,23 +778,16 @@ Do not create a fifth phase or evidence-only closure plan unless verification fi
 
 ## Verification
 
-- **Focused tests:** 526 unit tests, 55 property tests — all pass
-- **Full local verification:** fmt ✓, clippy ✓, tests ✓ (skip parity), doc ✓, generate-docs --check ✓
+- **Focused tests:** 534 unit tests, 55 property tests — all pass
+- **Full local verification:** fmt ✓, clippy ✓, 3476 tests ✓ (skip parity), doc ✓, generate-docs --check ✓, package ✓
 - **Remote CI:** pending push
 - **Default install audit:** binary is 11.6M ELF x86-64
 
 ## Closure
 
 - **Status:** complete
-- **Implementation commits:** 0a3ace9 (Phase 2), 63bac39 (Phase 3), pending (Phase 4)
+- **Implementation commits:** 0a3ace9 (Phase 2), 63bac39 (Phase 3), a8dc5e6 (Phase 4)
 - **Deferred items:** trivial regex cleanup, schema caching (both low-value, deferred per plan)
-- **Final statement:** The roadmap repaired MCP Unicode safety, regex truthfulness, deterministic output, TOML correctness, and dispatch simplification. Binary footprint reduced by ~100KB through Tokio feature narrowing. Non-MCP CLI paths no longer create a Tokio runtime.
-
-## Closure
-
-- **Status:** pending
-- **Implementation commit(s):** pending
-- **Deferred items:** pending
-- **Final statement:** pending
+- **Final statement:** The roadmap repaired MCP Unicode safety, regex truthfulness, deterministic output, TOML correctness, and dispatch simplification. Binary footprint reduced by ~100KB through Tokio feature narrowing. Non-MCP CLI paths no longer create a Tokio runtime. Full local verification passes (fmt, clippy, 3476 tests, doc tests, generate-docs, package).
 
 Record concise facts only. Do not append command transcripts, workflow run ledgers, artifact digests, or another closure plan.

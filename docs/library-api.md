@@ -344,11 +344,15 @@ The `eggsact::mcp` module provides a JSON-RPC 2.0 server over stdio for AI codin
 
 ### Starting the Server
 
+The MCP server requires a Tokio runtime. The `eggsact` binary builds one only for the `--mcp` path; non-MCP CLI commands run synchronously without a runtime. To launch the server directly:
+
 ```rust
-#[tokio::main]
-async fn main() -> ! {
-    eggsact::mcp::server::main().await
-}
+let rt = tokio::runtime::Builder::new_multi_thread()
+    .enable_all()
+    .thread_name("eggsact-mcp")
+    .build()
+    .expect("failed to create Tokio runtime");
+rt.block_on(eggsact::mcp::server::main());
 ```
 
 The server reads JSON-RPC requests from stdin and writes responses to stdout. It supports the following MCP methods:
