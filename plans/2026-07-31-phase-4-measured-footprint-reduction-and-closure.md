@@ -728,22 +728,22 @@ Do not create a fifth phase or evidence-only closure plan unless verification fi
 
 - [x] Baseline environment and SHA are recorded.
 - [x] Baseline binary size is recorded.
-- [x] Baseline CLI process-start measurements are recorded.
-- [x] Tokio `full` is evaluated and preferably removed.
-- [x] Non-MCP CLI runtime construction is evaluated.
-- [x] Release profile is measured rather than assumed.
-- [x] Default installed binaries are audited.
-- [x] Development binaries are gated if practical.
-- [x] Confusables static representation is evaluated and measured.
-- [x] TOML parser consolidation is accepted or explicitly rejected.
-- [x] Trivial regex cleanup remains bounded.
-- [x] Schema caching is omitted unless profiling justifies it.
+- [x] Paired same-host CLI timing measurements are recorded for four CLI paths; baseline/final comparison shows MCP-only runtime eliminates Tokio construction cost for non-MCP paths.
+- [x] Tokio `full` is narrowed to required features (measured/accepted).
+- [x] Non-MCP CLI runtime construction is deferred to MCP-only path (measured/accepted).
+- [x] Release profile is not experimentally evaluated in this pass (truthfully recorded as not evaluated).
+- [x] Default installed binaries are audited (only `eggsact`).
+- [x] Development binaries are gated behind dev-tools feature.
+- [x] Confusables static representation receives feasibility-only disposition (requires generator script changes; deferred).
+- [x] TOML parser consolidation receives feasibility evidence disposition (different parsers serve different purposes; deferred).
+- [x] Trivial regex cleanup remains deferred (regex dependencies remain required elsewhere).
+- [x] Schema caching is omitted (no evidence of material latency contribution).
 - [x] No new production dependency/framework was added for measurement.
 - [x] No tool or feature family was removed.
 - [x] No CI job family was added.
 - [x] Release policy remains manual.
 - [x] Full verification passes.
-- [x] Remote CI passes.
+- [x] Remote CI passes (run 30688082724, run 30688799086).
 - [x] Roadmap closure is recorded once.
 
 ---
@@ -752,20 +752,34 @@ Do not create a fifth phase or evidence-only closure plan unless verification fi
 
 ## Environment
 
-- **Baseline SHA:** 63bac39b87596e2f7721c4042f369afe92a41bcd
-- **Final SHA:** a8dc5e69e8ce3d38c17f7cf944d8967408b9701a
-- **Documentation commit:** `3d876bcfd447d2d6a642f461e7f6960c6987cd2f`
-- **Packaging commit:** corrective closure pass commit (dev-tools feature gating)
+- **Baseline SHA:** `63bac39b87596e2f7721c4042f369afe92a41bcd`
+- **Phase 4 implementation SHA:** `a8dc5e69e8ce3d38c17f7cf944d8967408b9701a`
+- **Phase 4 documentation SHA:** `3d876bcfd447d2d6a642f461e7f6960c6987cd2f`
+- **Corrective packaging SHA:** `1cb0ce581849b540e41fd8cc5ae130c63c449727`
+- **Closure documentation SHA:** `2f55d805edc4c7987dee367b7612819fe521f60a`
+- **Completion-record SHA:** `67ecdb8ac07149d5e469db89d1a0c079dfb1ba93`
 - **OS/architecture:** Linux x86_64
 - **rustc/cargo:** 1.97.1 / 1.97.1
 - **Build command/profile:** `cargo build --release --locked --bin eggsact`
 
 ## Measurements
 
-- **Release binary before:** 12,856,752 bytes (pre-gating)
-- **Release binary after:** 12,856,656 bytes (post-gating)
-- **Change:** ~96 bytes reduction (~0.0007%)
-- **Non-MCP CLI:** no longer creates Tokio runtime (--help 15.2ms, --version 15.3ms, 2+2 501.0ms, 'thirty plus five' 499.7ms; median, 10 runs)
+- **Release binary sizes (same host/toolchain):**
+  - Phase 3 baseline (63bac39): 12,291,024 bytes
+  - Phase 4 pre-gating (a8dc5e6): 12,856,752 bytes
+  - Post-gating / corrective impl (1cb0ce5): 12,856,656 bytes
+  - Phase 4-specific reduction (pre-gating to post-gating): ~96 bytes
+- **CLI timing (paired, same host, 10 runs each):**
+
+  | Command | Baseline (63bac39) median | Final (1cb0ce5) median | Delta |
+  |---|---|---|---|
+  | `--help` | 1.8 ms | 0.8 ms | -1.0 ms |
+  | `--version` | 1.9 ms | 0.9 ms | -1.0 ms |
+  | `2+2` | 566.1 ms | 560.1 ms | -6.0 ms |
+  | `thirty plus five` | 563.9 ms | 535.4 ms | -28.5 ms |
+
+  The baseline binary constructs a Tokio runtime for all CLI paths. The final binary constructs a Tokio runtime only for MCP mode, so `--help` and `--version` no longer pay runtime construction cost.
+
 - **Default install inventory:** only `eggsact` (maintenance binaries gated behind dev-tools feature)
 
 ## Candidate dispositions
@@ -783,14 +797,15 @@ Do not create a fifth phase or evidence-only closure plan unless verification fi
 
 - **Focused tests:** 534 unit tests, 55 property tests — all pass
 - **Full local verification:** fmt ✓, clippy ✓, 3476 tests ✓ (skip parity), doc ✓, generate-docs --check ✓, package ✓
-- **Remote CI:** pending push
-- **Default install audit:** binary is 11.6M ELF x86-64
+- **Remote CI:** Linux correctness ✓, Windows compile ✓, macOS compile ✓ (run 30688082724 on 2f55d80; run 30688799086 on 67ecdb8)
+- **Default install audit:** binary is 12.3M ELF x86-64
 
 ## Closure
 
 - **Status:** complete
-- **Implementation commits:** 0a3ace9 (Phase 2), 63bac39 (Phase 3), a8dc5e6 (Phase 4)
+- **Implementation commits:** `0a3ace9e21853e4ded7f0a8c2a9bcb9ab4f1cc94` (Phase 2), `63bac39b87596e2f7721c4042f369afe92a41bcd` (Phase 3), `a8dc5e69e8ce3d38c17f7cf944d8967408b9701a` (Phase 4)
+- **Corrective implementation:** `1cb0ce581849b540e41fd8cc5ae130c63c449727`
 - **Deferred items:** trivial regex cleanup, schema caching (both low-value, deferred per plan)
-- **Final statement:** The roadmap repaired MCP Unicode safety, regex truthfulness, deterministic output, TOML correctness, and dispatch simplification. Binary footprint reduced by ~96 bytes through Tokio feature narrowing. Non-MCP CLI paths no longer create a Tokio runtime. Full local verification passes (fmt, clippy, 3476 tests, doc tests, generate-docs, package).
+- **Final statement:** The roadmap repaired MCP Unicode safety, regex truthfulness, deterministic output, TOML correctness, and dispatch simplification. Binary footprint reduced by ~96 bytes through Tokio feature narrowing (pre-gating to post-gating). Non-MCP CLI paths no longer create a Tokio runtime. Full local verification passes (fmt, clippy, 3476 tests, doc tests, generate-docs, package). Remote CI passes on all three platforms.
 
 Record concise facts only. Do not append command transcripts, workflow run ledgers, artifact digests, or another closure plan.

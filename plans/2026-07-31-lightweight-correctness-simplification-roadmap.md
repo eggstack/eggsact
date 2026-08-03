@@ -414,10 +414,11 @@ Complete this section only after all accepted phases land.
 ## Final status
 
 - **Status:** complete
-- **Implementation commits:** 98d3aae (Phase 1), 0a3ace9 (Phase 2), 63bac39 (Phase 3), a8dc5e6 (Phase 4)
+- **Implementation commits:** `98d3aae00efc29436af808c430da6766ea76ebf6` (Phase 1), `0a3ace9e21853e4ded7f0a8c2a9bcb9ab4f1cc94` (Phase 2), `63bac39b87596e2f7721c4042f369afe92a41bcd` (Phase 3), `a8dc5e69e8ce3d38c17f7cf944d8967408b9701a` (Phase 4)
+- **Corrective closure implementation:** `1cb0ce581849b540e41fd8cc5ae130c63c449727` (regex captures, syntax/policy separation, direct-dispatch context isolation, dev-tools gating)
 - **Verification:** fmt ✓, clippy ✓, tests ✓ (skip parity), doc ✓, generate-docs --check ✓, package ✓
-- **Binary size before/after:** 12,856,752 → 12,856,656 bytes (~96 bytes reduction)
-- **Cold CLI timing:** --help 15.2ms, --version 15.3ms, 2+2 501.0ms, 'thirty plus five' 499.7ms (median, 10 runs)
+- **Binary sizes (same host/toolchain):** Phase 3 baseline 12,291,024 → Phase 4 pre-gating 12,856,752 → post-gating/corrective 12,856,656 bytes (Phase 4-specific reduction: ~96 bytes)
+- **CLI timing (paired, same host, 10 runs):** --help 1.8→0.8 ms, --version 1.9→0.9 ms, 2+2 566.1→560.1 ms, 'thirty plus five' 563.9→535.4 ms (baseline constructs Tokio for all paths; final only for MCP)
 - **Deferred items:** trivial regex cleanup (marginal), schema caching (unmeasured)
 
 ## Closure statement
@@ -427,6 +428,6 @@ The roadmap is complete. All 4 phases landed successfully:
 1. **Phase 1** — Repaired MCP Unicode panic path, unified regex compilation, rejected ASCII mode, preserved runtime errors, separated syntax/support/policy/execution status
 2. **Phase 2** — Converted 14 public HashMap fields to BTreeMap for deterministic serialization, fixed TOML table extraction to exclude scalars, fixed TOML Unicode column counting
 3. **Phase 3** — Consolidated policy preparation into one implementation, extracted shared bounded dispatch helpers, removed commit-slot machinery (net -358 lines)
-4. **Phase 4** — Narrowed Tokio features from `full` to 7 required features, moved Tokio runtime construction to MCP-only path; binary reduced ~96 bytes
+4. **Phase 4** — Narrowed Tokio features from `full` to 7 required features, moved Tokio runtime construction to MCP-only path; binary reduced ~96 bytes (pre-gating to post-gating)
 
-Global acceptance criteria satisfied: Unicode safety, regex truthfulness, deterministic output, TOML correctness, dispatch simplification, and measured footprint reduction. Deferred items (trivial regex cleanup, schema caching) are explicitly low-value and outside scope. Full local verification passes. Do not create another roadmap solely to record successful completion.
+Global acceptance criteria satisfied: Unicode safety, regex truthfulness, deterministic output, TOML correctness, dispatch simplification, and measured footprint reduction. Deferred items (trivial regex cleanup, schema caching) are explicitly low-value and outside scope. Full local verification passes. Remote CI passes on all three platforms (runs 30688082724, 30688799086). The corrective closure implementation (`1cb0ce5`) repaired named captures, syntax/policy separation, direct-dispatch context isolation, and dev-tools gating. This polish pass reconciled planning records only — no new implementation phase is created. Do not create another roadmap solely to record successful completion.

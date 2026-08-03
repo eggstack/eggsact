@@ -517,7 +517,7 @@ Run Python parity only if this phase changes a behavior covered by parity. Recor
 
 - **Status:** complete
 - **Implementation commit:** `98d3aae00efc29436af808c430da6766ea76ebf6`
-- **Corrective closure pass commit:** fixed named capture lookup, fancy substring extraction, absolute offset translation, and syntax/policy separation
+- **Corrective closure pass commit:** `1cb0ce581849b540e41fd8cc5ae130c63c449727` — fixed named capture lookup, fancy substring extraction, absolute offset translation, and syntax/policy separation
 - **Focused tests:** 523 unit tests, 938 text tests, 47 property tests, 11 doc tests — all pass
 - **Full verification:** fmt ✓, clippy ✓, tests ✓ (skip parity), doc ✓, generate-docs --check ✓, package ✓
 - **ASCII disposition:** explicitly rejected with REGEX_ASCII_NOT_SUPPORTED machine code

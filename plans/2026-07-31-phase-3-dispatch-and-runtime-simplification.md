@@ -556,7 +556,7 @@ No new workflow is required.
 - **Status:** complete
 - **Dispatch consolidation commit:** `63bac39b87596e2f7721c4042f369afe92a41bcd`
 - **Calculator/test-hook completion commit:** `021795bc72eee444510ff9f4472e16a611418b6d`
-- **Direct-dispatch corrective commit:** corrective closure pass commit
+- **Direct-dispatch corrective commit:** `1cb0ce581849b540e41fd8cc5ae130c63c449727`
 - **Public wrappers retained:** 6 thin wrappers, all delegating to shared inner dispatch
 - **Duplicated implementations removed:** policy preparation consolidated, sync-pool submission consolidated, context installation unified
 - **Calculator stateless contract:** tool dispatch uses fresh `EvalContext`; no process-global state

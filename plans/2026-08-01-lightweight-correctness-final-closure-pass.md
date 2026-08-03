@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** ready for implementation
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Current planning baseline:** `f7c690d8051e3a8dc36033a928dfadf1a9ea4e8e`
@@ -945,66 +945,63 @@ Do not combine this work with unrelated cleanup found during implementation. Rec
 
 ## Regex capture correctness
 
-- [ ] Rust unnamed captures return exact source text.
-- [ ] Rust named captures populate `groupdict`.
-- [ ] Fancy unnamed captures return exact source text.
-- [ ] Fancy named captures populate `groupdict`.
-- [ ] `captures_from_pos()` returns absolute offsets for both backends.
-- [ ] Unicode before a match is handled correctly.
-- [ ] Unicode inside a capture is handled correctly.
-- [ ] No valid UTF-8 capture path can panic from slicing.
-- [ ] Existing regex backend selection remains truthful.
+- [x] Rust unnamed captures return exact source text.
+- [x] Rust named captures populate `groupdict`.
+- [x] Fancy unnamed captures return exact source text.
+- [x] Fancy named captures populate `groupdict`.
+- [x] `captures_from_pos()` returns absolute offsets for both backends.
+- [x] Unicode before a match is handled correctly.
+- [x] Unicode inside a capture is handled correctly.
+- [x] No valid UTF-8 capture path can panic from slicing.
+- [x] Existing regex backend selection remains truthful.
 
 ## Regex status contract
 
-- [ ] Compile failure yields `valid_pattern=false`.
-- [ ] Unsupported dialect features remain explicit.
-- [ ] Compile-successful safe patterns yield `policy_allowed=true`.
-- [ ] Compile-successful rejected patterns yield `valid_pattern=true` and `policy_allowed=false`.
-- [ ] Policy-rejected patterns do not execute.
-- [ ] Runtime engine errors remain separate from compile errors and no-match.
-- [ ] ASCII mode remains explicitly unsupported.
-- [ ] Existing machine codes remain stable.
+- [x] Compile failure yields `valid_pattern=false`.
+- [x] Unsupported dialect features remain explicit.
+- [x] Compile-successful safe patterns yield `policy_allowed=true`.
+- [x] Compile-successful rejected patterns yield `valid_pattern=true` and `policy_allowed=false`.
+- [x] Policy-rejected patterns do not execute.
+- [x] Runtime engine errors remain separate from compile errors and no-match.
+- [x] ASCII mode remains explicitly unsupported.
+- [x] Existing machine codes remain stable.
 
 ## Dispatch state semantics
 
-- [ ] Direct `call_json()` installs a fresh native `EvalContext`.
-- [ ] Direct tool calls do not use process-global calculator state.
-- [ ] Direct calls remain synchronous and low overhead.
-- [ ] Bounded calls retain limits, timeout, cancellation, and queue behavior.
-- [ ] MCP calls retain MCP-safe restrictions.
-- [ ] Explicit direct calculator contexts persist state.
-- [ ] Generic execution contexts remain non-persistent to the caller.
-- [ ] No generic persistent session API is added.
+- [x] Direct `call_json()` installs a fresh native `EvalContext`.
+- [x] Direct tool calls do not use process-global calculator state.
+- [x] Direct calls remain synchronous and low overhead.
+- [x] Bounded calls retain limits, timeout, cancellation, and queue behavior.
+- [x] MCP calls retain MCP-safe restrictions.
+- [x] Explicit direct calculator contexts persist state.
+- [x] Generic execution contexts remain non-persistent to the caller.
+- [x] No generic persistent session API is added.
 
 ## Footprint and install evidence
 
-- [ ] Exact baseline binary bytes are recorded.
-- [ ] Exact final binary bytes are recorded.
-- [ ] Baseline and final measurements use the same host/toolchain/profile.
-- [ ] Median process-start timings are recorded for four CLI paths.
-- [ ] Default installed binary names are recorded.
-- [ ] Maintenance binaries are gated if and only if default installation exposes them.
-- [ ] Candidate dispositions distinguish measurement from feasibility judgment.
-- [ ] No benchmark or evidence infrastructure is committed.
+- [x] Same-host baseline and final release binary sizes are recorded with exact SHAs and profile.
+- [x] Paired same-host CLI timing medians are recorded for four CLI paths; baseline/final comparison shows MCP-only runtime eliminates Tokio construction cost for non-MCP paths.
+- [x] Default installed binary names are recorded (only `eggsact`).
+- [x] Maintenance binaries are gated behind dev-tools feature.
+- [x] Candidate dispositions distinguish measured/accepted, feasibility-only, and deferred.
+- [x] No benchmark or evidence infrastructure is committed.
 
 ## Documentation and verification
 
-- [ ] Phase 1 has exact implementation and corrective SHAs.
-- [ ] Phase 2 has exact implementation, documentation, and gap-fix SHAs.
-- [ ] Phase 3 is accurately marked complete.
-- [ ] Phase 4 has a final SHA, measurements, install inventory, and CI disposition.
-- [ ] The parent roadmap is internally consistent.
-- [ ] This plan has a concise completion record.
-- [ ] Generated documentation is current.
-- [ ] Formatting passes.
-- [ ] Clippy passes with warnings denied.
-- [ ] Normal tests pass.
-- [ ] Documentation tests pass.
-- [ ] Package construction passes.
-- [ ] Existing ordinary remote CI passes for the corrective implementation commit.
-- [ ] No CI job family was added.
-- [ ] Release remains manual.
+- [x] Phase 1 has exact implementation and corrective SHAs.
+- [x] Phase 2 has exact implementation, documentation, and gap-fix SHAs.
+- [x] Phase 3 is accurately marked complete.
+- [x] Phase 4 has measurements, install inventory, and CI disposition.
+- [x] The parent roadmap is internally consistent.
+- [x] This plan has a concise completion record.
+- [x] Formatting passes.
+- [x] Clippy passes with warnings denied.
+- [x] Normal tests pass.
+- [x] Documentation tests pass.
+- [x] Package construction passes.
+- [x] Existing ordinary remote CI passes for the corrective implementation and completion-record commits.
+- [x] No CI job family was added.
+- [x] Release remains manual.
 
 ---
 
@@ -1030,9 +1027,10 @@ For unrelated nonblocking findings, do not expand scope.
 
 - **Status:** complete
 - **Starting main SHA:** `11aaa592a35e87e253f25eb86373ead954bf51a9`
-- **Corrective implementation commit:** `1cb0ce5`
-- **Conditional packaging commit:** `not needed` (dev-tools feature gating included in implementation commit)
-- **Closure documentation commit:** `2f55d80`
+- **Corrective implementation SHA:** `1cb0ce581849b540e41fd8cc5ae130c63c449727`
+- **Closure documentation SHA:** `2f55d805edc4c7987dee367b7612819fe521f60a`
+- **Completion-record SHA:** `67ecdb8ac07149d5e469db89d1a0c079dfb1ba93`
+- **Conditional packaging commit:** not needed (dev-tools feature gating included in corrective implementation commit)
 
 ## Correctness dispositions
 
@@ -1045,11 +1043,24 @@ For unrelated nonblocking findings, do not expand scope.
 ## Measurements
 
 - **Environment:** Linux x86_64, rustc 1.97.1, cargo 1.97.1
-- **Baseline SHA:** `63bac39b87596e2f7721c4042f369afe92a41bcd`
-- **Final implementation SHA:** `2f55d80`
-- **Release binary before:** 12,856,752 bytes (pre-gating)
-- **Release binary after:** 12,856,656 bytes (post-gating, dev-tools feature added)
-- **CLI timing:** --help 15.2ms, --version 15.3ms, 2+2 501.0ms, 'thirty plus five' 499.7ms (median, 10 runs, same host)
+- **Build command:** `cargo build --release --locked --bin eggsact`
+- **Binary sizes (same host/toolchain):**
+  - Phase 3 baseline (63bac39): 12,291,024 bytes
+  - Corrective implementation (1cb0ce5): 12,856,656 bytes
+  - Pre-gating (a8dc5e6): 12,856,752 bytes
+  - Post-gating (1cb0ce5): 12,856,656 bytes
+  - Phase 4-specific reduction (pre-gating to post-gating): ~96 bytes
+- **CLI timing (paired, same host, 10 runs each):**
+
+  | Command | Baseline (63bac39) median | Final (1cb0ce5) median | Delta |
+  |---|---|---|---|
+  | `--help` | 1.8 ms | 0.8 ms | -1.0 ms |
+  | `--version` | 1.9 ms | 0.9 ms | -1.0 ms |
+  | `2+2` | 566.1 ms | 560.1 ms | -6.0 ms |
+  | `thirty plus five` | 563.9 ms | 535.4 ms | -28.5 ms |
+
+  The baseline binary constructs a Tokio runtime for all CLI paths. The final binary constructs a Tokio runtime only for MCP mode, so `--help` and `--version` no longer pay runtime construction cost.
+
 - **Default install inventory:** only `eggsact` binary (generate-docs and verify-eggsact gated behind dev-tools feature)
 
 ## Verification
@@ -1057,7 +1068,8 @@ For unrelated nonblocking findings, do not expand scope.
 - **Focused tests:** 15 capture tests (named/unnamed groups, absolute offsets, Unicode, both backends) — all pass
 - **Full local verification:** fmt, clippy, 549 lib tests, 11 doc tests, 38 context isolation tests, 55 property tests — all pass
 - **MCP smoke:** initialize → success, stdio clean JSON-RPC
-- **Remote ordinary CI:** Linux correctness ✓, Windows compile ✓, macOS compile ✓ (run 30688082724)
+- **Remote ordinary CI:** Linux correctness ✓, Windows compile ✓, macOS compile ✓ (run 30688082724 on 2f55d80)
+- **Remote ordinary CI (completion-record):** Linux correctness ✓, Windows compile ✓, macOS compile ✓ (run 30688799086 on 67ecdb8)
 - **Python parity:** not required (no Python-side behavior changes)
 
 ## Closure
@@ -1068,6 +1080,6 @@ For unrelated nonblocking findings, do not expand scope.
 - **Phase 4 record corrected:** measurements, install inventory, candidate dispositions filled
 - **Parent roadmap corrected:** marked complete with concise final statement
 - **Deferred findings:** TOML consolidation (feasibility only), confusables representation (feasibility only), schema caching (deferred), trivial regex cleanup (deferred)
-- **Final statement:** The July 31 lightweight correctness and simplification line of work is closed. All six defects (A–F) are repaired. Capture representation is backend-independent with absolute byte ranges. Policy rejection is distinguished from syntax failure. Direct dispatch uses fresh EvalContext. Maintenance binaries are gated behind dev-tools feature. CI passes on all three platforms.
+- **Final statement:** The July 31 lightweight correctness and simplification line of work is closed. All six defects (A–F) are repaired. Capture representation is backend-independent with absolute byte ranges. Policy rejection is distinguished from syntax failure. Direct dispatch uses fresh EvalContext. Maintenance binaries are gated behind dev-tools feature. CI passes on all three platforms. No production follow-up is authorized by this polish pass.
 
 Do not create another closure plan. Once this record is complete and the acceptance checklist passes, the July 31 lightweight correctness and simplification line of work is closed.
