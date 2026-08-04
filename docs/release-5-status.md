@@ -36,7 +36,7 @@ cargo-fuzz `0.13.2`.
 
 ## Property tests
 
-47 property tests across 9 modules pass in the ordinary test suite. They cover
+55 property tests across 10 modules pass in the ordinary test suite. They cover
 round-trip, determinism, symmetry, transaction, and span-validity properties;
 the former vacuous no-panic checks were removed or strengthened.
 
@@ -114,7 +114,7 @@ Gate), extended fuzz (19/19), latest-compatible, and Python parity.
 | Every planned fuzz target builds and runs | 12 targets build; all run in extended fuzz matrix | Complete |
 | Persistent corpora committed and seeded | 77 seeds across 12 targets (see table above) | Complete |
 | All required surfaces have fuzz coverage | Calculator, diff, shell, regex, JSON, TOML, Unicode, Markdown, glob — all covered | Complete |
-| Core properties enforced in ordinary tests | 47 property tests across 9 modules | Complete |
+| Core properties enforced in ordinary tests | 55 property tests across 10 modules | Complete |
 | No untriaged crash/hang/OOM/overflow | Extended fuzz Run `30287151564` on `3e5b41c` — all 19 jobs pass, no new findings; corrective pass `75ea503` closes the `calculator_normalization` backtrack artifact | Complete |
 | Fixed findings have regression tests | 4 fuzz-discovered fixes with regression seeds in `fuzz/corpus/` | Complete |
 | PR smoke fuzzing active and bounded | `fuzz-pr.yml` — builds all targets, runs bounded high-value targets with concurrency cancellation | Complete |

@@ -11,11 +11,10 @@ If `tool_registration_tables_are_in_sync` fails, you've modified the ToolSpec re
 
 ### Parity Test Failures
 
-Parity tests compare Rust vs Python output. The parity suite has known gaps as of
-2026-07-08 — see `docs/parity.md` `Verification status` and `Known parity gaps`
-for the current 33-failure breakdown (categories C1–C6, accepted behavioral
-differences). Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE`
-env var. When investigating a new parity failure:
+Parity tests compare Rust vs Python output. The parity suite has known gaps — see
+`docs/parity.md` `Verification status` and `Known parity gaps` for the current
+failure breakdown (categories C1–C6, accepted behavioral differences). When
+investigating a new parity failure:
 
 1. Check if the Python server is running at `../eggcalc`
 2. Compare the specific tool call and arguments

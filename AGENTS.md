@@ -73,7 +73,7 @@ src/
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text, property
   parity/           # Python/Rust parity tests (requires ../eggcalc)
-  property/         # property-based tests (9 files, 47 tests)
+  property/         # property-based tests (10 files, 55 tests)
 ```
 
 ## Key gotchas

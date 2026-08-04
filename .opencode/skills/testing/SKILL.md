@@ -81,7 +81,7 @@ tests/
     mod.rs                   # re-exports 24 modules
     test_<module>.rs         # one file per text module (24 files)
   property/
-    mod.rs                   # re-exports 9 property test modules
+    mod.rs                   # re-exports 10 property test modules
     test_calculator_properties.rs
     test_diff_properties.rs
     test_shell_properties.rs
@@ -177,7 +177,7 @@ Verify that:
 
 ## Property Tests
 
-`tests/property/` contains 47 property-based tests across 9 modules. These verify algebraic invariants (round-trip, idempotence, determinism, symmetry, span validity) using a deterministic xorshift64 PRNG for input generation — no external property-test framework required.
+`tests/property/` contains 55 property-based tests across 10 modules. These verify algebraic invariants (round-trip, idempotence, determinism, symmetry, span validity) using a deterministic xorshift64 PRNG for input generation — no external property-test framework required.
 
 ```bash
 cargo test --locked --test lib property              # all property tests
@@ -194,6 +194,7 @@ Properties verified per module:
 - **Unicode**: NFC idempotence, grapheme bounds, casefold validity
 - **Markdown**: fence span ordering, extraction determinism
 - **Path/Glob**: normalization idempotence, matching determinism
+- **Serialization**: ToolResponse serialization determinism across runs
 
 ## Fuzz Testing
 

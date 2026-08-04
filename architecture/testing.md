@@ -486,19 +486,20 @@ cargo test --locked --test lib mcp -- --skip parity
 
 ## Property Tests (`tests/property/`)
 
-9 test files containing 47 property-based tests that verify algebraic invariants across all major surfaces. Property tests run in ordinary CI via `cargo test --test lib property`.
+10 test files containing 55 property-based tests that verify algebraic invariants across all major surfaces. Property tests run in ordinary CI via `cargo test --test lib property`.
 
 | File | Tests | Properties Verified |
 |------|-------|-------------------|
 | `test_calculator_properties.rs` | 8 | Determinism, context isolation, normalization idempotence/determinism, fuzz-no-panic, error structure |
 | `test_diff_properties.rs` | 7 | Levenshtein self=0, symmetry, triangle inequality; first_diff determinism; common_prefix_suffix bounds; patch determinism |
 | `test_shell_properties.rs` | 6 | shell_split determinism/token validity; shell_quote round-trip/stability; empty command handling |
-| `test_regex_properties.rs` | 6 | classify_pattern determinism/fuzz-safety; regex_safety_check determinism; finditer span bounds/max_matches |
-| `test_json_properties.rs` | 6 | validate_json no-panic; canonicalize determinism/idempotence; compare symmetry/self-equal; extract no-panic |
-| `test_config_properties.rs` | 6 | TOML/dotenv/INI validate no-panic and determinism |
-| `test_unicode_properties.rs` | 7 | NFC idempotence, grapheme bounds, casefold validity, invisibles bounds, confusables determinism |
-| `test_markdown_properties.rs` | 5 | markdown_structure no-panic/determinism; code_fence span ordering/determinism |
-| `test_path_glob_properties.rs` | 5 | glob_match determinism/no-panic; path_normalize idempotence; path_analyze determinism |
+| `test_regex_properties.rs` | 5 | classify_pattern determinism/fuzz-safety; regex_safety_check determinism; finditer span bounds/max_matches |
+| `test_json_properties.rs` | 5 | validate_json no-panic; canonicalize determinism/idempotence; compare symmetry/self-equal; extract no-panic |
+| `test_config_properties.rs` | 3 | TOML/dotenv/INI validate no-panic and determinism |
+| `test_unicode_properties.rs` | 6 | NFC idempotence, grapheme bounds, casefold validity, invisibles bounds, confusables determinism |
+| `test_markdown_properties.rs` | 3 | markdown_structure no-panic/determinism; code_fence span ordering/determinism |
+| `test_path_glob_properties.rs` | 4 | glob_match determinism/no-panic; path_normalize idempotence; path_analyze determinism |
+| `test_serialization_determinism.rs` | 8 | ToolResponse serialization determinism across runs |
 
 Properties verified include:
 - **Determinism**: identical inputs produce identical outputs

@@ -309,7 +309,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | `tests/mcp/` | 28 | MCP protocol, tool tests, route contracts, concurrency, hardening |
 | `tests/text/` | 25 | Text processing module tests (one per module + regression) |
 | `tests/parity/` | 12 | Python/Rust parity tests (requires `eggcalc` at `../eggcalc`) |
-| `tests/property/` | 9 | Property-based tests (round-trip, idempotence, determinism, symmetry) |
+| `tests/property/` | 10 | Property-based tests (55 tests: round-trip, idempotence, determinism, symmetry) |
 | `tests/test_context_isolation.rs` | 1 | Context isolation integration test |
 
 ### Generated & Config
