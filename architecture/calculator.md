@@ -138,7 +138,7 @@ let ctx = EvalContext::mcp_mode()
 
 ### Thread-Local Bridge for MCP Dispatch
 
-When `ToolRegistry::call_json_with_execution_context()` dispatches a tool, `ctx.eval_ctx` is **cloned** before the handler runs. The clone is set as a thread-local via `budget::with_eval_context()`, making it available to calculator-backed handlers (e.g., `math_eval`). Handler signature remains `fn(&Value) -> ToolResponse` — state isolation is achieved at the orchestration layer.
+When `ToolRegistry::call_json_with_execution_context()` dispatches a tool, `ctx.eval_ctx` is **cloned** before the handler runs. The clone is set as a thread-local via `budget::with_eval_context()`, making it available to calculator-backed handlers (e.g., `math_eval`) via `budget::with_current_eval_context()`. Handler signature remains `fn(&Value) -> ToolResponse` — state isolation is achieved at the orchestration layer.
 
 **Key invariant**: PRNG draws, memory mutations, and variable assignments inside the handler operate on the per-call clone and **do not propagate back** to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value.
 

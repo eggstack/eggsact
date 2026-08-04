@@ -2,7 +2,7 @@ use crate::calc::units::{
     convert_temperature, get_conversion_factor, get_unit_info, is_unit, PHYSICAL_CONSTANTS,
 };
 use crate::calc::{run, run_with_context, RunError};
-use crate::mcp::budget::current_eval_context;
+use crate::mcp::budget::with_current_eval_context;
 use crate::mcp::machine_codes;
 use crate::mcp::response::ToolResponse;
 use crate::tools::helpers::{
@@ -34,11 +34,10 @@ pub fn math_eval(args: &Value) -> ToolResponse {
 
     let expr_owned = expression.to_string();
     let eval_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        if let Some(ctx) = current_eval_context() {
-            run_with_context(&expr_owned, ctx)
-        } else {
-            run(&expr_owned)
-        }
+        with_current_eval_context(|ctx| match ctx {
+            Some(ctx) => run_with_context(&expr_owned, ctx),
+            None => run(&expr_owned),
+        })
     }))
     .unwrap_or_else(|_| {
         Err(crate::calc::RunError::Evaluation(

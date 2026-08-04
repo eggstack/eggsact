@@ -20,9 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`get_tool_unfiltered` / `has_registered_tool`**: administrative
   tool-lookup methods that bypass audience/exposure checks. `get_tool` and
   `has_tool` now enforce audience/exposure in addition to profile membership.
+- **`with_current_eval_context`**: closure-based accessor for the thread-local
+  `EvalContext`. The mutable borrow exists only for the duration of the
+  closure, preventing escaping `&'static mut` references. Replaces the
+  unsound `current_eval_context()` function.
 - **RAII guards in `budget.rs`**: `CancelFlagGuard` and `EvalContextGuard`
-  provide panic-safe thread-local restoration for `CURRENT_CANCEL_FLAG` and
-  `CURRENT_EVAL_CONTEXT`.
+  now own their previous state, supporting correct nesting at arbitrary
+  depth. Panic/unwind restoration is handled by `Drop`.
 - **Mutex-backed handler lifecycle** (`src/mcp/execution.rs`): Handler
   execution now uses a `Mutex<HandlerPhase>` with five states (`Queued`,
   `Running`, `TimedOutQueued`, `TimedOutRunning`, `Finished`). Transitions
@@ -92,6 +96,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   MCP runtime gauges).
 
 ### Fixed
+- **Execution-context soundness**: `current_eval_context()` returned
+  `Option<&'static mut EvalContext>` from a thread-local raw pointer,
+  allowing safe callers to obtain multiple simultaneous mutable references
+  or retain the reference beyond the enclosing scope. Replaced with
+  `with_current_eval_context()`, a closure-based accessor where the mutable
+  borrow exists only for the callback duration. `current_eval_context()` is
+  now deprecated.
+- **Nested scope restoration**: `CancelFlagGuard` and `EvalContextGuard`
+  previously stored displaced values in a single `PREV_*` thread-local slot
+  per thread. A third nested scope overwrote the outer scope's restoration
+  state. Guards now own their previous value, supporting correct nesting at
+  arbitrary depth with unwind safety.
 - **Timeout lifecycle transitions are now linearizable**: Replaced the
   `AtomicU8` state machine with a `Mutex<HandlerPhase>` that prevents
   interleaving races between timeout and completion paths.

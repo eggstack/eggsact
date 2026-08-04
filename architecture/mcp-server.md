@@ -578,8 +578,8 @@ Tool handler functions retain the signature `fn(&Value) -> ToolResponse` for com
 |-------|------------|
 | `MCP_MODE`, `ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS` AtomicBool | One-shot startup flags, race-safe. Context-aware APIs bypass these via `EvalContext` fields. MCP dispatch no longer sets these directly — it uses `EvalContext::mcp_mode()` through the thread-local bridge. These remain for legacy library callers. |
 | `ACTIVE_PROFILE`, `ACTIVE_AUDIENCE`, `ACTIVE_SCHEMA_DETAIL` RwLock | Set once at startup, read-only after init |
-| `CURRENT_CANCEL_FLAG` thread-local | Properly scoped per-dispatch |
-| `CURRENT_EVAL_CONTEXT` thread-local | Set by `with_eval_context()` during calculator-backed tool dispatch; bypasses legacy globals |
+| `CURRENT_CANCEL_FLAG` thread-local | Properly scoped per-dispatch via guard-owned restoration |
+| `CURRENT_EVAL_CONTEXT` thread-local | Set by `with_eval_context()` during calculator-backed tool dispatch; accessed via closure-scoped `with_current_eval_context()` |
 | 36+ LazyLock immutable caches | Regex, tables, tool definitions — immutable after init |
 | Request-scoped Arc objects | Cloned per-request, not shared |
 | `MEMORY_REGISTERS`, `USER_VARIABLES`, `PRNG_STATE`, `GAUSS_SPARE` LazyLock | Legacy mutable state. Context-aware APIs use `EvalContext` fields instead; globals remain for legacy `evaluate()` path. |

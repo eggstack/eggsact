@@ -672,10 +672,10 @@ impl ToolRegistry {
     /// `ctx.eval_ctx` is **cloned** before dispatch (line `let mut eval_ctx = ctx.eval_ctx.clone()`).
     /// The handler receives a thread-local reference to the clone via
     /// [`budget::with_eval_context`]. Only tools that opt into the eval-context bridge
-    /// (currently **`math_eval`**) read from it. Any PRNG draws, memory mutations, or
-    /// variable assignments inside the handler are confined to the clone and do not
-    /// modify the caller's `ExecutionContext`. Two calls with identical seeds produce
-    /// the same first random value.
+    /// (currently **`math_eval`**) read from it via [`budget::with_current_eval_context`].
+    /// Any PRNG draws, memory mutations, or variable assignments inside the handler are
+    /// confined to the clone and do not modify the caller's `ExecutionContext`.
+    /// Two calls with identical seeds produce the same first random value.
     pub fn call_json_with_execution_context(
         &self,
         name: &str,

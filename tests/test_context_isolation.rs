@@ -872,27 +872,35 @@ fn test_eval_context_restored_after_panic() {
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         budget::with_eval_context(&mut outer_ctx, || {
-            assert!(budget::current_eval_context().is_some());
+            assert!(
+                budget::with_current_eval_context(|ctx| ctx.is_some()),
+                "context should be installed"
+            );
             // Use recall(1) to read register R1 — store sets it via the public API
-            let _ = evaluate_with_context("store(10, 1)", budget::current_eval_context().unwrap());
+            let _ = budget::with_current_eval_context(|ctx| {
+                evaluate_with_context("store(10, 1)", ctx.unwrap())
+            });
             let _ = catch_unwind(AssertUnwindSafe(|| {
                 budget::with_eval_context(&mut inner_ctx, || {
-                    let ctx = budget::current_eval_context().unwrap();
-                    let val = evaluate_with_context("recall(1)", ctx).unwrap().0;
+                    let val = budget::with_current_eval_context(|ctx| {
+                        evaluate_with_context("recall(1)", ctx.unwrap()).unwrap().0
+                    });
                     assert_eq!(val, "0", "inner ctx should have empty register R1");
                     panic!("intentional panic");
                 });
             }));
             // After inner panic, outer context should be restored
-            let ctx = budget::current_eval_context()
-                .expect("outer context should be restored after inner panic");
-            let val = evaluate_with_context("recall(1)", ctx).unwrap().0;
+            let val = budget::with_current_eval_context(|ctx| {
+                evaluate_with_context("recall(1)", ctx.expect("outer context should be restored"))
+                    .unwrap()
+                    .0
+            });
             assert_eq!(val, "10", "outer context register R1 should be restored");
         });
     }));
     assert!(result.is_ok());
     assert!(
-        budget::current_eval_context().is_none(),
+        budget::with_current_eval_context(|ctx| ctx.is_none()),
         "context should be cleared after scope"
     );
 }
@@ -1598,6 +1606,178 @@ fn test_mut_ctx_cancellation_flag_visible_smoke() {
             response.machine_code
         );
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 20. Depth-3 eval context nesting: each scope observes its own context.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_eval_context_depth3_nesting() {
+    let mut ctx_a = EvalContext::new();
+    let mut ctx_b = EvalContext::new();
+    let mut ctx_c = EvalContext::new();
+
+    // Store distinct values in each context so we can identify them.
+    let _ = evaluate_with_context("store(1, 1)", &mut ctx_a);
+    let _ = evaluate_with_context("store(2, 1)", &mut ctx_b);
+    let _ = evaluate_with_context("store(3, 1)", &mut ctx_c);
+
+    budget::with_eval_context(&mut ctx_a, || {
+        // Scope A: register R1 == 1
+        let val = budget::with_current_eval_context(|ctx| {
+            evaluate_with_context("recall(1)", ctx.unwrap()).unwrap().0
+        });
+        assert_eq!(val, "1", "scope A should see register R1 == 1");
+
+        budget::with_eval_context(&mut ctx_b, || {
+            // Scope B: register R1 == 2
+            let val = budget::with_current_eval_context(|ctx| {
+                evaluate_with_context("recall(1)", ctx.unwrap()).unwrap().0
+            });
+            assert_eq!(val, "2", "scope B should see register R1 == 2");
+
+            budget::with_eval_context(&mut ctx_c, || {
+                // Scope C: register R1 == 3
+                let val = budget::with_current_eval_context(|ctx| {
+                    evaluate_with_context("recall(1)", ctx.unwrap()).unwrap().0
+                });
+                assert_eq!(val, "3", "scope C should see register R1 == 3");
+            });
+
+            // After scope C returns, scope B should be restored
+            let val = budget::with_current_eval_context(|ctx| {
+                evaluate_with_context("recall(1)", ctx.unwrap()).unwrap().0
+            });
+            assert_eq!(val, "2", "scope B should be restored after scope C returns");
+        });
+
+        // After scope B returns, scope A should be restored
+        let val = budget::with_current_eval_context(|ctx| {
+            evaluate_with_context("recall(1)", ctx.unwrap()).unwrap().0
+        });
+        assert_eq!(val, "1", "scope A should be restored after scope B returns");
+    });
+
+    assert!(
+        budget::with_current_eval_context(|ctx| ctx.is_none()),
+        "no context should be installed after all scopes"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 21. Depth-3 cancel flag nesting: each scope observes its own flag.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_cancel_flag_depth3_nesting() {
+    let flag_a = Arc::new(AtomicBool::new(false));
+    let flag_b = Arc::new(AtomicBool::new(true));
+    let flag_c = Arc::new(AtomicBool::new(false));
+
+    budget::with_cancel_flag(Some(flag_a.clone()), || {
+        assert!(budget::current_cancel_flag().is_some());
+        assert!(
+            !budget::current_cancel_flag()
+                .unwrap()
+                .load(Ordering::Relaxed),
+            "scope A: flag_a is false"
+        );
+
+        budget::with_cancel_flag(Some(flag_b.clone()), || {
+            assert!(budget::current_cancel_flag().is_some());
+            assert!(
+                budget::current_cancel_flag()
+                    .unwrap()
+                    .load(Ordering::Relaxed),
+                "scope B: flag_b is true"
+            );
+
+            budget::with_cancel_flag(Some(flag_c.clone()), || {
+                assert!(budget::current_cancel_flag().is_some());
+                assert!(
+                    !budget::current_cancel_flag()
+                        .unwrap()
+                        .load(Ordering::Relaxed),
+                    "scope C: flag_c is false"
+                );
+            });
+
+            // After scope C returns, scope B should be restored
+            let current = budget::current_cancel_flag().expect("scope B flag should be restored");
+            assert!(
+                Arc::ptr_eq(&current, &flag_b),
+                "scope B should be restored after scope C returns"
+            );
+            assert!(
+                current.load(Ordering::Relaxed),
+                "scope B flag is true after scope C"
+            );
+        });
+
+        // After scope B returns, scope A should be restored
+        let current = budget::current_cancel_flag().expect("scope A flag should be restored");
+        assert!(
+            Arc::ptr_eq(&current, &flag_a),
+            "scope A should be restored after scope B returns"
+        );
+        assert!(
+            !current.load(Ordering::Relaxed),
+            "scope A flag is false after scope B"
+        );
+    });
+
+    assert!(
+        budget::current_cancel_flag().is_none(),
+        "no flag should be installed after all scopes"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 22. Depth-3 unwind restoration: panic in innermost scope restores outer.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_depth3_unwind_restores_outer() {
+    let mut ctx_a = EvalContext::new();
+    let mut ctx_b = EvalContext::new();
+    let mut ctx_c = EvalContext::new();
+
+    let _ = evaluate_with_context("store(10, 1)", &mut ctx_a);
+    let _ = evaluate_with_context("store(20, 1)", &mut ctx_b);
+    let _ = evaluate_with_context("store(30, 1)", &mut ctx_c);
+
+    let flag_a = Arc::new(AtomicBool::new(false));
+    let flag_b = Arc::new(AtomicBool::new(true));
+    let flag_c = Arc::new(AtomicBool::new(false));
+
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        budget::with_eval_context(&mut ctx_a, || {
+            budget::with_cancel_flag(Some(flag_a.clone()), || {
+                budget::with_eval_context(&mut ctx_b, || {
+                    budget::with_cancel_flag(Some(flag_b.clone()), || {
+                        budget::with_eval_context(&mut ctx_c, || {
+                            budget::with_cancel_flag(Some(flag_c.clone()), || {
+                                panic!("intentional panic at depth 3");
+                            });
+                        });
+                    });
+                });
+                // After all guards have dropped during unwind and catch_unwind
+                // at depth 3 returned, scope A's context should be restored.
+                let val = budget::with_current_eval_context(|ctx| {
+                    evaluate_with_context("recall(1)", ctx.unwrap()).unwrap().0
+                });
+                assert_eq!(val, "10", "scope A context should be restored after unwind");
+            });
+        });
+    }));
+    assert!(result.is_err(), "catch_unwind should catch the panic");
+    assert!(
+        budget::with_current_eval_context(|ctx| ctx.is_none()),
+        "no context after all scopes"
+    );
+    assert!(
+        budget::current_cancel_flag().is_none(),
+        "no flag after all scopes"
+    );
 }
 
 // WS5-8: pool saturation leaves context unchanged.

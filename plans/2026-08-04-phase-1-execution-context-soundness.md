@@ -344,13 +344,11 @@ Miri is optional maintainer-local evidence if already available. It is not an ac
 
 # Completion record
 
-Fill once when implementation lands:
-
 - **Implementation commit(s):** pending
-- **Unsound API disposition:** pending
-- **Restoration design:** pending
-- **Targeted tests:** pending
-- **Ordinary verification:** pending
-- **Documentation updated:** pending
-- **Deferred findings:** none expected
-- **Final phase disposition:** pending
+- **Unsound API disposition:** `current_eval_context()` deprecated, replaced by `with_current_eval_context()` closure-based accessor
+- **Restoration design:** Guard-owned previous value (`CancelFlagGuard { previous }`, `EvalContextGuard { previous }`); `PREV_CANCEL_FLAG` and `PREV_EVAL_CONTEXT` thread-locals removed
+- **Targeted tests:** depth-3 nesting (eval context + cancel flag), depth-3 unwind restoration, existing panic-safety tests all pass
+- **Ordinary verification:** fmt, clippy, 3505 tests, doc tests, generate-docs check all pass
+- **Documentation updated:** CHANGELOG.md, architecture/budget-concurrency.md, architecture/mcp-server.md, architecture/calculator.md, src/agent/mod.rs rustdoc, AGENTS.md, mcp-tools skill, testing skill
+- **Deferred findings:** none
+- **Final phase disposition:** complete

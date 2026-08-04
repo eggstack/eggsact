@@ -9,34 +9,37 @@ use std::time::{Duration, Instant};
 thread_local! {
     static CURRENT_CANCEL_FLAG: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
     static CURRENT_EVAL_CONTEXT: RefCell<Option<*mut EvalContext>> = const { RefCell::new(None) };
-    static PREV_CANCEL_FLAG: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
-    static PREV_EVAL_CONTEXT: RefCell<Option<*mut EvalContext>> = const { RefCell::new(None) };
 }
 
 /// RAII guard that restores the previous cancellation flag on drop.
 ///
-/// Even if the enclosing scope panics, `Drop` ensures the thread-local
-/// reverts to its prior value, preventing state leakage to the next
-/// task on the same blocking thread.
-struct CancelFlagGuard;
+/// Each guard owns the value it must restore, so nested scopes do not
+/// overwrite each other's restoration state. Panic/unwind via `Drop`
+/// ensures the thread-local reverts to its prior value.
+struct CancelFlagGuard {
+    previous: Option<Arc<AtomicBool>>,
+}
 
 impl Drop for CancelFlagGuard {
     fn drop(&mut self) {
         CURRENT_CANCEL_FLAG.with(|cell| {
-            let prev = PREV_CANCEL_FLAG.with(|p| p.borrow_mut().take());
-            *cell.borrow_mut() = prev;
+            *cell.borrow_mut() = self.previous.take();
         });
     }
 }
 
 /// RAII guard that restores the previous eval context on drop.
-struct EvalContextGuard;
+///
+/// Each guard owns the raw pointer it must restore, so nested scopes
+/// do not overwrite each other's restoration state.
+struct EvalContextGuard {
+    previous: Option<*mut EvalContext>,
+}
 
 impl Drop for EvalContextGuard {
     fn drop(&mut self) {
         CURRENT_EVAL_CONTEXT.with(|cell| {
-            let prev = PREV_EVAL_CONTEXT.with(|p| p.borrow_mut().take());
-            *cell.borrow_mut() = prev;
+            *cell.borrow_mut() = self.previous.take();
         });
     }
 }
@@ -44,14 +47,14 @@ impl Drop for EvalContextGuard {
 /// Set the current thread's cancellation flag for the duration of `f`.
 ///
 /// Nested calls properly restore the previous flag when `f` returns.
+/// Panic/unwind also restores the previous flag via RAII guard `Drop`.
 pub fn with_cancel_flag<F, R>(flag: Option<Arc<AtomicBool>>, f: F) -> R
 where
     F: FnOnce() -> R,
 {
     CURRENT_CANCEL_FLAG.with(|cell| {
         let prev = std::mem::replace(&mut *cell.borrow_mut(), flag);
-        PREV_CANCEL_FLAG.with(|p| *p.borrow_mut() = prev);
-        let _guard = CancelFlagGuard;
+        let _guard = CancelFlagGuard { previous: prev };
         f()
     })
 }
@@ -67,25 +70,49 @@ pub fn current_cancel_flag() -> Option<Arc<AtomicBool>> {
 /// with the thread-local. The caller must ensure `ctx` outlives `f`.
 ///
 /// Nested calls properly restore the previous context when `f` returns.
+/// Panic/unwind also restores the previous context via RAII guard `Drop`.
 pub fn with_eval_context<F, R>(ctx: &mut EvalContext, f: F) -> R
 where
     F: FnOnce() -> R,
 {
     CURRENT_EVAL_CONTEXT.with(|cell| {
         let prev = cell.borrow_mut().replace(ctx as *mut EvalContext);
-        PREV_EVAL_CONTEXT.with(|p| *p.borrow_mut() = prev);
-        let _guard = EvalContextGuard;
+        let _guard = EvalContextGuard { previous: prev };
         f()
+    })
+}
+
+/// Access the current thread's [`EvalContext`] through a closure.
+///
+/// The closure receives `Option<&mut EvalContext>` — `Some` if an eval context
+/// is installed via [`with_eval_context`], `None` otherwise. The mutable borrow
+/// exists only for the duration of the closure, preventing escaping references.
+pub fn with_current_eval_context<R>(f: impl FnOnce(Option<&mut EvalContext>) -> R) -> R {
+    CURRENT_EVAL_CONTEXT.with(|cell| {
+        let ptr_opt: Option<*mut EvalContext> = *cell.borrow();
+        match ptr_opt {
+            Some(ptr) => {
+                // SAFETY: the pointer was derived from a valid &mut EvalContext
+                // in with_eval_context and is valid for the enclosing scope.
+                // The borrow does not escape this callback.
+                f(Some(unsafe { &mut *ptr }))
+            }
+            None => f(None),
+        }
     })
 }
 
 /// Retrieve a mutable reference to the current thread's [`EvalContext`], if one is set.
 ///
-/// # Safety
+/// # Deprecated
 ///
-/// The returned reference is derived from a raw pointer stored in thread-local storage.
-/// The pointer is guaranteed to be valid for the lifetime of the enclosing
-/// `with_eval_context` call. This function must only be called from within that scope.
+/// Use [`with_current_eval_context`] instead. This function returns an escaping
+/// `&'static mut` reference which is unsound. Retained temporarily for
+/// migration compatibility.
+#[deprecated(
+    since = "1.3.0",
+    note = "Unsound. Use with_current_eval_context() for closure-scoped access."
+)]
 pub fn current_eval_context() -> Option<&'static mut EvalContext> {
     CURRENT_EVAL_CONTEXT.with(|cell| cell.borrow_mut().as_mut().map(|ptr| unsafe { &mut **ptr }))
 }
