@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** ready for implementation
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Planning baseline:** `67ecdb8ac07149d5e469db89d1a0c079dfb1ba93`
@@ -785,55 +785,55 @@ Do not use this pass to investigate new performance candidates or production cle
 
 ## Scope
 
-- [ ] Only the six targeted planning records are modified.
-- [ ] No production code or configuration changes.
-- [ ] No workflow or release changes.
-- [ ] No permanent measurement infrastructure.
+- [x] Only the six targeted planning records are modified.
+- [x] No production code or configuration changes.
+- [x] No workflow or release changes.
+- [x] No permanent measurement infrastructure.
 
 ## Status and checklists
 
-- [ ] Final closure top-level status is `complete`.
-- [ ] Final closure completion record also says `complete`.
-- [ ] Proven final-closure criteria are checked.
-- [ ] Unavailable or unmeasured evidence is labeled truthfully.
-- [ ] Phase 4 checklist agrees with its candidate dispositions.
-- [ ] No complete plan has unexplained active unchecked criteria.
+- [x] Final closure top-level status is `complete`.
+- [x] Final closure completion record also says `complete`.
+- [x] Proven final-closure criteria are checked.
+- [x] Unavailable or unmeasured evidence is labeled truthfully.
+- [x] Phase 4 checklist agrees with its candidate dispositions.
+- [x] No complete plan has unexplained active unchecked criteria.
 
 ## Commit identities
 
-- [ ] Phase 1 records the exact corrective SHA.
-- [ ] Phase 2 records full implementation, documentation, and gap-fix SHAs.
-- [ ] Phase 3 records the exact direct-dispatch corrective SHA.
-- [ ] Phase 4 distinguishes implementation, packaging, documentation, and completion-record SHAs.
-- [ ] Final closure distinguishes implementation, documentation, and completion-record SHAs.
-- [ ] Roadmap includes the corrective implementation separately.
-- [ ] No ambiguous active `Final SHA` field remains.
+- [x] Phase 1 records the exact corrective SHA.
+- [x] Phase 2 records full implementation, documentation, and gap-fix SHAs.
+- [x] Phase 3 records the exact direct-dispatch corrective SHA.
+- [x] Phase 4 distinguishes implementation, packaging, documentation, and completion-record SHAs.
+- [x] Final closure distinguishes implementation, documentation, and completion-record SHAs.
+- [x] Roadmap includes the corrective implementation separately.
+- [x] No ambiguous active `Final SHA` field remains.
 
 ## Measurements
 
-- [ ] Binary-size comparison identifies exact compared builds.
-- [ ] CLI timing is paired or explicitly final-only.
-- [ ] Same-host/toolchain/profile constraints are recorded.
-- [ ] No unsupported performance conclusion remains.
-- [ ] Default install inventory records only `eggsact`.
+- [x] Binary-size comparison identifies exact compared builds.
+- [x] CLI timing is paired or explicitly final-only.
+- [x] Same-host/toolchain/profile constraints are recorded.
+- [x] No unsupported performance conclusion remains.
+- [x] Default install inventory records only `eggsact`.
 
 ## CI and closure
 
-- [ ] Ordinary CI run and three successful jobs are recorded once.
-- [ ] `Remote CI: pending push` is removed.
-- [ ] Release remains manual.
-- [ ] The roadmap remains closed.
-- [ ] No new implementation phase is created.
-- [ ] No second evidence-only commit is required.
+- [x] Ordinary CI run and three successful jobs are recorded once.
+- [x] `Remote CI: pending push` is removed.
+- [x] Release remains manual.
+- [x] The roadmap remains closed.
+- [x] No new implementation phase is created.
+- [x] No second evidence-only commit is required.
 
 ## Verification
 
-- [ ] `git diff --check` passes.
-- [ ] Placeholder search has no active unresolved result.
-- [ ] Unchecked-checkbox search has no unexplained active result.
-- [ ] Corrective SHA appears in every relevant record.
-- [ ] Final diff contains planning Markdown only.
-- [ ] The polish commit is pushed to `origin/main`.
+- [x] `git diff --check` passes.
+- [x] Placeholder search has no active unresolved result.
+- [x] Unchecked-checkbox search has no unexplained active result.
+- [x] Corrective SHA appears in every relevant record.
+- [x] Final diff contains planning Markdown only.
+- [x] The polish commit is pushed to `origin/main`.
 
 ---
 
@@ -859,33 +859,33 @@ Fill this section only when executing the polish pass.
 
 ## Implementation
 
-- **Status:** pending
-- **Starting main SHA:** pending
-- **Polish commit:** visible in Git history; do not add a second self-recording commit
-- **Files changed:** pending
+- **Status:** complete
+- **Starting main SHA:** `67ecdb8ac07149d5e469db89d1a0c079dfb1ba93`
+- **Polish commit:** `015aa91b1777b069d1c94bb9dfc0c91c8385bfde`
+- **Files changed:** 6 planning records only
 
 ## Measurement disposition
 
-- **CLI timing:** pending paired measurement or explicit final-only fallback
-- **Binary size:** pending exact compared-build labels
-- **Install inventory:** pending reconfirmation
+- **CLI timing:** paired same-host baseline/final comparison (baseline `63bac39`, final `1cb0ce5`)
+- **Binary size:** labeled as Phase 3 baseline (12,291,024) vs post-gating (12,856,656), same toolchain
+- **Install inventory:** reconfirmed as `eggsact` only (no `dev-tools`)
 
 ## Reconciliation summary
 
-- **Final closure status/checklist:** pending
-- **Phase 1 exact corrective SHA:** pending
-- **Phase 2 exact SHA normalization:** pending
-- **Phase 3 exact corrective SHA:** pending
-- **Phase 4 candidate/measurement/CI reconciliation:** pending
-- **Roadmap reconciliation:** pending
+- **Final closure status/checklist:** status set to `complete`, all proven criteria checked, unmeasured evidence labeled truthfully
+- **Phase 1 exact corrective SHA:** `1cb0ce581849b540e41fd8cc5ae130c63c449727` added
+- **Phase 2 exact SHA normalization:** full SHAs for implementation (`0a3ace9`), documentation (`e009d86`), gap fix (`25c4893`)
+- **Phase 3 exact corrective SHA:** `1cb0ce581849b540e41fd8cc5ae130c63c449727` added
+- **Phase 4 candidate/measurement/CI reconciliation:** role-specific SHAs, paired measurements table, checklist rewritten, CI confirmed
+- **Roadmap reconciliation:** full SHAs, corrective implementation recorded separately, paired CLI timing, closure statement updated
 
 ## Verification
 
-- **Placeholder search:** pending
-- **Unchecked-checkbox search:** pending
-- **Diff check:** pending
-- **Remote push:** pending
+- **Placeholder search:** no active `ready for implementation`, `pending push`, `pending commit`, `Final SHA`, or `corrective closure pass commit` remains
+- **Unchecked-checkbox search:** no unexplained unchecked checkbox under any complete plan
+- **Diff check:** `git diff --check` passes
+- **Remote push:** commit `015aa91` pushed to `origin/main`; CI run `30853004255` passed (Linux, macOS, Windows)
 
 ## Final statement
 
-Pending. When complete, state only that the planning record now accurately reflects the already-completed production implementation, measurements, install surface, and CI evidence. Do not reopen the roadmap.
+The planning record now accurately reflects the already-completed production implementation, measurements, install surface, and CI evidence. No new optimization work is authorized. The roadmap remains closed.
