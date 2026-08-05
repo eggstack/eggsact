@@ -1,5 +1,5 @@
-// Unicode version: (pre-phase-5 data)
-// Source checksum (SHA-256): (regenerated from existing data)
+// Unicode version: 17.0.0
+// Source checksum (SHA-256): 091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a
 [
     (0x0022, "U+0027 U+0027"),
     (0x0025, "U+00BA U+002F U+2080"),

@@ -115,12 +115,14 @@ def generate_rust_file(
     lines = [
         f"// Unicode version: {version}",
         f"// Source checksum (SHA-256): {checksum}",
+        "[",
     ]
 
     sorted_items = sorted(confusables.items())
     for source_cp, sub in sorted_items:
-        lines.append(f"(0x{source_cp:04X}, \"{sub}\"),")
+        lines.append(f"    (0x{source_cp:04X}, \"{sub}\"),")
 
+    lines.append("]")
     return "\n".join(lines)
 
 
