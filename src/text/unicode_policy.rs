@@ -215,14 +215,8 @@ fn detect_mixed_scripts(text: &str) -> (bool, Vec<String>) {
 }
 
 fn detect_confusables(text: &str) -> Vec<(char, &'static str)> {
-    use crate::text::confusables::CONFUSABLES;
-
-    text.chars()
-        .filter_map(|c| {
-            let key = format!("U+{:04X}", c as u32);
-            CONFUSABLES.get(key.as_str()).map(|sub| (c, *sub))
-        })
-        .collect()
+    use crate::text::confusables::find_confusables;
+    find_confusables(text)
 }
 
 pub fn unicode_policy_check(

@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** planned
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Planning baseline:** `48159ec4b829561f8569a7d130488ddeefb97a1c`
@@ -268,6 +268,16 @@ Required outcome:
 - retain candidates that save meaningful space or plainly delete complexity without behavior loss;
 - reject speculative candidates explicitly rather than forcing every optimization;
 - record one concise closure statement and stop.
+
+Completed outcome:
+
+- Baseline: 12.2M (not stripped, no LTO). Final: 8.8M (strip + thin LTO + codegen-units=1). 28% reduction.
+- Confusables: accepted — sorted static table with binary search, runtime parser/map removed, Unicode data pinned with checksum.
+- Release profile: accepted — strip=symbols, thin LTO, codegen-units=1.
+- Current-thread Tokio: accepted — rt-multi-thread feature removed, simpler runtime config.
+- preserve_order: rejected — wire-order compatibility risk exceeds measured benefit.
+- TOML consolidation: rejected — different APIs, consolidation requires broad conversion code.
+- All 80 tools remain available. No new dependencies, workflows, or subsystems added.
 
 ---
 

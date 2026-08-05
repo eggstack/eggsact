@@ -1,35 +1,24 @@
-use std::collections::HashMap;
-use std::sync::LazyLock;
+/// Sorted static table of Unicode confusable mappings.
+/// Generated from confusables.txt (Unicode UTS #39).
+/// Key: source code point (u32). Value: substitution string (e.g. "U+0041").
+pub static CONFUSABLES: &[(u32, &str)] = &include!("confusables_generated.rs");
 
-pub static CONFUSABLES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
-    let mut m: HashMap<&'static str, &'static str> = HashMap::new();
-    let data = include_str!("confusables_generated.rs");
-    for line in data.lines() {
-        let line = line.trim();
-        if line.starts_with("m.insert(\"") && line.ends_with("\");") {
-            let content = line.strip_prefix("m.insert(\"").unwrap();
-            let content = content.strip_suffix("\");").unwrap();
-            if let Some((key, value)) = content.split_once("\", \"") {
-                m.insert(key, value);
-            }
-        }
-    }
-    m
-});
+/// Look up the confusable substitution for a single character.
+pub fn lookup(c: char) -> Option<&'static str> {
+    let cp = c as u32;
+    CONFUSABLES
+        .binary_search_by_key(&cp, |(code_point, _)| *code_point)
+        .ok()
+        .map(|idx| CONFUSABLES[idx].1)
+}
 
 pub fn has_confusables(text: &str) -> bool {
-    text.chars().any(|c| {
-        let key = format!("U+{:04X}", c as u32);
-        CONFUSABLES.get(key.as_str()).is_some()
-    })
+    text.chars().any(|c| lookup(c).is_some())
 }
 
 pub fn find_confusables(text: &str) -> Vec<(char, &'static str)> {
     text.chars()
-        .filter_map(|c| {
-            let key = format!("U+{:04X}", c as u32);
-            CONFUSABLES.get(key.as_str()).map(|sub| (c, *sub))
-        })
+        .filter_map(|c| lookup(c).map(|sub| (c, sub)))
         .collect()
 }
 
@@ -44,7 +33,37 @@ mod tests {
 
     #[test]
     fn test_cyrillic_a_confusable() {
-        let key = "U+0410";
-        assert_eq!(CONFUSABLES.get(key), Some(&"U+0041"));
+        assert_eq!(lookup('А'), Some("U+0041"));
+    }
+
+    #[test]
+    fn test_sorted_no_duplicates() {
+        for window in CONFUSABLES.windows(2) {
+            assert!(
+                window[0].0 < window[1].0,
+                "Table must be strictly sorted: 0x{:04X} >= 0x{:04X}",
+                window[0].0,
+                window[1].0
+            );
+        }
+    }
+
+    #[test]
+    fn test_entry_count() {
+        assert_eq!(CONFUSABLES.len(), 6565);
+    }
+
+    #[test]
+    fn test_representative_substitutions() {
+        // ASCII
+        assert_eq!(lookup('"'), Some("U+0027 U+0027"));
+        // Greek
+        assert_eq!(lookup('µ'), Some("U+03BC"));
+        // Cyrillic
+        assert_eq!(lookup('А'), Some("U+0041"));
+        // Supplementary plane
+        assert_eq!(lookup('\u{2FA1D}'), Some("U+2A600"));
+        // Multi-code-point substitution
+        assert_eq!(lookup('Æ'), Some("U+0041 U+0045"));
     }
 }

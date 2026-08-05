@@ -163,7 +163,7 @@ fn main() {
         CliCommand::Help => print_usage(),
         CliCommand::Version => println!("eggsact {}", env!("CARGO_PKG_VERSION")),
         CliCommand::Mcp => {
-            let rt = tokio::runtime::Builder::new_multi_thread()
+            let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .thread_name("eggsact-mcp")
                 .build()

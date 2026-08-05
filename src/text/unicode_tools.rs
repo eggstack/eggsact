@@ -318,13 +318,8 @@ pub fn unicode_scripts(s: &str) -> Vec<String> {
 }
 
 pub fn confusables_count(s: &str) -> usize {
-    use crate::text::confusables::CONFUSABLES;
-    s.chars()
-        .filter(|c| {
-            let key = format!("U+{:04X}", *c as u32);
-            CONFUSABLES.get(key.as_str()).is_some()
-        })
-        .count()
+    use crate::text::confusables::lookup;
+    s.chars().filter(|c| lookup(*c).is_some()).count()
 }
 
 pub fn reverse_confusables(ch: char) -> Result<Vec<String>, String> {
@@ -334,12 +329,12 @@ pub fn reverse_confusables(ch: char) -> Result<Vec<String>, String> {
 
     static REVERSE_INDEX: LazyLock<HashMap<String, Vec<String>>> = LazyLock::new(|| {
         let mut index: HashMap<String, Vec<String>> = HashMap::new();
-        for (&source_cp, &target_cps_str) in CONFUSABLES.iter() {
+        for &(source_cp, target_cps_str) in CONFUSABLES.iter() {
             for target_cp in target_cps_str.split_whitespace() {
                 index
                     .entry(target_cp.to_string())
                     .or_default()
-                    .push(source_cp.to_string());
+                    .push(format!("U+{:04X}", source_cp));
             }
         }
         index

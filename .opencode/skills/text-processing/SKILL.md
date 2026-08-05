@@ -9,7 +9,7 @@ description: Use when working with text processing functionality in src/text/, a
 |--------|------|---------|
 | `cargo` | `cargo.rs` | Cargo.toml inspection |
 | `config` | `config.rs` | .env and .ini validation |
-| `confusables` | `confusables.rs` | Unicode confusable character detection |
+| `confusables` | `confusables.rs` | Unicode confusable character detection (sorted static table, binary search) |
 | `diff` | `diff.rs` | Text diffing, Levenshtein distance |
 | `glob` | `glob.rs` | Glob pattern matching |
 | `identifier` | `identifier.rs` | Identifier naming analysis |

@@ -8,7 +8,7 @@ The `src/text/` module provides **25 text processing modules** plus auto-generat
 |--------|------|-----------|------------|
 | `cargo` | `cargo.rs` | `cargo_toml_inspect` | `cargo_toml_inspect()` |
 | `config` | `config.rs` | `dotenv_validate`, `ini_validate` | `dotenv_validate()`, `ini_validate()` |
-| `confusables` | `confusables.rs` | (used by `identifier_inspect`) | `has_confusables()`, `find_confusables()`, `CONFUSABLES` |
+| `confusables` | `confusables.rs` | (used by `identifier_inspect`) | `lookup()`, `has_confusables()`, `find_confusables()`, `CONFUSABLES` |
 | `diff` | `diff.rs` | `text_diff_explain` | `levenshtein_distance()`, `diff_spans()`, `first_diff()`, `common_prefix_suffix()` |
 | `glob` | `glob.rs` | `glob_match` | `glob_match()` |
 | `identifier` | `identifier.rs` | `identifier_analyze`, `identifier_inspect`, `identifier_table_inspect` | `identifier_analyze()`, `identifier_inspect()`, `identifier_table_inspect()` |

@@ -1153,14 +1153,12 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
     let mut a_confusable_count = 0;
     let mut b_confusable_count = 0;
     for c in a.chars() {
-        let key = format!("U+{:04X}", c as u32);
-        if crate::text::CONFUSABLES.get(key.as_str()).is_some() {
+        if crate::text::confusables::lookup(c).is_some() {
             a_confusable_count += 1;
         }
     }
     for c in b.chars() {
-        let key = format!("U+{:04X}", c as u32);
-        if crate::text::CONFUSABLES.get(key.as_str()).is_some() {
+        if crate::text::confusables::lookup(c).is_some() {
             b_confusable_count += 1;
         }
     }
@@ -1388,8 +1386,7 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
         text.chars()
             .enumerate()
             .filter_map(|(i, c)| {
-                let key = format!("U+{:04X}", c as u32);
-                crate::text::CONFUSABLES.get(key.as_str()).map(|sub| {
+                crate::text::confusables::lookup(c).map(|sub| {
                     let name = unicode_names2::name(c)
                         .map(|n| n.to_string())
                         .unwrap_or_else(|| "<unknown>".to_string());
@@ -1411,7 +1408,7 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
                     serde_json::json!({
                         "index": i,
                         "char": format!("{}", c),
-                        "codepoint": key,
+                        "codepoint": format!("U+{:04X}", c as u32),
                         "name": name,
                         "confusable_with": confusable_chars,
                         "confusable_name": confusable_name,

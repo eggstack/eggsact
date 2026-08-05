@@ -40,7 +40,7 @@ pub use config::{
     IniValidateResult,
 };
 pub use confusables::CONFUSABLES;
-pub use confusables::{find_confusables, has_confusables};
+pub use confusables::{find_confusables, has_confusables, lookup};
 pub use diff::{
     common_prefix_suffix, diff_spans, first_diff, levenshtein_distance, CommonPrefixSuffix,
     DiffSpan, FirstDiff,

@@ -9,7 +9,7 @@ Maintainer reference for generated files, doc generation, confusables data, pari
 | `README.md` tool tables | `ToolSpec` registry in `src/mcp/specs/` | `cargo run --features dev-tools --bin generate-docs` | Category-organized tool catalog with tier, exposure, stability, cost, profiles |
 | `architecture/mcp-server.md` profile reference | `ToolSpec` registry + `available_profiles()` | `cargo run --features dev-tools --bin generate-docs` | Per-profile model/harness tool counts and harness-only listings |
 | `generated/tool-cards.md` | `ToolSpec` registry | `cargo run --features dev-tools --bin generate-docs` | Per-codegg-profile tool cards with required args, aliases, composite flags |
-| `src/text/confusables_generated.rs` | Unicode UTS #39 `confusables.txt` | `python3 scripts/generate_confusables.py` | HashMap of Unicode codepoints to confusable alternatives |
+| `src/text/confusables_generated.rs` | Unicode UTS #39 `confusables.txt` | `python3 scripts/generate_confusables.py` | Sorted static table of Unicode codepoints to confusable alternatives (binary-search key lookup) |
 
 These files are **never hand-edited**. Edit the source of truth and re-run the generator.
 
@@ -97,21 +97,21 @@ Compares current generated output against file contents without writing. Exit co
 
 ## Confusables Data
 
-`src/text/confusables_generated.rs` is a 6500+ line auto-generated Rust file mapping Unicode codepoints to their confusable alternatives per Unicode UTS #39.
+`src/text/confusables_generated.rs` is an auto-generated sorted static table mapping Unicode codepoints to their confusable alternatives per Unicode UTS #39.
 
 ### Format
 
-Each line maps a single codepoint to its confusable replacement(s):
+The file contains a sorted array literal of `(u32, &str)` tuples:
 
 ```rust
-// Auto-generated from confusables.txt (Unicode UTS #39).
-// DO NOT EDIT - regenerate with scripts/generate_confusables.py
-m.insert("U+0022", "U+0027 U+0027");  // " → ''
-m.insert("U+0030", "U+004F");          // 0 → O
-m.insert("U+0049", "U+006C");          // I → l
+// Unicode version: (version)
+// Source checksum (SHA-256): (checksum)
+(0x0022, "U+0027 U+0027"),  // " → ''
+(0x0030, "U+004F"),          // 0 → O
+(0x0049, "U+006C"),          // I → l
 ```
 
-The file is included into a `Lazy<HashMap<&'static str, &'static str>>` via `include!()` in the `unicode_policy_check` and `text_security_inspect` tool handlers.
+The file is included into a `&[(u32, &str)]` static via `include!()` in `confusables.rs`. Lookups use binary search by code point.
 
 ### Generation
 
@@ -124,8 +124,8 @@ The script:
 1. Fetches `confusables.txt` from `https://www.unicode.org/Public/security/latest/confusables.txt`
 2. Parses hex code point mappings (source → substitution)
 3. Writes two files:
-   - `src/text/confusables_generated.rs` — the raw `m.insert()` lines (included at compile time)
-   - `data/confusables.rs` — a self-contained module with `Lazy<HashMap>` wrapper (standalone reference)
+   - `src/text/confusables_generated.rs` — sorted static table of `(u32, &str)` tuples (included at compile time)
+   - `data/confusables.rs` — standalone reference with same static table
 
 ### Build Impact
 

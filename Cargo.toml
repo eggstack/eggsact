@@ -41,7 +41,7 @@ unicode-general-category = "1.1"
 caseless = "0.2"
 toml = "0.8"
 toml_edit = "0.22"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "sync", "time"] }
+tokio = { version = "1", features = ["rt", "macros", "io-std", "io-util", "sync", "time"] }
 
 [dev-dependencies]
 
@@ -57,3 +57,8 @@ required-features = ["dev-tools"]
 [[test]]
 name = "lib"
 path = "tests/lib.rs"
+
+[profile.release]
+strip = "symbols"
+lto = "thin"
+codegen-units = 1

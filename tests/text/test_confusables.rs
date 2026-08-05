@@ -1,4 +1,4 @@
-use eggsact::text::{find_confusables, has_confusables, CONFUSABLES};
+use eggsact::text::{find_confusables, has_confusables, lookup, CONFUSABLES};
 
 #[test]
 fn test_confusables_loaded() {
@@ -14,8 +14,8 @@ fn test_bug_008_confusable_entry() {
     // BUG-008: U+05AD (HEBREW ACCENT TIPEHA) should confusable-map to
     // U+0596 (HEBREW ACCENT ETNAHTA)
     assert_eq!(
-        CONFUSABLES.get("U+05AD"),
-        Some(&"U+0596"),
+        lookup('\u{05AD}'),
+        Some("U+0596"),
         "BUG-008: U+05AD should map to U+0596"
     );
 }
@@ -67,9 +67,9 @@ fn test_find_confusables_mixed() {
 #[test]
 fn test_confusables_lookup() {
     // Cyrillic 'а' (U+0430) maps to Latin 'a' (U+0061)
-    assert_eq!(CONFUSABLES.get("U+0430"), Some(&"U+0061"));
+    assert_eq!(lookup('а'), Some("U+0061"));
     // Greek 'α' (U+03B1) maps to Latin 'a' (U+0061)
-    assert_eq!(CONFUSABLES.get("U+03B1"), Some(&"U+0061"));
+    assert_eq!(lookup('α'), Some("U+0061"));
 }
 
 #[test]

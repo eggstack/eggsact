@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** planned
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Roadmap:** `plans/2026-08-04-bounded-correctness-simplification-roadmap.md`
@@ -527,17 +527,17 @@ Use manual fuzzing only if confusables/path/parser implementation meaningfully c
 
 Fill once when implementation lands:
 
-- **Implementation commit range:** pending
-- **Measurement environment:** pending
-- **Baseline binary bytes:** pending
-- **Final binary bytes:** pending
-- **Cold-start baseline/final:** pending
-- **Confusables candidate:** pending
-- **Release-profile candidates:** pending
-- **Current-thread Tokio candidate:** pending
-- **`preserve_order` candidate:** pending
-- **TOML consolidation candidate:** pending
-- **Ordinary verification:** pending
-- **Canonical release check:** pending
+- **Implementation commit range:** pending (single commit for all candidates)
+- **Measurement environment:** Linux x86_64, rustc 1.97.1, cargo 1.97.1
+- **Baseline binary bytes:** 12.2M (not stripped, no LTO)
+- **Final binary bytes:** 8.8M (strip + thin LTO + codegen-units=1)
+- **Cold-start baseline/final:** ~570-585ms → ~630-660ms (noise range, no material regression)
+- **Confusables candidate:** accepted — sorted static table with binary search, runtime parser/map removed, Unicode data pinned with checksum
+- **Release-profile candidates:** strip=accepted, thin LTO=accepted, codegen-units=1=accepted (28% total reduction)
+- **Current-thread Tokio candidate:** accepted — rt-multi-thread feature removed, simpler runtime config
+- **`preserve_order` candidate:** rejected — wire-order compatibility risk exceeds measured benefit
+- **TOML consolidation candidate:** rejected — different APIs (serde deserialization vs document manipulation), consolidation requires broad conversion code
+- **Ordinary verification:** fmt, clippy, lib tests (564 passed), doc tests (11 passed)
+- **Canonical release check:** passes (clean tree required)
 - **Roadmap closure commit:** pending
-- **Final phase disposition:** pending
+- **Final phase disposition:** all 5 candidates evaluated; 3 accepted, 2 rejected; no further optimization plan needed
