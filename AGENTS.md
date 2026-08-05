@@ -25,7 +25,7 @@ scripts/release-check.sh               # full local release gate (no publish, no
 
 ## Verification order
 
-`cargo fmt --all -- --check` → `cargo clippy --locked --all-targets --all-features -- -D warnings` → `cargo test --locked --all-features --lib` → `cargo test --locked --all-features --bins` → `cargo test --locked --all-features --tests -- --skip parity` → `cargo test --locked --doc` → `cargo run --locked --features dev-tools --bin generate-docs -- --check` → `cargo deny check advisories bans licenses sources` → `cargo package --locked --list` → `cargo package --locked --verbose` → `cargo publish --locked --dry-run`
+`cargo fmt --all -- --check` → `cargo clippy --locked --all-targets --all-features -- -D warnings` → `cargo test --locked --all-features --lib` → `cargo test --locked --all-features --bins` → `cargo test --locked --all-features -- --skip parity --test-threads=4` → `cargo test --locked --doc` → `cargo run --locked --features dev-tools --bin generate-docs -- --check` → `cargo deny check advisories bans licenses sources` → `cargo package --locked --list` → `cargo package --locked --verbose` → `cargo publish --locked --dry-run`
 
 ## CI
 
@@ -35,7 +35,7 @@ GitHub Actions CI runs on push/PR to `main` (plus manual `workflow_dispatch`):
 - `cargo fmt --all -- --check`
 - `cargo run --locked --bin generate-docs -- --check`
 - `cargo clippy --locked --all-targets --all-features -- -D warnings`
-- `cargo test --locked --all-features -- --skip parity`
+- `cargo test --locked --all-features -- --skip parity --test-threads=4`
 - `cargo test --locked --doc`
 - `cargo package --locked`
 
@@ -97,6 +97,7 @@ tests/
 - **`Profile::from_str_opt`** is strict — returns `None` for unknown names. Use `Profile::custom(name)` for custom profiles.
 - **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to `Model`), `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`; defaults to `full`).
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
+- **Test-thread bound:** `--test-threads=4` is used in CI and the release gate to prevent Tokio blocking-pool starvation when many MCP subprocess tests run in parallel. This is a test-runner containment measure, not a product budget. Unit tests (`--lib`) and doc tests do not need it.
 
 ## Exposure & Audience Model
 

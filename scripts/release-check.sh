@@ -19,7 +19,7 @@ echo "release-check: clippy"
 cargo clippy --locked --all-targets --all-features -- -D warnings
 
 echo "release-check: tests"
-cargo test --locked --all-features -- --skip parity
+cargo test --locked --all-features -- --skip parity --test-threads=4
 
 echo "release-check: doc tests"
 cargo test --locked --doc

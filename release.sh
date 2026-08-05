@@ -21,7 +21,7 @@ echo "=== Running binary tests ==="
 cargo test --locked --all-features --bins
 
 echo "=== Running integration tests (parity excluded) ==="
-cargo test --locked --all-features --tests -- --skip parity
+cargo test --locked --all-features --tests -- --skip parity --test-threads=4
 
 echo "=== Running doc tests ==="
 cargo test --locked --doc

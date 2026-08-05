@@ -32,4 +32,4 @@ jobs:
       - run: cargo check --all-targets --all-features
       - run: cargo test --all-features --lib
       - run: cargo test --all-features --bins
-      - run: cargo test --all-features --tests -- --skip parity
+      - run: cargo test --all-features --tests -- --skip parity --test-threads=4

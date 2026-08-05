@@ -235,10 +235,6 @@ Responses may arrive out of request order. **Clients must correlate by JSON-RPC 
 3. On timeout: `SyncPoolError::Timeout` returned to caller
 4. Handler may continue running on the worker thread
 
-### Load-Tolerant Budgets
-
-Tools frequently exercised under heavy parallel test load (`math_eval`, `text_diff_explain`, `regex_finditer`) get 120s budgets instead of the standard 30s moderate budget to prevent spurious timeouts from worker starvation.
-
 ---
 
 ## Request Size Limits

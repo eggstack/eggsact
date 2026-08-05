@@ -288,7 +288,7 @@ GitHub Actions runs on push/PR to `main` (plus manual `workflow_dispatch`):
 - `cargo fmt --all -- --check`
 - `cargo run --locked --features dev-tools --bin generate-docs -- --check`
 - `cargo clippy --locked --all-targets --all-features -- -D warnings`
-- `cargo test --locked --all-features -- --skip parity`
+- `cargo test --locked --all-features -- --skip parity --test-threads=4`
 - `cargo test --locked --doc`
 - `cargo package --locked`
 
