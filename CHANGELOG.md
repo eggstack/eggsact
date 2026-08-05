@@ -17,12 +17,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`confusables_generated.rs`, `tool-cards.md`, `../eggcalc`) or development
   command strings. Installed binaries report stable runtime/package facts only.
 
+### Changed
+- **Confusables representation** (`src/text/confusables.rs`): Replaced runtime
+  `HashMap` parsing with a sorted static table using binary search. Unicode data
+  pinned to version 17.0.0 with SHA-256 checksum header. Deleted runtime parser
+  and per-character `format!` allocations.
+- **Release profile** (`Cargo.toml`): Added `strip = "symbols"`, `lto = "thin"`,
+  `codegen-units = 1` to `[profile.release]`. Binary size reduced from 12.2M to
+  8.8M (28% reduction).
+- **Tokio runtime** (`src/main.rs`, `Cargo.toml`): Changed from multi-thread to
+  current-thread runtime. Removed `rt-multi-thread` feature. Simpler runtime
+  configuration with no behavior change.
+
 ### Removed
 - **`release.sh`** deleted — duplicates `scripts/release-check.sh` which is the
   sole canonical release gate.
 - **`build.sh`** deleted — trivial wrapper around `cargo build`.
 - **`verify-eggsact` binary** deleted — duplicated the release gate command
   sequence and was not invoked by any workflow or script.
+- **`rt-multi-thread` Tokio feature** — no longer needed with current-thread runtime.
 
 ## [1.2.1] - Unreleased
 

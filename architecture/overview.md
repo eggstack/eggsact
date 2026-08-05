@@ -328,7 +328,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 
 | Category | Crates |
 |----------|--------|
-| Core | `serde`, `serde_json` (preserve_order), `tokio` (rt, rt-multi-thread, macros, io-std, io-util, sync, time) |
+| Core | `serde`, `serde_json` (preserve_order), `tokio` (rt, macros, io-std, io-util, sync, time) |
 | Regex | `fancy-regex`, `regex` |
 | Unicode | `unicode-normalization`, `unicode-segmentation`, `unicode_names2`, `unicode-general-category`, `caseless` |
 | Crypto | `sha2`, `sha1`, `md5`, `crc32fast` |

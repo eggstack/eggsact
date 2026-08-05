@@ -504,22 +504,22 @@ Use manual fuzzing only if confusables/path/parser implementation meaningfully c
 
 # Acceptance checklist
 
-- [ ] Reproducible baseline environment and binary bytes are recorded.
-- [ ] Confusables data uses a sorted static representation or is explicitly rejected with measurement.
-- [ ] Full confusables dataset parity is proven.
-- [ ] Unicode data version and checksum are pinned.
-- [ ] Runtime confusables parsing/map construction/per-character key formatting are removed if the candidate is accepted.
-- [ ] Release-profile settings are evaluated independently.
-- [ ] `panic = "abort"` is not used.
-- [ ] Current-thread Tokio is accepted or rejected with behavioral and size evidence.
-- [ ] `serde_json/preserve_order` is accepted or rejected without broad serializer churn.
-- [ ] TOML dependency consolidation is accepted or rejected without a custom parser layer.
-- [ ] All 80 tools and documented capabilities remain available.
-- [ ] No benchmark dependency, workflow, artifact, workspace split, or new subsystem was added.
-- [ ] Ordinary verification passes.
-- [ ] Canonical local release check passes and leaves a clean tree.
-- [ ] Final roadmap/phase completion records are updated once.
-- [ ] No further polish/evidence plan is created.
+- [x] Reproducible baseline environment and binary bytes are recorded.
+- [x] Confusables data uses a sorted static representation or is explicitly rejected with measurement.
+- [x] Full confusables dataset parity is proven.
+- [x] Unicode data version and checksum are pinned.
+- [x] Runtime confusables parsing/map construction/per-character key formatting are removed if the candidate is accepted.
+- [x] Release-profile settings are evaluated independently.
+- [x] `panic = "abort"` is not used.
+- [x] Current-thread Tokio is accepted or rejected with behavioral and size evidence.
+- [x] `serde_json/preserve_order` is accepted or rejected without broad serializer churn.
+- [x] TOML dependency consolidation is accepted or rejected without a custom parser layer.
+- [x] All 80 tools and documented capabilities remain available.
+- [x] No benchmark dependency, workflow, artifact, workspace split, or new subsystem was added.
+- [x] Ordinary verification passes.
+- [x] Canonical local release check passes and leaves a clean tree.
+- [x] Final roadmap/phase completion records are updated once.
+- [x] No further polish/evidence plan is created.
 
 ---
 
@@ -527,7 +527,7 @@ Use manual fuzzing only if confusables/path/parser implementation meaningfully c
 
 Fill once when implementation lands:
 
-- **Implementation commit range:** pending (single commit for all candidates)
+- **Implementation commit range:** `632f07c..e4c52b0` (Phase 5 footprint + confusables pin)
 - **Measurement environment:** Linux x86_64, rustc 1.97.1, cargo 1.97.1
 - **Baseline binary bytes:** 12.2M (not stripped, no LTO)
 - **Final binary bytes:** 8.8M (strip + thin LTO + codegen-units=1)
@@ -539,5 +539,5 @@ Fill once when implementation lands:
 - **TOML consolidation candidate:** rejected — different APIs (serde deserialization vs document manipulation), consolidation requires broad conversion code
 - **Ordinary verification:** fmt, clippy, lib tests (564 passed), doc tests (11 passed)
 - **Canonical release check:** passes (clean tree required)
-- **Roadmap closure commit:** pending
+- **Roadmap closure commit:** `e4c52b0`
 - **Final phase disposition:** all 5 candidates evaluated; 3 accepted, 2 rejected; no further optimization plan needed
