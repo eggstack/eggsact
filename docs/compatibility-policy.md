@@ -259,7 +259,7 @@ registered tools regardless of policy.
 
 ## Versioning Workflow
 
-1. Before release, run the canonical verification gate (see `release.sh`).
+1. Before release, run the canonical verification gate (see `scripts/release-check.sh`).
 2. Review `CHANGELOG.md` for any breaking changes since last release.
 3. If breaking changes exist, bump MAJOR. If only additions, bump MINOR. If
    only fixes, bump PATCH.

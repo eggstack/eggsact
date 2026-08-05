@@ -15,7 +15,7 @@ const END_TOOLS: &str = "<!-- END GENERATED: eggsact tools -->";
 const BEGIN_PROFILES: &str = "<!-- BEGIN GENERATED: profile reference -->";
 const END_PROFILES: &str = "<!-- END GENERATED: profile reference -->";
 
-const REGENERATE_COMMAND: &str = "cargo run --bin generate-docs";
+const REGENERATE_COMMAND: &str = "cargo run --features dev-tools --bin generate-docs";
 
 const CODEGG_PROFILES: &[&str] = &[
     "codegg_core_min",
@@ -695,7 +695,10 @@ mod tests {
     /// `[[bin]]` in `Cargo.toml`, not the source filename.
     #[test]
     fn stale_docs_message_uses_cargo_bin_name() {
-        assert_eq!(REGENERATE_COMMAND, "cargo run --bin generate-docs");
+        assert_eq!(
+            REGENERATE_COMMAND,
+            "cargo run --features dev-tools --bin generate-docs"
+        );
         assert!(
             REGENERATE_COMMAND.contains("generate-docs"),
             "REGENERATE_COMMAND must use the dash form, got: {REGENERATE_COMMAND}"

@@ -282,7 +282,7 @@ cargo test --locked --bins                            # tests for bin/ targets
 
 ## CI Pipeline
 
-GitHub Actions runs on push/PR to `main` (plus manual `workflow_dispatch`):
+GitHub Actions CI runs on push/PR to `main` (plus manual `workflow_dispatch`):
 
 **Linux correctness** (single job, one cache):
 - `cargo fmt --all -- --check`
@@ -290,17 +290,14 @@ GitHub Actions runs on push/PR to `main` (plus manual `workflow_dispatch`):
 - `cargo clippy --locked --all-targets --all-features -- -D warnings`
 - `cargo test --locked --all-features -- --skip parity --test-threads=4`
 - `cargo test --locked --doc`
-- `cargo package --locked`
 
-**Supported-platform compilation** (matrix):
+**Supported-platform compilation** (matrix, scheduled/manual only):
 - Windows: `cargo check --locked --all-targets --all-features`
 - macOS: `cargo check --locked --all-targets --all-features`
 
 MSRV, cargo-deny, parity, latest-compatible, and fuzz/sanitizer checks are scheduled/manual (not merge-blocking). See `docs/verification.md`.
 
 Parity tests are excluded from CI because Python `eggcalc` is not available in the CI environment. Run locally with `cargo test --locked --test lib parity`.
-
-A **scheduled parity workflow** runs the full parity suite periodically to detect drift between Rust and Python implementations.
 
 CI mirrors the release verification gates but does **not** publish to crates.io. The maintainer publishes manually per `docs/release.md`.
 

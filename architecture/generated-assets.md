@@ -273,13 +273,9 @@ The `runtime_diagnostics` tool returns a JSON object:
     }
   },
   "known_env_vars": ["EGGCALC_NO_CONFIG", "EGGCALC_MCP_PROFILE", ...],
-  "generated_doc_command": "cargo run --features dev-tools --bin generate-docs",
-  "verification_command": "cargo run --features dev-tools --bin verify-eggsact",
-  "generated_data": {
-    "confusables_generated_rs": true,
-    "tool_cards_md": true
-  },
-  "parity_available": true
+  "compatibility_mode": "eggcalc_python",
+  "route_critical_tools": [...],
+  "budget_tier_summary": {"cheap": N, "moderate": N, "heavy": N},
 }
 ```
 
@@ -311,10 +307,7 @@ git diff README.md architecture/mcp-server.md generated/tool-cards.md
 # 3. Verify generated docs are current
 cargo run --features dev-tools --bin generate-docs -- --check
 
-# 4. Run full verification pipeline
-cargo run --features dev-tools --bin verify-eggsact
-
-# 5. Or run individual gates in order
+# 4. Or run individual gates in order
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features --lib

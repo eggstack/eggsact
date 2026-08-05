@@ -1,6 +1,6 @@
 # CLI & Binaries
 
-eggsact provides a CLI entry point (`eggsact`) and two utility binaries (`generate-docs`, `verify-eggsact`).
+eggsact provides a CLI entry point (`eggsact`) and one utility binary (`generate-docs`).
 
 See also: [Overview](overview.md), [CLI & Usage](../docs/cli.md)
 
@@ -57,7 +57,7 @@ The server sets `EGGCALC_NO_CONFIG=1` unconditionally before dispatching any mod
 
 ### Diagnostics Mode
 
-Prints version, tool count, profile summary, budget tiers, runtime settings, generated data status, and environment variable names (no values). Useful for verifying the build and checking active configuration.
+Prints version, tool count, profile summary, budget tiers, runtime settings, and environment variable names (no values). Useful for verifying the build and checking active configuration.
 
 ```bash
 eggsact --diagnostics              # text output
@@ -84,9 +84,6 @@ Route-critical tools:
   patch_apply_check
   text_security_inspect
 
-Generated-doc command: cargo run --features dev-tools --bin generate-docs
-Verification command:  cargo run --features dev-tools --bin verify-eggsact
-
 Compatibility mode (default by surface):
   MCP server:       EggcalcPython
   In-process API:   StrictNative
@@ -107,10 +104,6 @@ Known env vars (names only, no values):
   EGGCALC_MCP_PROFILE
   EGGCALC_MCP_AUDIENCE
   EGGCALC_MCP_SCHEMA_DETAIL
-
-confusables_generated.rs exists: yes
-tool-cards.md exists:            yes
-../eggcalc parity ref exists:    no
 ```
 
 #### JSON output example
@@ -131,8 +124,6 @@ tool-cards.md exists:            yes
     "codegg_shell": 6,
     "codegg_repo_audit": 18
   },
-  "generated_doc_command": "cargo run --features dev-tools --bin generate-docs",
-  "verification_command": "cargo run --features dev-tools --bin verify-eggsact",
   "compatibility_mode": {
     "mcp_server": "EggcalcPython",
     "in_process_api": "StrictNative"
@@ -154,7 +145,6 @@ tool-cards.md exists:            yes
     "active_audience": "Model",
     "schema_detail": "full",
     "limits": {
-      "max_requests_per_second": 10,
       "max_in_flight_requests": 32,
       "max_tool_workers": 16,
       "max_request_bytes": 1000000,
@@ -166,15 +156,7 @@ tool-cards.md exists:            yes
     "EGGCALC_MCP_PROFILE",
     "EGGCALC_MCP_AUDIENCE",
     "EGGCALC_MCP_SCHEMA_DETAIL"
-  ],
-  "generated_data": {
-    "confusables_generated_rs": true,
-    "tool_cards_md": true
-  },
-  "parity_reference": {
-    "path": "../eggcalc",
-    "exists": false
-  }
+  ]
 }
 ```
 
@@ -319,73 +301,6 @@ After regenerating, commit the updated files. CI will fail if generated docs are
 
 ---
 
-## `verify-eggsact` Binary (`src/bin/verify_eggsact.rs`)
-
-Runs a 9-step verification pipeline and emits a markdown report. Exits with code 0 (all pass) or 1 (any failure).
-
-```bash
-cargo run --features dev-tools --bin verify-eggsact                     # full pipeline
-cargo run --features dev-tools --bin verify-eggsact -- --report markdown  # explicit format (only markdown supported)
-```
-
-### Pipeline Steps
-
-| # | Step | Command | Description |
-|---|------|---------|-------------|
-| 1 | `cargo fmt` | `cargo fmt --all -- --check` | Format check (no modifications) |
-| 2 | `cargo clippy` | `cargo clippy --locked --all-targets --all-features -- -D warnings` | Lint with warnings as errors |
-| 3 | `cargo test --lib` | `cargo test --locked --all-features --lib` | Unit tests in `src/` only |
-| 4 | `cargo test --bins` | `cargo test --locked --all-features --bins` | Binary tests (generate-docs tests, etc.) |
-| 5 | `cargo test --tests` | `cargo test --locked --all-features --tests -- --skip parity` | Integration tests (parity excluded) |
-| 6 | `cargo test --doc` | `cargo test --locked --doc` | Doc tests |
-| 7 | `generate-docs --check` | `cargo run --locked --features dev-tools --bin generate-docs -- --check` | Verify generated docs are fresh |
-| 8 | `cargo package` | `cargo package --locked --verbose` | Crates.io packaging dry run |
-| 9 | parity tests | `cargo test --locked --test lib parity --all-features` | Python/Rust parity (skipped if `../eggcalc` missing) |
-
-Each step is timed independently. The parity step is automatically skipped when `../eggcalc` does not exist (detected via `fs::metadata()`).
-
-### Output Format
-
-The report is printed as markdown with a header, commit hash, and a results table:
-
-```markdown
-# Eggsact Verification Report
-
-**commit:** `abc1234`
-**generated-docs freshness:** `PASS`
-**parity availability:** available
-
-## Results
-
-| Step | Status | Duration |
-|------|--------|----------|
-| cargo fmt | `PASS` | 120ms |
-| cargo clippy | `PASS` | 8.2s |
-| cargo test --lib | `PASS` | 4.1s |
-| cargo test --bins | `PASS` | 1.3s |
-| cargo test --tests (skip parity) | `PASS` | 12.5s |
-| cargo test --doc | `PASS` | 2.0s |
-| generate-docs --check | `PASS` | 1.5s |
-| cargo package | `PASS` | 3.2s |
-| parity tests | `SKIP` | - |
-
-**Overall: PASS**
-```
-
-Status badges: `` `PASS` ``, `` `FAIL` ``, `` `SKIP` `` (parity only, when unavailable).
-
-Duration formatting: `<1s` → `{ms}ms`, `<60s` → `{s}s`, `≥60s` → `{m}m {s}s`.
-
-### Parity Check
-
-Parity tests compare eggsact MCP output against the Python `eggcalc` package. They require `../eggcalc` to exist (the Python reference implementation). When the directory is absent, step 9 is marked `SKIP` and the report notes:
-
-```
-parity availability: unavailable (`../eggcalc` not found) — parity tests skipped
-```
-
----
-
 ## Environment Variables
 
 | Variable | Set In | Purpose | Values |
@@ -442,9 +357,6 @@ cargo run --features dev-tools --bin generate-docs
 # Generate docs (check mode, for CI)
 cargo run --features dev-tools --bin generate-docs -- --check
 
-# Verify eggsact (full pipeline)
-cargo run --features dev-tools --bin verify-eggsact
-
 # Run main.rs unit tests
 cargo test --locked --lib main
 ```
@@ -455,20 +367,20 @@ The recommended verification order before release:
 
 ```bash
 cargo fmt --all -- --check
+cargo run --locked --features dev-tools --bin generate-docs -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-features --lib
 cargo test --locked --all-features --bins
 cargo test --locked --all-features --tests -- --skip parity
 cargo test --locked --doc
-cargo run --locked --features dev-tools --bin generate-docs -- --check
 cargo deny check advisories bans licenses sources
 cargo package --locked --verbose
 ```
 
-Or equivalently:
+Or equivalently, the canonical release gate:
 
 ```bash
-cargo run --features dev-tools --bin verify-eggsact
+scripts/release-check.sh
 ```
 
 ---
@@ -479,4 +391,3 @@ cargo run --features dev-tools --bin verify-eggsact
 - **`EGGCALC_NO_CONFIG` is hardcoded**: The main binary always sets this env var, preventing any config file from affecting CLI behavior. This ensures reproducible output.
 - **Diagnostics exposes names, not values**: The `--diagnostics` mode lists environment variable names but never reads or prints their values, avoiding secret leakage.
 - **`generate-docs` uses marker-based insertion**: HTML comments delimit generated sections in markdown files. This allows hand-editing around generated content while keeping the generated parts reproducible.
-- **`verify-eggsact` is a self-contained pipeline**: It spawns each step as a child process with `EGGCALC_NO_CONFIG=1`, captures exit status, and builds a markdown report. No external test framework required.

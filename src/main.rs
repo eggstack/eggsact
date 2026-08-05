@@ -43,8 +43,6 @@ fn print_diagnostics(format: &str) {
     let version = env!("CARGO_PKG_VERSION");
     let tool_count = eggsact::mcp::registry::tool_count();
     let profiles = eggsact::mcp::registry::available_profiles();
-    let generated_doc_cmd = "cargo run --bin generate-docs";
-    let verification_cmd = "cargo run --bin verify-eggsact";
     let compat_mcp = "EggcalcPython";
     let compat_inprocess = "StrictNative";
     let env_var_names = [
@@ -53,9 +51,6 @@ fn print_diagnostics(format: &str) {
         "EGGCALC_MCP_AUDIENCE",
         "EGGCALC_MCP_SCHEMA_DETAIL",
     ];
-    let confusables_exists = std::path::Path::new("src/text/confusables_generated.rs").exists();
-    let tool_cards_exists = std::path::Path::new("generated/tool-cards.md").exists();
-    let parity_ref_exists = std::path::Path::new("../eggcalc").exists();
     let route_critical = eggsact::mcp::registry::ROUTE_CRITICAL_TOOLS;
 
     let budget_tiers = [
@@ -97,8 +92,6 @@ fn print_diagnostics(format: &str) {
             "version": version,
             "tool_count": tool_count,
             "profiles": profiles_obj,
-            "generated_doc_command": generated_doc_cmd,
-            "verification_command": verification_cmd,
             "compatibility_mode": {
                 "mcp_server": compat_mcp,
                 "in_process_api": compat_inprocess,
@@ -117,14 +110,6 @@ fn print_diagnostics(format: &str) {
                 },
             },
             "env_var_names": env_vars,
-            "generated_data": {
-                "confusables_generated_rs": confusables_exists,
-                "tool_cards_md": tool_cards_exists,
-            },
-            "parity_reference": {
-                "path": "../eggcalc",
-                "exists": parity_ref_exists,
-            },
         });
         println!("{}", serde_json::to_string_pretty(&diag).unwrap());
     } else {
@@ -142,9 +127,6 @@ fn print_diagnostics(format: &str) {
         for name in route_critical {
             println!("  {}", name);
         }
-        println!();
-        println!("Generated-doc command: {}", generated_doc_cmd);
-        println!("Verification command:  {}", verification_cmd);
         println!();
         println!("Compatibility mode (default by surface):");
         println!("  MCP server:       {}", compat_mcp);
@@ -171,19 +153,6 @@ fn print_diagnostics(format: &str) {
         for v in &env_var_names {
             println!("  {}", v);
         }
-        println!();
-        println!(
-            "confusables_generated.rs exists: {}",
-            if confusables_exists { "yes" } else { "no" }
-        );
-        println!(
-            "tool-cards.md exists:            {}",
-            if tool_cards_exists { "yes" } else { "no" }
-        );
-        println!(
-            "../eggcalc parity ref exists:    {}",
-            if parity_ref_exists { "yes" } else { "no" }
-        );
     }
 }
 

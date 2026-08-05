@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **CI simplified**: Removed `cargo package` from ordinary CI (packaging belongs to
+  the local release gate). Removed the Windows/macOS compile-check matrix from
+  `ci.yml`; platform checks now run in the existing `maintenance.yml` workflow
+  (scheduled/manual).
+- **Diagnostics simplified**: `--diagnostics` (CLI and MCP `runtime_diagnostics`
+  tool) no longer reports source-tree-relative file existence checks
+  (`confusables_generated.rs`, `tool-cards.md`, `../eggcalc`) or development
+  command strings. Installed binaries report stable runtime/package facts only.
+
+### Removed
+- **`release.sh`** deleted — duplicates `scripts/release-check.sh` which is the
+  sole canonical release gate.
+- **`build.sh`** deleted — trivial wrapper around `cargo build`.
+- **`verify-eggsact` binary** deleted — duplicated the release gate command
+  sequence and was not invoked by any workflow or script.
+
 ## [1.2.1] - Unreleased
 
 ### Fixed

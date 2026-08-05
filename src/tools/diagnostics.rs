@@ -32,9 +32,6 @@ pub fn runtime_diagnostics(_args: &Value) -> ToolResponse {
         registry::tools_for_profile_audience(&active_profile, registry::ToolListAudience::Harness)
             .len();
 
-    let confusables_exists = std::path::Path::new("src/text/confusables_generated.rs").exists();
-    let tool_cards_exists = std::path::Path::new("generated/tool-cards.md").exists();
-
     let metrics = runtime::snapshot_metrics();
 
     let result = json!({
@@ -75,13 +72,6 @@ pub fn runtime_diagnostics(_args: &Value) -> ToolResponse {
             "EGGCALC_MCP_AUDIENCE",
             "EGGCALC_MCP_SCHEMA_DETAIL",
         ],
-        "generated_doc_command": "cargo run --bin generate-docs",
-        "verification_command": "cargo run --bin verify-eggsact",
-        "generated_data": {
-            "confusables_generated_rs": confusables_exists,
-            "tool_cards_md": tool_cards_exists,
-        },
-        "parity_available": std::path::Path::new("../eggcalc").exists(),
     });
 
     ToolResponse::success(result, Some("runtime_diagnostics"))

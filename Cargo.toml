@@ -16,8 +16,6 @@ exclude = [
     "plans/",
     "data/",
     "scripts/",
-    "build.sh",
-    "release.sh",
     ".github/",
     ".opencode/",
     ".agents/",
@@ -54,11 +52,6 @@ dev-tools = []
 [[bin]]
 name = "generate-docs"
 path = "src/bin/generate_docs.rs"
-required-features = ["dev-tools"]
-
-[[bin]]
-name = "verify-eggsact"
-path = "src/bin/verify_eggsact.rs"
 required-features = ["dev-tools"]
 
 [[test]]

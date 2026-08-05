@@ -16,18 +16,7 @@ cargo run --locked --features dev-tools --bin generate-docs -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-features -- --skip parity --test-threads=4
 cargo test --locked --doc
-cargo package --locked
 ```
-
-### Supported-platform compilation
-
-Runs on `windows-latest` and `macos-latest` as a matrix:
-
-```bash
-cargo check --locked --all-targets --all-features
-```
-
-Compilation checks establish that the codebase compiles on all supported platforms. Full test suites run only on Linux to avoid duplicated orchestration.
 
 ## Tier 2 — Scheduled Compatibility and Policy Checks
 
@@ -37,6 +26,7 @@ Run weekly (Monday) and via `workflow_dispatch`. Do not block ordinary merges. A
 |-------|----------|---------|
 | MSRV compilation and library tests | `maintenance.yml` | Weekly |
 | cargo-deny advisory/policy audit | `maintenance.yml` | Weekly |
+| Supported-platform compile checks (Windows, macOS) | `maintenance.yml` | Weekly |
 | Latest-compatible dependency resolution | `latest-compatible.yml` | Weekly |
 | Python eggcalc parity | `parity.yml` | Weekly |
 
@@ -47,6 +37,10 @@ Verifies the declared MSRV in `Cargo.toml` compiles and passes library tests. Th
 ### cargo-deny
 
 Checks licenses, advisories, bans, and sources against `deny.toml`. Failures create maintainer tasks.
+
+### Supported-platform compilation
+
+Compile-checks on Windows and macOS to verify cross-platform compatibility. Uses `cargo check --locked --all-targets --all-features`.
 
 ### Latest-compatible
 
@@ -83,7 +77,7 @@ This script runs the full verification gate locally and performs a `cargo publis
 | Failure | Blocks merge? | Blocks release? | Expected response |
 |---------|---------------|-----------------|-------------------|
 | Linux correctness | yes | yes | fix before merge |
-| Windows/macOS compile | yes | yes for supported platforms | fix or change support policy |
+| Windows/macOS compile | no immediate PR block | yes for supported platforms | fix or change support policy |
 | Weekly MSRV | no immediate PR block | yes if advertised MSRV is broken | repair or raise MSRV deliberately |
 | cargo-deny advisory/policy | no immediate PR block | maintainer judgment; security findings normally block | triage dependency/policy |
 | Python parity | no immediate PR block | blocks only when changed behavior promises parity | reproduce and classify drift |

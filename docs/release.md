@@ -86,7 +86,7 @@ crates.io releases are immutable. Tagging after publish avoids a tag pointing at
 
 ## Package contents
 
-`cargo package --locked` excludes: `plans/`, `data/`, `scripts/`, `build.sh`, `release.sh`, `.github/`, `.opencode/`, `.agents/`, `deny.toml`, `AGENTS.md`.
+`cargo package --locked` excludes: `plans/`, `data/`, `scripts/`, `.github/`, `.opencode/`, `.agents/`, `deny.toml`, `AGENTS.md`.
 
 Verify with:
 
@@ -96,21 +96,23 @@ cargo package --locked --list
 
 ## CI
 
-GitHub Actions runs 3 jobs on push/PR to `main` (plus `workflow_dispatch`):
+GitHub Actions CI runs on push/PR to `main` (plus manual `workflow_dispatch`):
 
-| Job | Platform | What It Runs |
-|-----|----------|-------------|
-| Linux correctness | Linux | fmt, generated-docs, clippy, tests (parity excluded), doc tests, package |
-| Check (windows-latest) | Windows | `cargo check --locked --all-targets --all-features` |
-| Check (macos-latest) | macOS | `cargo check --locked --all-targets --all-features` |
+**Linux correctness** (single job, one cache):
+- `cargo fmt --all -- --check`
+- `cargo run --locked --features dev-tools --bin generate-docs -- --check`
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`
+- `cargo test --locked --all-features -- --skip parity --test-threads=4`
+- `cargo test --locked --doc`
 
-Scheduled/manual workflows:
+**Supported-platform compilation** (matrix, scheduled/manual only):
+- Windows: `cargo check --locked --all-targets --all-features`
+- macOS: `cargo check --locked --all-targets --all-features`
 
-| Workflow | Trigger | Purpose |
-|----------|---------|---------|
-| Maintenance (MSRV + cargo-deny) | Weekly + manual | MSRV compilation and dependency policy |
-| Latest Compatible Dependencies | Weekly + manual | Ecosystem drift detection |
-| Python Parity | Weekly + manual | Reference implementation drift |
-| Fuzz Extended | Manual only | Hardening: fuzz + sanitizer matrices |
+MSRV, cargo-deny, parity, latest-compatible, and fuzz/sanitizer checks are scheduled/manual (not merge-blocking). See `docs/verification.md`.
+
+Parity tests are excluded from CI because Python `eggcalc` is not available in the CI environment. Run parity locally with `cargo test --test lib parity`.
+
+GitHub CI verifies merge correctness but does **not** publish to crates.io. The maintainer publishes manually per this document.
 
 See `docs/verification.md` for the full verification doctrine and failure ownership.

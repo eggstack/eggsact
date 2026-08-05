@@ -63,14 +63,6 @@ fn test_runtime_diagnostics_returns_structured_output() {
         result["route_critical_tools"].is_array(),
         "route_critical_tools should be an array"
     );
-    assert!(
-        result.get("parity_available").is_some(),
-        "result should contain parity_available"
-    );
-    assert!(
-        result["parity_available"].is_boolean(),
-        "parity_available should be a boolean"
-    );
 }
 
 #[test]
@@ -94,27 +86,6 @@ fn test_runtime_diagnostics_expanded_fields() {
     assert!(
         result["harness_visible_tool_count"].is_number(),
         "harness_visible_tool_count should be a number"
-    );
-    assert!(
-        result.get("verification_command").is_some(),
-        "result should contain verification_command"
-    );
-    assert!(
-        result["verification_command"].is_string(),
-        "verification_command should be a string"
-    );
-    assert!(
-        result.get("generated_data").is_some(),
-        "result should contain generated_data"
-    );
-    let gen_data = &result["generated_data"];
-    assert!(
-        gen_data.get("confusables_generated_rs").is_some(),
-        "generated_data should contain confusables_generated_rs"
-    );
-    assert!(
-        gen_data.get("tool_cards_md").is_some(),
-        "generated_data should contain tool_cards_md"
     );
     assert!(
         result.get("runtime").is_some(),

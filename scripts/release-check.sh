@@ -13,7 +13,7 @@ echo "release-check: formatting"
 cargo fmt --all -- --check
 
 echo "release-check: generated docs"
-cargo run --locked --bin generate-docs -- --check
+cargo run --locked --features dev-tools --bin generate-docs -- --check
 
 echo "release-check: clippy"
 cargo clippy --locked --all-targets --all-features -- -D warnings

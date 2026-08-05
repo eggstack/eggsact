@@ -20,7 +20,7 @@ cargo package --locked --verbose                  # package verification
 
 The canonical release gate (including the full test suite) is defined in `docs/release.md` — do not duplicate it here.
 
-CI runs on push/PR to `main` (plus `workflow_dispatch`) via `.github/workflows/ci.yml` — one Linux correctness job plus a two-platform compile-check matrix (Windows, macOS). MSRV and cargo-deny are scheduled maintenance checks (Tier 2), not ordinary merge gates. Parity tests require Python `eggcalc` at `../eggcalc` and are local-only.
+CI runs on push/PR to `main` (plus `workflow_dispatch`) via `.github/workflows/ci.yml` — one Linux correctness job. Supported-platform compilation checks run in scheduled `maintenance.yml`. MSRV and cargo-deny are scheduled maintenance checks (Tier 2), not ordinary merge gates. Parity tests require Python `eggcalc` at `../eggcalc` and are local-only.
 
 ## Test Structure
 
