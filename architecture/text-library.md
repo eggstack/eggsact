@@ -633,6 +633,12 @@ Based on finding codes:
 
 Path analysis, comparison, and scope checking for both POSIX and Windows paths.
 
+**Lexical operations only.** Path tools operate on strings, not the filesystem.
+They do not follow symlinks, resolve mount points, or access the host file
+system. UNC share roots (`\\host\share`) are protected boundaries: dot-segment
+collapse cannot pop the host or share components, and scope checks reject
+traversal above the share root.
+
 ### `path_analyze(path, style) -> PathAnalyzeResult`
 
 ```rust

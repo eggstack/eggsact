@@ -185,6 +185,92 @@ fn test_path_normalize_windows_unc_with_forward_slashes() {
     assert_eq!(result.normalized, "\\\\server\\share\\file");
 }
 
+// ─── UNC share boundary protection ────────────────────────────────────
+
+#[test]
+fn test_unc_dir_dotdot_file_stays_in_share() {
+    // \\host\share\dir\..\file -> \\host\share\file (dir collapsed, share intact)
+    let result = path_normalize("\\\\host\\share\\dir\\..\\file", "windows", true, false);
+    assert_eq!(result.normalized, "\\\\host\\share\\file");
+}
+
+#[test]
+fn test_unc_dotdot_above_share_clamped() {
+    // \\host\share\.. -> \\host\share (.. clamped at UNC share boundary)
+    let result = path_normalize("\\\\host\\share\\..", "windows", true, false);
+    assert_eq!(result.normalized, "\\\\host\\share");
+    // has_dot_dot is still true (raw path had ..)
+    assert!(result.warnings.iter().any(|w| w.contains("dot-dot")));
+}
+
+#[test]
+fn test_unc_double_dotdot_above_share() {
+    // \\host\share\dir\..\..\secret -> \\host\share\secret
+    // dir pops, then .. at share boundary is clamped
+    let result = path_normalize(
+        "\\\\host\\share\\dir\\..\\..\\secret",
+        "windows",
+        true,
+        false,
+    );
+    assert_eq!(result.normalized, "\\\\host\\share\\secret");
+}
+
+#[test]
+fn test_unc_forward_slash_equivalent() {
+    // //host/share/dir/../file -> \\host\share\file
+    let result = path_normalize("//host/share/dir/../file", "windows", true, false);
+    assert_eq!(result.normalized, "\\\\host\\share\\file");
+}
+
+#[test]
+fn test_unc_arbitrary_names_not_sentinel() {
+    // \\documents\photos\..\secret -> \\documents\photos\secret
+    // (.. is clamped at the UNC share boundary; "photos" is the share name)
+    let result = path_normalize("\\\\documents\\photos\\..\\secret", "windows", true, false);
+    assert_eq!(result.normalized, "\\\\documents\\photos\\secret");
+}
+
+#[test]
+fn test_unc_share_root_valid() {
+    let result = path_normalize("\\\\host\\share", "windows", true, false);
+    assert_eq!(result.normalized, "\\\\host\\share");
+    assert!(result.is_absolute);
+}
+
+#[test]
+fn test_unc_incomplete_host_only() {
+    // \\host is an incomplete UNC prefix
+    let result = path_normalize("\\\\host", "windows", true, false);
+    assert_eq!(result.normalized, "\\\\host");
+    assert!(result.is_absolute);
+}
+
+#[test]
+fn test_drive_relative_not_absolute() {
+    let result = path_normalize("C:foo", "windows", true, false);
+    assert!(!result.is_absolute);
+}
+
+#[test]
+fn test_drive_rooted_absolute() {
+    let result = path_normalize("C:\\foo", "windows", true, false);
+    assert!(result.is_absolute);
+}
+
+#[test]
+fn test_drive_rooted_forward_slash() {
+    let result = path_normalize("C:/foo", "windows", true, false);
+    assert!(result.is_absolute);
+}
+
+#[test]
+fn test_drive_dotdot_collapse() {
+    // C:/foo/../bar -> C:\bar
+    let result = path_normalize("C:/foo/../bar", "windows", true, false);
+    assert_eq!(result.normalized, "C:\\bar");
+}
+
 // ─── path_scope_check ────────────────────────────────────────────────
 
 #[test]
@@ -236,4 +322,40 @@ fn test_path_scope_check_real_traversal() {
 fn test_path_scope_check_case_insensitive() {
     let result = path_scope_check("/Home/User", "/home/user/docs", "posix", false);
     assert!(result.inside_root);
+}
+
+// ─── UNC scope check ─────────────────────────────────────────────────
+
+#[test]
+fn test_unc_scope_check_inside() {
+    let result = path_scope_check(
+        "\\\\host\\share",
+        "\\\\host\\share\\dir\\file.txt",
+        "windows",
+        true,
+    );
+    assert!(result.inside_root);
+}
+
+#[test]
+fn test_unc_scope_check_escape() {
+    let result = path_scope_check(
+        "\\\\host\\share",
+        "\\\\host\\share\\..\\secret",
+        "windows",
+        true,
+    );
+    assert!(!result.inside_root);
+    assert!(result.escapes_via_dotdot);
+}
+
+#[test]
+fn test_unc_scope_check_different_share() {
+    let result = path_scope_check(
+        "\\\\host\\share",
+        "\\\\host\\other\\file.txt",
+        "windows",
+        true,
+    );
+    assert!(!result.inside_root);
 }

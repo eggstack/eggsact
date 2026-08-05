@@ -95,7 +95,7 @@ Runtime:
   Active profile: codegg_core_min
   Active audience: Model
   Schema detail: full
-  Limits: 10 req/s, 32 in-flight, 16 workers, 1000000 bytes request, 1000000 bytes output
+  Limits: 32 in-flight, 16 workers, 1000000 bytes request, 1000000 bytes output
 
 Budget tiers:
   cheap: 1 MB in/out, 10s, 100 findings

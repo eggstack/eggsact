@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.1] - Unreleased
 
+### Fixed
+- **UNC share boundary corrections** (`src/text/path.rs`): Windows UNC
+  host/share prefixes are now represented structurally (by position), not
+  by sentinel component text. Dot-segment collapse cannot pop a UNC host or
+  share. Scope checks reject traversal above the share root. Drive-relative
+  paths (`C:foo`) remain non-absolute and are not silently resolved under
+  an unrelated rooted path.
+- **Findings truncation accounting** (`src/mcp/response.rs`): The `omitted`
+  count in the synthetic `OUTPUT_TOO_LARGE` notice is now exact for all caps.
+  `max_findings = 0` returns zero findings without a synthetic notice.
+  `max_findings = 1` retains only the notice (zero real findings).
+- **Resource-pressure error classification** (`src/mcp/server.rs`): In-flight
+  capacity exhaustion now returns JSON-RPC error code -32000 with
+  `RESOURCE_EXHAUSTED` structured data, not -32600 (invalid request).
+
+### Changed
+- **Bounded MCP line allocation** (`src/mcp/server.rs`): The JSONL read loop
+  now uses an incremental bounded reader (`read_bounded_line`) that checks
+  `MAX_REQUEST_BYTES` during reading, not after full-line allocation. An
+  oversized line is drained before processing the next request.
+- **Rate limiter removed**: The fixed 10 req/s rate limiter (`RateLimiter` /
+  `MAX_REQUESTS_PER_SECOND`) has been removed from the MCP server. The
+  in-flight limit (32), tool semaphore (16), and byte limits are sufficient
+  for the local stdio server. Agent clients commonly issue legitimate bursts.
+
 ### Added
 - **`call_json_with_execution_template`**: explicit immutable alias for
   `call_json_with_execution_context`. Identical behavior (clones `eval_ctx`);

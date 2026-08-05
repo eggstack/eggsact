@@ -644,13 +644,11 @@ fn test_malformed_cancelled_notification_no_response() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// M4: Rate-limiter saturation then cancel
+// M4: Burst of pings — all accepted (no fixed rate limiter)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_rate_limiter_saturation_then_cancel() {
-    use eggsact::mcp::runtime::MAX_REQUESTS_PER_SECOND;
-
+fn test_burst_pings_all_accepted() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .stdin(Stdio::piped())
@@ -668,36 +666,20 @@ fn test_rate_limiter_saturation_then_cancel() {
             .write_all(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_bytes())
             .unwrap();
         stdin.write_all(b"\n").unwrap();
-        // Saturate the rate limiter with MAX_REQUESTS_PER_SECOND fast requests.
-        // All must be accepted (sliding window allows burst up to the limit).
-        for i in 0..MAX_REQUESTS_PER_SECOND {
-            let req = format!(r#"{{"jsonrpc":"2.0","method":"ping","id":{}}}"#, i + 1);
+        // Send a burst of 20 pings — all should be accepted without rate limiting.
+        for i in 1..=20 {
+            let req = format!(r#"{{"jsonrpc":"2.0","method":"ping","id":{}}}"#, i);
             stdin.write_all(req.as_bytes()).unwrap();
             stdin.write_all(b"\n").unwrap();
         }
-        // Now send a cancellation notification — it must bypass the rate limiter.
-        stdin
-            .write_all(
-                r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":999}}"#
-                    .as_bytes(),
-            )
-            .unwrap();
-        stdin.write_all(b"\n").unwrap();
-        // The rate limiter window hasn't reset, so a new request would be
-        // rejected. Send one anyway — the error response proves the server
-        // is still alive and processing requests (not crashed).
-        stdin
-            .write_all(r#"{"jsonrpc":"2.0","method":"ping","id":9999}"#.as_bytes())
-            .unwrap();
-        stdin.write_all(b"\n").unwrap();
     }
 
     let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let lines: Vec<&str> = stdout.lines().collect();
 
-    // All ping requests should have been accepted (rate limiter allows burst).
-    let initial_pings: usize = lines
+    // All 20 pings should have been accepted.
+    let accepted_pings: usize = lines
         .iter()
         .filter(|line| {
             serde_json::from_str::<Value>(line)
@@ -705,31 +687,15 @@ fn test_rate_limiter_saturation_then_cancel() {
                     v.get("result").is_some()
                         && v.get("id")
                             .and_then(|id| id.as_u64())
-                            .is_some_and(|id| id >= 1 && id <= MAX_REQUESTS_PER_SECOND as u64)
+                            .is_some_and(|id| (1..=20).contains(&id))
                 })
                 .unwrap_or(false)
         })
         .count();
-    assert!(
-        initial_pings >= MAX_REQUESTS_PER_SECOND as usize - 1,
-        "Most initial pings should succeed within rate limit (init handshake may consume one slot), got {}",
-        initial_pings
-    );
-
-    // The cancellation notification produces no response (it's a notification).
-    // The final ping (id=9999) may be rate-limited (error response) — either
-    // way, the server must respond, proving it's still alive.
-    let has_response_9999 = lines.iter().any(|line| {
-        serde_json::from_str::<Value>(line)
-            .map(|v| {
-                v.get("id") == Some(&Value::Number(9999.into()))
-                    && (v.get("result").is_some() || v.get("error").is_some())
-            })
-            .unwrap_or(false)
-    });
-    assert!(
-        has_response_9999,
-        "Server must respond to final ping (success or rate-limit error) — proves server is alive"
+    assert_eq!(
+        accepted_pings, 20,
+        "All 20 burst pings should be accepted (no fixed rate limiter), got {}",
+        accepted_pings
     );
 }
 
@@ -1253,8 +1219,8 @@ fn test_metrics_return_to_zero_after_shutdown() {
 // The pre-spawn cancel check (server.rs:390) fires BETWEEN acquiring the
 // semaphore permit and calling spawn_blocking. To exercise it, the cancel
 // notification must arrive while the request is waiting for a permit. This
-// requires saturating all MAX_TOOL_WORKERS permits, which the rate limiter
-// (MAX_REQUESTS_PER_SECOND=10) prevents from a single MCP process.
+// requires saturating all MAX_TOOL_WORKERS permits, which requires many
+// concurrent requests from a single MCP process.
 //
 // Instead, we verify the cooperative cancellation path via MCP: send a slow
 // request, cancel it while running, and verify bounded termination. The cancel

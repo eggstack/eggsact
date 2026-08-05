@@ -541,17 +541,24 @@ pub fn truncate_response(response: &mut ToolResponse, budget: &crate::mcp::budge
                 let sev_b = b.get("severity").and_then(|v| v.as_str()).unwrap_or("info");
                 severity_order(sev_a).cmp(&severity_order(sev_b))
             });
-            let omitted = findings.len().saturating_sub(budget.max_findings);
-            // Reserve last slot for the truncation notice.
+            let original_len = findings.len();
+            // When max_findings >= 1, reserve one slot for the truncation
+            // notice; real findings are capped at max_findings - 1.
+            // When max_findings == 0, no findings or notice are retained.
             let real_cap = budget.max_findings.saturating_sub(1);
             findings.truncate(real_cap);
-            findings.push(serde_json::json!({
-                "code": "OUTPUT_TOO_LARGE",
-                "severity": "info",
-                "message": format!("{} findings omitted due to output budget", omitted),
-                "disposition": "informational",
-            }));
-            limits.push(format!("findings_truncated:{}", omitted));
+            if budget.max_findings >= 1 {
+                let omitted = original_len.saturating_sub(real_cap);
+                findings.push(serde_json::json!({
+                    "code": "OUTPUT_TOO_LARGE",
+                    "severity": "info",
+                    "message": format!("{} findings omitted due to output budget", omitted),
+                    "disposition": "informational",
+                }));
+                limits.push(format!("findings_truncated:{}", omitted));
+            } else {
+                limits.push(format!("findings_truncated:{}", original_len));
+            }
         }
     }
 
@@ -982,6 +989,81 @@ mod tests {
         }
         .with_metrics(metrics);
         assert!(resp.result.is_none());
+    }
+
+    #[test]
+    fn truncate_findings_cap_zero_returns_no_findings() {
+        let budget = crate::mcp::budget::ToolBudget::CHEAP.with_max_findings(0);
+        let mut resp = ToolResponse::success(serde_json::json!({}), Some("test_tool"))
+            .with_findings(vec![
+                finding("A", severity::LOW, "a", None, None),
+                finding("B", severity::HIGH, "b", None, None),
+            ]);
+        truncate_response(&mut resp, &budget);
+        let findings = resp.findings.as_ref().unwrap();
+        assert_eq!(findings.len(), 0);
+        let limits = resp.limits_applied.as_ref().unwrap();
+        assert!(limits.iter().any(|l| l.starts_with("findings_truncated:2")));
+    }
+
+    #[test]
+    fn truncate_findings_cap_one_keeps_notice_only() {
+        let budget = crate::mcp::budget::ToolBudget::CHEAP.with_max_findings(1);
+        let mut resp = ToolResponse::success(serde_json::json!({}), Some("test_tool"))
+            .with_findings(vec![
+                finding("A", severity::LOW, "a", None, None),
+                finding("B", severity::HIGH, "b", None, None),
+                finding("C", severity::MEDIUM, "c", None, None),
+            ]);
+        truncate_response(&mut resp, &budget);
+        let findings = resp.findings.as_ref().unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0]["code"], "OUTPUT_TOO_LARGE");
+        // All 3 real findings were omitted
+        assert_eq!(
+            findings[0]["message"],
+            "3 findings omitted due to output budget"
+        );
+    }
+
+    #[test]
+    fn truncate_findings_cap_two_keeps_one_real_and_notice() {
+        let budget = crate::mcp::budget::ToolBudget::CHEAP.with_max_findings(2);
+        let mut resp = ToolResponse::success(serde_json::json!({}), Some("test_tool"))
+            .with_findings(vec![
+                finding("A", severity::LOW, "a", None, None),
+                finding("B", severity::HIGH, "b", None, None),
+                finding("C", severity::MEDIUM, "c", None, None),
+                finding("D", severity::CRITICAL, "d", None, None),
+            ]);
+        truncate_response(&mut resp, &budget);
+        let findings = resp.findings.as_ref().unwrap();
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0]["severity"], "critical");
+        assert_eq!(findings[1]["code"], "OUTPUT_TOO_LARGE");
+        // 4 original - 1 real cap = 3 omitted
+        assert_eq!(
+            findings[1]["message"],
+            "3 findings omitted due to output budget"
+        );
+    }
+
+    #[test]
+    fn truncate_findings_omitted_count_exact() {
+        // Regression: omitted count should be original_len - real_cap, not
+        // original_len - max_findings (which would be off by one).
+        let budget = crate::mcp::budget::ToolBudget::CHEAP.with_max_findings(5);
+        let mut resp = ToolResponse::success(serde_json::json!({}), Some("test_tool"))
+            .with_findings(vec![
+                finding("A", severity::LOW, "a", None, None),
+                finding("B", severity::HIGH, "b", None, None),
+                finding("C", severity::MEDIUM, "c", None, None),
+            ]);
+        // 3 findings within cap of 5: no truncation
+        truncate_response(&mut resp, &budget);
+        let findings = resp.findings.as_ref().unwrap();
+        assert_eq!(findings.len(), 3);
+        assert!(resp.limits_applied.is_none());
     }
 
     #[test]

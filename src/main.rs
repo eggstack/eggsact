@@ -110,7 +110,6 @@ fn print_diagnostics(format: &str) {
                 "active_audience": format!("{:?}", runtime::get_active_audience()),
                 "schema_detail": runtime::get_schema_detail(),
                 "limits": {
-                    "max_requests_per_second": runtime::MAX_REQUESTS_PER_SECOND,
                     "max_in_flight_requests": runtime::MAX_IN_FLIGHT_REQUESTS,
                     "max_tool_workers": runtime::MAX_TOOL_WORKERS,
                     "max_request_bytes": runtime::MAX_REQUEST_BYTES,
@@ -156,8 +155,7 @@ fn print_diagnostics(format: &str) {
         println!("  Active audience: {:?}", runtime::get_active_audience());
         println!("  Schema detail: {}", runtime::get_schema_detail());
         println!(
-            "  Limits: {} req/s, {} in-flight, {} workers, {} bytes request, {} bytes output",
-            runtime::MAX_REQUESTS_PER_SECOND,
+            "  Limits: {} in-flight, {} workers, {} bytes request, {} bytes output",
             runtime::MAX_IN_FLIGHT_REQUESTS,
             runtime::MAX_TOOL_WORKERS,
             runtime::MAX_REQUEST_BYTES,

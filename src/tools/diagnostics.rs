@@ -56,7 +56,6 @@ pub fn runtime_diagnostics(_args: &Value) -> ToolResponse {
             "active_audience": active_audience,
             "schema_detail": schema_detail,
             "limits": {
-                "max_requests_per_second": runtime::MAX_REQUESTS_PER_SECOND,
                 "max_in_flight_requests": runtime::MAX_IN_FLIGHT_REQUESTS,
                 "max_tool_workers": runtime::MAX_TOOL_WORKERS,
                 "max_request_bytes": runtime::MAX_REQUEST_BYTES,

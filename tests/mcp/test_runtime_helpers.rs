@@ -6,8 +6,8 @@
 use eggsact::agent::ToolAudience;
 use eggsact::mcp::runtime::{
     apply_cancellation, complete_request, new_active_requests, parse_audience, parse_schema_detail,
-    register_request, snapshot_metrics, MetricGuard, RateLimiter, RegisterRequestError,
-    RequestGuard, MAX_IN_FLIGHT_REQUESTS, MAX_REQUESTS_PER_SECOND, RUNTIME_METRICS,
+    register_request, snapshot_metrics, MetricGuard, RegisterRequestError, RequestGuard,
+    MAX_IN_FLIGHT_REQUESTS, RUNTIME_METRICS,
 };
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -177,34 +177,6 @@ async fn apply_cancellation_is_idempotent() {
     assert!(
         flag.load(Ordering::Relaxed),
         "idempotent cancel must leave flag set"
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Rate limiter
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn rate_limiter_allows_up_to_max_per_second() {
-    let mut rl = RateLimiter::new();
-    for i in 0..MAX_REQUESTS_PER_SECOND {
-        assert!(rl.check(), "request {i} should succeed within rate limit");
-    }
-    assert!(!rl.check(), "request after max must be rate-limited");
-}
-
-#[test]
-fn rate_limiter_resets_after_window() {
-    let mut rl = RateLimiter::new();
-    for _ in 0..MAX_REQUESTS_PER_SECOND {
-        rl.check();
-    }
-    assert!(!rl.check(), "rate-limited after burst");
-    // After 1.1s the sliding window should allow new requests
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-    assert!(
-        rl.check(),
-        "after 1.1s the rate limiter must accept new requests"
     );
 }
 

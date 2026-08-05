@@ -4,18 +4,18 @@ use crate::mcp::compat::CompatibilityMode;
 use crate::mcp::execution;
 use crate::mcp::machine_codes;
 use crate::mcp::protocol::{
-    already_initialized, invalid_request, json_rpc_error, method_not_found, not_initialized,
-    EggsactExtensions, ExperimentalCapabilities, InitializeParams, InitializeResult,
-    JsonRpcRequest, JsonRpcResponse, ServerCapabilities, ServerInfo, ToolsCapability,
+    already_initialized, invalid_request, json_rpc_error, json_rpc_error_with_data,
+    method_not_found, not_initialized, EggsactExtensions, ExperimentalCapabilities,
+    InitializeParams, InitializeResult, JsonRpcRequest, JsonRpcResponse, ServerCapabilities,
+    ServerInfo, ToolsCapability,
 };
 use crate::mcp::registry;
 use crate::mcp::response::{wrap_tool_response, ToolResponse};
 use crate::mcp::runtime::{
     apply_cancellation, complete_request, get_active_audience, get_active_profile,
     get_schema_detail, negotiate_protocol_version, new_active_requests, register_request,
-    MetricGuard, NegotiatedProtocol, RateLimiter, RegisterRequestError, SessionState,
-    MAX_REQUESTS_PER_SECOND, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS,
-    MCP_SERVER_NAME, RUNTIME_METRICS,
+    MetricGuard, NegotiatedProtocol, RegisterRequestError, SessionState, MAX_REQUEST_BYTES,
+    MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS, MCP_SERVER_NAME, RUNTIME_METRICS,
 };
 use serde_json::Value;
 use std::io::Write;
@@ -56,6 +56,110 @@ fn truncate_utf8_bytes(input: &str, max_bytes: usize, suffix: &str) -> String {
 fn truncate_id_display(id: &Value) -> String {
     let s = id.to_string();
     truncate_utf8_bytes(&s, 128, "...")
+}
+
+/// Result of reading one bounded line from the JSONL input.
+enum LimitedLine {
+    /// A complete line (without the trailing newline).
+    Line(String),
+    /// The line exceeded `MAX_REQUEST_BYTES`. Contains the number of bytes
+    /// observed before the limit was exceeded. The remainder of the line
+    /// (through the next newline) has been drained.
+    TooLarge { observed_at_least: usize },
+    /// End of input (clean EOF with no buffered data).
+    Eof,
+}
+
+/// Read one line from `reader` with a hard byte cap of `max_bytes`.
+///
+/// Uses `fill_buf`/`consume` to read incrementally without allocating the
+/// full line upfront. When the accumulated bytes exceed `max_bytes`, the
+/// rest of the line is drained through the next newline before returning.
+/// Handles both LF and CRLF line endings consistently.
+async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    max_bytes: usize,
+) -> LimitedLine {
+    use tokio::io::AsyncReadExt;
+
+    let mut buf = Vec::with_capacity(4096);
+    let mut total = 0usize;
+
+    loop {
+        let chunk = match reader.fill_buf().await {
+            Ok(chunk) => chunk,
+            Err(_) => {
+                if buf.is_empty() {
+                    return LimitedLine::Eof;
+                }
+                break;
+            }
+        };
+
+        if chunk.is_empty() {
+            if buf.is_empty() {
+                return LimitedLine::Eof;
+            }
+            break;
+        }
+
+        // Search for newline in this chunk
+        if let Some(pos) = chunk.iter().position(|&b| b == b'\n') {
+            // Found newline — but if it's beyond our byte limit, reject
+            if pos > max_bytes.saturating_sub(total) {
+                // Consume up to and including the newline, discarding
+                // this oversized line. The next read starts after it.
+                reader.consume(pos + 1);
+                return LimitedLine::TooLarge {
+                    observed_at_least: total + pos,
+                };
+            }
+            let consume_to = if pos > 0 && chunk[pos - 1] == b'\r' {
+                pos - 1
+            } else {
+                pos
+            };
+            let can_take = max_bytes.saturating_sub(total).min(consume_to);
+            buf.extend_from_slice(&chunk[..can_take]);
+            reader.consume(pos + 1);
+            return LimitedLine::Line(
+                String::from_utf8(buf)
+                    .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned()),
+            );
+        }
+
+        // No newline in this chunk — accumulate what we can
+        let can_take = max_bytes.saturating_sub(total).min(chunk.len());
+        buf.extend_from_slice(&chunk[..can_take]);
+        total += can_take;
+        let chunk_len = chunk.len();
+        // Consume exactly the bytes we read from this chunk
+        reader.consume(chunk_len);
+
+        // If we've hit the byte limit, drain the rest of the line
+        if total >= max_bytes {
+            let mut drain = [0u8; 4096];
+            loop {
+                match reader.read(&mut drain).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if drain[..n].contains(&b'\n') {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            return LimitedLine::TooLarge {
+                observed_at_least: total,
+            };
+        }
+    }
+
+    LimitedLine::Line(
+        String::from_utf8(buf)
+            .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned()),
+    )
 }
 
 fn write_json_line(value: &Value) {
@@ -561,10 +665,8 @@ async fn handle_request_async(
 
 pub async fn main() -> ! {
     let stdin = tokio::io::stdin();
-    let reader = BufReader::new(stdin);
-    let mut lines = reader.lines();
+    let mut reader = BufReader::new(stdin);
 
-    let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
     let tool_semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_TOOL_WORKERS));
     let active_requests = new_active_requests();
     let session_state = Arc::new(Mutex::new(SessionState::Uninitialized));
@@ -582,29 +684,27 @@ pub async fn main() -> ! {
     let mut join_set = tokio::task::JoinSet::new();
 
     loop {
-        let line = match lines.next_line().await {
-            Ok(Some(line)) => line,
-            Ok(None) | Err(_) => break,
+        let line = match read_bounded_line(&mut reader, MAX_REQUEST_BYTES).await {
+            LimitedLine::Line(line) => line,
+            LimitedLine::TooLarge { observed_at_least } => {
+                let _ = tx
+                    .send(json_rpc_error(
+                        -32700,
+                        format!(
+                            "Request exceeds maximum size: at least {} bytes received, {} bytes maximum",
+                            observed_at_least,
+                            MAX_REQUEST_BYTES
+                        ),
+                        None,
+                    ))
+                    .await;
+                continue;
+            }
+            LimitedLine::Eof => break,
         };
 
         let trimmed = line.trim();
         if trimmed.is_empty() {
-            continue;
-        }
-
-        // Request size limit
-        if trimmed.len() > MAX_REQUEST_BYTES {
-            let _ = tx
-                .send(json_rpc_error(
-                    -32700,
-                    format!(
-                        "Request exceeds maximum size: {} bytes received, {} bytes maximum",
-                        trimmed.len(),
-                        MAX_REQUEST_BYTES
-                    ),
-                    None,
-                ))
-                .await;
             continue;
         }
 
@@ -779,23 +879,6 @@ pub async fn main() -> ! {
             continue;
         }
 
-        // Rate limiting — applies only to requests, not notifications.
-        {
-            let mut limiter = rate_limiter.lock().await;
-            if !limiter.check() {
-                let _ = tx
-                    .send(invalid_request(
-                        format!(
-                            "Rate limit exceeded: max {} requests per second",
-                            MAX_REQUESTS_PER_SECOND
-                        ),
-                        request.id.clone(),
-                    ))
-                    .await;
-                continue;
-            }
-        }
-
         // Register the active request atomically under one lock acquisition.
         // This checks in-flight limits, duplicate IDs, and inserts the entry
         // in a single lock window — no separate contains_key/insert race.
@@ -825,9 +908,13 @@ pub async fn main() -> ! {
             }
             Err(RegisterRequestError::CapacityExceeded) => {
                 let _ = tx
-                    .send(json_rpc_error(
-                        -32600,
+                    .send(json_rpc_error_with_data(
+                        -32000,
                         "Too many in-flight requests",
+                        Some(serde_json::json!({
+                            "code": "RESOURCE_EXHAUSTED",
+                            "limit": crate::mcp::runtime::MAX_IN_FLIGHT_REQUESTS,
+                        })),
                         request.id.clone(),
                     ))
                     .await;
@@ -1197,5 +1284,131 @@ mod truncate_utf8_bytes_tests {
         let result = truncate_id_display(&long_unicode);
         // Should produce a bounded string, not panic
         assert!(result.len() < 200);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // read_bounded_line tests
+    // ═══════════════════════════════════════════════════════════════════════
+
+    #[tokio::test]
+    async fn bounded_line_short_lf() {
+        use super::*;
+        let data = b"hello world\n";
+        let mut cursor = std::io::Cursor::new(data);
+        let result = read_bounded_line(&mut cursor, 1000).await;
+        match result {
+            LimitedLine::Line(s) => assert_eq!(s, "hello world"),
+            _ => panic!("expected Line"),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_short_crlf() {
+        use super::*;
+        let data = b"hello world\r\n";
+        let mut cursor = std::io::Cursor::new(data);
+        let result = read_bounded_line(&mut cursor, 1000).await;
+        match result {
+            LimitedLine::Line(s) => assert_eq!(s, "hello world"),
+            _ => panic!("expected Line"),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_exactly_max_bytes() {
+        use super::*;
+        let payload = "x".repeat(100);
+        let data = format!("{}\n", payload);
+        let mut cursor = std::io::Cursor::new(data.as_bytes());
+        let result = read_bounded_line(&mut cursor, 100).await;
+        match result {
+            LimitedLine::Line(s) => assert_eq!(s, payload),
+            _ => panic!("expected Line for exactly max_bytes"),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_one_over_max_rejected() {
+        use super::*;
+        let payload = "x".repeat(101);
+        let data = format!("{}\n", payload);
+        let mut cursor = std::io::Cursor::new(data.as_bytes());
+        let result = read_bounded_line(&mut cursor, 100).await;
+        match result {
+            LimitedLine::TooLarge { observed_at_least } => {
+                assert!(observed_at_least >= 100);
+            }
+            _ => panic!("expected TooLarge for limit+1"),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_unterminated_large_input() {
+        use super::*;
+        // 5 MB of data with no newline — should NOT retain a 5 MB string
+        let payload = "x".repeat(5 * 1024 * 1024);
+        let mut cursor = std::io::Cursor::new(payload.as_bytes());
+        let result = read_bounded_line(&mut cursor, 1_000_000).await;
+        match result {
+            LimitedLine::TooLarge { observed_at_least } => {
+                assert!(observed_at_least >= 1_000_000);
+            }
+            _ => panic!("expected TooLarge for multi-MB unterminated input"),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_oversized_then_valid() {
+        use super::*;
+        // Oversized line followed by a valid short line
+        let big = "a".repeat(200);
+        let data = format!("{}\nshort\n", big);
+        let mut cursor = std::io::Cursor::new(data.as_bytes());
+
+        // First read: oversized
+        let r1 = read_bounded_line(&mut cursor, 100).await;
+        assert!(matches!(r1, LimitedLine::TooLarge { .. }));
+
+        // Second read: valid short line
+        let r2 = read_bounded_line(&mut cursor, 100).await;
+        match r2 {
+            LimitedLine::Line(s) => assert_eq!(s, "short"),
+            _ => panic!("expected Line for second request"),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_eof_after_final_non_newline() {
+        use super::*;
+        // Final line without newline (EOF at end of data)
+        let data = b"no-newline-at-end";
+        let mut cursor = std::io::Cursor::new(data);
+        let result = read_bounded_line(&mut cursor, 1000).await;
+        match result {
+            LimitedLine::Line(s) => assert_eq!(s, "no-newline-at-end"),
+            _ => panic!("expected Line for EOF-terminated final line"),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_empty_lines_ignored() {
+        use super::*;
+        // Empty line (just newline) should return an empty string
+        let data = b"\n";
+        let mut cursor = std::io::Cursor::new(data);
+        let result = read_bounded_line(&mut cursor, 1000).await;
+        match result {
+            LimitedLine::Line(s) => assert_eq!(s, ""),
+            _ => panic!("expected Line for empty line"),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_clean_eof() {
+        use super::*;
+        let data = b"";
+        let mut cursor = std::io::Cursor::new(data);
+        let result = read_bounded_line(&mut cursor, 1000).await;
+        assert!(matches!(result, LimitedLine::Eof));
     }
 }

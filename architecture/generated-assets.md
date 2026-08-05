@@ -240,7 +240,7 @@ eggsact --diagnostics --format json
 - Version, tool count, profile summary
 - Budget tier distribution (cheap/moderate/heavy)
 - Active profile, audience, schema detail
-- Runtime limits (rate limit, in-flight, workers, request/output bytes)
+- Runtime limits (in-flight, workers, request/output bytes)
 - Environment variable names (no values)
 - Generated data existence checks (`confusables_generated.rs`, `tool-cards.md`)
 - Parity availability (`../eggcalc` exists)

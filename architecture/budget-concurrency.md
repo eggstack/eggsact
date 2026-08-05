@@ -183,14 +183,13 @@ The MCP stdio server reads requests serially but dispatches each as a tokio task
 |----------|-------|---------|
 | `MAX_IN_FLIGHT_REQUESTS` | 32 | Maximum concurrent request tasks |
 | `MAX_TOOL_WORKERS` | 16 | Semaphore for concurrent blocking tool executions |
-| `MAX_REQUESTS_PER_SECOND` | 10 | Token-bucket rate limiter on incoming requests |
-| `MAX_REQUEST_BYTES` | 1,000,000 | Maximum request size (checked pre-dispatch) |
+| `MAX_REQUEST_BYTES` | 1,000,000 | Maximum request size (checked during bounded reading) |
 | `MAX_OUTPUT_BYTES` | 1,000,000 | Maximum response size (post-truncation) |
 
 ### Request Flow
 
 ```
-stdin → JSON-RPC parse → rate limit check → in-flight limit check
+stdin → bounded line read → JSON-RPC parse → in-flight limit check
   → request_id registration (duplicate detection)
   → spawn tokio task
     → schema validation
@@ -246,7 +245,7 @@ Tools frequently exercised under heavy parallel test load (`math_eval`, `text_di
 
 | Check | Where | Limit |
 |-------|-------|-------|
-| Request body size | `server.rs` (pre-parse) | `MAX_REQUEST_BYTES` (1 MB) |
+| Request body size | `server.rs` (bounded line reader) | `MAX_REQUEST_BYTES` (1 MB) |
 | Request ID length | `runtime.rs` | `MAX_REQUEST_ID_LENGTH` (1024 chars) |
 | Input size | `schema_validation.rs` (pre-dispatch) | `budget.max_input_bytes` (default 1 MB) |
 | Output size | `response.rs` (post-execution) | `budget.max_output_bytes` (default 1–2 MB) |

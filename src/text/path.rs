@@ -329,15 +329,33 @@ pub fn path_normalize(
         "\\"
     };
 
-    let mut components: Vec<&str> = vec![];
-    let mut is_unc_track =
-        actual_platform == "windows" && (path.starts_with("\\\\") || path.starts_with("//"));
+    // Detect UNC prefix structurally: \\host\share or //host/share
+    // The prefix (host + share) is protected from dot-segment collapse.
+    let (is_unc, unc_protected_count): (bool, usize) = if actual_platform == "windows" {
+        if path.starts_with("\\\\") || path.starts_with("//") {
+            let parts: Vec<&str> = path.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
+            if parts.len() >= 2 {
+                (true, 2)
+            } else if parts.len() == 1 {
+                (true, 1)
+            } else {
+                (false, 0)
+            }
+        } else {
+            (false, 0)
+        }
+    } else {
+        (false, 0)
+    };
 
     let split_seps: &[char] = if actual_platform == "windows" {
         &['/', '\\']
     } else {
         &['/']
     };
+
+    let mut components: Vec<&str> = vec![];
+    let mut prefix_components: Vec<&str> = vec![];
 
     for part in path.split(split_seps) {
         if part.is_empty() {
@@ -356,34 +374,29 @@ pub fn path_normalize(
             has_dot_dot = true;
             if collapse_dot_segments {
                 warnings.push("Collapsing dot-dot segment".to_string());
-                if is_unc_track {
-                    if !components.is_empty()
-                        && components.last() != Some(&"")
-                        && components.last() != Some(&"..")
-                    {
-                        if components.last() != Some(&"server") || components.len() == 1 {
-                            components.pop();
-                        } else {
-                            components.push("..");
-                        }
-                    } else {
-                        components.push("..");
-                    }
-                } else if !components.is_empty() && components.last() != Some(&"..") {
+                // Pop the last collapsible component if available.
+                // For UNC paths, prefix components (host/share) are already
+                // separated into prefix_components and never appear in
+                // components, so no special sentinel check is needed.
+                // At the UNC share root (empty components), .. is clamped:
+                // the share boundary cannot be escaped via normalization.
+                // Scope checking (path_scope_check) detects the escape.
+                if !components.is_empty() && components.last() != Some(&"..") {
                     components.pop();
-                } else {
-                    components.push("..");
                 }
+                // When components is empty at UNC root, .. is silently
+                // clamped — not pushed to components.
             } else {
                 components.push(part);
             }
             continue;
-        } else if is_unc_track && (part == "server" || part == "share") {
-            if components.len() >= 2 {
-                is_unc_track = false;
-            }
-            components.push(part);
-        } else if !part.is_empty() && part != "." && part != ".." {
+        }
+
+        // For UNC paths, the first two non-empty parts after the
+        // leading separators are host and share — they are protected.
+        if is_unc && prefix_components.len() < unc_protected_count {
+            prefix_components.push(part);
+        } else {
             components.push(part);
         }
     }
@@ -392,6 +405,7 @@ pub fn path_normalize(
         components.push("");
     }
 
+    // Build the normalized result: prefix + collapsible components
     let mut normalized = if components.is_empty() {
         String::new()
     } else {
@@ -401,8 +415,23 @@ pub fn path_normalize(
     if actual_platform == "posix" && path.starts_with('/') && !normalized.starts_with('/') {
         normalized = format!("/{}", normalized);
     } else if actual_platform == "windows" {
-        if is_unc_track {
-            normalized = format!("\\\\{}", normalized);
+        if is_unc {
+            // Rebuild UNC root from structural prefix, not from component text
+            let host = prefix_components.first().unwrap_or(&"");
+            let share = prefix_components.get(1).unwrap_or(&"");
+            if prefix_components.len() >= 2 {
+                if normalized.is_empty() {
+                    normalized = format!("\\\\{}\\{}", host, share);
+                } else {
+                    normalized = format!("\\\\{}\\{}\\{}", host, share, normalized);
+                }
+            } else if !prefix_components.is_empty() {
+                // Incomplete UNC (host only)
+                let prefix_str = prefix_components.join(sep);
+                normalized = format!("\\\\{}", prefix_str);
+            } else {
+                normalized = format!("\\\\{}", normalized);
+            }
         } else if let Some(first) = path.chars().next() {
             if first.is_ascii_alphabetic() {
                 let second_byte = first.len_utf8();
@@ -420,7 +449,7 @@ pub fn path_normalize(
     if normalized.is_empty() {
         if actual_platform == "posix" && path.starts_with('/') {
             normalized = "/".to_string();
-        } else if actual_platform == "windows" && is_unc_track {
+        } else if actual_platform == "windows" && is_unc {
             normalized = "\\\\".to_string();
         }
     }
@@ -442,7 +471,7 @@ pub fn path_normalize(
         } else {
             false
         };
-        has_drive_root || is_unc_track
+        has_drive_root || is_unc
     };
 
     if has_dot && !collapse_dot_segments {
@@ -595,11 +624,20 @@ pub fn path_scope_check(
         absolute_target = abs_norm.normalized;
     }
 
+    // Resolve .. segments in absolute_target to compute the effective path.
+    // This correctly determines whether a path with .. escapes the root.
+    let sep_char = if actual_platform == "windows" {
+        '\\'
+    } else {
+        '/'
+    };
+    let resolved = resolve_dot_segments(&absolute_target, actual_platform, sep_char);
+
     let mut root_cmp = root_normalized.clone();
-    let mut target_cmp = absolute_target.clone();
+    let mut resolved_cmp = resolved.clone();
     if !case_sensitive {
         root_cmp = root_cmp.to_lowercase();
-        target_cmp = target_cmp.to_lowercase();
+        resolved_cmp = resolved_cmp.to_lowercase();
     }
 
     let root_prefix = if actual_platform == "posix" {
@@ -608,13 +646,108 @@ pub fn path_scope_check(
         format!("{}\\", root_cmp.trim_end_matches('\\'))
     };
 
-    let inside_root = target_cmp.starts_with(&root_prefix) || target_cmp == root_cmp;
-
     let escapes_via_dotdot = target.split(['/', '\\']).any(|seg| seg == "..");
+
+    // For UNC paths, detect whether .. escapes above the share boundary.
+    // path_normalize silently clamps .. at the share root, so we must
+    // detect the escape from the raw target before normalization.
+    let unc_escape_above_share = if actual_platform == "windows" {
+        let target_for_check = if !target_is_abs && !absolute_target.is_empty() {
+            absolute_target.as_str()
+        } else {
+            target_pre.as_str()
+        };
+        let is_unc_target =
+            target_for_check.starts_with("\\\\") || target_for_check.starts_with("//");
+        if is_unc_target && escapes_via_dotdot {
+            let split: Vec<&str> = target_for_check
+                .split(['/', '\\'])
+                .filter(|s| !s.is_empty())
+                .collect();
+            // Track depth relative to the share root.
+            // host and share are prefix components; depth starts at 0
+            // for the share. Each component after share adds 1, each
+            // .. subtracts 1. If depth < 0, we escaped above share.
+            if split.len() >= 2 {
+                let mut depth: i32 = 0;
+                let mut escaped = false;
+                for seg in &split[2..] {
+                    if *seg == ".." {
+                        depth -= 1;
+                        if depth < 0 {
+                            escaped = true;
+                            break;
+                        }
+                    } else if *seg != "." {
+                        depth += 1;
+                    }
+                }
+                escaped
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    // For POSIX paths, detect whether .. escapes above the root.
+    // path_normalize collapses .. silently, so we detect the escape by
+    // analyzing the raw target's component structure before normalization.
+    // For relative targets, we combine root + target and check if ..
+    // depth goes below zero.
+    let posix_escape_above_root = if actual_platform == "posix" && escapes_via_dotdot {
+        // Resolve the raw target against root components.
+        // For relative paths, root components are the base — popping
+        // below them means escape.
+        let raw_parts: Vec<&str> = target_pre.split('/').filter(|s| !s.is_empty()).collect();
+        let root_components: Vec<&str> = if target_is_abs {
+            Vec::new()
+        } else {
+            root_pre.split('/').filter(|s| !s.is_empty()).collect()
+        };
+        let root_len = root_components.len();
+        let mut resolved = root_components;
+        let mut escaped = false;
+        for seg in &raw_parts {
+            if *seg == ".." {
+                if resolved.len() > root_len {
+                    resolved.pop();
+                } else if !resolved.is_empty() {
+                    // Popping a root component = escape
+                    resolved.pop();
+                    escaped = true;
+                    break;
+                } else {
+                    // Stack empty, can't pop = escape
+                    escaped = true;
+                    break;
+                }
+            } else if *seg != "." {
+                resolved.push(seg);
+            }
+        }
+        escaped
+    } else {
+        false
+    };
+
+    let mut inside_root = resolved_cmp.starts_with(&root_prefix) || resolved_cmp == root_cmp;
+
+    // Reject escapes: POSIX .. above root, UNC share boundary escape,
+    // or resolved path landing exactly on root via .. (clamped escape).
+    if (escapes_via_dotdot && resolved_cmp == root_cmp)
+        || unc_escape_above_share
+        || posix_escape_above_root
+    {
+        inside_root = false;
+    }
 
     let mut relative_path = String::new();
     if inside_root {
-        relative_path = target_cmp
+        relative_path = resolved_cmp
             .get(root_prefix.len()..)
             .unwrap_or("")
             .to_string();
@@ -642,4 +775,50 @@ pub fn path_scope_check(
         absolute_target,
         findings,
     }
+}
+
+/// Resolve `.` and `..` segments in a path, producing the effective path
+/// without traversal segments. Does not touch UNC prefix components.
+fn resolve_dot_segments(path: &str, platform: &str, sep: char) -> String {
+    let parts: Vec<&str> = path.split(sep).collect();
+    let mut resolved: Vec<&str> = Vec::new();
+
+    for part in &parts {
+        if *part == "." || (*part).is_empty() {
+            continue;
+        } else if *part == ".." {
+            // For UNC paths starting with \\, the first two non-empty
+            // parts are host and share — never pop them.
+            let is_unc =
+                platform == "windows" && (path.starts_with("\\\\") || path.starts_with("//"));
+            let protected = if is_unc { 2 } else { 0 };
+
+            if resolved.len() > protected {
+                resolved.pop();
+            }
+            // At the protected boundary, .. is silently absorbed
+        } else {
+            resolved.push(part);
+        }
+    }
+
+    let mut result = resolved.join(&sep.to_string());
+    if platform == "posix" && path.starts_with('/') {
+        result = format!("/{}", result);
+    } else if platform == "windows" && (path.starts_with("\\\\") || path.starts_with("//")) {
+        // Rebuild UNC prefix
+        if resolved.len() >= 2 {
+            result = format!("\\\\{}\\{}", resolved[0], resolved[1]);
+            if resolved.len() > 2 {
+                result.push('\\');
+                result.push_str(&resolved[2..].join(&sep.to_string()));
+            }
+        } else if resolved.len() == 1 {
+            result = format!("\\\\{}", resolved[0]);
+        } else {
+            result = "\\\\".to_string();
+        }
+    }
+
+    result
 }

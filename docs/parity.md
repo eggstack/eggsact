@@ -94,7 +94,7 @@ The following areas have been brought to full parity:
 - **`tools/list` response**: Serialized fields match Python (`category`, `cost`, `deprecated`, `description`, `inputSchema`, `llm_exposure`, `name`, `outputSchema`, `tags`, `tier`)
 - **Error codes**: Same JSON-RPC error codes (-32600, -32601, -32602, -32603, -32700, -32000)
 - **Error sanitization**: Same regex-based PII/path redaction
-- **Rate limiting**: 10 req/s sliding window
+- **Concurrency limits**: In-flight (32), tool workers (16), byte limits (1 MB)
 - **Timeout handling**: Tool timeouts are budget-derived from `ToolSpec.cost` (`Cheap`/`Moderate`/`Heavy`), not a fixed 30s.
 - **JSON parser error messages**: serde_json errors are mapped to Python `json` module equivalents
 - **TOML parser error messages**: toml_edit errors are mapped to Python `tomllib` equivalents

@@ -1,10 +1,9 @@
 use crate::agent::ToolAudience;
 use crate::mcp::registry;
 use serde_json::Value;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
-use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
@@ -42,8 +41,6 @@ impl Drop for RequestGuard {
     }
 }
 
-#[doc(hidden)]
-pub const MAX_REQUESTS_PER_SECOND: u32 = 10;
 #[doc(hidden)]
 pub const MAX_IN_FLIGHT_REQUESTS: usize = 32;
 
@@ -456,41 +453,6 @@ pub fn get_active_audience() -> ToolAudience {
 
 pub fn truncate_2000(s: &str) -> String {
     s.chars().take(2000).collect()
-}
-
-pub struct RateLimiter {
-    timestamps: VecDeque<Instant>,
-}
-
-impl Default for RateLimiter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RateLimiter {
-    pub fn new() -> Self {
-        Self {
-            timestamps: VecDeque::new(),
-        }
-    }
-
-    pub fn check(&mut self) -> bool {
-        let now = Instant::now();
-        while let Some(&front) = self.timestamps.front() {
-            if now.duration_since(front) > Duration::from_secs(1) {
-                self.timestamps.pop_front();
-            } else {
-                break;
-            }
-        }
-        if self.timestamps.len() < MAX_REQUESTS_PER_SECOND as usize {
-            self.timestamps.push_back(now);
-            true
-        } else {
-            false
-        }
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

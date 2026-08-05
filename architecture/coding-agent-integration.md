@@ -29,7 +29,6 @@ Starts a JSON-RPC 2.0 server over stdin/stdout. The agent sends `tools/list` and
 | Protocol | JSON-RPC 2.0 |
 | MCP version | `2025-11-25` (preferred), `2024-11-05` (legacy) |
 | Max in-flight requests | 32 |
-| Rate limit | 10 req/s |
 | Tool concurrency | 16 workers |
 
 **Key caveats:**
@@ -218,7 +217,6 @@ Key concurrency constants:
 | Constant | Value |
 |----------|-------|
 | `MAX_IN_FLIGHT_REQUESTS` | 32 |
-| `MAX_REQUESTS_PER_SECOND` | 10 |
 | `MAX_TOOL_WORKERS` | 16 |
 
 Test helpers that send multiple requests in one session must correlate by id. The canonical helper `mcp_request_multi()` in `tests/mcp/test_comprehensive_parity.rs` does this and reorders responses to match request slice order.

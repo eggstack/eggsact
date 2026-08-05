@@ -337,12 +337,11 @@ preventing interleaved output from concurrent handlers.
 **Concurrency limits:**
 
 - `MAX_IN_FLIGHT_REQUESTS` (32): maximum simultaneously active request tasks.
-  Exceeding this limit returns a JSON-RPC error (-32600 "Too many in-flight
-  requests").
+  Exceeding this limit returns a JSON-RPC error (-32000 with
+  `RESOURCE_EXHAUSTED` data code).
 - `MAX_TOOL_WORKERS` (16): semaphore permits for concurrent blocking tool
   executions *within* tasks. This is a back-pressure mechanism for CPU-bound
   tools, not a concurrency driver.
-- `MAX_REQUESTS_PER_SECOND` (10): rate limiter on incoming requests.
 
 **Worker containment:** Semaphore permits are acquired via `acquire_owned()`
 and moved into `spawn_blocking` closures. The owned permit is held until the
@@ -354,14 +353,16 @@ threads. The outer tokio semaphore provides the sole concurrency bound.
 **Read loop stages:** The read loop processes each incoming line through seven
 stages in order:
 
-1. Frame-size check (rejects lines exceeding `MAX_REQUEST_BYTES`)
+1. Bounded frame-size check (rejects lines exceeding `MAX_REQUEST_BYTES`
+   during incremental reading — the server never allocates the full line
+   before checking the limit)
 2. JSON parse
 3. Top-level validation (must be an object)
 4. Extract method
 5. Validate ID type (must be string, integer, or absent — null is rejected)
 6. Construct request (or handle notifications)
-7. For notifications: bypass rate limit, dispatch immediately
-8. For requests: reject null IDs → rate limit → in-flight check → duplicate ID check → register + dispatch
+7. For notifications: dispatch immediately
+8. For requests: reject null IDs → in-flight check → duplicate ID check → register + dispatch
 
 **Cancellation model:** Each request gets an `Arc<AtomicBool>` cancel flag at
 dispatch time. When a `notifications/cancelled` notification arrives for an
@@ -373,9 +374,8 @@ cancellation and timeout share the same signal. The handler can check
 
 `apply_cancellation` is `async` — it uses `.lock().await` on the
 active-request map instead of `.try_lock()`, preventing cancellation loss under
-lock contention. Cancellation notifications bypass the ordinary request rate
-limiter (`MAX_REQUESTS_PER_SECOND`) because they are notifications, not
-requests.
+lock contention. Cancellation notifications are dispatched immediately without
+any rate or capacity checks.
 
 **Duplicate-ID policy:** Non-null duplicate request IDs are rejected atomically
 by `register_request()` under a single lock acquisition — in-flight limit check,
@@ -586,15 +586,19 @@ Tool handler functions retain the signature `fn(&Value) -> ToolResponse` for com
 
 These are intentionally global because they represent immutable configuration or startup-time state, not per-request mutable state. The legacy mutable globals (`MEMORY_REGISTERS`, `USER_VARIABLES`, `PRNG_STATE`, `GAUSS_SPARE`) are retained for backward compatibility but are bypassed by context-aware APIs.
 
-## Rate Limiting
+## Concurrency Limits
 
 Defined in `src/mcp/runtime.rs`:
-- `MAX_REQUESTS_PER_SECOND`: 10
 - `MAX_IN_FLIGHT_REQUESTS`: 32
 - `MAX_TOOL_WORKERS`: 16
 - `MAX_REQUEST_ID_LENGTH`: 1024
 - `MAX_REQUEST_BYTES`: 1,000,000
 - `MAX_OUTPUT_BYTES`: 1,000,000
+
+No fixed request-rate limiter is applied. The in-flight limit, tool semaphore,
+and byte limits are sufficient for the local stdio server. Capacity pressure
+returns a JSON-RPC error in the -32000 range with `RESOURCE_EXHAUSTED` data,
+not -32600.
 
 Tool timeouts are now **budget-derived** rather than using a fixed `MAX_TOOL_TIMEOUT_SECONDS`. Each `ToolSpec` declares a `cost` field (`ToolCost::Cheap`, `Moderate`, `Heavy`), which maps to a `ToolBudget` with per-tool limits including `max_elapsed_ms`. The `budget_for_tool()` function in `src/mcp/budget.rs` resolves the effective budget, and `tools/call` uses `budget.max_elapsed_ms` as the timeout instead of the previous fixed 30s constant.
 

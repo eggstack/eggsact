@@ -1217,7 +1217,7 @@ Return structured runtime diagnostics including active profile, tool counts, bud
 
 **`generated_data` object (nested):** `{"confusables_generated_rs": <boolean>, "tool_cards_md": <boolean>}`
 
-The `runtime` object reports the current runtime configuration: the active profile, audience, schema detail level, and server-side rate/concurrency limits. The `limits` sub-object exposes the values of `MAX_REQUESTS_PER_SECOND`, `MAX_IN_FLIGHT_REQUESTS`, `MAX_TOOL_WORKERS`, `MAX_REQUEST_BYTES`, and `MAX_OUTPUT_BYTES`. The `generated_data` sub-object reports whether key generated asset files exist on disk.
+The `runtime` object reports the current runtime configuration: the active profile, audience, schema detail level, and server-side concurrency limits. The `limits` sub-object exposes the values of `MAX_IN_FLIGHT_REQUESTS`, `MAX_TOOL_WORKERS`, `MAX_REQUEST_BYTES`, and `MAX_OUTPUT_BYTES`. The `generated_data` sub-object reports whether key generated asset files exist on disk.
 
 ### profile_inspect
 

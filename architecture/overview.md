@@ -80,7 +80,7 @@ Each major component has a dedicated architecture doc. The table below serves as
 | Component | Doc | What It Covers | Key Files |
 |-----------|-----|----------------|-----------|
 | **Calculator Core** | [calculator.md](calculator.md) | NL normalization pipeline (31-step), AST evaluator (recursive descent, 8 precedence levels), 150+ unit definitions, 50+ physical/math constants, EvalContext for mutable per-call state, big-integer factorial/perm/comb, sentinel-based return protocol | `src/calc/{normalize,evaluator,units,context}.rs` |
-| **MCP Server** | [mcp-server.md](mcp-server.md) | JSON-RPC 2.0 over stdio, tokio concurrent dispatch via JoinSet, protocol negotiation, request lifecycle, schema validation (JSON Schema subset), rate limiting, cancellation model, python-compatible JSON serialization | `src/mcp/{server,protocol,response,compat,machine_codes}.rs` |
+| **MCP Server** | [mcp-server.md](mcp-server.md) | JSON-RPC 2.0 over stdio, tokio concurrent dispatch via JoinSet, protocol negotiation, request lifecycle, schema validation (JSON Schema subset), bounded line allocation, cancellation model, python-compatible JSON serialization | `src/mcp/{server,protocol,response,compat,machine_codes}.rs` |
 | **Registry & Profiles** | [registry-profiles.md](registry-profiles.md) | `ToolSpec` single source of truth, `ALL_TOOLS_VEC` aggregation, 11 named profiles, `ToolAudience` (Model/Harness/Debug), `ToolExposure` levels, route-critical tools, schema compaction, Levenshtein suggestions | `src/mcp/registry/{types,all_tools,listing}.rs`, `src/mcp/specs/` |
 | **Budget & Concurrency** | [budget-concurrency.md](budget-concurrency.md) | `ToolBudget` (3 tiers), `BudgetContext` with cooperative cancellation, `SyncExecutionPool` (8 workers, 32-slot queue), `HandlerPhase` state machine, runtime metrics, timeout lifecycle, thread-local bridges | `src/mcp/{budget,execution,sync_pool,runtime}.rs` |
 | **Machine Codes** | [machine-codes.md](machine-codes.md) | ~145 machine-readable response code constants (UPPER_SNAKE_CASE), severity/disposition/verdict constants, `finding()` helper functions for constructing structured findings, route-critical tool contract | `src/mcp/machine_codes.rs` |
@@ -152,7 +152,7 @@ The MCP stdio server reads requests serially but dispatches each as a tokio task
 |----------|-------|---------|
 | `MAX_IN_FLIGHT_REQUESTS` | 32 | Maximum concurrent request tasks |
 | `MAX_TOOL_WORKERS` | 16 | Semaphore for concurrent blocking tool executions |
-| `MAX_REQUESTS_PER_SECOND` | 10 | Rate limiter on incoming requests |
+| `MAX_IN_FLIGHT_REQUESTS` | 32 | Maximum concurrent request tasks |
 | `MAX_REQUEST_BYTES` | 1,000,000 | Maximum request size |
 | `MAX_OUTPUT_BYTES` | 1,000,000 | Maximum response size |
 
