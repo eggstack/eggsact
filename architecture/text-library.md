@@ -579,7 +579,7 @@ Static confusables map loaded from generated data at startup via `LazyLock`:
 pub static CONFUSABLES: LazyLock<HashMap<&'static str, &'static str>>
 ```
 
-Source data: `src/text/confusables_generated.rs` (auto-generated from unicode.org confusables.txt by `scripts/generate_confusables.py`). Contains 1,400+ entries mapping Unicode codepoints to their confusable equivalents.
+Source data: `src/text/confusables_generated.rs` (auto-generated from unicode.org confusables.txt by `scripts/generate_confusables.py`). Contains 6,565 entries mapping Unicode codepoints to their confusable equivalents. Pinned to Unicode Security version 17.0.0 with SHA-256 checksum verification.
 
 | Function | Description |
 |----------|-------------|

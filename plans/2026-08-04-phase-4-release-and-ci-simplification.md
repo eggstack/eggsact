@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** planned
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Roadmap:** `plans/2026-08-04-bounded-correctness-simplification-roadmap.md`
@@ -496,17 +496,15 @@ Workflow syntax should be reviewed through GitHub's normal Actions parsing after
 
 # Completion record
 
-Fill once when implementation lands:
-
-- **Implementation commit(s):** pending
-- **Canonical release command:** pending
-- **`release.sh` disposition:** pending
-- **`verify-eggsact` disposition:** pending
-- **`build.sh` disposition:** pending
-- **Diagnostics changes:** pending
-- **Ordinary CI final shape:** pending
-- **Maintenance cadence:** pending
-- **Canonical release-check result:** pending
-- **Worktree cleanliness result:** pending
-- **Documentation updated:** pending
-- **Final phase disposition:** pending
+- **Implementation commit(s):** `63c7a94` (release/CI simplification)
+- **Canonical release command:** `scripts/release-check.sh` — sole canonical full local release gate
+- **`release.sh` disposition:** deleted
+- **`verify-eggsact` disposition:** deleted
+- **`build.sh` disposition:** deleted
+- **Diagnostics changes:** removed source-tree-relative file existence checks; installed binaries report stable runtime/package facts only
+- **Ordinary CI final shape:** single Linux correctness job (fmt, clippy, tests, doc-tests, generate-docs check)
+- **Maintenance cadence:** Windows/macOS compile-checks and MSRV/dependency/parity/fuzz checks in scheduled/manual `maintenance.yml`
+- **Canonical release-check result:** passes from clean worktree
+- **Worktree cleanliness result:** script requires clean worktree, exits non-zero otherwise
+- **Documentation updated:** AGENTS.md, CI workflows, scripts/release-check.sh
+- **Final phase disposition:** complete

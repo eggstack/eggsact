@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** planned
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Roadmap:** `plans/2026-08-04-bounded-correctness-simplification-roadmap.md`
@@ -448,16 +448,15 @@ Run existing path fuzz targets manually only if the path parser changes substant
 
 # Completion record
 
-Fill once when implementation lands:
-
-- **Implementation commit(s):** pending
-- **Windows prefix design:** pending
-- **UNC escape disposition:** pending
-- **Bounded reader design:** pending
-- **Truncation edge behavior:** pending
-- **Rate limiter disposition:** pending
-- **Resource error code(s):** pending
-- **Targeted tests:** pending
-- **Ordinary verification:** pending
-- **Deferred findings:** none expected
-- **Final phase disposition:** pending
+- **Implementation commit(s):** `76ec421` (path/wire corrections — UNC, bounded reader, truncation, rate-limit); `a3f78e3` (companion corrective — `read_bounded_line()` rewrite, Windows drive-relative `WindowsPrefix` classifier)
+- **Windows prefix design:** private `WindowsPrefix` enum with `_classify_windows_prefix()` classifier; used in `path_analyze` (absolute check + warning) and `path_scope_check` (conservative rejection of drive-relative)
+- **UNC escape disposition:** UNC host/share prefixes are structural position-only; dot-segment collapse cannot pop above share root
+- **Bounded reader design:** `read_bounded_line()` uses only `fill_buf()`/`consume()`; line-length tracking via `payload_total` + `tentative` counters; CRLF detection across chunks via `last_byte` state
+- **Truncation edge behavior:** `max_findings = 0` reserves no slot; `max_findings = 1` shows only the notice; omission count is exact
+- **Rate limiter disposition:** fixed 10 req/s limiter removed; bounded in-flight (32) and worker (16) limits retained
+- **Resource error code(s):** `RESOURCE_EXHAUSTED` (-32004) for rate/capacity, distinct from `-32600`
+- **Targeted tests:** 9 bounded-reader tests (buffered_cursor helpers, exactly-cap, CRLF split, oversized-then-valid), 11 path tests (WS3-1 through WS3-11), UNC share-root tests — all pass
+- **Ordinary verification:** fmt, clippy, 3560+ tests, doc tests, generate-docs check all pass
+- **Documentation updated:** AGENTS.md, architecture/budget-concurrency.md, architecture/text-library.md
+- **Deferred findings:** none
+- **Final phase disposition:** complete

@@ -387,7 +387,7 @@ If a test-thread bound is adopted, run the exact final ordinary command as well.
 
 # Completion record
 
-- **Implementation commit(s):** pending (this session)
+- **Implementation commit(s):** `17878d5` (budget unification, load-tolerant override removal, test-thread bound)
 - **Masked failure classification:** Tokio blocking-pool starvation — 11 subprocess MCP tests timed out under full parallel load; all pass with `--test-threads=4`
 - **Production budget path:** `budget_for_tool(name, spec.cost)` used directly in both MCP (`server.rs`) and in-process (`agent/mod.rs`) dispatch
 - **Test isolation changes:** sync_pool tests already use local pools/gates; no additional isolation needed

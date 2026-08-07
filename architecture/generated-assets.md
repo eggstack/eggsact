@@ -122,8 +122,10 @@ python3 scripts/generate_confusables.py
 The script:
 
 1. Fetches `confusables.txt` from `https://www.unicode.org/Public/security/latest/confusables.txt`
-2. Parses hex code point mappings (source → substitution)
-3. Writes two files:
+2. Verifies downloaded bytes against a pinned SHA-256 checksum
+3. Verifies the file header reports the pinned Unicode Security version
+4. Parses hex code point mappings (source → substitution)
+5. Writes two files:
    - `src/text/confusables_generated.rs` — sorted static table of `(u32, &str)` tuples (included at compile time)
    - `data/confusables.rs` — standalone reference with same static table
 

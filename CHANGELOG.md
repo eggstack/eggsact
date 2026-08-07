@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tool) no longer reports source-tree-relative file existence checks
   (`confusables_generated.rs`, `tool-cards.md`, `../eggcalc`) or development
   command strings. Installed binaries report stable runtime/package facts only.
+- **Confusables generator pinned**: `scripts/generate_confusables.py` now pins
+  the expected Unicode Security version (17.0.0) and SHA-256 checksum as
+  constants. Downloaded bytes are checksum-validated and the file header version
+  is verified before any output is written. A mismatch fails loudly with exit
+  code 1, leaving existing generated files untouched. Upgrading Unicode requires
+  an intentional source edit to the pinned constants.
 
 ### Changed
 - **Confusables representation** (`src/text/confusables.rs`): Replaced runtime

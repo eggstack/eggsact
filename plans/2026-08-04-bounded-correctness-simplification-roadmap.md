@@ -8,6 +8,8 @@
 - **Planning baseline:** `48159ec4b829561f8569a7d130488ddeefb97a1c`
 - **Scope:** close the current soundness and correctness findings, remove test-driven production behavior, repair release/verification inconsistencies, and reduce footprint only where measured evidence supports a simple change
 - **Primary objective:** preserve eggsact's existing deterministic utility scope while making its implementation safer, smaller, and easier to maintain
+- **Implementation range:** `08c419d` through `a3f78e3` (phases 1–5 plus August 7 corrective follow-up)
+- **Closure:** all five phase records reconciled; companion corrective plans (`2026-08-07-corrective-runtime-soundness-and-boundaries.md`, `2026-08-07-reproducibility-and-closure-correction.md`) completed
 - **Release policy:** crates.io publication remains a direct manual maintainer action; this roadmap does not publish, tag, or determine release cadence
 
 ## Purpose

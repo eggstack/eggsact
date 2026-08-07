@@ -457,7 +457,7 @@ If implementation uncovers a new issue unrelated to the listed acceptance criter
 
 Fill once implementation lands:
 
-- **Implementation commit(s):** pending (to be committed after this update)
+- **Implementation commit(s):** `a3f78e3`
 - **Unsound accessor disposition:** deleted from `src/mcp/budget.rs` (no shim retained)
 - **Re-entrant mutable-access design:** thread-local `EVAL_CONTEXT_MUTABLY_BORROWED` flag with RAII `EvalBorrowGuard`; panics on re-entry, restores on drop/unwind
 - **Context regression tests:** 10 new tests in `tests/test_context_isolation.rs` (WS1-1 through WS1-10); all pass

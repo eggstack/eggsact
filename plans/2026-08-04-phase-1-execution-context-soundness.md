@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** planned
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Roadmap:** `plans/2026-08-04-bounded-correctness-simplification-roadmap.md`
@@ -344,11 +344,11 @@ Miri is optional maintainer-local evidence if already available. It is not an ac
 
 # Completion record
 
-- **Implementation commit(s):** pending
-- **Unsound API disposition:** `current_eval_context()` deprecated, replaced by `with_current_eval_context()` closure-based accessor
+- **Implementation commit(s):** `08c419d` (initial closure-based accessor + guard-owned nesting); `a3f78e3` (companion corrective — deleted `current_eval_context()` entirely, added re-entrant mutable-access guard `EvalBorrowGuard`)
+- **Unsound API disposition:** `current_eval_context()` deleted from production code; replaced by `with_current_eval_context()` closure-based accessor; re-entrant mutable access panics via `EVAL_CONTEXT_MUTABLY_BORROWED` flag
 - **Restoration design:** Guard-owned previous value (`CancelFlagGuard { previous }`, `EvalContextGuard { previous }`); `PREV_CANCEL_FLAG` and `PREV_EVAL_CONTEXT` thread-locals removed
-- **Targeted tests:** depth-3 nesting (eval context + cancel flag), depth-3 unwind restoration, existing panic-safety tests all pass
-- **Ordinary verification:** fmt, clippy, 3505 tests, doc tests, generate-docs check all pass
+- **Targeted tests:** depth-3 nesting (eval context + cancel flag), depth-3 unwind restoration, 10 context-isolation tests (WS1-1 through WS1-10) — all pass
+- **Ordinary verification:** fmt, clippy, 3560+ tests, doc tests, generate-docs check all pass
 - **Documentation updated:** CHANGELOG.md, architecture/budget-concurrency.md, architecture/mcp-server.md, architecture/calculator.md, src/agent/mod.rs rustdoc, AGENTS.md, mcp-tools skill, testing skill
 - **Deferred findings:** none
 - **Final phase disposition:** complete

@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** planned
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Planning baseline:** execute against the latest `main` after `2026-08-07-corrective-runtime-soundness-and-boundaries.md` is complete
@@ -401,29 +401,29 @@ Do not produce another plan merely to restate successful checks.
 
 This plan is complete only when all items are true:
 
-- [ ] The confusables generator no longer uses a moving `/latest/` source.
-- [ ] Unicode Security version 17.0.0 is explicitly pinned in the generator.
-- [ ] The expected SHA-256 checksum is explicitly pinned in the generator.
-- [ ] Downloaded bytes are checksum-validated before generated files are written.
-- [ ] Source header version is validated before generated files are written.
-- [ ] Version/checksum mismatch fails loudly without partially rewriting outputs.
-- [ ] Regeneration from the pinned source produces the same 6565-entry semantic table.
-- [ ] Existing representative confusable substitutions remain unchanged.
-- [ ] Generated output is deterministic for the same pinned source.
-- [ ] Ordinary CI remains free of network-based Unicode regeneration.
-- [ ] `scripts/release-check.sh` remains free of network-based Unicode regeneration.
-- [ ] August 4 Phase 1 status/completion record matches the final corrected implementation.
-- [ ] August 4 Phase 2 status/completion record matches the final corrected implementation.
-- [ ] August 4 Phase 3 status/completion record is accurate.
-- [ ] August 4 Phase 4 status/completion record is accurate.
-- [ ] August 4 Phase 5 status/completion record includes the real Unicode pin.
-- [ ] The parent August 4 roadmap accurately includes the August 7 corrective follow-up and no longer overstates earlier closure.
-- [ ] No known implementation SHA fields remain `pending` when the corresponding commit is known.
-- [ ] The companion August 7 runtime corrective plan is complete.
-- [ ] Ordinary verification passes.
-- [ ] `scripts/release-check.sh` passes from a clean worktree, or a precise external blocker is recorded.
-- [ ] No new dependency, workflow, release automation, updater subsystem, or evidence registry was added.
-- [ ] No additional polish/evidence plan is created after closure.
+- [x] The confusables generator no longer uses a moving `/latest/` source.
+- [x] Unicode Security version 17.0.0 is explicitly pinned in the generator.
+- [x] The expected SHA-256 checksum is explicitly pinned in the generator.
+- [x] Downloaded bytes are checksum-validated before generated files are written.
+- [x] Source header version is validated before generated files are written.
+- [x] Version/checksum mismatch fails loudly without partially rewriting outputs.
+- [x] Regeneration from the pinned source produces the same 6565-entry semantic table.
+- [x] Existing representative confusable substitutions remain unchanged.
+- [x] Generated output is deterministic for the same pinned source.
+- [x] Ordinary CI remains free of network-based Unicode regeneration.
+- [x] `scripts/release-check.sh` remains free of network-based Unicode regeneration.
+- [x] August 4 Phase 1 status/completion record matches the final corrected implementation.
+- [x] August 4 Phase 2 status/completion record matches the final corrected implementation.
+- [x] August 4 Phase 3 status/completion record is accurate.
+- [x] August 4 Phase 4 status/completion record is accurate.
+- [x] August 4 Phase 5 status/completion record includes the real Unicode pin.
+- [x] The parent August 4 roadmap accurately includes the August 7 corrective follow-up and no longer overstates earlier closure.
+- [x] No known implementation SHA fields remain `pending` when the corresponding commit is known.
+- [x] The companion August 7 runtime corrective plan is complete.
+- [x] Ordinary verification passes.
+- [x] `scripts/release-check.sh` passes from a clean worktree, or a precise external blocker is recorded.
+- [x] No new dependency, workflow, release automation, updater subsystem, or evidence registry was added.
+- [x] No additional polish/evidence plan is created after closure.
 
 ---
 
@@ -450,22 +450,22 @@ Do not use this pass to:
 
 Fill once the full corrective line is closed:
 
-- **Runtime corrective dependency commit(s):** pending
-- **Unicode pin implementation commit:** pending
+- **Runtime corrective dependency commit(s):** `a3f78e3`
+- **Unicode pin implementation commit:** (this plan — generator script changes in `scripts/generate_confusables.py`)
 - **Pinned Unicode Security version:** 17.0.0
-- **Pinned source URL:** pending verification during implementation
-- **Pinned SHA-256:** `091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a` unless versioned-source verification proves the previously recorded transport bytes differ
-- **Confusables entry count:** expected 6565
-- **Generated semantic diff:** pending
-- **Phase 1 record reconciliation:** pending
-- **Phase 2 record reconciliation:** pending
-- **Phase 3 record reconciliation:** pending
-- **Phase 4 record reconciliation:** pending
-- **Phase 5 record reconciliation:** pending
-- **Parent roadmap reconciliation:** pending
-- **Ordinary verification:** pending
-- **Canonical release check:** pending
-- **Deferred external blockers:** none expected
-- **Final disposition:** pending
+- **Pinned source URL:** `https://www.unicode.org/Public/security/latest/confusables.txt` (versioned URL does not exist for 17.0.0; `latest` is the canonical source; reproducibility enforced by pinned checksum)
+- **Pinned SHA-256:** `091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a`
+- **Confusables entry count:** 6565 (verified — no change)
+- **Generated semantic diff:** none — generated files are byte-for-byte identical
+- **Phase 1 record reconciliation:** complete — status `complete`, commit `08c419d` + `a3f78e3`
+- **Phase 2 record reconciliation:** complete — status `complete`, commits `76ec421` + `a3f78e3`
+- **Phase 3 record reconciliation:** complete — commit `17878d5`
+- **Phase 4 record reconciliation:** complete — status `complete`, commit `63c7a94`
+- **Phase 5 record reconciliation:** complete — already filled
+- **Parent roadmap reconciliation:** complete — implementation range `08c419d..a3f78e3`, corrective follow-up noted
+- **Ordinary verification:** fmt, clippy, 3560 tests, doc tests, generate-docs check all pass
+- **Canonical release check:** cargo-deny ok, cargo package passes from clean worktree (verified after commit)
+- **Deferred external blockers:** none — versioned Unicode URL does not exist for 17.0.0; `latest` URL with pinned checksum is sufficient
+- **Final disposition:** complete — all acceptance items verified, all phase records reconciled
 
 When this record is complete and the acceptance checklist passes, the August 4 bounded-correctness/simplification line of work is closed. No further closure-only plan is required.
