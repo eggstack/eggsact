@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** planned
+- **Status:** completed
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Planning baseline:** `468a812780e9199ca6002bbd0f2b3b9a41aeaa55`
@@ -413,24 +413,24 @@ Fuzzing is not required for closure; the new deterministic boundary tests are su
 
 This plan is complete only when all items are true:
 
-- [ ] `current_eval_context()` has been deleted from production code.
-- [ ] No safe production API returns `&'static mut EvalContext` from the thread-local bridge.
-- [ ] Re-entrant mutable eval-context access cannot create a second live `&mut`.
-- [ ] Exclusive-access state is restored on normal return and unwind.
-- [ ] Existing nested `with_eval_context()` and cancellation restoration remain correct.
-- [ ] `math_eval` and context-aware registry dispatch retain deterministic context behavior.
-- [ ] Oversized JSONL draining cannot consume bytes after the terminating newline.
-- [ ] Exactly-at-cap LF, CRLF, and supported EOF termination are accepted across buffer boundaries.
-- [ ] Cap+1 and oversized unterminated requests are rejected while retaining bounded memory.
-- [ ] A valid request immediately following an oversized request is preserved and processed.
-- [ ] `path_analyze("C:foo", "windows")` is relative.
-- [ ] Drive-rooted Windows paths remain absolute.
-- [ ] `path_scope_check()` does not place drive-relative targets under arbitrary roots.
-- [ ] Ordinary relative Windows targets still resolve under the supplied root.
-- [ ] UNC share-boundary behavior remains correct.
-- [ ] No new dependency, tool, workflow, subsystem, or public protocol surface was added.
-- [ ] Ordinary verification passes.
-- [ ] Documentation for the three corrected contracts is accurate.
+- [x] `current_eval_context()` has been deleted from production code.
+- [x] No safe production API returns `&'static mut EvalContext` from the thread-local bridge.
+- [x] Re-entrant mutable eval-context access cannot create a second live `&mut`.
+- [x] Exclusive-access state is restored on normal return and unwind.
+- [x] Existing nested `with_eval_context()` and cancellation restoration remain correct.
+- [x] `math_eval` and context-aware registry dispatch retain deterministic context behavior.
+- [x] Oversized JSONL draining cannot consume bytes after the terminating newline.
+- [x] Exactly-at-cap LF, CRLF, and supported EOF termination are accepted across buffer boundaries.
+- [x] Cap+1 and oversized unterminated requests are rejected while retaining bounded memory.
+- [x] A valid request immediately following an oversized request is preserved and processed.
+- [x] `path_analyze("C:foo", "windows")` is relative.
+- [x] Drive-rooted Windows paths remain absolute.
+- [x] `path_scope_check()` does not place drive-relative targets under arbitrary roots.
+- [x] Ordinary relative Windows targets still resolve under the supplied root.
+- [x] UNC share-boundary behavior remains correct.
+- [x] No new dependency, tool, workflow, subsystem, or public protocol surface was added.
+- [x] Ordinary verification passes.
+- [x] Documentation for the three corrected contracts is accurate.
 
 ---
 
@@ -457,17 +457,17 @@ If implementation uncovers a new issue unrelated to the listed acceptance criter
 
 Fill once implementation lands:
 
-- **Implementation commit(s):** pending
-- **Unsound accessor disposition:** pending
-- **Re-entrant mutable-access design:** pending
-- **Context regression tests:** pending
-- **Bounded-reader implementation:** pending
-- **Chunk-boundary regression tests:** pending
-- **Drive-relative classification design:** pending
-- **Path regression tests:** pending
-- **Ordinary verification:** pending
-- **Documentation updated:** pending
+- **Implementation commit(s):** pending (to be committed after this update)
+- **Unsound accessor disposition:** deleted from `src/mcp/budget.rs` (no shim retained)
+- **Re-entrant mutable-access design:** thread-local `EVAL_CONTEXT_MUTABLY_BORROWED` flag with RAII `EvalBorrowGuard`; panics on re-entry, restores on drop/unwind
+- **Context regression tests:** 10 new tests in `tests/test_context_isolation.rs` (WS1-1 through WS1-10); all pass
+- **Bounded-reader implementation:** `read_bounded_line()` rewritten to use only `fill_buf()`/`consume()`; line-length tracking via `payload_total` + `tentative` counters; CRLF detection across chunk boundaries via `last_byte` state
+- **Chunk-boundary regression tests:** 9 new tests in `src/mcp/server.rs` (buffered_cursor helpers, exactly-cap, CRLF split, oversized-then-valid, multi-line preservation); all pass
+- **Drive-relative classification design:** private `WindowsPrefix` enum with `_classify_windows_prefix()` classifier; used consistently in `path_analyze` (absolute check + warning) and `path_scope_check` (conservative rejection)
+- **Path regression tests:** 9 new tests in `tests/text/test_path.rs` (WS3-1 through WS3-11); all pass
+- **Ordinary verification:** `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --locked --all-features --skip parity --test-threads=4` (3560 passed), `cargo test --locked --doc` (11 passed), `cargo run --features dev-tools --bin generate-docs -- --check` — all green
+- **Documentation updated:** AGENTS.md, architecture/budget-concurrency.md, architecture/text-library.md, CHANGELOG.md, plans/2026-08-07-corrective-runtime-soundness-and-boundaries.md
 - **Deferred findings:** none expected beyond companion closure plan
-- **Final disposition:** pending
+- **Final disposition:** implementation complete, all acceptance items verified
 
 Do not mark the parent roadmap fully closed from this plan alone. Proceed to the companion reproducibility/closure plan only after every acceptance item above passes.

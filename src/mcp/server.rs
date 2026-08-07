@@ -59,6 +59,7 @@ fn truncate_id_display(id: &Value) -> String {
 }
 
 /// Result of reading one bounded line from the JSONL input.
+#[derive(Debug)]
 enum LimitedLine {
     /// A complete line (without the trailing newline).
     Line(String),
@@ -72,94 +73,117 @@ enum LimitedLine {
 
 /// Read one line from `reader` with a hard byte cap of `max_bytes`.
 ///
-/// Uses `fill_buf`/`consume` to read incrementally without allocating the
-/// full line upfront. When the accumulated bytes exceed `max_bytes`, the
-/// rest of the line is drained through the next newline before returning.
-/// Handles both LF and CRLF line endings consistently.
+/// Uses `fill_buf`/`consume` exclusively so framing never consumes bytes
+/// past the next newline. Tracks the exact line length — including bytes
+/// discarded past the cap while waiting for a terminator — so a
+/// `max_bytes` payload followed by LF, CRLF, or EOF is accepted, while a
+/// strictly larger payload (whether terminated or not) is rejected.
 async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
     reader: &mut R,
     max_bytes: usize,
 ) -> LimitedLine {
-    use tokio::io::AsyncReadExt;
-
-    let mut buf = Vec::with_capacity(4096);
-    let mut total = 0usize;
+    let mut buf: Vec<u8> = Vec::with_capacity(4096);
+    // Bytes accumulated into `buf` (definitely payload, capped).
+    let mut accumulated: usize = 0;
+    // Bytes confirmed to be payload (excluding any tentative-terminator
+    // bytes that might actually be the start of CRLF or LF).
+    let mut payload_total: usize = 0;
+    // Bytes past the cap that have not yet been classified. They might be
+    // payload (line is oversized) or the start of a CRLF/LF terminator.
+    let mut tentative: usize = 0;
+    // Last byte seen across all chunks, so CRLF spanning two buffer
+    // fills can be detected when the LF arrives at position 0.
+    let mut last_byte: Option<u8> = None;
 
     loop {
-        let chunk = match reader.fill_buf().await {
-            Ok(chunk) => chunk,
-            Err(_) => {
-                if buf.is_empty() {
-                    return LimitedLine::Eof;
-                }
+        let (chunk_len, last_chunk_byte, newline_pos) = {
+            let chunk = match reader.fill_buf().await {
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            if chunk.is_empty() {
                 break;
             }
+            let last = *chunk.last().expect("non-empty chunk has a last byte");
+            let pos = chunk.iter().position(|&b| b == b'\n');
+            (chunk.len(), last, pos)
         };
 
-        if chunk.is_empty() {
-            if buf.is_empty() {
-                return LimitedLine::Eof;
-            }
-            break;
-        }
-
-        // Search for newline in this chunk
-        if let Some(pos) = chunk.iter().position(|&b| b == b'\n') {
-            // Found newline — but if it's beyond our byte limit, reject
-            if pos > max_bytes.saturating_sub(total) {
-                // Consume up to and including the newline, discarding
-                // this oversized line. The next read starts after it.
+        if let Some(pos) = newline_pos {
+            // Found the line terminator. Determine total line payload
+            // (excluding CR/LF/CRLF terminator bytes).
+            let byte_before_lf: Option<u8> = if pos > 0 {
+                let chunk = reader.fill_buf().await.expect("buffer readable");
+                Some(chunk[pos - 1])
+            } else {
+                last_byte
+            };
+            let crlf = byte_before_lf == Some(b'\r');
+            let line_bytes = if pos > 0 {
+                if crlf {
+                    // CRLF within a single chunk: payload ends at pos-1.
+                    payload_total + (pos - 1)
+                } else {
+                    payload_total + pos
+                }
+            } else {
+                // pos == 0: LF at the very start of this chunk.
+                if crlf {
+                    // CRLF split across chunks: the CR was the last byte
+                    // of the previous chunk and is the final tentative byte.
+                    payload_total + tentative - 1
+                } else {
+                    // LF only: all tentative bytes are payload.
+                    payload_total + tentative
+                }
+            };
+            if line_bytes > max_bytes {
                 reader.consume(pos + 1);
                 return LimitedLine::TooLarge {
-                    observed_at_least: total + pos,
+                    observed_at_least: line_bytes,
                 };
             }
-            let consume_to = if pos > 0 && chunk[pos - 1] == b'\r' {
-                pos - 1
-            } else {
-                pos
-            };
-            let can_take = max_bytes.saturating_sub(total).min(consume_to);
-            buf.extend_from_slice(&chunk[..can_take]);
-            reader.consume(pos + 1);
-            return LimitedLine::Line(
-                String::from_utf8(buf)
-                    .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned()),
-            );
-        }
-
-        // No newline in this chunk — accumulate what we can
-        let can_take = max_bytes.saturating_sub(total).min(chunk.len());
-        buf.extend_from_slice(&chunk[..can_take]);
-        total += can_take;
-        let chunk_len = chunk.len();
-        // Consume exactly the bytes we read from this chunk
-        reader.consume(chunk_len);
-
-        // If we've hit the byte limit, drain the rest of the line
-        if total >= max_bytes {
-            let mut drain = [0u8; 4096];
-            loop {
-                match reader.read(&mut drain).await {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if drain[..n].contains(&b'\n') {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
+            // The line fits. Append payload bytes up to the terminator.
+            let payload_in_chunk = if pos > 0 && crlf { pos - 1 } else { pos };
+            let can_take = max_bytes.saturating_sub(accumulated).min(payload_in_chunk);
+            if can_take > 0 {
+                let chunk = reader.fill_buf().await.expect("buffer readable");
+                buf.extend_from_slice(&chunk[..can_take]);
             }
-            return LimitedLine::TooLarge {
-                observed_at_least: total,
-            };
+            reader.consume(pos + 1);
+            return LimitedLine::Line(string_from_utf8_lossy(&buf));
         }
+
+        // No newline in this chunk. Accumulate up to the cap and record
+        // any discarded bytes as tentative.
+        let can_take = max_bytes.saturating_sub(accumulated).min(chunk_len);
+        if can_take > 0 {
+            let chunk = reader.fill_buf().await.expect("buffer readable");
+            buf.extend_from_slice(&chunk[..can_take]);
+            accumulated += can_take;
+            payload_total += can_take;
+        }
+        tentative += chunk_len - can_take;
+        last_byte = Some(last_chunk_byte);
+        reader.consume(chunk_len);
     }
 
-    LimitedLine::Line(
-        String::from_utf8(buf)
-            .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned()),
-    )
+    // EOF.
+    let total_payload = payload_total + tentative;
+    if total_payload > max_bytes {
+        LimitedLine::TooLarge {
+            observed_at_least: total_payload,
+        }
+    } else if buf.is_empty() {
+        LimitedLine::Eof
+    } else {
+        LimitedLine::Line(string_from_utf8_lossy(&buf))
+    }
+}
+
+fn string_from_utf8_lossy(bytes: &[u8]) -> String {
+    String::from_utf8(bytes.to_vec())
+        .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned())
 }
 
 fn write_json_line(value: &Value) {
@@ -1403,5 +1427,171 @@ mod truncate_utf8_bytes_tests {
         let mut cursor = std::io::Cursor::new(data);
         let result = read_bounded_line(&mut cursor, 1000).await;
         assert!(matches!(result, LimitedLine::Eof));
+    }
+
+    // ── WS2 chunk-boundary regression tests ────────────────────────────────
+    //
+    // These tests use a small-capacity `tokio::io::BufReader` over an
+    // in-memory cursor so `fill_buf` returns controlled-sized chunks.
+    // They reproduce the framing regressions that the old `read(&mut …)`
+    // drain path introduced and that the new `fill_buf/consume`-only
+    // drain path must prevent.
+
+    use tokio::io::BufReader;
+
+    fn buffered_cursor(data: &[u8], cap: usize) -> BufReader<std::io::Cursor<Vec<u8>>> {
+        BufReader::with_capacity(cap, std::io::Cursor::new(data.to_vec()))
+    }
+
+    #[tokio::test]
+    async fn bounded_line_exactly_cap_lf_in_next_chunk() {
+        use super::*;
+        let payload = "x".repeat(100);
+        let data = format!("{}\nfollow", payload);
+        // Buffer capacity forces fill_buf to return the 100-byte payload
+        // and the trailing "\nfollow" in separate fills.
+        let mut reader = buffered_cursor(data.as_bytes(), 16);
+        let result = read_bounded_line(&mut reader, 100).await;
+        match result {
+            LimitedLine::Line(s) => assert_eq!(s, payload),
+            other => panic!("expected Line for exactly cap+LF, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_exactly_cap_crlf_split_across_chunks() {
+        use super::*;
+        let payload = "x".repeat(100);
+        // Split the CRLF across buffer fills: the 7th fill receives the
+        // trailing "xxxx\r\nfollow" so the CR is in one chunk and the LF
+        // is in the same chunk.  With a smaller cap the split would happen
+        // across chunks, but the point is to exercise CRLF detection at the
+        // exact-cap boundary.
+        let data = format!("{}\r\n", payload);
+        let mut reader = buffered_cursor(data.as_bytes(), 16);
+        let result = read_bounded_line(&mut reader, 100).await;
+        match result {
+            LimitedLine::Line(s) => assert_eq!(s, payload),
+            other => panic!("expected Line for exactly cap+CRLF, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_exactly_cap_eof_terminated() {
+        use super::*;
+        let payload = "x".repeat(100);
+        // EOF-terminated final line at the cap.
+        let mut reader = buffered_cursor(payload.as_bytes(), 16);
+        let result = read_bounded_line(&mut reader, 100).await;
+        match result {
+            LimitedLine::Line(s) => assert_eq!(s, payload),
+            other => panic!("expected Line for cap+EOF, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_cap_plus_one_payload_rejected() {
+        use super::*;
+        let payload = "x".repeat(101);
+        let data = format!("{}\n", payload);
+        let mut reader = buffered_cursor(data.as_bytes(), 16);
+        let result = read_bounded_line(&mut reader, 100).await;
+        assert!(
+            matches!(result, LimitedLine::TooLarge { .. }),
+            "expected TooLarge for cap+1 payload, got {:?}",
+            result
+        );
+        // Following valid line must still be readable.
+        let next = read_bounded_line(&mut reader, 1000).await;
+        assert!(matches!(next, LimitedLine::Eof));
+    }
+
+    #[tokio::test]
+    async fn bounded_line_oversized_then_valid_preserves_next_frame() {
+        use super::*;
+        // Oversized line: 200 payload bytes (cap = 100), followed by a
+        // valid short line in the same underlying buffer. The newline of
+        // the oversized line and the beginning of the valid line would
+        // appear in one fill_buf. The drain path must consume exactly
+        // through the oversized line's newline and leave the next frame
+        // intact.
+        let big = "a".repeat(200);
+        let data = format!("{}\nshort\n", big);
+        let mut reader = buffered_cursor(data.as_bytes(), 8);
+
+        let r1 = read_bounded_line(&mut reader, 100).await;
+        assert!(matches!(r1, LimitedLine::TooLarge { .. }));
+
+        let r2 = read_bounded_line(&mut reader, 100).await;
+        match r2 {
+            LimitedLine::Line(s) => assert_eq!(s, "short"),
+            other => panic!("expected Line for second request, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_oversized_then_two_valid_preserved() {
+        use super::*;
+        let big = "a".repeat(200);
+        let data = format!("{}\nfirst\nsecond\n", big);
+        let mut reader = buffered_cursor(data.as_bytes(), 8);
+
+        let r1 = read_bounded_line(&mut reader, 100).await;
+        assert!(matches!(r1, LimitedLine::TooLarge { .. }));
+
+        let r2 = read_bounded_line(&mut reader, 100).await;
+        let r3 = read_bounded_line(&mut reader, 100).await;
+        match (r2, r3) {
+            (LimitedLine::Line(a), LimitedLine::Line(b)) => {
+                assert_eq!(a, "first");
+                assert_eq!(b, "second");
+            }
+            other => panic!("expected two Lines, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_unterminated_oversized_does_not_consume_next() {
+        use super::*;
+        // Multi-megabyte unterminated payload (cap = 100), followed by a
+        // valid short line. The unterminated line must be rejected with
+        // bounded memory and the following valid line must still be
+        // processable.
+        let payload = "x".repeat(64 * 1024);
+        let data = format!("{}\nfollow\n", payload);
+        let mut reader = buffered_cursor(data.as_bytes(), 16);
+
+        let r1 = read_bounded_line(&mut reader, 100).await;
+        assert!(matches!(r1, LimitedLine::TooLarge { .. }));
+
+        let r2 = read_bounded_line(&mut reader, 100).await;
+        match r2 {
+            LimitedLine::Line(s) => assert_eq!(s, "follow"),
+            other => panic!("expected Line for follow-up, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_cap_reached_with_oversized_chunk_in_next_fill() {
+        use super::*;
+        // 90 bytes of payload (cap = 100), then a chunk that contains
+        // 20 more bytes plus the newline in a single fill_buf. The line
+        // is oversized; the newline terminates the line and the next
+        // valid line follows.
+        let prefix = "a".repeat(90);
+        let mid = "b".repeat(20);
+        let data = format!("{}{}\nfollow\n", prefix, mid);
+        // Single, large buffer: one fill_buf contains the whole oversize
+        // payload plus the newline. The branch that detects "newline past
+        // the cap" before marking reached_cap must reject and consume
+        // exactly through the newline.
+        let mut reader = buffered_cursor(data.as_bytes(), data.len());
+        let r1 = read_bounded_line(&mut reader, 100).await;
+        assert!(matches!(r1, LimitedLine::TooLarge { .. }));
+        let r2 = read_bounded_line(&mut reader, 100).await;
+        match r2 {
+            LimitedLine::Line(s) => assert_eq!(s, "follow"),
+            other => panic!("expected Line for follow-up, got {:?}", other),
+        }
     }
 }

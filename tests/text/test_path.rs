@@ -359,3 +359,87 @@ fn test_unc_scope_check_different_share() {
     );
     assert!(!result.inside_root);
 }
+
+// ─── WS3 drive-relative classification tests ────────────────────────────
+
+#[test]
+fn test_analyze_drive_relative_is_relative() {
+    let result = path_analyze("C:foo", "windows");
+    assert!(!result.absolute, "C:foo must be relative");
+}
+
+#[test]
+fn test_analyze_drive_relative_bare() {
+    let result = path_analyze("C:", "windows");
+    assert!(!result.absolute, "C: must be relative");
+}
+
+#[test]
+fn test_analyze_drive_rooted_backslash_is_absolute() {
+    let result = path_analyze("C:\\foo", "windows");
+    assert!(result.absolute, "C:\\foo must be absolute");
+}
+
+#[test]
+fn test_analyze_drive_rooted_forward_slash_is_absolute() {
+    let result = path_analyze("C:/foo", "windows");
+    assert!(result.absolute, "C:/foo must be absolute");
+}
+
+#[test]
+fn test_normalize_drive_relative_preserves_drive() {
+    let result = path_normalize("C:foo", "windows", true, false);
+    assert!(!result.is_absolute);
+    assert!(result.normalized.starts_with("C:"));
+}
+
+#[test]
+fn test_scope_check_drive_relative_c_drive_root() {
+    // C:foo under C:\work must NOT be inside (drive-relative can't be
+    // resolved lexically).
+    let result = path_scope_check("C:\\work", "C:foo", "windows", true);
+    assert!(!result.inside_root);
+}
+
+#[test]
+fn test_scope_check_drive_relative_d_drive_root() {
+    // C:foo under D:\work must NOT be inside.
+    let result = path_scope_check("D:\\work", "C:foo", "windows", true);
+    assert!(!result.inside_root);
+}
+
+#[test]
+fn test_scope_check_drive_relative_dotdot() {
+    // C:..\secret under C:\work must NOT be inside.
+    let result = path_scope_check("C:\\work", "C:..\\secret", "windows", true);
+    assert!(!result.inside_root);
+}
+
+#[test]
+fn test_scope_check_ordinary_relative_still_resolves() {
+    // src\main.rs under C:\work must still be inside.
+    let result = path_scope_check("C:\\work", "src\\main.rs", "windows", true);
+    assert!(result.inside_root);
+}
+
+#[test]
+fn test_scope_check_drive_relative_finding_message() {
+    // The result should contain a finding explaining the ambiguity.
+    let result = path_scope_check("C:\\work", "C:foo", "windows", true);
+    assert!(
+        result.findings.iter().any(|f| f.contains("Drive-relative")),
+        "expected a Drive-relative finding, got: {:?}",
+        result.findings
+    );
+}
+
+#[test]
+fn test_analyze_drive_relative_warning() {
+    // path_analyze should emit a warning for drive-relative paths.
+    let result = path_analyze("C:foo", "windows");
+    assert!(
+        result.warnings.iter().any(|w| w.contains("Drive-relative")),
+        "expected a Drive-relative warning, got: {:?}",
+        result.warnings
+    );
+}

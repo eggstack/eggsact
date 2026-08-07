@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Execution-context soundness**: Deleted the unsound `current_eval_context()` function. Re-entrant mutable access via `with_current_eval_context()` now panics through an exclusive-access guard that restores on normal return and unwind.
+- **Bounded JSONL reader**: The oversize-drain path no longer uses raw `AsyncReadExt::read()`. Oversized-line draining uses `fill_buf()`/`consume()` exclusively so framing never consumes bytes past the terminating newline. Exactly-at-cap LF, CRLF, and EOF-terminated final lines are now accepted across buffer boundaries.
+- **Windows drive-relative paths**: `path_analyze("C:foo", "windows")` now correctly reports `absolute == false`. `path_scope_check()` never resolves a drive-relative target beneath an unrelated root — it conservatively returns `inside_root == false` with an explanatory finding. `path_analyze()` emits a warning for drive-relative paths.
 - **CI simplified**: Removed `cargo package` from ordinary CI (packaging belongs to
   the local release gate). Removed the Windows/macOS compile-check matrix from
   `ci.yml`; platform checks now run in the existing `maintenance.yml` workflow

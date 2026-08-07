@@ -637,7 +637,10 @@ Path analysis, comparison, and scope checking for both POSIX and Windows paths.
 They do not follow symlinks, resolve mount points, or access the host file
 system. UNC share roots (`\\host\share`) are protected boundaries: dot-segment
 collapse cannot pop the host or share components, and scope checks reject
-traversal above the share root.
+traversal above the share root. Windows drive-relative paths (`C:foo`) are
+treated conservatively: `path_analyze` reports them as non-absolute, and
+`path_scope_check` refuses to resolve them lexically because the result
+depends on the caller's current directory on the target drive.
 
 ### `path_analyze(path, style) -> PathAnalyzeResult`
 

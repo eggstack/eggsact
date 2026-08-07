@@ -1,5 +1,85 @@
 use crate::text::confusables::find_confusables;
 
+/// Windows-specific prefix classification for path analysis.
+///
+/// The lexical path tools have no per-drive current-working-directory state,
+/// so a drive-relative target (`C:foo`) cannot be resolved lexically. The
+/// classifier lets every path helper treat drive-relative paths
+/// conservatively instead of silently concatenating them under an unrelated
+/// root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowsPrefix<'a> {
+    /// No special prefix (plain relative path).
+    None,
+    /// Drive-relative: `C:foo` — relative to the current directory on drive C.
+    DriveRelative { drive: &'a str },
+    /// Drive-rooted (absolute): `C:\foo` or `C:/foo`.
+    DriveRooted { drive: &'a str },
+    /// UNC path: `\\host\share` or `//host/share`.
+    Unc {
+        host: &'a str,
+        share: Option<&'a str>,
+    },
+}
+
+impl<'a> WindowsPrefix<'a> {
+    /// Returns `true` if this prefix represents an absolute path.
+    fn is_absolute(&self) -> bool {
+        matches!(self, Self::DriveRooted { .. } | Self::Unc { .. })
+    }
+}
+
+/// Classify the leading prefix of a Windows-style path.
+fn _classify_windows_prefix(path: &str) -> WindowsPrefix<'_> {
+    if path.is_empty() {
+        return WindowsPrefix::None;
+    }
+
+    // UNC: \\host\share or //host/share
+    if path.starts_with("\\\\") || path.starts_with("//") {
+        let parts: Vec<&str> = path.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
+        if parts.len() >= 2 {
+            return WindowsPrefix::Unc {
+                host: parts[0],
+                share: Some(parts[1]),
+            };
+        } else if parts.len() == 1 {
+            return WindowsPrefix::Unc {
+                host: parts[0],
+                share: None,
+            };
+        } else {
+            return WindowsPrefix::Unc {
+                host: "",
+                share: None,
+            };
+        }
+    }
+
+    // Drive letter: X: or X:\ or X:/
+    if let Some(first) = path.chars().next() {
+        if first.is_ascii_alphabetic() {
+            let second_byte = first.len_utf8();
+            if second_byte < path.len() && path.as_bytes()[second_byte] == b':' {
+                let next = second_byte + 1;
+                if next < path.len() {
+                    let sep = path.as_bytes()[next];
+                    if sep == b'/' || sep == b'\\' {
+                        return WindowsPrefix::DriveRooted {
+                            drive: &path[..second_byte],
+                        };
+                    }
+                }
+                return WindowsPrefix::DriveRelative {
+                    drive: &path[..second_byte],
+                };
+            }
+        }
+    }
+
+    WindowsPrefix::None
+}
+
 #[derive(Debug, Clone)]
 pub struct PathNormalizeResult {
     pub normalized: String,
@@ -190,7 +270,11 @@ pub fn path_analyze(path: &str, style: &str) -> PathAnalyzeResult {
     }
 
     let has_traversal = raw_components.contains(&"..");
-    let absolute = root.is_some();
+    let absolute = if actual_style == "windows" {
+        _classify_windows_prefix(path).is_absolute()
+    } else {
+        root.is_some()
+    };
 
     let confusables = find_confusables(path);
     if !confusables.is_empty() {
@@ -198,6 +282,18 @@ pub fn path_analyze(path: &str, style: &str) -> PathAnalyzeResult {
             "Path contains {} confusable character(s)",
             confusables.len()
         ));
+    }
+
+    // Classify Windows prefix to add drive-relative warnings.
+    if actual_style == "windows" {
+        let prefix = _classify_windows_prefix(path);
+        if let WindowsPrefix::DriveRelative { drive } = prefix {
+            warnings.push(format!(
+                "Drive-relative path on drive {}; \
+                 cannot be resolved lexically without the current directory on drive {}",
+                drive, drive
+            ));
+        }
     }
 
     let name = components.last().map(|s| s.to_string());
@@ -598,6 +694,29 @@ pub fn path_scope_check(
     let root_pre = pre_normalize(root, actual_platform);
     let target_pre = pre_normalize(target, actual_platform);
 
+    // Classify the target's Windows prefix.  Drive-relative targets
+    // (`C:foo`) cannot be resolved lexically — the result depends on
+    // the caller's current directory on drive C, which this lexical API
+    // does not model.
+    let target_prefix = if actual_platform == "windows" {
+        _classify_windows_prefix(&target_pre)
+    } else {
+        WindowsPrefix::None
+    };
+
+    if matches!(target_prefix, WindowsPrefix::DriveRelative { .. }) {
+        let drive = match target_prefix {
+            WindowsPrefix::DriveRelative { drive } => drive,
+            _ => unreachable!(),
+        };
+        findings.push(format!(
+            "Drive-relative target 'C:{}' cannot be resolved lexically; \
+             the result depends on the current directory on drive {}",
+            target_pre.trim_start_matches(|c: char| c.is_ascii_alphabetic() || c == ':'),
+            drive
+        ));
+    }
+
     let root_norm = path_normalize(&root_pre, actual_platform, true, false);
     let target_norm = path_normalize(&target_pre, actual_platform, true, false);
 
@@ -609,6 +728,19 @@ pub fn path_scope_check(
 
     if target_is_abs && !root_is_abs {
         findings.push("Target is absolute but root is relative".to_string());
+    }
+
+    // Drive-relative targets are conservatively not inside the root.
+    if matches!(target_prefix, WindowsPrefix::DriveRelative { .. }) {
+        return PathScopeCheckResult {
+            inside_root: false,
+            root_normalized,
+            target_normalized: target_normalized.clone(),
+            relative_path: String::new(),
+            escapes_via_dotdot: false,
+            absolute_target: target_normalized,
+            findings,
+        };
     }
 
     let mut absolute_target = target_normalized.clone();

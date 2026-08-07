@@ -1814,3 +1814,292 @@ fn test_mut_ctx_pool_saturation_leaves_context_unchanged() {
         "register 1 should be unchanged regardless of pool state"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// WS1-1: No context installed → callback receives None.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_with_current_eval_context_no_context_yields_none() {
+    // No with_eval_context wrapper is active, so the accessor sees None.
+    let observed = budget::with_current_eval_context(|ctx| ctx.is_none());
+    assert!(
+        observed,
+        "callback should observe None when no eval context is installed"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// WS1-2: One installed context → callback receives and can mutate that context.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_with_current_eval_context_observes_and_mutates_installed_context() {
+    let mut ctx = EvalContext::new();
+    let _ = evaluate_with_context("store(42, 1)", &mut ctx);
+
+    let val = budget::with_eval_context(&mut ctx, || {
+        budget::with_current_eval_context(|maybe| {
+            let borrowed = maybe.expect("context should be installed");
+            let observed = evaluate_with_context("recall(1)", borrowed).unwrap().0;
+            // Mutate through the same reference.
+            let _ = evaluate_with_context("store(99, 1)", borrowed);
+            observed
+        })
+    });
+
+    assert_eq!(
+        val, "42",
+        "borrow should observe the originally installed context"
+    );
+    assert_eq!(
+        evaluate_with_context("recall(1)", &mut ctx).unwrap().0,
+        "99",
+        "mutation through the borrowed &mut should persist"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// WS1-3: Sequential accessor calls succeed (no flag leakage between calls).
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_with_current_eval_context_sequential_calls_succeed() {
+    let mut ctx = EvalContext::new();
+    let _ = evaluate_with_context("store(1, 1)", &mut ctx);
+    let _ = evaluate_with_context("store(2, 1)", &mut ctx);
+    let _ = evaluate_with_context("store(3, 1)", &mut ctx);
+
+    let observed: Vec<String> = budget::with_eval_context(&mut ctx, || {
+        (0..3)
+            .map(|_| {
+                budget::with_current_eval_context(|maybe| {
+                    evaluate_with_context("recall(1)", maybe.unwrap())
+                        .unwrap()
+                        .0
+                })
+            })
+            .collect()
+    });
+
+    assert_eq!(observed, vec!["3", "3", "3"]);
+    assert!(
+        budget::with_current_eval_context(|maybe| maybe.is_none()),
+        "flag must be cleared between sequential calls"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// WS1-4: Re-entrant accessor cannot obtain a second &mut EvalContext.
+//        This is the regression test for the soundness defect fixed in this pass.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_with_current_eval_context_reentrant_access_is_rejected() {
+    let mut ctx = EvalContext::new();
+    let _ = evaluate_with_context("store(7, 1)", &mut ctx);
+
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        budget::with_eval_context(&mut ctx, || {
+            budget::with_current_eval_context(|outer| {
+                // Try to obtain a second &mut EvalContext while the first is live.
+                // The guard should make this fail safely rather than allow a
+                // second mutable reference.
+                budget::with_current_eval_context(|inner| {
+                    // Hold both references simultaneously to observe (under the
+                    // old unsound API) that they alias the same object. With
+                    // the guard in place this branch must not be reachable.
+                    let _ = (outer, inner);
+                });
+            });
+        });
+    }));
+
+    assert!(
+        result.is_err(),
+        "re-entrant with_current_eval_context must panic, not produce aliased &mut"
+    );
+
+    // The mutable-borrow flag must be cleared even though the inner scope panicked.
+    assert!(
+        budget::with_current_eval_context(|maybe| maybe.is_none()),
+        "outer thread-local state must be untouched after re-entry panic"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// WS1-5: Access-state restoration works after panic/unwind.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_with_current_eval_context_guard_restored_after_panic() {
+    let mut ctx = EvalContext::new();
+    let _ = evaluate_with_context("store(5, 1)", &mut ctx);
+
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        budget::with_eval_context(&mut ctx, || {
+            budget::with_current_eval_context(|maybe| {
+                let _ = evaluate_with_context("recall(1)", maybe.unwrap());
+                panic!("intentional panic inside callback");
+            });
+        });
+    }));
+    assert!(
+        result.is_err(),
+        "catch_unwind should observe the panic from inside the callback"
+    );
+
+    // After unwind, the borrow guard must be cleared so a new accessor works.
+    let val = budget::with_eval_context(&mut ctx, || {
+        budget::with_current_eval_context(|maybe| {
+            evaluate_with_context("recall(1)", maybe.unwrap())
+                .unwrap()
+                .0
+        })
+    });
+    assert_eq!(val, "5", "borrow guard must be cleared after unwind");
+    assert!(
+        budget::with_current_eval_context(|maybe| maybe.is_none()),
+        "no mutable context after unwind"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// WS1-6: Depth-3 nested with_eval_context scopes still restore the immediate parent.
+//        (Reuses the existing depth-3 scenario from test_eval_context_depth3_nesting
+//         but asserts the parent restoration invariant end-to-end.)
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_with_current_eval_context_depth3_parent_restoration() {
+    let mut ctx_a = EvalContext::new();
+    let mut ctx_b = EvalContext::new();
+    let mut ctx_c = EvalContext::new();
+    let _ = evaluate_with_context("store(1, 1)", &mut ctx_a);
+    let _ = evaluate_with_context("store(2, 1)", &mut ctx_b);
+    let _ = evaluate_with_context("store(3, 1)", &mut ctx_c);
+
+    let scope_a_val = budget::with_eval_context(&mut ctx_a, || {
+        assert_eq!(
+            budget::with_current_eval_context(|c| evaluate_with_context("recall(1)", c.unwrap())
+                .unwrap()
+                .0),
+            "1"
+        );
+        let scope_b_val = budget::with_eval_context(&mut ctx_b, || {
+            assert_eq!(
+                budget::with_current_eval_context(|c| evaluate_with_context(
+                    "recall(1)",
+                    c.unwrap()
+                )
+                .unwrap()
+                .0),
+                "2"
+            );
+            let scope_c_val = budget::with_eval_context(&mut ctx_c, || {
+                budget::with_current_eval_context(|c| {
+                    evaluate_with_context("recall(1)", c.unwrap()).unwrap().0
+                })
+            });
+            assert_eq!(scope_c_val, "3");
+
+            // After C returns, B should be restored and accessible.
+            budget::with_current_eval_context(|c| {
+                evaluate_with_context("recall(1)", c.unwrap()).unwrap().0
+            })
+        });
+        assert_eq!(scope_b_val, "2");
+
+        // After B returns, A should be restored and accessible.
+        budget::with_current_eval_context(|c| {
+            evaluate_with_context("recall(1)", c.unwrap()).unwrap().0
+        })
+    });
+    assert_eq!(scope_a_val, "1");
+
+    assert!(
+        budget::with_current_eval_context(|c| c.is_none()),
+        "no context after all scopes unwind"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// WS1-7: Depth-3 cancellation nesting remains unaffected by the eval-context
+//        re-entrancy guard.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_with_current_eval_context_cancel_nesting_unaffected() {
+    let mut ctx = EvalContext::new();
+    let _ = evaluate_with_context("store(11, 1)", &mut ctx);
+
+    let flag_a = Arc::new(AtomicBool::new(false));
+    let flag_b = Arc::new(AtomicBool::new(true));
+    let flag_c = Arc::new(AtomicBool::new(false));
+
+    let observed = budget::with_eval_context(&mut ctx, || {
+        budget::with_cancel_flag(Some(flag_a.clone()), || {
+            // Accessor works alongside cancel flags at every depth.
+            let a_val = budget::with_current_eval_context(|c| {
+                evaluate_with_context("recall(1)", c.unwrap()).unwrap().0
+            });
+            let b_val = budget::with_cancel_flag(Some(flag_b.clone()), || {
+                budget::with_current_eval_context(|c| {
+                    evaluate_with_context("recall(1)", c.unwrap()).unwrap().0
+                })
+            });
+            let c_val = budget::with_cancel_flag(Some(flag_c.clone()), || {
+                budget::with_current_eval_context(|c| {
+                    evaluate_with_context("recall(1)", c.unwrap()).unwrap().0
+                })
+            });
+            assert_eq!(c_val, "11");
+            assert_eq!(b_val, "11");
+            a_val
+        })
+    });
+    assert_eq!(observed, "11");
+
+    assert!(
+        budget::current_cancel_flag().is_none(),
+        "no cancel flag after all scopes"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// WS1-8: math_eval through direct registry dispatch uses the per-call context.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_math_eval_dispatch_uses_per_call_context() {
+    let registry = ToolRegistry::default();
+
+    // Direct call_json installs EvalContext::mcp_mode() via run_bounded().
+    let r = registry.call_json("math_eval", serde_json::json!({"expression": "2 + 3"}));
+    assert!(r.is_ok());
+    assert!(r.unwrap().ok, "direct dispatch should succeed");
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// WS1-9: Bounded context-aware dispatch preserves deterministic context behavior.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_bounded_dispatch_deterministic_context() {
+    let registry = ToolRegistry::default();
+    let ctx = ExecutionContext::mcp_default(Profile::Full, ToolAudience::Model);
+
+    let r1 = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "5 + 5"}),
+        &ctx,
+    );
+    let r2 = registry.call_json_with_execution_context(
+        "math_eval",
+        serde_json::json!({"expression": "5 + 5"}),
+        &ctx,
+    );
+
+    assert!(r1.is_ok() && r2.is_ok());
+    let v1 = r1.unwrap().result.unwrap()["value"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let v2 = r2.unwrap().result.unwrap()["value"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(v1, v2, "bounded dispatch must remain deterministic");
+    assert_eq!(v1, "10");
+}

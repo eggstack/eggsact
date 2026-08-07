@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 thread_local! {
     static CURRENT_CANCEL_FLAG: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
     static CURRENT_EVAL_CONTEXT: RefCell<Option<*mut EvalContext>> = const { RefCell::new(None) };
+    static EVAL_CONTEXT_MUTABLY_BORROWED: RefCell<bool> = const { RefCell::new(false) };
 }
 
 /// RAII guard that restores the previous cancellation flag on drop.
@@ -40,6 +41,21 @@ impl Drop for EvalContextGuard {
     fn drop(&mut self) {
         CURRENT_EVAL_CONTEXT.with(|cell| {
             *cell.borrow_mut() = self.previous.take();
+        });
+    }
+}
+
+/// RAII guard that clears the mutable-borrow flag on drop.
+///
+/// While this guard is alive, [`with_current_eval_context`] refuses to
+/// produce another `&mut EvalContext`. Drop restores the flag even on
+/// unwind.
+struct EvalBorrowGuard;
+
+impl Drop for EvalBorrowGuard {
+    fn drop(&mut self) {
+        EVAL_CONTEXT_MUTABLY_BORROWED.with(|cell| {
+            *cell.borrow_mut() = false;
         });
     }
 }
@@ -87,34 +103,39 @@ where
 /// The closure receives `Option<&mut EvalContext>` — `Some` if an eval context
 /// is installed via [`with_eval_context`], `None` otherwise. The mutable borrow
 /// exists only for the duration of the closure, preventing escaping references.
+///
+/// While the closure is running, a thread-local guard prevents any other call
+/// to `with_current_eval_context` from producing a second `&mut EvalContext`.
+/// Re-entrant access is treated as an internal invariant violation and
+/// panics. The guard is restored on normal return and during unwind, so the
+/// mutable-borrow state never leaks across calls.
 pub fn with_current_eval_context<R>(f: impl FnOnce(Option<&mut EvalContext>) -> R) -> R {
+    {
+        let already_borrowed = EVAL_CONTEXT_MUTABLY_BORROWED.with(|cell| *cell.borrow());
+        assert!(
+            !already_borrowed,
+            "with_current_eval_context: re-entrant mutable access to the installed EvalContext is not allowed"
+        );
+        EVAL_CONTEXT_MUTABLY_BORROWED.with(|cell| {
+            *cell.borrow_mut() = true;
+        });
+    }
+    let _borrow_guard = EvalBorrowGuard;
+
     CURRENT_EVAL_CONTEXT.with(|cell| {
         let ptr_opt: Option<*mut EvalContext> = *cell.borrow();
         match ptr_opt {
             Some(ptr) => {
                 // SAFETY: the pointer was derived from a valid &mut EvalContext
                 // in with_eval_context and is valid for the enclosing scope.
-                // The borrow does not escape this callback.
+                // The borrow does not escape this callback. The mutable-borrow
+                // guard above prevents a second `&mut EvalContext` from being
+                // handed out while this one is live.
                 f(Some(unsafe { &mut *ptr }))
             }
             None => f(None),
         }
     })
-}
-
-/// Retrieve a mutable reference to the current thread's [`EvalContext`], if one is set.
-///
-/// # Deprecated
-///
-/// Use [`with_current_eval_context`] instead. This function returns an escaping
-/// `&'static mut` reference which is unsound. Retained temporarily for
-/// migration compatibility.
-#[deprecated(
-    since = "1.3.0",
-    note = "Unsound. Use with_current_eval_context() for closure-scoped access."
-)]
-pub fn current_eval_context() -> Option<&'static mut EvalContext> {
-    CURRENT_EVAL_CONTEXT.with(|cell| cell.borrow_mut().as_mut().map(|ptr| unsafe { &mut **ptr }))
 }
 
 /// Create a `BudgetContext` suitable for a tool handler, automatically

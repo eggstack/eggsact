@@ -64,7 +64,7 @@ Two thread-local bridges allow handler functions (which have signature `fn(&Valu
 |--------|---------|--------|
 | `with_cancel_flag(flag, f)` | Sets the thread's cancellation flag for the duration of `f` | Guard-owned previous value; RAII `CancelFlagGuard` restores on drop |
 | `with_eval_context(ctx, f)` | Sets the thread's `EvalContext` for the duration of `f` | Guard-owned previous pointer; RAII `EvalContextGuard` restores on drop |
-| `with_current_eval_context(f)` | Closure-scoped access to the current `EvalContext` | Mutable borrow exists only inside `f`; no escaping references |
+| `with_current_eval_context(f)` | Closure-scoped access to the current `EvalContext` | Mutable borrow exists only inside `f`; no escaping references. Re-entrant mutable access on the same thread panics via an exclusive-access guard. |
 
 `for_handler(budget)` is the recommended entry point — it creates a `BudgetContext` and automatically picks up the thread-local cancellation flag if one is set.
 
