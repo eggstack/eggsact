@@ -152,7 +152,6 @@ The MCP stdio server reads requests serially but dispatches each as a tokio task
 |----------|-------|---------|
 | `MAX_IN_FLIGHT_REQUESTS` | 32 | Maximum concurrent request tasks |
 | `MAX_TOOL_WORKERS` | 16 | Semaphore for concurrent blocking tool executions |
-| `MAX_IN_FLIGHT_REQUESTS` | 32 | Maximum concurrent request tasks |
 | `MAX_REQUEST_BYTES` | 1,000,000 | Maximum request size |
 | `MAX_OUTPUT_BYTES` | 1,000,000 | Maximum response size |
 
