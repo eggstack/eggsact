@@ -72,7 +72,24 @@ tests/
   lib.rs            # declares test modules: calc, mcp, parity, text, property
   parity/           # Python/Rust parity tests (requires ../eggcalc)
   property/         # property-based tests (10 files, 55 tests)
+architecture/       # detailed design docs (15 files) — see below
 ```
+
+## Architecture docs
+
+Detailed design documentation lives in `architecture/`. Use these as the deep-reference for the gotchas below:
+
+| Doc | Covers |
+|-----|--------|
+| `architecture/machine-codes.md` | Full machine code table, finding helpers, verdict constants |
+| `architecture/budget-concurrency.md` | SyncExecutionPool, truncation, budget checks |
+| `architecture/mcp-server.md` | MCP lifecycle, concurrency, response ordering |
+| `architecture/registry-profiles.md` | Profile definitions, audience model, exposure levels |
+| `architecture/calculator.md` | Evaluator, normalization, units, context |
+| `architecture/text-library.md` | Text module catalog and conventions |
+| `architecture/preflight.md` | Typed preflight wrappers, composite tools |
+| `architecture/agent-api.md` | ToolRegistry, in-process execution path |
+| `architecture/testing.md` | Test structure, parity, property tests, fuzzing |
 
 ## Key gotchas
 
@@ -89,10 +106,10 @@ tests/
 - **`serde_json` uses `preserve_order`** — key order is intentional in serialized JSON.
 - **Regex backend auto-selection**: `regex_finditer` and `validate_regex` use `compile_regex()` in `src/text/regex_engine.rs` to pick between Rust `regex` (fast, linear-time) and `fancy-regex` (lookaround/backreferences). Outputs report `engine_used` and `unsupported_features`. This is NOT PCRE2.
 - **Context-aware vs legacy APIs**: `call_json_with_execution_context()` clones `eval_ctx` — mutations do **not** persist back. Use `call_json_with_execution_context_mut()` for persistent state, or `evaluate_with_context()`/`run_with_context()` for calculator state. **`call_json_with_execution_context_mut` is `#[deprecated(since = "0.4.0")]`**. Use `with_current_eval_context()` for closure-scoped thread-local access. Re-entrant mutable access panics via an exclusive-access guard.
-- **Response truncation is automatic**: `truncate_response()` caps findings/output when a tool exceeds its budget. Check `limits_applied` in the response envelope.
-- **MCP response ordering is concurrent**: Responses may arrive out of request order. **Correlate by JSON-RPC `id`**, not arrival position.
-- **Sync execution pool for budget-aware APIs**: `call_json_with_budget`, `call_json_with_context`, and `call_json_with_execution_context` route through `SyncExecutionPool` (8 workers, 32-slot queue). Queue saturation returns `RESOURCE_EXHAUSTED`. `call_json` remains direct (no pool). The MCP server path uses Tokio `spawn_blocking`.
-- **MCP lifecycle required**: The server requires `initialize` → `notifications/initialized` before `tools/list`, `tools/call`, `profiles/list`. Methods before initialization return `-32600` with `NOT_INITIALIZED` data code. Ping is always allowed.
+- **Response truncation is automatic**: `truncate_response()` caps findings/output when a tool exceeds its budget. Check `limits_applied` in the response envelope. See `architecture/budget-concurrency.md`.
+- **MCP response ordering is concurrent**: Responses may arrive out of request order. **Correlate by JSON-RPC `id`**, not arrival position. See `architecture/mcp-server.md`.
+- **Sync execution pool for budget-aware APIs**: `call_json_with_budget`, `call_json_with_context`, and `call_json_with_execution_context` route through `SyncExecutionPool` (8 workers, 32-slot queue). Queue saturation returns `RESOURCE_EXHAUSTED`. `call_json` remains direct (no pool). The MCP server path uses Tokio `spawn_blocking`. See `architecture/budget-concurrency.md`.
+- **MCP lifecycle required**: The server requires `initialize` → `notifications/initialized` before `tools/list`, `tools/call`, `profiles/list`. Methods before initialization return `-32600` with `NOT_INITIALIZED` data code. Ping is always allowed. See `architecture/mcp-server.md`.
 - **`ToolDefinition`** lives in `src/mcp/registry/types.rs` (not `server.rs`).
 - **`ToolAudience`** enum (`Model`, `Harness`, `Debug`) controls exposure. Use `available_tools_model_safe()` for model-facing integrations.
 - **`Profile::from_str_opt`** is strict — returns `None` for unknown names. Use `Profile::custom(name)` for custom profiles.
@@ -108,6 +125,8 @@ Tools have typed `ToolExposure` and `ToolListAudience` enums in `src/mcp/registr
 - **Audience**: `Model` (excludes HarnessOnly+Hidden), `Harness` (excludes Hidden), `Debug` (all non-hidden)
 
 **No per-call profile override**: `tools/call` intentionally does NOT accept a `profile` parameter. The active profile is set once at server startup via `EGGCALC_MCP_PROFILE` and applies to all `tools/call` requests.
+
+See `architecture/registry-profiles.md` for profile definitions and the audience model.
 
 ## Skills
 

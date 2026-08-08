@@ -1,6 +1,6 @@
 # Testing
 
-The eggsact test suite spans 70+ test files across 4 integration suites, plus unit tests in `src/` and doc tests. All integration tests compile into a single test crate via `tests/lib.rs`.
+The eggsact test suite spans 70+ test files across 5 integration suites, plus unit tests in `src/` and doc tests. All integration tests compile into a single test crate via `tests/lib.rs`.
 
 See also: [Calculator](calculator.md), [MCP Server](mcp-server.md), [Agent API](agent-api.md), [Preflight](preflight.md)
 
@@ -10,11 +10,11 @@ See also: [Calculator](calculator.md), [MCP Server](mcp-server.md), [Agent API](
 tests/
   lib.rs                          # single test crate root, declares 5 modules
   test_context_isolation.rs       # context isolation integration tests (819 lines)
-  calc/                           # calculator tests (4 files)
+  calc/                           # calculator tests (5 files)
   mcp/                            # MCP protocol + tool tests (28 files)
   text/                           # text processing tests (24 files)
   parity/                         # Python/Rust parity tests (11 files)
-  property/                       # property-based tests (9 files, 47 tests)
+  property/                       # property-based tests (11 files, 55 tests)
   fixtures/
     accepted_parity_failures.txt  # 34 known parity failures for regression detection
 fuzz/
@@ -38,7 +38,7 @@ All integration tests run via `cargo test --test lib`. Context isolation tests a
 
 ## Calculator Tests (`tests/calc/`)
 
-Four files covering the calculator core (`src/calc/`):
+Five files covering the calculator core (`src/calc/`):
 
 | File | Coverage |
 |------|----------|

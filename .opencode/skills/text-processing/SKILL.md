@@ -3,7 +3,7 @@ name: text-processing
 description: Use when working with text processing functionality in src/text/, adding new text modules, or understanding the text module catalog and conventions in the eggsact codebase.
 ---
 
-## Module List (25 modules)
+## Module List (25 modules, 27 files including `mod.rs` and `confusables_generated.rs`)
 
 | Module | File | Purpose |
 |--------|------|---------|
