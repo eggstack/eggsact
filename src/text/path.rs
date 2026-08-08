@@ -710,10 +710,9 @@ pub fn path_scope_check(
             _ => unreachable!(),
         };
         findings.push(format!(
-            "Drive-relative target 'C:{}' cannot be resolved lexically; \
+            "Drive-relative target '{}' cannot be resolved lexically; \
              the result depends on the current directory on drive {}",
-            target_pre.trim_start_matches(|c: char| c.is_ascii_alphabetic() || c == ':'),
-            drive
+            target_pre, drive
         ));
     }
 

@@ -121,7 +121,8 @@ python3 scripts/generate_confusables.py
 
 The script:
 
-1. Fetches `confusables.txt` from `https://www.unicode.org/Public/security/latest/confusables.txt`
+1. Fetches `confusables.txt` from the version-specific Unicode 17.0.0 source
+   `https://www.unicode.org/Public/17.0.0/security/confusables.txt`
 2. Verifies downloaded bytes against a pinned SHA-256 checksum
 3. Verifies the file header reports the pinned Unicode Security version
 4. Parses hex code point mappings (source → substitution)
@@ -135,6 +136,8 @@ The script:
 - No network access needed at build time (data is static)
 - Listed in `Cargo.toml`'s `include` list for `cargo package`
 - Regeneration needed only when a new Unicode version adds confusables mappings
+- Regeneration is a maintainer action; ordinary CI and `scripts/release-check.sh`
+  use the checked-in data and do not download Unicode sources
 
 ## Parity Tests
 

@@ -4,6 +4,10 @@
 .DS_Store
 Thumbs.db
 
+# Python caches
+__pycache__/
+*.py[cod]
+
 # Editor files
 *.swp
 *.swo

@@ -434,6 +434,14 @@ fn test_scope_check_drive_relative_finding_message() {
 }
 
 #[test]
+fn test_scope_check_drive_relative_finding_uses_actual_drive() {
+    let result = path_scope_check("C:\\work", "D:foo", "windows", true);
+    assert!(!result.inside_root);
+    assert!(result.findings.iter().any(|f| f.contains("D:foo")));
+    assert!(!result.findings.iter().any(|f| f.contains("C:foo")));
+}
+
+#[test]
 fn test_analyze_drive_relative_warning() {
     // path_analyze should emit a warning for drive-relative paths.
     let result = path_analyze("C:foo", "windows");

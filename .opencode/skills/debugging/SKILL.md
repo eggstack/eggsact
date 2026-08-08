@@ -35,6 +35,19 @@ If confusable character detection seems wrong:
 python3 scripts/generate_confusables.py  # regenerate from Unicode.org
 ```
 Never edit `src/text/confusables_generated.rs` directly.
+The generator is pinned to
+`https://www.unicode.org/Public/17.0.0/security/confusables.txt` and verifies
+the expected SHA-256 and header before writing; ordinary CI is offline.
+
+For bounded JSONL failures, inspect `read_bounded_line()` in
+`src/mcp/server.rs`. It must count every byte before LF, subtract only a
+terminating CR, retain no more than the request cap, and consume exactly
+through LF. Reproduce chunk-boundary cases with the small-capacity
+`BufReader` tests before changing the transport.
+
+For Windows drive-relative scope findings, use a non-C target such as `D:foo`.
+The result must remain outside the root and the message must contain the
+actual target, not a hardcoded drive.
 
 ### MCP Server Issues
 

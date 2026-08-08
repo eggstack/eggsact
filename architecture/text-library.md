@@ -579,7 +579,11 @@ Static confusables map loaded from generated data at startup via `LazyLock`:
 pub static CONFUSABLES: LazyLock<HashMap<&'static str, &'static str>>
 ```
 
-Source data: `src/text/confusables_generated.rs` (auto-generated from unicode.org confusables.txt by `scripts/generate_confusables.py`). Contains 6,565 entries mapping Unicode codepoints to their confusable equivalents. Pinned to Unicode Security version 17.0.0 with SHA-256 checksum verification.
+Source data: `src/text/confusables_generated.rs` (auto-generated from
+`https://www.unicode.org/Public/17.0.0/security/confusables.txt` by
+`scripts/generate_confusables.py`). Contains 6,565 entries mapping Unicode
+codepoints to their confusable equivalents. Pinned to Unicode Security
+version 17.0.0 with SHA-256 checksum verification.
 
 | Function | Description |
 |----------|-------------|
@@ -640,7 +644,8 @@ collapse cannot pop the host or share components, and scope checks reject
 traversal above the share root. Windows drive-relative paths (`C:foo`) are
 treated conservatively: `path_analyze` reports them as non-absolute, and
 `path_scope_check` refuses to resolve them lexically because the result
-depends on the caller's current directory on the target drive.
+depends on the caller's current directory on the target drive. Its finding
+reports the actual drive-relative input rather than assuming `C:`.
 
 ### `path_analyze(path, style) -> PathAnalyzeResult`
 

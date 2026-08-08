@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Bounded JSONL accounting**: Cross-buffer CRLF handling now counts all
+  payload bytes discarded after the retention cap, while accepting exact-cap
+  LF/CRLF/EOF frames and preserving every following frame.
+- **Pinned Unicode source**: Confusables regeneration now names the official
+  version-specific Unicode 17.0.0 URL instead of the moving `security/latest`
+  path; the checksum and 6,565-entry generated table remain unchanged.
+- **Windows diagnostics**: Drive-relative scope findings now report the
+  actual target drive (for example, `D:foo`) while retaining conservative
+  outside-root behavior.
+- **Repository hygiene**: Python bytecode/cache artifacts are ignored and the
+  accidentally committed generator cache was removed.
 - **Execution-context soundness**: Deleted the unsound `current_eval_context()` function. Re-entrant mutable access via `with_current_eval_context()` now panics through an exclusive-access guard that restores on normal return and unwind.
 - **Bounded JSONL reader**: The oversize-drain path no longer uses raw `AsyncReadExt::read()`. Oversized-line draining uses `fill_buf()`/`consume()` exclusively so framing never consumes bytes past the terminating newline. Exactly-at-cap LF, CRLF, and EOF-terminated final lines are now accepted across buffer boundaries.
 - **Windows drive-relative paths**: `path_analyze("C:foo", "windows")` now correctly reports `absolute == false`. `path_scope_check()` never resolves a drive-relative target beneath an unrelated root — it conservatively returns `inside_root == false` with an explanatory finding. `path_analyze()` emits a warning for drive-relative paths.

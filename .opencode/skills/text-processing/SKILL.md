@@ -34,6 +34,9 @@ description: Use when working with text processing functionality in src/text/, a
 | `version` | `version.rs` | Semver comparison and constraint checking |
 
 Plus `confusables_generated.rs` — auto-generated data file (never edit directly).
+It is generated from the pinned Unicode Security 17.0.0 source by
+`scripts/generate_confusables.py`; the checked-in table is used at build time,
+so ordinary CI does not need network access.
 
 ## Code Conventions
 

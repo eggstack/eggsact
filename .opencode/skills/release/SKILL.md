@@ -14,7 +14,9 @@ description: Use when preparing or performing a release of eggsact, running the 
 ## Release process
 
 1. Ensure clean worktree on `main` at the verified commit.
-2. Regenerate confusables data: `python3 scripts/generate_confusables.py`
+2. Regenerate confusables data from the pinned Unicode 17.0.0 source:
+   `python3 scripts/generate_confusables.py` (this is the only release-step
+   network access; CI and the release check use checked-in generated data)
 3. Regenerate docs: `cargo run --features dev-tools --bin generate-docs`
 4. Run the local release check: `scripts/release-check.sh`
 5. Optional parity gate: `cargo test --test lib parity`

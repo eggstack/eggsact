@@ -355,7 +355,10 @@ stages in order:
 
 1. Bounded frame-size check (rejects lines exceeding `MAX_REQUEST_BYTES`
    during incremental reading — the server never allocates the full line
-   before checking the limit)
+   before checking the limit). The reader counts every byte before LF,
+   discounts only a final CR in CRLF, retains at most the configured cap, and
+   consumes through exactly the terminating LF so the next JSONL frame is
+   preserved.
 2. JSON parse
 3. Top-level validation (must be an object)
 4. Extract method

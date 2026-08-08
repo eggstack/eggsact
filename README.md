@@ -624,6 +624,14 @@ cargo run -- "thirty plus five"
 cargo run -- --mcp
 ```
 
+### Generated Unicode data
+
+Confusable mappings are checked into the repository as generated static data.
+Maintainers regenerate them from the pinned Unicode Security 17.0.0 source
+(`https://www.unicode.org/Public/17.0.0/security/confusables.txt`); the script
+verifies the source checksum and header before writing. Builds, CI, and the
+local release gate use the checked-in data and do not download Unicode data.
+
 ## Relationship to Python eggcalc
 
 `eggsact` is a Rust reimplementation of the Python `eggcalc` project. The Python version uses AST parsing of expressions and a plugin-based MCP server. `eggsact` reimplements the same normalization pipeline, evaluation engine, and all MCP tools in Rust for higher performance and easier distribution as a single binary.

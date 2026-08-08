@@ -1,6 +1,6 @@
 // Auto-generated from confusables.txt (Unicode UTS #39).
 // Unicode version: 17.0.0
-// Source: https://www.unicode.org/Public/security/latest/confusables.txt
+// Source: https://www.unicode.org/Public/17.0.0/security/confusables.txt
 // Source checksum (SHA-256): 091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a
 // DO NOT EDIT - regenerate with scripts/generate_confusables.py
 

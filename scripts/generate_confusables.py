@@ -21,7 +21,7 @@ from pathlib import Path
 
 # Pinned source — update these values intentionally when upgrading Unicode.
 UNICODE_SECURITY_VERSION = "17.0.0"
-CONFUSABLES_URL = "https://www.unicode.org/Public/security/latest/confusables.txt"
+CONFUSABLES_URL = "https://www.unicode.org/Public/17.0.0/security/confusables.txt"
 EXPECTED_SHA256 = "091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a"
 
 OUTPUT_FILE = Path(__file__).parent.parent / "src" / "text" / "confusables_generated.rs"
