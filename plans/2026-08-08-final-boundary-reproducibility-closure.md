@@ -702,10 +702,10 @@ Fill only after implementation and verification are complete:
 - **Drive-relative diagnostic correction:** `D:foo` reports `D:foo`, remains outside root, and never reports `C:foo`
 - **Focused verification:** bounded reader 21 passed; path 62 passed; context isolation 50 passed
 - **Ordinary verification:** fmt, clippy `-D warnings`, 3565 non-parity tests (1 ignored), 11 doc tests, and generate-docs check passed
-- **Canonical release check:** pending final clean-worktree run
+- **Canonical release check:** passed from clean `main` after `96f6102`; cargo-deny, package verification, and publish dry-run passed with no publication
 - **Prior corrective-plan reconciliation:** runtime and reproducibility records updated with `324006f` and the verified source URL
 - **Parent roadmap final note:** added final corrective follow-up for residual CRLF accounting and source-pin closure
 - **Deferred findings:** none expected
-- **Final disposition:** complete after the clean canonical release check and remote CI verification
+- **Final disposition:** complete after the clean canonical release check; remote CI verification follows the push
 
 When every acceptance item is satisfied, mark this plan `complete`, record the implementation SHA(s), and stop this line of work.

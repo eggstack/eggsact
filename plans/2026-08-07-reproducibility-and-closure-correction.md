@@ -464,7 +464,7 @@ Fill once the full corrective line is closed:
 - **Phase 5 record reconciliation:** complete — already filled
 - **Parent roadmap reconciliation:** complete — implementation range `08c419d..a3f78e3`, corrective follow-up noted
 - **Ordinary verification:** fmt, clippy, 3565 non-parity tests (1 ignored), 11 doc tests, generate-docs check all pass
-- **Canonical release check:** pending final clean-worktree run for `324006f` plus this record reconciliation
+- **Canonical release check:** passed from clean `main` after `96f6102`; cargo-deny, package verification, and publish dry-run all passed with no publication
 - **Deferred external blockers:** none
 - **Final disposition:** complete after the final boundary correction and canonical release check
 
