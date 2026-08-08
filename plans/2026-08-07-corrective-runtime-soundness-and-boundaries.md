@@ -461,13 +461,13 @@ Fill once implementation lands:
 - **Unsound accessor disposition:** deleted from `src/mcp/budget.rs` (no shim retained)
 - **Re-entrant mutable-access design:** thread-local `EVAL_CONTEXT_MUTABLY_BORROWED` flag with RAII `EvalBorrowGuard`; panics on re-entry, restores on drop/unwind
 - **Context regression tests:** 10 new tests in `tests/test_context_isolation.rs` (WS1-1 through WS1-10); all pass
-- **Bounded-reader implementation:** `read_bounded_line()` rewritten to use only `fill_buf()`/`consume()`; line-length tracking via `payload_total` + `tentative` counters; CRLF detection across chunk boundaries via `last_byte` state
-- **Chunk-boundary regression tests:** 9 new tests in `src/mcp/server.rs` (buffered_cursor helpers, exactly-cap, CRLF split, oversized-then-valid, multi-line preservation); all pass
+- **Bounded-reader implementation:** `a3f78e3` removed raw-read draining; follow-up `324006f` replaced the split counters with one total for every byte before LF, discounts only a final CR, retains bounded payload, and drains through exactly LF
+- **Chunk-boundary regression tests:** the original buffered-reader tests plus four `324006f` CRLF/EOF regressions (21 bounded-reader tests pass)
 - **Drive-relative classification design:** private `WindowsPrefix` enum with `_classify_windows_prefix()` classifier; used consistently in `path_analyze` (absolute check + warning) and `path_scope_check` (conservative rejection)
 - **Path regression tests:** 9 new tests in `tests/text/test_path.rs` (WS3-1 through WS3-11); all pass
-- **Ordinary verification:** `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --locked --all-features --skip parity --test-threads=4` (3560 passed), `cargo test --locked --doc` (11 passed), `cargo run --features dev-tools --bin generate-docs -- --check` — all green
+- **Ordinary verification:** `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --locked --all-features --skip parity --test-threads=4` (3565 passed, 1 ignored), `cargo test --locked --doc` (11 passed), `cargo run --features dev-tools --bin generate-docs -- --check` — all green
 - **Documentation updated:** AGENTS.md, architecture/budget-concurrency.md, architecture/text-library.md, CHANGELOG.md, plans/2026-08-07-corrective-runtime-soundness-and-boundaries.md
 - **Deferred findings:** none expected beyond companion closure plan
-- **Final disposition:** implementation complete, all acceptance items verified
+- **Final disposition:** original implementation complete; the separate CRLF cross-buffer accounting defect was corrected by `324006f` and verified in the final gate
 
 Do not mark the parent roadmap fully closed from this plan alone. Proceed to the companion reproducibility/closure plan only after every acceptance item above passes.

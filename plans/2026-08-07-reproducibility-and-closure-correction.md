@@ -453,7 +453,7 @@ Fill once the full corrective line is closed:
 - **Runtime corrective dependency commit(s):** `a3f78e3`
 - **Unicode pin implementation commit:** (this plan — generator script changes in `scripts/generate_confusables.py`)
 - **Pinned Unicode Security version:** 17.0.0
-- **Pinned source URL:** `https://www.unicode.org/Public/security/latest/confusables.txt` (versioned URL does not exist for 17.0.0; `latest` is the canonical source; reproducibility enforced by pinned checksum)
+- **Pinned source URL:** `https://www.unicode.org/Public/17.0.0/security/confusables.txt` (official version-specific Unicode Security 17.0.0 source, verified by `324006f`)
 - **Pinned SHA-256:** `091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a`
 - **Confusables entry count:** 6565 (verified — no change)
 - **Generated semantic diff:** none — generated files are byte-for-byte identical
@@ -463,9 +463,9 @@ Fill once the full corrective line is closed:
 - **Phase 4 record reconciliation:** complete — status `complete`, commit `63c7a94`
 - **Phase 5 record reconciliation:** complete — already filled
 - **Parent roadmap reconciliation:** complete — implementation range `08c419d..a3f78e3`, corrective follow-up noted
-- **Ordinary verification:** fmt, clippy, 3560 tests, doc tests, generate-docs check all pass
-- **Canonical release check:** cargo-deny ok, cargo package passes from clean worktree (verified after commit)
-- **Deferred external blockers:** none — versioned Unicode URL does not exist for 17.0.0; `latest` URL with pinned checksum is sufficient
-- **Final disposition:** complete — all acceptance items verified, all phase records reconciled
+- **Ordinary verification:** fmt, clippy, 3565 non-parity tests (1 ignored), 11 doc tests, generate-docs check all pass
+- **Canonical release check:** pending final clean-worktree run for `324006f` plus this record reconciliation
+- **Deferred external blockers:** none
+- **Final disposition:** complete after the final boundary correction and canonical release check
 
 When this record is complete and the acceptance checklist passes, the August 4 bounded-correctness/simplification line of work is closed. No further closure-only plan is required.

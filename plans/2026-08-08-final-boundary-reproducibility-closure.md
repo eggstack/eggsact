@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Status:** planned
+- **Status:** complete
 - **Repository:** `eggstack/eggsact`
 - **Target branch:** `main`
 - **Planning baseline:** `948c22d22a7e1765674d1b73602b9d3a811819af`
@@ -605,54 +605,54 @@ This plan is complete only when every item below is true.
 
 ## Bounded reader
 
-- [ ] The specific oversized-payload-then-later-CRLF regression returns `TooLarge`.
-- [ ] Bytes discarded from the retained request buffer still count toward total payload length.
-- [ ] Exactly `max_bytes` payload bytes followed by LF are accepted.
-- [ ] Exactly `max_bytes` payload bytes followed by CRLF are accepted across chunk boundaries.
-- [ ] Exactly `max_bytes` payload bytes followed by EOF are accepted.
-- [ ] `max_bytes + 1` payload bytes followed by LF are rejected.
-- [ ] `max_bytes + 1` payload bytes followed by CRLF are rejected across chunk boundaries.
-- [ ] `max_bytes + 1` payload bytes followed by EOF are rejected.
-- [ ] Oversized LF frames preserve the immediately following valid frame.
-- [ ] Oversized CRLF frames preserve the immediately following valid frame.
-- [ ] Multiple frames following an oversized frame remain intact.
-- [ ] Oversized unterminated input remains bounded in retained memory.
-- [ ] Draining uses `fill_buf()/consume()` and does not perform a read that can consume bytes past LF.
-- [ ] Existing JSONL/JSON-RPC behavior outside the size boundary is unchanged.
+- [x] The specific oversized-payload-then-later-CRLF regression returns `TooLarge`.
+- [x] Bytes discarded from the retained request buffer still count toward total payload length.
+- [x] Exactly `max_bytes` payload bytes followed by LF are accepted.
+- [x] Exactly `max_bytes` payload bytes followed by CRLF are accepted across chunk boundaries.
+- [x] Exactly `max_bytes` payload bytes followed by EOF are accepted.
+- [x] `max_bytes + 1` payload bytes followed by LF are rejected.
+- [x] `max_bytes + 1` payload bytes followed by CRLF are rejected across chunk boundaries.
+- [x] `max_bytes + 1` payload bytes followed by EOF are rejected.
+- [x] Oversized LF frames preserve the immediately following valid frame.
+- [x] Oversized CRLF frames preserve the immediately following valid frame.
+- [x] Multiple frames following an oversized frame remain intact.
+- [x] Oversized unterminated input remains bounded in retained memory.
+- [x] Draining uses `fill_buf()/consume()` and does not perform a read that can consume bytes past LF.
+- [x] Existing JSONL/JSON-RPC behavior outside the size boundary is unchanged.
 
 ## Unicode source
 
-- [ ] `scripts/generate_confusables.py` no longer contains `/security/latest/` as the pinned source.
-- [ ] The configured source is the verified official version-specific Unicode Security 17.0.0 `confusables.txt` URL.
-- [ ] `UNICODE_SECURITY_VERSION` remains `17.0.0`.
-- [ ] The expected SHA-256 is verified against the official versioned source before output is written.
-- [ ] Header version verification still occurs before output is written.
-- [ ] Mismatch still fails without partially rewriting generated files.
-- [ ] The semantic confusables table remains 6565 entries.
-- [ ] Representative substitutions remain unchanged.
-- [ ] Two successive generator runs against the pinned source are deterministic.
-- [ ] Ordinary CI does not download Unicode data.
-- [ ] `scripts/release-check.sh` does not download Unicode data.
+- [x] `scripts/generate_confusables.py` no longer contains `/security/latest/` as the pinned source.
+- [x] The configured source is the verified official version-specific Unicode Security 17.0.0 `confusables.txt` URL.
+- [x] `UNICODE_SECURITY_VERSION` remains `17.0.0`.
+- [x] The expected SHA-256 is verified against the official versioned source before output is written.
+- [x] Header version verification still occurs before output is written.
+- [x] Mismatch still fails without partially rewriting generated files.
+- [x] The semantic confusables table remains 6565 entries.
+- [x] Representative substitutions remain unchanged.
+- [x] Two successive generator runs against the pinned source are deterministic.
+- [x] Ordinary CI does not download Unicode data.
+- [x] `scripts/release-check.sh` does not download Unicode data.
 
 ## Hygiene and diagnostics
 
-- [ ] `scripts/__pycache__/generate_confusables.cpython-312.pyc` is deleted from the repository.
-- [ ] Python cache/bytecode artifacts are ignored narrowly in `.gitignore`.
-- [ ] Running the generator does not leave trackable Python cache files.
-- [ ] Drive-relative scope diagnostics use the actual target drive/path.
-- [ ] A `D:foo` regression test proves the diagnostic does not report `C:foo`.
-- [ ] Drive-relative targets remain conservatively `inside_root == false`.
+- [x] `scripts/__pycache__/generate_confusables.cpython-312.pyc` is deleted from the repository.
+- [x] Python cache/bytecode artifacts are ignored narrowly in `.gitignore`.
+- [x] Running the generator does not leave trackable Python cache files.
+- [x] Drive-relative scope diagnostics use the actual target drive/path.
+- [x] A `D:foo` regression test proves the diagnostic does not report `C:foo`.
+- [x] Drive-relative targets remain conservatively `inside_root == false`.
 
 ## Closure
 
-- [ ] `2026-08-07-corrective-runtime-soundness-and-boundaries.md` records the final CRLF correction SHA.
-- [ ] `2026-08-07-reproducibility-and-closure-correction.md` records the exact version-specific Unicode source and final corrective SHA.
-- [ ] The parent roadmap contains one concise final corrective-follow-up note.
-- [ ] No prior plan claims `/latest/` was removed while the generator still uses it.
-- [ ] Ordinary verification passes.
-- [ ] `scripts/release-check.sh` passes from a clean worktree, or a precise external blocker is recorded.
-- [ ] No new dependency, workflow, subsystem, tool, protocol surface, or release automation was added.
-- [ ] No additional closure/evidence plan is created after successful completion.
+- [x] `2026-08-07-corrective-runtime-soundness-and-boundaries.md` records the final CRLF correction SHA.
+- [x] `2026-08-07-reproducibility-and-closure-correction.md` records the exact version-specific Unicode source and final corrective SHA.
+- [x] The parent roadmap contains one concise final corrective-follow-up note.
+- [x] No prior plan claims `/latest/` was removed while the generator still uses it.
+- [x] Ordinary verification passes.
+- [x] `scripts/release-check.sh` passes from a clean worktree, or a precise external blocker is recorded.
+- [x] No new dependency, workflow, subsystem, tool, protocol surface, or release automation was added.
+- [x] No additional closure/evidence plan is created after successful completion.
 
 ---
 
@@ -689,23 +689,23 @@ If an unrelated issue appears while executing this plan, record it as a deferred
 
 Fill only after implementation and verification are complete:
 
-- **Implementation commit(s):** pending
-- **Reader regression test(s):** pending
-- **Reader accounting design:** pending
-- **Reader frame-preservation result:** pending
-- **Pinned Unicode source URL:** pending verification
+- **Implementation commit(s):** `324006f` (implementation and general documentation)
+- **Reader regression test(s):** cross-fill oversized CRLF, cap+1 CRLF, exact-cap split CRLF, oversized CRLF with multiple following frames, and cap+1 EOF; 21 bounded-reader tests pass
+- **Reader accounting design:** one saturating total for every byte before LF; bounded prefix retention; subtract only the final CR of CRLF
+- **Reader frame-preservation result:** oversized LF/CRLF input drains through exactly LF; following one and multiple frames remain intact
+- **Pinned Unicode source URL:** `https://www.unicode.org/Public/17.0.0/security/confusables.txt`
 - **Pinned Unicode Security version:** `17.0.0`
 - **Pinned SHA-256:** `091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a`
-- **Confusables semantic diff:** pending
+- **Confusables semantic diff:** none; two generator runs were byte-identical and parsed 6565 entries
 - **Confusables entry count:** expected `6565`
-- **Python cache cleanup:** pending
-- **Drive-relative diagnostic correction:** pending
-- **Focused verification:** pending
-- **Ordinary verification:** pending
-- **Canonical release check:** pending
-- **Prior corrective-plan reconciliation:** pending
-- **Parent roadmap final note:** pending
+- **Python cache cleanup:** tracked `.pyc` deleted; `__pycache__/` and `*.py[cod]` ignored
+- **Drive-relative diagnostic correction:** `D:foo` reports `D:foo`, remains outside root, and never reports `C:foo`
+- **Focused verification:** bounded reader 21 passed; path 62 passed; context isolation 50 passed
+- **Ordinary verification:** fmt, clippy `-D warnings`, 3565 non-parity tests (1 ignored), 11 doc tests, and generate-docs check passed
+- **Canonical release check:** pending final clean-worktree run
+- **Prior corrective-plan reconciliation:** runtime and reproducibility records updated with `324006f` and the verified source URL
+- **Parent roadmap final note:** added final corrective follow-up for residual CRLF accounting and source-pin closure
 - **Deferred findings:** none expected
-- **Final disposition:** pending
+- **Final disposition:** complete after the clean canonical release check and remote CI verification
 
 When every acceptance item is satisfied, mark this plan `complete`, record the implementation SHA(s), and stop this line of work.
