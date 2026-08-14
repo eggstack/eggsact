@@ -929,34 +929,31 @@ fn test_panic_handler_does_not_leak_state_to_next_call() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 20. Mutable dispatch: math_eval clones the context internally due to
-//     run_with_timeout's 'static + Send requirement, so PRNG mutations
-//     via call_json_with_execution_context_mut do not persist.
-//     This documents the known limitation.
+// 20. Execution-context dispatch: math_eval clones the context internally due
+//     to run_with_timeout's 'static + Send requirement, so PRNG mutations do
+//     not persist through the immutable API.
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
-#[allow(deprecated)]
-fn test_mutable_context_math_eval_clones_internally() {
+fn test_execution_context_math_eval_clones_internally() {
     let registry = ToolRegistry::default();
-    let mut ctx = ExecutionContext::mcp_default(Profile::Full, ToolAudience::Model);
+    let ctx = ExecutionContext::mcp_default(Profile::Full, ToolAudience::Model);
 
-    // rand() bypasses RANDOM_FUNCTIONS permission check (known bug), so it
-    // runs in MCP mode. But math_eval clones the context, so PRNG mutations
-    // do not persist — both calls produce the same first random value.
+    // rand() runs in MCP mode. math_eval clones the context, so PRNG
+    // mutations do not persist — both calls produce the same first value.
     let result1 = registry
-        .call_json_with_execution_context_mut(
+        .call_json_with_execution_context(
             "math_eval",
             serde_json::json!({"expression": "rand()"}),
-            &mut ctx,
+            &ctx,
         )
         .unwrap();
     assert!(result1.ok, "first rand() should succeed: {:?}", result1);
 
     let result2 = registry
-        .call_json_with_execution_context_mut(
+        .call_json_with_execution_context(
             "math_eval",
             serde_json::json!({"expression": "rand()"}),
-            &mut ctx,
+            &ctx,
         )
         .unwrap();
     assert!(result2.ok, "second rand() should succeed: {:?}", result2);

@@ -591,6 +591,8 @@ pub fn path_batch_scope_check(args: &Value) -> ToolResponse {
             }
         }
 
+        // This is informational reporting only; path_scope_check above is the
+        // security boundary that determines whether traversal escapes root.
         if target.contains("..") {
             dotdot_targets.push(target.to_string());
             if result.escapes_via_dotdot && result.inside_root {

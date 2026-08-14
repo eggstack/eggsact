@@ -171,6 +171,12 @@ fn test_floor_ceil() {
 }
 
 #[test]
+fn test_round_rejects_unrepresentable_ndigits() {
+    let error = evaluate("round(1.5, 400)").unwrap_err();
+    assert!(error.contains("ndigits 400 out of range"), "got: {error}");
+}
+
+#[test]
 fn test_max_min() {
     assert_eq!(
         evaluate("max(1, 5, 3)").unwrap(),

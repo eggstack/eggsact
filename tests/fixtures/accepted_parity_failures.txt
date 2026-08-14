@@ -3,7 +3,7 @@
 # Used by tests to detect future regressions: any parity failure NOT in this list
 # is an unexpected regression.
 #
-# 33 test functions as of 2026-07-08 (milestone 6 commit).
+# 37 test functions as of 2026-08-14.
 test_shell_split_comment_handling
 test_shell_split_quoted_hash
 test_shell_split_single_quotes
@@ -38,3 +38,6 @@ test_bug006_prompt_inspect_vt_ff_detected
 test_math_eval_power
 test_version_compare_phase4_cases
 test_validate_toml_invalid
+test_validate_toml_valid
+test_toml_shape_basic
+test_config_preflight_toml

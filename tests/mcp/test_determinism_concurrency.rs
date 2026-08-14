@@ -438,14 +438,15 @@ fn test_unit_info_length_category() {
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     let info = &r["result"];
     // Should have category info
-    if let Some(cat) = info.get("category") {
-        let cat_str = cat.as_str().unwrap_or("");
-        assert!(
-            cat_str.contains("length") || cat_str.contains("distance") || !cat_str.is_empty(),
-            "km should be a length unit, got category: {}",
-            cat_str
-        );
-    }
+    let cat = info
+        .get("category")
+        .expect("unit_info result must include category");
+    let cat_str = cat.as_str().expect("unit_info category must be a string");
+    assert!(
+        cat_str.contains("length") || cat_str.contains("distance"),
+        "km should be a length unit, got category: {}",
+        cat_str
+    );
 }
 
 #[test]
@@ -453,14 +454,15 @@ fn test_unit_info_weight_category() {
     let r = call_tool("unit_info", serde_json::json!({"unit": "kg"}));
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     let info = &r["result"];
-    if let Some(cat) = info.get("category") {
-        let cat_str = cat.as_str().unwrap_or("");
-        assert!(
-            cat_str.contains("mass") || cat_str.contains("weight") || !cat_str.is_empty(),
-            "kg should be a mass unit, got category: {}",
-            cat_str
-        );
-    }
+    let cat = info
+        .get("category")
+        .expect("unit_info result must include category");
+    let cat_str = cat.as_str().expect("unit_info category must be a string");
+    assert!(
+        cat_str.contains("mass") || cat_str.contains("weight"),
+        "kg should be a mass unit, got category: {}",
+        cat_str
+    );
 }
 
 #[test]
@@ -468,14 +470,15 @@ fn test_unit_info_temperature() {
     let r = call_tool("unit_info", serde_json::json!({"unit": "C"}));
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     let info = &r["result"];
-    if let Some(cat) = info.get("category") {
-        let cat_str = cat.as_str().unwrap_or("");
-        assert!(
-            cat_str.contains("temperature") || !cat_str.is_empty(),
-            "C should be a temperature unit, got category: {}",
-            cat_str
-        );
-    }
+    let cat = info
+        .get("category")
+        .expect("unit_info result must include category");
+    let cat_str = cat.as_str().expect("unit_info category must be a string");
+    assert!(
+        cat_str.contains("temperature"),
+        "C should be a temperature unit, got category: {}",
+        cat_str
+    );
 }
 
 #[test]
@@ -508,15 +511,21 @@ fn test_constant_lookup_tau() {
 #[test]
 fn test_constant_lookup_inf() {
     let r = call_tool("constant_lookup", serde_json::json!({"name": "inf"}));
-    // inf may not be a recognized constant name; just verify no panic
-    assert!(r.get("ok").is_some());
+    assert_eq!(r.get("ok"), Some(&Value::Bool(false)));
+    assert!(
+        r.get("error").is_some(),
+        "unknown constant must return an error"
+    );
 }
 
 #[test]
 fn test_constant_lookup_nan() {
     let r = call_tool("constant_lookup", serde_json::json!({"name": "nan"}));
-    // nan may not be a recognized constant name; just verify no panic
-    assert!(r.get("ok").is_some());
+    assert_eq!(r.get("ok"), Some(&Value::Bool(false)));
+    assert!(
+        r.get("error").is_some(),
+        "unknown constant must return an error"
+    );
 }
 
 #[test]

@@ -37,6 +37,7 @@ use crate::agent::{Profile, ToolAudience, ToolCallError, ToolRegistry};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
+use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
 // PreflightError
@@ -945,13 +946,14 @@ pub struct EditPreflightOutput {
 /// Typed wrapper for the `edit_preflight` tool.
 pub struct EditPreflight;
 
+static DEFAULT_REGISTRY: LazyLock<ToolRegistry> = LazyLock::new(ToolRegistry::default);
+
 impl EditPreflight {
     const TOOL: &'static str = "edit_preflight";
 
     /// Run edit preflight analysis.
     pub fn run(input: &EditPreflightInput) -> Result<EditPreflightOutput, PreflightError> {
-        let registry = ToolRegistry::default();
-        Self::run_with_registry(&registry, input)
+        Self::run_with_registry(&DEFAULT_REGISTRY, input)
     }
 
     /// Run edit preflight analysis using a caller-provided ToolRegistry.

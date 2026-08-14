@@ -163,6 +163,11 @@ fn main() {
         CliCommand::Help => print_usage(),
         CliCommand::Version => println!("eggsact {}", env!("CARGO_PKG_VERSION")),
         CliCommand::Mcp => {
+            if let Err(error) = runtime::init_active_profile() {
+                eprintln!("Error: {error}");
+                std::process::exit(1);
+            }
+            eggsact::calc::normalize::warm_calculator_regex_cache();
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .thread_name("eggsact-mcp")

@@ -475,6 +475,10 @@ async fn execute_tool_bounded_inner(
     _hooks: ExecutionHooks,
     metrics: &'static runtime::RuntimeMetrics,
 ) -> ExecutionOutcome {
+    // Warm one-time calculator initialization before starting the bounded
+    // dispatch window. This keeps regex compilation out of the first call's
+    // elapsed-time budget for both MCP and in-process execution.
+    crate::calc::normalize::warm_calculator_regex_cache();
     let timeout_ms = budget.max_elapsed_ms;
     let tool_name_for_timeout = tool_name.clone();
 
@@ -637,7 +641,7 @@ async fn execute_tool_bounded_inner(
             timed_out: false,
         },
         Err(_timeout) => {
-            cancel_flag_for_timeout.store(true, Ordering::Relaxed);
+            cancel_flag_for_timeout.store(true, Ordering::Release);
             metrics.total_timeouts.fetch_add(1, Ordering::Relaxed);
 
             #[cfg(test)]

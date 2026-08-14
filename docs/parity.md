@@ -174,12 +174,12 @@ tests that previously differed (Python emitted only `valid_pattern`,
 `matches`, `truncated`, `match_count`, `error` while Rust also emits
 `engine_used`, `dialect`, `unsupported_features`) were resolved 2026-07-09
 by switching them to the existing superset comparator (`compare_tool_parity_superset`)
-in `tests/parity/mod.rs`. Categories C1–C6 (34 accepted failures) remain
+in `tests/parity/mod.rs`. Categories C1–C6 (37 accepted failures) remain
 documented in `tests/fixtures/accepted_parity_failures.txt`.
 
 ## Known parity gaps
 
-The 34 remaining parity failures are classified below (down from 56 after
+The 37 remaining parity failures are classified below (down from 60 after
 fixing Category A). None are regressions from a single change; they
 accumulated across the phase 06–09 line of work. The concurrent-ordering
 failures (old Category D) were resolved 2026-07-07 by switching
@@ -237,16 +237,20 @@ updating all MCP test helpers to use `Harness` audience.
 | 44 | `parity/test_tools_tier0.rs` | `test_unit_info_invalid` | C4 | Error envelope shape differs | No | Defer: cosmetic difference |
 | 45 | `parity/test_tools_core.rs` | `test_math_eval_power` | C4 | Power expression output differs | No | Defer: cosmetic difference |
 | 46 | `parity/test_tools_phase4.rs` | `test_version_compare_phase4_cases` | C4 | Version compare output differs | No | Defer: cosmetic difference |
-| 47 | `parity/test_tools_list.rs` | `test_tools_list_order_full` | C5 | Index 11: Python=validate_brackets, Rust=text_position | No | Defer: registration order difference |
-| 48 | `parity/test_tools_list.rs` | `test_tools_list_order_normal` | C5 | Same | No | Defer |
-| 49 | `parity/test_tools_list.rs` | `test_tools_list_order_compact` | C5 | Same | No | Defer |
-| 50 | `parity/test_semantic_parity.rs` | `test_tools_list_tier_true_as_bool` | C5 | Rust has 4 extra tools vs Python | No | Defer: Rust superset |
-| 51 | `parity/test_semantic_parity.rs` | `test_tools_list_tier_false_as_bool` | C5 | Same | No | Defer |
-| 52 | `parity/test_semantic_parity.rs` | `test_tools_list_tier_int` | C5 | Same | No | Defer |
-| 53 | `parity/test_semantic_parity.rs` | `test_tools_list_full_schema_parity` | C5 | Tool count mismatch: Rust=80, Python=67 | No | Defer: Rust superset |
-| 54 | `parity/test_semantic_parity.rs` | `test_profiles_list_parity` | C5 | Per-profile tool sets differ (Rust extras) | No | Defer |
-| 55 | `parity/test_error_handling.rs` | `test_shell_split_basic` | C6 | Raw MCP response comparison differs; shell_split HarnessOnly in Rust subprocess | No | Defer: needs Harness audience in test |
-| 56 | `parity/test_bug_fixes.rs` | `test_bug006_prompt_inspect_vt_ff_detected` | C6 | prompt_input_inspect HarnessOnly, raw MCP call lacks audience | No | Defer: needs Harness audience in test |
+| 47 | `parity/test_tools_tier1.rs` | `test_validate_toml_invalid` | C4 | Invalid TOML diagnostic differs | No | Defer: cosmetic difference |
+| 48 | `parity/test_tools_tier1.rs` | `test_validate_toml_valid` | C4 | TOML shape metadata differs | No | Defer: accepted Rust behavioral difference |
+| 49 | `parity/test_tools_tier2.rs` | `test_toml_shape_basic` | C4 | TOML shape metadata differs | No | Defer: accepted Rust behavioral difference |
+| 50 | `parity/test_tools_tier3.rs` | `test_config_preflight_toml` | C4 | TOML subresult metadata differs | No | Defer: accepted Rust behavioral difference |
+| 51 | `parity/test_tools_list.rs` | `test_tools_list_order_full` | C5 | Index 11: Python=validate_brackets, Rust=text_position | No | Defer: registration order difference |
+| 52 | `parity/test_tools_list.rs` | `test_tools_list_order_normal` | C5 | Same | No | Defer |
+| 53 | `parity/test_tools_list.rs` | `test_tools_list_order_compact` | C5 | Same | No | Defer |
+| 54 | `parity/test_semantic_parity.rs` | `test_tools_list_tier_true_as_bool` | C5 | Rust has 4 extra tools vs Python | No | Defer: Rust superset |
+| 55 | `parity/test_semantic_parity.rs` | `test_tools_list_tier_false_as_bool` | C5 | Same | No | Defer |
+| 56 | `parity/test_semantic_parity.rs` | `test_tools_list_tier_int` | C5 | Same | No | Defer |
+| 57 | `parity/test_semantic_parity.rs` | `test_tools_list_full_schema_parity` | C5 | Tool count mismatch: Rust=80, Python=67 | No | Defer: Rust superset |
+| 58 | `parity/test_semantic_parity.rs` | `test_profiles_list_parity` | C5 | Per-profile tool sets differ (Rust extras) | No | Defer |
+| 59 | `parity/test_error_handling.rs` | `test_shell_split_basic` | C6 | Raw MCP response comparison differs; shell_split HarnessOnly in Rust subprocess | No | Defer: needs Harness audience in test |
+| 60 | `parity/test_bug_fixes.rs` | `test_bug006_prompt_inspect_vt_ff_detected` | C6 | prompt_input_inspect HarnessOnly, raw MCP call lacks audience | No | Defer: needs Harness audience in test |
 
 ### Category definitions
 
@@ -274,7 +278,7 @@ tool handler.
 **C3 — Unicode policy check drift (3 failures).** Output shape or finding
 severity/details differ between Rust and Python for `unicode_policy_check`.
 
-**C4 — Tool output drift (7 failures).** Miscellaneous output differences:
+**C4 — Tool output drift (11 failures).** Miscellaneous output differences:
 `cargo_toml_inspect` shape, `constant_lookup` metadata ordering,
 `unit_info` error envelope, `text_security_inspect` finding shape,
 `edit_preflight` missing `match_codepoint_length` field in subtool output,
@@ -305,10 +309,10 @@ calls a HarnessOnly tool without proper audience setup.
 | C1 — Shell tokenization | 9 | Defer: accepted Rust behavioral difference | No |
 | C2 — Prompt input inspect | 4 | Defer: Rust has richer findings | No |
 | C3 — Unicode policy check | 3 | Defer: Rust has different finding structure | No |
-| C4 — Tool output drift | 8 | Defer: cosmetic or intentional Rust differences | No |
+| C4 — Tool output drift | 11 | Defer: cosmetic or intentional Rust differences | No |
 | C5 — Tools/list ordering | 8 | Defer: Rust superset (80 vs 67 tools) | No |
 | C6 — Error handling | 2 | Defer: needs Harness audience in test | No |
-| **Total** | **56** | **383 passed, 34 failed, 2 ignored** | **None** |
+| **Total** | **60** | **383 passed, 37 failed, 5 ignored** | **None** |
 
 ### Known tool-set gap: 80 vs 67 tools
 

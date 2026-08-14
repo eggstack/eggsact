@@ -1,3 +1,4 @@
+use eggsact::text::regex_engine::{classify_pattern, RegexEngineUsed};
 use eggsact::text::{
     json_canonicalize, json_compare, json_extract, regex_finditer, regex_test, validate_brackets,
     validate_json, validate_regex, RegexTestResult,
@@ -534,6 +535,19 @@ fn test_regex_backend_escaped_lookaround_is_rust_regex() {
     );
     assert!(result.valid_pattern);
     assert_eq!(result.engine_used.as_deref(), Some("rust-regex"));
+}
+
+#[test]
+fn test_regex_backend_octal_escape_is_rust_regex() {
+    for pattern in [r"\00", r"\07", r"\000"] {
+        let classification = classify_pattern(pattern);
+        assert_eq!(
+            classification.preferred_engine,
+            RegexEngineUsed::RustRegex,
+            "octal escape should not be classified as a backreference: {pattern}"
+        );
+        assert!(classification.features.is_empty());
+    }
 }
 
 #[test]

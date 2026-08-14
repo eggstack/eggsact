@@ -1561,8 +1561,21 @@ fn evaluate_function(
         "round" if args.len() == 1 => Ok(banker_round(args[0])),
         "round" if args.len() == 2 => {
             let ndigits = args[1] as i32;
+            if !(-308..=308).contains(&ndigits) {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "ndigits {} out of range (-308..=308)",
+                    ndigits
+                )));
+            }
             let factor = 10.0_f64.powi(ndigits);
-            Ok(banker_round(args[0] * factor) / factor)
+            if !factor.is_finite() || factor == 0.0 {
+                return Err(EvaluationError::InvalidOperation(format!(
+                    "ndigits {} produces an unusable rounding factor",
+                    ndigits
+                )));
+            }
+            let scaled = check_result_value(args[0] * factor)?;
+            check_result_value(banker_round(scaled) / factor)
         }
         "trunc" if args.len() == 1 => Ok(args[0].trunc()),
         "sign" if args.len() == 1 => Ok(args[0].signum()),

@@ -510,7 +510,7 @@ async fn handle_request_async(
                     };
 
                     // Check if request was cancelled before execution
-                    if cancel_flag.load(Ordering::Relaxed) {
+                    if cancel_flag.load(Ordering::Acquire) {
                         return Some(wrap_tool_response(&ToolResponse::error_with_code(
                             "cancelled",
                             machine_codes::CANCELLED,

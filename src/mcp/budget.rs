@@ -375,7 +375,7 @@ impl BudgetContext {
     pub fn is_cancelled(&self) -> bool {
         self.cancelled
             .as_ref()
-            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed))
+            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire))
     }
 
     /// Returns `true` when the context should stop (expired or cancelled).

@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::LazyLock;
 
 mod test_bug_fixes;
 mod test_error_handling;
@@ -60,6 +61,27 @@ fn python_reference_root() -> Option<PathBuf> {
 
     let sibling = Path::new(env!("CARGO_MANIFEST_DIR")).join("../eggcalc");
     sibling.is_dir().then_some(sibling)
+}
+
+static PYTHON_REFERENCE_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
+    let Some(root) = python_reference_root() else {
+        return false;
+    };
+    Command::new("python3")
+        .args(["-c", "import eggcalc.mcp.server"])
+        .current_dir(root)
+        .status()
+        .is_ok_and(|status| status.success())
+});
+
+fn parity_skip_result(tool_name: &str) -> ParityTestResult {
+    ParityTestResult {
+        passed: true,
+        error: Some(format!(
+            "Parity test '{}': Python eggcalc reference unavailable; skipped",
+            tool_name
+        )),
+    }
 }
 
 fn initialize_request() -> Value {
@@ -244,6 +266,9 @@ fn run_rust_tool(tool_name: &str, arguments: Value) -> Option<Value> {
 }
 
 pub fn compare_tool_parity(tool_name: &str, arguments: Value) -> ParityTestResult {
+    if !*PYTHON_REFERENCE_AVAILABLE {
+        return parity_skip_result(tool_name);
+    }
     let python_out = run_python_request(tool_name, arguments.clone(), 1);
     let rust_out = run_rust_tool(tool_name, arguments.clone());
 
@@ -286,6 +311,9 @@ pub fn compare_tool_parity(tool_name: &str, arguments: Value) -> ParityTestResul
 }
 
 pub fn compare_tool_parity_superset(tool_name: &str, arguments: Value) -> ParityTestResult {
+    if !*PYTHON_REFERENCE_AVAILABLE {
+        return parity_skip_result(tool_name);
+    }
     let python_out = run_python_request(tool_name, arguments.clone(), 1);
     let rust_out = run_rust_tool(tool_name, arguments.clone());
 
@@ -357,6 +385,9 @@ fn is_subset(python: &Value, rust: &Value) -> bool {
 }
 
 pub fn compare_tool_text_parity(tool_name: &str, arguments: Value) -> ParityTestResult {
+    if !*PYTHON_REFERENCE_AVAILABLE {
+        return parity_skip_result(tool_name);
+    }
     let python_out = run_python_request(tool_name, arguments.clone(), 1);
     let rust_out = run_rust_tool(tool_name, arguments);
 

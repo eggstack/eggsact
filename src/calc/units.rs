@@ -101,8 +101,11 @@ impl std::ops::Mul for UnitValue {
 }
 
 impl std::ops::Div for UnitValue {
-    type Output = Self;
-    fn div(self, other: Self) -> Self {
+    type Output = Result<Self, String>;
+    fn div(self, other: Self) -> Result<Self, String> {
+        if other.value == 0.0 {
+            return Err("Division by zero".to_string());
+        }
         let unit = match (&self.unit, &other.unit) {
             (Some(a), Some(b)) if a == b => None,
             (Some(a), Some(b)) => Some(format!("{}/{}", a, b)),
@@ -110,7 +113,10 @@ impl std::ops::Div for UnitValue {
             (None, Some(b)) => Some(format!("1/{}", b)),
             (None, None) => None,
         };
-        UnitValue::new_unchecked(self.value / other.value, unit)
+        match unit {
+            Some(unit) => UnitValue::with_unit(self.value / other.value, &unit),
+            None => UnitValue::new(self.value / other.value),
+        }
     }
 }
 

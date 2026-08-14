@@ -418,10 +418,24 @@ pub fn classify_pattern(pattern: &str) -> RegexClassification {
         // Skip escaped characters — the next char is literal
         if c == '\\' && i + 1 < len {
             let next = chars[i + 1];
-            // Check for backreferences: \1-\9
-            if next.is_ascii_digit() && next != '0' {
-                features.push(RegexFeature::Backreference);
-                needs_fancy = true;
+            // Check for backreferences: \1-\9. Consume up to three digits
+            // for octal escapes so \00 and \07 do not leave a digit to be
+            // classified as a separate token.
+            if next.is_ascii_digit() {
+                if next != '0' {
+                    features.push(RegexFeature::Backreference);
+                    needs_fancy = true;
+                } else {
+                    let mut escape_len = 2;
+                    while escape_len < 4
+                        && i + escape_len < len
+                        && chars[i + escape_len].is_ascii_digit()
+                    {
+                        escape_len += 1;
+                    }
+                    i += escape_len;
+                    continue;
+                }
             }
             // Detect \K (reset match start) — PCRE-only
             else if next == 'K' {

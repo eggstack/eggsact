@@ -527,7 +527,8 @@ pub fn truncate_response(response: &mut ToolResponse, budget: &crate::mcp::budge
     // never exceeding `max_findings` total.
     if let Some(ref mut findings) = response.findings {
         if findings.len() > budget.max_findings {
-            // Sort by severity (highest first) before truncating
+            // Sort by severity (highest first) before truncating. This
+            // intentionally changes the ordering of the truncated response.
             let severity_order = |s: &str| match s {
                 "critical" => 0,
                 "high" => 1,

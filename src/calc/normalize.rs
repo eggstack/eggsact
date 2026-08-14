@@ -1064,6 +1064,68 @@ fn word_boundary_regex(word: &str) -> String {
     format!(r"\b{}\b", regex_escape(word))
 }
 
+/// Compile all calculator normalization patterns before a bounded call starts.
+///
+/// The MCP budget measures handler execution, so one-time regex compilation
+/// must not be charged to the first request that happens to normalize text.
+pub fn warm_calculator_regex_cache() {
+    let _ = &*PCT_SYMBOL_RE;
+    let _ = &*PERCENT_RE;
+    let _ = &*COMPLEX_RE;
+    let _ = &*UNIT_ALT;
+    let _ = &*NUMBER_WORD_ALT;
+    let _ = &*TEMP_UNITS_LIST;
+    let _ = &*TEMP_CONVERSION_RE;
+    let _ = &*BINARY_WORD_RE;
+    let _ = &*BINARY_WORD_INNER_RE;
+    let _ = &*TO_THE_POWER_RE;
+    let _ = &*DEGREES_NON_TEMP_RE;
+    let _ = &*DEGREES_RE;
+    let _ = &*POINT_RE;
+    let _ = &*MERGE_DECIMAL_RE;
+    let _ = &*IMPLICIT_MUL_FUNC_RE;
+    let _ = &*IMPLICIT_MUL_PAREN_RE;
+    let _ = &*IMPLICIT_MUL_DIGIT_PAREN_RE;
+    let _ = &*FACTORIAL_RE;
+    let _ = &*SPLIT_NUM_MINUS_RE;
+    let _ = &*SPLIT_DOUBLE_MINUS_RE;
+    let _ = &*SPLIT_TRAILING_MINUS_RE;
+    let _ = &*UNIT_INLINE_RE;
+    let _ = &*SAME_UNIT_DIV_RE;
+    let _ = &*CONVERT_SIMPLE_RE;
+    let _ = &*CONVERT_BARE_RE;
+    let _ = &*TEMP_HANDLE_RE;
+    let _ = &*HYPHEN_RE;
+    let _ = &*NUMBER_WORD_RE;
+    let _ = unit_caret_attach_re();
+    let _ = unit_caret_denom_re();
+    let _ = unit_caret_paren_re();
+    let _ = &*UNIT_POWER_RE;
+    let _ = &*UNIT_SPELLED_RE;
+    let _ = &*UNIT_COMPOUND_RE;
+    let _ = &*BARE_COMPOUND_UNIT_RE;
+    let _ = &*SPLIT_UNIT_DIV_RE;
+    let _ = &*PER_UNIT_RE;
+    let _ = &*BARE_SIMPLE_UNIT_RE;
+    let _ = &*TEMP_DEG_CONV_PATTERNS;
+    let _ = &*TEMP_DEG_UNIT_PATTERNS;
+    let _ = &*DIGIT_SCALE_PATTERNS;
+    let _ = &*CONSTANT_PATTERNS;
+    let _ = &*MULTI_WORD_PATTERNS;
+    let _ = &*STRIPPED_LONG_PATTERNS;
+    let _ = &*STRIPPED_SHORT_PATTERNS;
+    let _ = &*OPERATOR_PATTERNS;
+    let _ = &*FUNC_NAME_PATTERNS;
+    let _ = &*COMPACT_FUNC_RE;
+    let _ = &*FUNC_FIX_PATTERNS;
+    let _ = &*NUMBER_WORDS;
+    let _ = &*MULTI_WORD_NUMBERS;
+    let _ = &*OPERATOR_CONVERSIONS;
+    let _ = &*FUNCTION_MAPPINGS;
+    let _ = &*CONSTANT_WORDS;
+    let _ = &*STRIPPED_PHRASES;
+}
+
 /// Combine consecutive number words in a string.
 ///
 /// After number word replacement, "twenty one" becomes "20 1". This function

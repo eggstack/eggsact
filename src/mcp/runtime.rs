@@ -340,17 +340,29 @@ mod lifecycle_tests {
 
 static ACTIVE_PROFILE: LazyLock<RwLock<String>> = LazyLock::new(|| {
     let profile = std::env::var("EGGCALC_MCP_PROFILE").unwrap_or_else(|_| "full".to_string());
+    RwLock::new(if registry::PROFILE_NAMES.contains(&profile.as_str()) {
+        profile
+    } else {
+        "full".to_string()
+    })
+});
+
+/// Validate and initialize the profile selected by the environment.
+///
+/// Profile validation is explicit so library callers can handle bad
+/// configuration without a process-wide exit from a lazy initializer.
+pub fn init_active_profile() -> Result<(), String> {
+    let profile = std::env::var("EGGCALC_MCP_PROFILE").unwrap_or_else(|_| "full".to_string());
     if !registry::PROFILE_NAMES.contains(&profile.as_str()) {
         let available: Vec<&str> = registry::PROFILE_NAMES.to_vec();
-        eprintln!(
-            "Error: Invalid EGGCALC_MCP_PROFILE: {:?}. Available profiles: {}",
+        return Err(format!(
+            "Invalid EGGCALC_MCP_PROFILE: {:?}. Available profiles: {}",
             profile,
             available.join(", ")
-        );
-        std::process::exit(1);
+        ));
     }
-    RwLock::new(profile)
-});
+    set_active_profile(&profile)
+}
 
 /// Parse a schema detail string, returning the validated value or `None` for
 /// invalid input. Valid values are `"compact"`, `"normal"`, and `"full"`.
@@ -711,7 +723,7 @@ pub async fn apply_cancellation(active: &ActiveRequests, request_id: &Value) -> 
     };
     // Set the flag outside the critical section — no lock held.
     if let Some(flag) = maybe_flag {
-        flag.store(true, Ordering::Relaxed);
+        flag.store(true, Ordering::Release);
         true
     } else {
         false

@@ -92,7 +92,7 @@ fn test_unit_value_mul_unitless() {
 fn test_unit_value_div_same_unit() {
     let a = UnitValue::with_unit(10.0, "m").unwrap();
     let b = UnitValue::with_unit(5.0, "m").unwrap();
-    let c = a / b;
+    let c = (a / b).unwrap();
     assert_eq!(c.value, 2.0);
     assert!(c.unit.is_none());
 }
@@ -101,7 +101,7 @@ fn test_unit_value_div_same_unit() {
 fn test_unit_value_div_different_units() {
     let a = UnitValue::with_unit(10.0, "m").unwrap();
     let b = UnitValue::with_unit(2.0, "s").unwrap();
-    let c = a / b;
+    let c = (a / b).unwrap();
     assert_eq!(c.value, 5.0);
     assert_eq!(c.unit.as_deref(), Some("m/s"));
 }
@@ -111,8 +111,7 @@ fn test_unit_value_div_by_zero() {
     let a = UnitValue::with_unit(10.0, "m").unwrap();
     let b = UnitValue::with_unit(0.0, "s").unwrap();
     let result = a / b;
-    assert!(result.value.is_infinite());
-    assert_eq!(result.unit.as_deref(), Some("m/s"));
+    assert_eq!(result, Err("Division by zero".to_string()));
 }
 
 // ─── UnitValue conversion ────────────────────────────────────────────
