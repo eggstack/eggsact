@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-08-15
+
 ### Changed
 - **Bounded JSONL accounting**: Cross-buffer CRLF handling now counts all
   payload bytes discarded after the retention cap, while accepting exact-cap
@@ -56,8 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`verify-eggsact` binary** deleted — duplicated the release gate command
   sequence and was not invoked by any workflow or script.
 - **`rt-multi-thread` Tokio feature** — no longer needed with current-thread runtime.
-
-## [1.2.1] - Unreleased
 
 ### Fixed
 - **UNC share boundary corrections** (`src/text/path.rs`): Windows UNC
