@@ -1,6 +1,7 @@
 # eggsact
 
 [![Crates.io](https://img.shields.io/crates/v/eggsact)](https://crates.io/crates/eggsact)
+[![Downloads](https://img.shields.io/crates/d/eggsact)](https://crates.io/crates/eggsact)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Deterministic MCP and in-process utility tools for coding agents. 80 tools across 20 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, and more. Includes a natural language math evaluator that parses expressions like "thirty plus five" or "30m + 100ft".
