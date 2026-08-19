@@ -30,6 +30,7 @@ enum HandlerPhase {
 enum BeginRunning {
     Run,
     CancelledBeforeStart,
+    Error,
 }
 
 /// Disposition of a timeout attempt, observed under the lifecycle lock.
@@ -75,7 +76,14 @@ impl HandlerLifecycle {
                 BeginRunning::Run
             }
             HandlerPhase::TimedOutQueued => BeginRunning::CancelledBeforeStart,
-            other => panic!("begin_running called in unexpected phase: {:?}", other),
+            other => {
+                debug_assert!(
+                    false,
+                    "begin_running called in unexpected phase: {:?}",
+                    other
+                );
+                BeginRunning::Error
+            }
         }
     }
 
@@ -565,6 +573,19 @@ async fn execute_tool_bounded_inner(
                     );
                 }
                 BeginRunning::Run => {}
+                BeginRunning::Error => {
+                    lifecycle_block.finish(metrics);
+                    return ToolResponse::error_with_code(
+                        "internal_error",
+                        machine_codes::INTERNAL_ERROR,
+                        &format!(
+                            "Tool '{}' lifecycle error: begin_running called in unexpected phase",
+                            tool_name_block
+                        ),
+                        None,
+                        Some(&tool_name_block),
+                    );
+                }
             }
 
             #[cfg(test)]

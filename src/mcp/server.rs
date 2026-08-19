@@ -135,7 +135,10 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
             let payload_in_chunk = if pos > 0 && crlf { pos - 1 } else { pos };
             let can_take = max_bytes.saturating_sub(buf.len()).min(payload_in_chunk);
             if can_take > 0 {
-                let chunk = reader.fill_buf().await.expect("buffer readable");
+                let chunk = match reader.fill_buf().await {
+                    Ok(c) => c,
+                    Err(_) => break,
+                };
                 buf.extend_from_slice(&chunk[..can_take]);
             }
             reader.consume(pos + 1);
@@ -146,7 +149,10 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
         // the bounded prefix needed to reconstruct an accepted line.
         let can_take = max_bytes.saturating_sub(buf.len()).min(chunk_len);
         if can_take > 0 {
-            let chunk = reader.fill_buf().await.expect("buffer readable");
+            let chunk = match reader.fill_buf().await {
+                Ok(c) => c,
+                Err(_) => break,
+            };
             buf.extend_from_slice(&chunk[..can_take]);
         }
         bytes_before_lf = bytes_before_lf.saturating_add(chunk_len);

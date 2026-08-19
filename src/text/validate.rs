@@ -1641,6 +1641,20 @@ pub fn regex_finditer(
 
 // ── JSON tool helpers ──────────────────────────────────────────────────
 
+/// Treat two floats as numerically equivalent for `numeric_string_equivalence`
+/// comparisons. Uses a relative tolerance so that numbers of very different
+/// magnitudes (e.g. `0.0` vs `1e-20`) are correctly distinguished instead of
+/// being collapsed by `f64::EPSILON` (which is absolute and meaningless near
+/// zero).
+fn floats_equivalent(a: f64, b: f64) -> bool {
+    if a == b {
+        return true;
+    }
+    let diff = (a - b).abs();
+    let largest = a.abs().max(b.abs());
+    diff <= f64::EPSILON * largest
+}
+
 fn get_json_type(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Null => "null".to_string(),
@@ -2347,7 +2361,7 @@ pub fn json_compare(
                         _ => Err(()),
                     },
                 ) {
-                    if (num_a - num_b).abs() < f64::EPSILON {
+                    if floats_equivalent(num_a, num_b) {
                         return;
                     }
                     *same_type = false;
@@ -2398,7 +2412,7 @@ pub fn json_compare(
             if let (serde_json::Value::String(s_a), serde_json::Value::String(s_b)) = (a_val, b_val)
             {
                 if let (Ok(num_a), Ok(num_b)) = (s_a.parse::<f64>(), s_b.parse::<f64>()) {
-                    if (num_a - num_b).abs() < f64::EPSILON {
+                    if floats_equivalent(num_a, num_b) {
                         return;
                     }
                 }

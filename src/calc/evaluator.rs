@@ -203,13 +203,11 @@ static MEMORY_REGISTERS: LazyLock<std::sync::Mutex<HashMap<String, f64>>> =
 static USER_VARIABLES: LazyLock<std::sync::Mutex<HashMap<String, f64>>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
-/// PRNG state (xorshift64) for random functions.
-static PRNG_STATE: LazyLock<std::sync::Mutex<u64>> =
-    LazyLock::new(|| std::sync::Mutex::new(123456789));
-
-/// Box-Muller spare value for randn/gauss.
-static GAUSS_SPARE: LazyLock<std::sync::Mutex<Option<f64>>> =
-    LazyLock::new(|| std::sync::Mutex::new(None));
+/// PRNG state (xorshift64) and Box-Muller spare value for randn/gauss.
+/// Held under a single Mutex to enforce a global lock order and prevent
+/// ABBA deadlock between PRNG and GAUSS_SPARE acquisitions.
+static PRNG_STATE: LazyLock<std::sync::Mutex<(u64, Option<f64>)>> =
+    LazyLock::new(|| std::sync::Mutex::new((123456789, None)));
 
 /// Enter MCP-safe mode. Idempotent: safe to call multiple times.
 /// Sets `_mcp_mode = true` and disables random/side-effect functions.
@@ -1073,7 +1071,7 @@ fn parse_power(
             if exp.fract() == 0.0 && base.fract() == 0.0 && exp.abs() < 1e15 && base.abs() < 1e15 {
                 let base_i = base as i64;
                 let exp_i = exp as i64;
-                if exp_i >= 0 {
+                if exp_i >= 0 && exp_i <= u32::MAX as i64 {
                     if let Some(result) = base_i.checked_pow(exp_i as u32) {
                         return Ok(result as f64);
                     }
@@ -1129,7 +1127,7 @@ fn parse_power_with(
             if exp.fract() == 0.0 && base.fract() == 0.0 && exp.abs() < 1e15 && base.abs() < 1e15 {
                 let base_i = base as i64;
                 let exp_i = exp as i64;
-                if exp_i >= 0 {
+                if exp_i >= 0 && exp_i <= u32::MAX as i64 {
                     if let Some(result) = base_i.checked_pow(exp_i as u32) {
                         return Ok(result as f64);
                     }
@@ -2105,10 +2103,9 @@ fn evaluate_function(
             Ok(mu + sigma * prng_randn())
         }
         "seed" if args.is_empty() => {
-            let mut state = PRNG_STATE.lock().unwrap();
-            *state = 123456789;
-            let mut spare = GAUSS_SPARE.lock().unwrap();
-            *spare = None;
+            let mut prng = PRNG_STATE.lock().unwrap_or_else(|e| e.into_inner());
+            prng.0 = 123456789;
+            prng.1 = None;
             Ok(0.0)
         }
         "seed" if args.len() == 1 => {
@@ -2119,52 +2116,52 @@ fn evaluate_function(
 
         // ── Memory / variable functions ──
         "store" if args.len() == 1 => {
-            let mut regs = MEMORY_REGISTERS.lock().unwrap();
+            let mut regs = MEMORY_REGISTERS.lock().unwrap_or_else(|e| e.into_inner());
             regs.insert("M".to_string(), args[0]);
             Ok(args[0])
         }
         "store" if args.len() == 2 => {
             let name = format!("R{}", args[1] as i64);
-            let mut regs = MEMORY_REGISTERS.lock().unwrap();
+            let mut regs = MEMORY_REGISTERS.lock().unwrap_or_else(|e| e.into_inner());
             regs.insert(name, args[0]);
             Ok(args[0])
         }
         "recall" if args.is_empty() => {
-            let regs = MEMORY_REGISTERS.lock().unwrap();
+            let regs = MEMORY_REGISTERS.lock().unwrap_or_else(|e| e.into_inner());
             Ok(*regs.get("M").unwrap_or(&0.0))
         }
         "recall" if args.len() == 1 => {
             let name = format!("R{}", args[0] as i64);
-            let regs = MEMORY_REGISTERS.lock().unwrap();
+            let regs = MEMORY_REGISTERS.lock().unwrap_or_else(|e| e.into_inner());
             Ok(*regs.get(&name).unwrap_or(&0.0))
         }
         "mplus" | "m+" | "madd" if args.len() == 1 => {
-            let mut regs = MEMORY_REGISTERS.lock().unwrap();
+            let mut regs = MEMORY_REGISTERS.lock().unwrap_or_else(|e| e.into_inner());
             let current = *regs.get("M").unwrap_or(&0.0);
             let new_val = current + args[0];
             regs.insert("M".to_string(), new_val);
             Ok(new_val)
         }
         "mminus" | "m-" | "msub" if args.len() == 1 => {
-            let mut regs = MEMORY_REGISTERS.lock().unwrap();
+            let mut regs = MEMORY_REGISTERS.lock().unwrap_or_else(|e| e.into_inner());
             let current = *regs.get("M").unwrap_or(&0.0);
             let new_val = current - args[0];
             regs.insert("M".to_string(), new_val);
             Ok(new_val)
         }
         "mc" | "mclear" if args.is_empty() => {
-            let mut regs = MEMORY_REGISTERS.lock().unwrap();
+            let mut regs = MEMORY_REGISTERS.lock().unwrap_or_else(|e| e.into_inner());
             regs.clear();
             Ok(0.0)
         }
         "mr" | "mrecall" if args.is_empty() => {
-            let regs = MEMORY_REGISTERS.lock().unwrap();
+            let regs = MEMORY_REGISTERS.lock().unwrap_or_else(|e| e.into_inner());
             Ok(*regs.get("M").unwrap_or(&0.0))
         }
         "setvar" if args.len() == 2 => {
             let var_id = args[1] as i64;
             let key = format!("v{}", var_id);
-            let mut vars = USER_VARIABLES.lock().unwrap();
+            let mut vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
             if !vars.contains_key(&key) && vars.len() >= MAX_USER_VARIABLES {
                 if let Some(oldest) = vars.keys().next().cloned() {
                     vars.remove(&oldest);
@@ -2176,24 +2173,24 @@ fn evaluate_function(
         "getvar" if args.len() == 1 => {
             let var_id = args[0] as i64;
             let key = format!("v{}", var_id);
-            let vars = USER_VARIABLES.lock().unwrap();
+            let vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
             Ok(*vars.get(&key).unwrap_or(&0.0))
         }
         "getvar" if args.len() == 2 => {
             let var_id = args[0] as i64;
             let key = format!("v{}", var_id);
-            let vars = USER_VARIABLES.lock().unwrap();
+            let vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
             Ok(*vars.get(&key).unwrap_or(&args[1]))
         }
         "delvar" if args.len() == 1 => {
             let var_id = args[0] as i64;
             let key = format!("v{}", var_id);
-            let mut vars = USER_VARIABLES.lock().unwrap();
+            let mut vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
             vars.remove(&key);
             Ok(0.0)
         }
         "listvars" if args.is_empty() => {
-            let vars = USER_VARIABLES.lock().unwrap();
+            let vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
             let s = if vars.is_empty() {
                 "{}".to_string()
             } else {
@@ -2207,7 +2204,7 @@ fn evaluate_function(
             )))
         }
         "clearvars" if args.is_empty() => {
-            let mut vars = USER_VARIABLES.lock().unwrap();
+            let mut vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
             vars.clear();
             Ok(0.0)
         }
@@ -3216,29 +3213,26 @@ fn xorshift64(state: &mut u64) -> u64 {
 }
 
 fn prng_random() -> f64 {
-    let mut state = PRNG_STATE.lock().unwrap();
-    xorshift64(&mut state) as f64 / u64::MAX as f64
+    let mut prng = PRNG_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    xorshift64(&mut prng.0) as f64 / u64::MAX as f64
 }
 
 fn prng_seed(s: u64) {
-    let mut state = PRNG_STATE.lock().unwrap();
-    *state = if s == 0 { 123456789 } else { s };
-    let mut spare = GAUSS_SPARE.lock().unwrap();
-    *spare = None;
+    let mut prng = PRNG_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    prng.0 = if s == 0 { 123456789 } else { s };
+    prng.1 = None;
 }
 
 fn prng_randn() -> f64 {
-    let mut spare = GAUSS_SPARE.lock().unwrap();
-    if let Some(val) = spare.take() {
+    let mut prng = PRNG_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(val) = prng.1.take() {
         return val;
     }
-    let mut state = PRNG_STATE.lock().unwrap();
-    let u1 = (xorshift64(&mut state) as f64 / u64::MAX as f64).max(1e-300);
-    let u2 = xorshift64(&mut state) as f64 / u64::MAX as f64;
+    let u1 = (xorshift64(&mut prng.0) as f64 / u64::MAX as f64).max(1e-300);
+    let u2 = xorshift64(&mut prng.0) as f64 / u64::MAX as f64;
     let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
     let z1 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).sin();
-    drop(state);
-    *spare = Some(z1);
+    prng.1 = Some(z1);
     z0
 }
 
