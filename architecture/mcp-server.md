@@ -758,9 +758,8 @@ Recommended profile + audience combinations for codegg:
 
 ### Generated Documentation
 
-Three files are generated from the ToolSpec registry by `cargo run --features dev-tools --bin generate-docs`:
+Two files are generated from the ToolSpec registry by `cargo run --features dev-tools --bin generate-docs`:
 
-- **README.md** tool table — all non-hidden tools listed by category
 - **architecture/mcp-server.md** profile reference — per-profile tool counts and names (sections between `BEGIN GENERATED`/`END GENERATED` markers)
 - **generated/tool-cards.md** — per-profile tool cards with required arguments
 

@@ -2,6 +2,8 @@
 
 Complete reference for all registered tools exposed by the `eggsact` MCP server.
 
+See also: [Math Features](math-features.md), [Library API](library-api.md), [MCP Server Architecture](../architecture/mcp-server.md)
+
 ## Overview
 
 | Property | Value |

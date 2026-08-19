@@ -6,7 +6,6 @@ Maintainer reference for generated files, doc generation, confusables data, pari
 
 | File | Source | Generator Command | Purpose |
 |------|--------|-------------------|---------|
-| `README.md` tool tables | `ToolSpec` registry in `src/mcp/specs/` | `cargo run --features dev-tools --bin generate-docs` | Category-organized tool catalog with tier, exposure, stability, cost, profiles |
 | `architecture/mcp-server.md` profile reference | `ToolSpec` registry + `available_profiles()` | `cargo run --features dev-tools --bin generate-docs` | Per-profile model/harness tool counts and harness-only listings |
 | `generated/tool-cards.md` | `ToolSpec` registry | `cargo run --features dev-tools --bin generate-docs` | Per-codegg-profile tool cards with required args, aliases, composite flags |
 | `src/text/confusables_generated.rs` | Unicode UTS #39 `confusables.txt` | `python3 scripts/generate_confusables.py` | Sorted static table of Unicode codepoints to confusable alternatives (binary-search key lookup) |
@@ -15,7 +14,7 @@ These files are **never hand-edited**. Edit the source of truth and re-run the g
 
 ## Doc Generation
 
-`src/bin/generate_docs.rs` is a standalone binary that reads the `ToolSpec` registry at compile time and produces three outputs:
+`src/bin/generate_docs.rs` is a standalone binary that reads the `ToolSpec` registry at compile time and produces two outputs:
 
 ### What It Reads
 
@@ -25,29 +24,6 @@ These files are **never hand-edited**. Edit the source of truth and re-run the g
 - Each `ToolSpec`'s `input_schema()` closure — for required-arg extraction in tool cards
 
 ### What It Produces
-
-**1. Tool tables in `README.md`**
-
-Inserted between HTML comment markers under the `## MCP Tools` heading:
-
-```
-<!-- BEGIN GENERATED: eggsact tools -->
-{category-organized tool tables}
-<!-- END GENERATED: eggsact tools -->
-```
-
-Each category gets a `### Category (N)` heading with a markdown table:
-
-| Column | Source |
-|--------|--------|
-| Tool | `spec.name` |
-| Tier | `spec.tier` |
-| Exposure | `spec.exposure` (short: default/contextual/expert/harness/hidden) |
-| Stability | `spec.stability` (stable/deprecated/exp) |
-| Cost | `spec.cost` (cheap/mod/heavy) |
-| Profiles | `spec.profiles` sorted and comma-joined |
-
-Hidden tools are excluded from the output.
 
 **2. Profile reference in `architecture/mcp-server.md`**
 

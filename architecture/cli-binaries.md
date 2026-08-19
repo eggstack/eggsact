@@ -225,7 +225,6 @@ cargo run --features dev-tools --bin generate-docs -- --output-dir /path  # writ
 
 | Output File | Content | Marker Pair |
 |-------------|---------|-------------|
-| `README.md` | Tool table with all non-hidden tools, grouped by category (20 categories) | `<!-- BEGIN GENERATED: eggsact tools -->` / `<!-- END GENERATED: eggsact tools -->` |
 | `architecture/mcp-server.md` | Profile reference table — model/harness tool counts, tool names, harness-only tools | `<!-- BEGIN GENERATED: profile reference -->` / `<!-- END GENERATED: profile reference -->` |
 | `generated/tool-cards.md` | Per-profile tool cards with description, tier, cost, stability, exposure, required args, and aliases | (whole file is generated) |
 
@@ -233,12 +232,11 @@ cargo run --features dev-tools --bin generate-docs -- --output-dir /path  # writ
 
 1. **Reads `ToolSpec` registry**: Calls `all_tools_vec()` and `tools_for_profile_audience()` from `src/mcp/registry/` to get the canonical tool list.
 
-2. **Generates three content blocks**:
-   - `generate_readme_tools()` — filters out `ToolExposure::Hidden` tools, groups by category (using a fixed `CATEGORY_ORDER` of 20 categories), emits markdown tables with tool name, tier, exposure, stability, cost, and profile membership.
+2. **Generates two content blocks**:
    - `generate_profile_reference()` — iterates all available profiles, counts model vs harness tools, lists harness-only tools per profile.
    - `generate_tool_cards()` — iterates 8 codegg profiles, generates per-tool cards with required args (extracted from JSON schemas), aliases, and composite flags.
 
-3. **Marker-based insertion**: For `README.md` and `architecture/mcp-server.md`, the generator uses HTML comment markers to delimit generated sections. It strips all existing generated blocks (including orphaned/duplicated ones from prior failed runs) and inserts a fresh single block. If markers don't exist yet, they are appended.
+3. **Marker-based insertion**: For `architecture/mcp-server.md`, the generator uses HTML comment markers to delimit generated sections. It strips all existing generated blocks (including orphaned/duplicated ones from prior failed runs) and inserts a fresh single block. If markers don't exist yet, they are appended.
 
 4. **Writes `generated/tool-cards.md`**: This file is entirely generated (no markers needed).
 
@@ -256,7 +254,6 @@ In check mode, the generator compares generated content against existing files a
 
 ```
 Stale generated docs:
-  README.md
   architecture/mcp-server.md
 Run `cargo run --features dev-tools --bin generate-docs` to regenerate.
 ```
@@ -276,8 +273,6 @@ The binary includes 11 unit tests (`tests` module) plus 4 marker-integrity tests
 
 | Test | Purpose |
 |------|---------|
-| `tool_table_contains_all_non_hidden_tools` | Every non-hidden tool appears in README table |
-| `generated_readme_excludes_hidden_tools` | No hidden tool appears in README table |
 | `generated_tool_cards_exclude_hidden_tools` | No hidden tool appears in tool cards |
 | `profile_counts_match_registry` | Profile reference table counts match live registry |
 | `profile_reference_includes_harness_only_tools` | Harness-only tools listed per profile |
@@ -285,7 +280,6 @@ The binary includes 11 unit tests (`tests` module) plus 4 marker-integrity tests
 | `tool_card_required_args_match_schema` | Required args in cards match JSON schemas |
 | `stale_docs_message_uses_cargo_bin_name` | Error message uses `generate-docs` (dash, not underscore) |
 | `regenerate_command_uses_dash_form` | `REGENERATE_COMMAND` constant uses dash form |
-| `readme_markers_are_well_formed` | README.md has exactly one well-ordered marker pair |
 | `mcp_server_doc_markers_are_well_formed` | mcp-server.md has exactly one well-ordered marker pair |
 
 ### When to Regenerate

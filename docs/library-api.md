@@ -355,32 +355,38 @@ let rt = tokio::runtime::Builder::new_multi_thread()
 rt.block_on(eggsact::mcp::server::main());
 ```
 
-The server reads JSON-RPC requests from stdin and writes responses to stdout. It supports the following MCP methods:
+The server supports MCP protocol versions `2025-11-25` (preferred) and `2024-11-05` (legacy).
+
+**Lifecycle**: Clients must complete the initialization handshake before calling tools:
+
+```json
+→ {"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"my-client"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{...},"serverInfo":{"name":"eggsact","version":"..."}}}
+→ {"jsonrpc":"2.0","method":"notifications/initialized"}
+→ {"jsonrpc":"2.0","method":"tools/list","id":2}
+← {"jsonrpc":"2.0","id":2,"result":{"tools":[...]}}
+```
+
+The server dispatches requests **concurrently**. Responses may arrive out of request order. **Clients must correlate responses to requests by JSON-RPC `id`**, not by arrival position.
+
+### MCP Methods
 
 | Method | Description |
 |--------|-------------|
 | `initialize` | Returns server info and capabilities |
-| `tools/list` | Returns the list of available tools |
+| `notifications/initialized` | Client acknowledgment (no response) |
+| `tools/list` | Returns registered tool definitions (filtered by profile) |
 | `tools/call` | Executes a tool by name |
+| `profiles/list` | Lists all profiles and their tool counts |
+| `ping` | Returns empty response (health check) |
+
+### Response Contract
+
+Every tool response includes a `machine_code` field (when non-OK) for programmatic routing and classification. Machine codes are defined in `src/mcp/machine_codes.rs`. See [machine-codes.md](../architecture/machine-codes.md) for the full code table and finding helpers.
 
 ### Available MCP Tools
 
-The server exposes 80 tools, including:
-
-- `math_eval` -- evaluate math expressions (NL or symbolic)
-- `text_measure` -- measure text properties (bytes, chars, words, lines)
-- `validate_json` / `validate_brackets` / `validate_regex` -- validation
-- `text_diff_explain` -- semantic diff
-- `text_fingerprint` / `text_hash` -- text comparison
-- `escape_text` / `unescape_text` -- escaping
-- `unit_convert` / `unit_info` / `constant_lookup` -- units and constants
-- `path_normalize` / `path_analyze` / `path_compare` -- path operations
-- `shell_split` / `shell_quote_join` / `argv_compare` -- shell operations
-- `markdown_structure` / `code_fence_extract` -- markdown parsing
-- `patch_apply_check` / `patch_summary` -- patch operations
-- `identifier_analyze` / `identifier_inspect` -- identifier analysis
-- `json_extract` / `json_compare` / `json_query` / `json_canonicalize` -- JSON operations
-- `glob_match` -- glob pattern matching
+80 tools across 20 categories. See [mcp-tools.md](mcp-tools.md) for the complete reference with parameters, return types, and examples.
 
 ### Programmatic Usage
 

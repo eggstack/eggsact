@@ -1,16 +1,11 @@
-use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::process;
 
-use eggsact::mcp::registry::all_tools_vec;
 use eggsact::mcp::registry::tools_for_profile_audience;
 use eggsact::mcp::registry::{
     available_profiles, ToolCost, ToolExposure, ToolListAudience, ToolSpec, ToolStability,
 };
-
-const BEGIN_TOOLS: &str = "<!-- BEGIN GENERATED: eggsact tools -->";
-const END_TOOLS: &str = "<!-- END GENERATED: eggsact tools -->";
 
 const BEGIN_PROFILES: &str = "<!-- BEGIN GENERATED: profile reference -->";
 const END_PROFILES: &str = "<!-- END GENERATED: profile reference -->";
@@ -26,29 +21,6 @@ const CODEGG_PROFILES: &[&str] = &[
     "codegg_unicode_security",
     "codegg_shell",
     "codegg_repo_audit",
-];
-
-const CATEGORY_ORDER: &[&str] = &[
-    "math",
-    "text",
-    "json",
-    "regex",
-    "validation",
-    "list",
-    "path",
-    "shell",
-    "markdown",
-    "config",
-    "identifier",
-    "unicode",
-    "version",
-    "toml",
-    "patch",
-    "cargo",
-    "dependency",
-    "repo",
-    "analysis",
-    "diagnostics",
 ];
 
 fn exposure_short(e: &ToolExposure) -> &'static str {
@@ -75,50 +47,6 @@ fn stability_short(s: &ToolStability) -> &'static str {
         ToolStability::Deprecated => "deprecated",
         ToolStability::Experimental => "exp",
     }
-}
-
-fn profile_display(spec: &ToolSpec) -> String {
-    let mut profiles: Vec<&str> = spec.profiles.to_vec();
-    profiles.sort();
-    profiles.join(", ")
-}
-
-fn generate_readme_tools() -> String {
-    let visible_tools: Vec<&ToolSpec> = all_tools_vec()
-        .iter()
-        .filter(|spec| spec.exposure != ToolExposure::Hidden)
-        .collect();
-    let mut by_category: BTreeMap<&str, Vec<&ToolSpec>> = BTreeMap::new();
-    for spec in &visible_tools {
-        by_category.entry(spec.category).or_default().push(spec);
-    }
-
-    let mut out = String::new();
-    out.push_str(&format!("{} tools across {} categories. See `architecture/mcp-server.md` for the full reference.\n\n", visible_tools.len(), by_category.len()));
-
-    for &cat in CATEGORY_ORDER {
-        let tools = match by_category.get(cat) {
-            Some(t) => t,
-            None => continue,
-        };
-        out.push_str(&format!("### {} ({})\n\n", capitalize(cat), tools.len()));
-        out.push_str("| Tool | Tier | Exposure | Stability | Cost | Profiles |\n");
-        out.push_str("|------|------|----------|-----------|------|----------|\n");
-        for spec in tools {
-            out.push_str(&format!(
-                "| `{}` | {} | {} | {} | {} | {} |\n",
-                spec.name,
-                spec.tier,
-                exposure_short(&spec.exposure),
-                stability_short(&spec.stability),
-                cost_short(&spec.cost),
-                profile_display(spec),
-            ));
-        }
-        out.push('\n');
-    }
-
-    out
 }
 
 fn generate_profile_reference() -> String {
@@ -392,14 +320,6 @@ fn write_file(path: &str, content: &str) {
     });
 }
 
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_uppercase().to_string() + c.as_str(),
-    }
-}
-
 fn main() {
     let args: Vec<String> = env::args().collect();
     let check_mode = args.iter().any(|a| a == "--check");
@@ -409,53 +329,10 @@ fn main() {
         .map(|w| w[1].clone())
         .unwrap_or_else(|| ".".to_string());
 
-    let readme_content = generate_readme_tools();
     let profile_content = generate_profile_reference();
     let cards_content = generate_tool_cards();
 
     let mut stale_files = Vec::new();
-
-    // Check/update README.md
-    let readme_path = format!("{}/README.md", output_dir);
-    let readme_file = read_file(&readme_path);
-    let existing = extract_between(&readme_file, BEGIN_TOOLS, END_TOOLS).unwrap_or("");
-    let readme_orphans = count_orphan_begins(&readme_file, BEGIN_TOOLS, END_TOOLS);
-    let needs_update = if !readme_file.contains(BEGIN_TOOLS) {
-        // No markers — need to insert
-        true
-    } else if readme_orphans > 0 {
-        // Orphan BEGIN markers present (triplication bug) — must rebuild.
-        true
-    } else {
-        existing.trim() != readme_content.trim()
-    };
-    if needs_update {
-        stale_files.push(readme_path.clone());
-        if !check_mode {
-            // Always strip ALL generated blocks (including orphans) first to
-            // guarantee a clean single-block output even when prior runs left
-            // triplicated or duplicated content.
-            let cleaned = strip_all_generated_blocks(&readme_file, BEGIN_TOOLS, END_TOOLS);
-            let marker_section = format!("\n{}\n{}\n{}\n", BEGIN_TOOLS, readme_content, END_TOOLS);
-            let updated = if let Some(pos) = cleaned.find("## MCP Tools") {
-                let heading_end = pos + "## MCP Tools".len();
-                let rest = &cleaned[heading_end..];
-                let insert_at = heading_end + rest.find('\n').unwrap_or(0) + 1;
-                let mut out = String::with_capacity(cleaned.len() + marker_section.len());
-                out.push_str(&cleaned[..insert_at]);
-                out.push_str(&marker_section);
-                out.push_str(&cleaned[insert_at..]);
-                out
-            } else {
-                let mut out = String::with_capacity(cleaned.len() + marker_section.len() + 1);
-                out.push_str(&cleaned);
-                out.push('\n');
-                out.push_str(&marker_section);
-                out
-            };
-            write_file(&readme_path, &updated);
-        }
-    }
 
     // Check/update architecture/mcp-server.md
     let arch_path = format!("{}/architecture/mcp-server.md", output_dir);
@@ -536,45 +413,6 @@ mod tests {
     use eggsact::mcp::registry::{
         all_tools_vec, tools_for_profile_audience, ToolExposure, ToolListAudience,
     };
-
-    #[test]
-    fn tool_table_contains_all_non_hidden_tools() {
-        let table = generate_readme_tools();
-        let all = all_tools_vec();
-        let non_hidden: Vec<&str> = all
-            .iter()
-            .filter(|s| s.exposure != ToolExposure::Hidden)
-            .map(|s| s.name)
-            .collect();
-        for name in &non_hidden {
-            let backtick_name = format!("`{}`", name);
-            assert!(
-                table.contains(&backtick_name),
-                "tool table missing {}",
-                name
-            );
-        }
-    }
-
-    #[test]
-    fn generated_readme_excludes_hidden_tools() {
-        let table = generate_readme_tools();
-        let all = all_tools_vec();
-        let hidden: Vec<&str> = all
-            .iter()
-            .filter(|s| s.exposure == ToolExposure::Hidden)
-            .map(|s| s.name)
-            .collect();
-        for name in &hidden {
-            let backtick_name = format!("`{}`", name);
-            assert!(
-                !table.contains(&backtick_name),
-                "tool table should not include hidden tool {}",
-                name
-            );
-        }
-        // If no hidden tools exist, the test still passes — it guards future additions.
-    }
 
     #[test]
     fn generated_tool_cards_exclude_hidden_tools() {
@@ -811,13 +649,6 @@ mod generated_marker_integrity {
             begin_pos < end_pos,
             "{file}: `{begin}` must appear before `{end}`"
         );
-    }
-
-    #[test]
-    fn readme_markers_are_well_formed() {
-        let content =
-            std::fs::read_to_string("README.md").expect("failed to read README.md from repo root");
-        assert_marker_pair(&content, BEGIN_TOOLS, END_TOOLS, "README.md");
     }
 
     #[test]
