@@ -317,7 +317,8 @@ Every MCP tool response includes a `machine_code` field (when non-OK) for progra
 ### Operations
 
 - Basic arithmetic: `+`, `-`, `*`, `/`, `%`
-- Power: `**`, `^` (e.g., `2 ** 10` = 1024)
+- Power: `**` (e.g., `2 ** 10` = 1024)
+- Bitwise XOR: `^` (e.g., `5 ^ 3` = 6)
 - Parentheses for grouping
 
 ### Functions

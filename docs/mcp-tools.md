@@ -8,7 +8,7 @@ Complete reference for all registered tools exposed by the `eggsact` MCP server.
 |----------|-------|
 | Protocol version | `2025-11-25` (preferred), `2024-11-05` (legacy) |
 | Server name | `eggsact` |
-| Server version | 1.2.1 |
+| Server version | 1.2.2 |
 | Transport | stdio JSON-RPC 2.0 |
 | Total tools | registered (see generated README table for current count) |
 
