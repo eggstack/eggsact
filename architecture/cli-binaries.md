@@ -67,7 +67,7 @@ eggsact --diagnostics --format json  # JSON output
 #### Text output example
 
 ```
-eggsact diagnostics (v1.2.2)
+eggsact diagnostics (v1.2.3)
 
 Tools: 80 total
 
@@ -110,7 +110,7 @@ Known env vars (names only, no values):
 
 ```json
 {
-  "version": "1.2.2",
+  "version": "1.2.3",
   "tool_count": 80,
   "profiles": {
     "full": 80,

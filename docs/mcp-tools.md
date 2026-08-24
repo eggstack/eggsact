@@ -10,7 +10,7 @@ See also: [Math Features](math-features.md), [Library API](library-api.md), [MCP
 |----------|-------|
 | Protocol version | `2025-11-25` (preferred), `2024-11-05` (legacy) |
 | Server name | `eggsact` |
-| Server version | 1.2.2 |
+| Server version | 1.2.3 |
 | Transport | stdio JSON-RPC 2.0 |
 | Total tools | registered (see generated README table for current count) |
 

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-08-24
+
+### Fixed
+- **CI hang resolved**: The calculator regex warm-up introduced in 1.2.2 ran
+  inline on async runtime threads and at every MCP server startup. In debug
+  builds the unit-alternation pattern compilations take multiple seconds of
+  CPU per process, which starved the bounded-dispatch timer wheel (wedging
+  the `cooperative_cancellation_visibility` test and its un-abortable
+  spinning handler until CI's job timeout) and multiplied that cost across
+  every short-lived MCP subprocess in the integration suite.
+- Warm-up now runs once per process on a detached OS thread; debug builds
+  skip it entirely. Release builds keep startup precompilation so no request
+  is charged for compilation.
+- `cooperative_cancellation_visibility` hardened: the spinning handler now
+  bails after 30 s so a failing assertion can never wedge the test process,
+  and the observation wait moved off-runtime (dedicated poller + Notify) so
+  the coordinator's timer is never starved by the watchdog.
+
+### Changed
+- Clippy compliance with rustc 1.98: replaced three literal-only `format!`
+  calls in `src/tools/text.rs` with `.to_string()`.
+
 ## [1.2.2] - 2026-08-15
 
 ### Changed
