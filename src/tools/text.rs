@@ -771,7 +771,7 @@ pub fn text_equal(args: &Value) -> ToolResponse {
             "invalid_arguments",
             machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported normalization form: {}", normalization),
-            Some(vec![format!("Use one of: raw, NFC, NFD, NFKC, NFKD")]),
+            Some(vec!["Use one of: raw, NFC, NFD, NFKC, NFKD".to_string()]),
             Some("text_equal"),
         );
     }
@@ -1830,7 +1830,7 @@ pub fn text_count(args: &Value) -> ToolResponse {
             "invalid_arguments",
             machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported normalization form: {}", normalization),
-            Some(vec![format!("Use one of: raw, NFC, NFKC")]),
+            Some(vec!["Use one of: raw, NFC, NFKC".to_string()]),
             Some("text_count"),
         );
     }
@@ -2739,7 +2739,7 @@ pub fn text_transform(args: &Value) -> ToolResponse {
             "invalid_arguments",
             machine_codes::INVALID_ARGUMENTS,
             &format!("Unsupported detail level: {}", detail),
-            Some(vec![format!("Use one of: summary, normal, full")]),
+            Some(vec!["Use one of: summary, normal, full".to_string()]),
             Some("text_transform"),
         );
     }
