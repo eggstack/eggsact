@@ -167,6 +167,13 @@ fn main() {
                 eprintln!("Error: {error}");
                 std::process::exit(1);
             }
+            // Release builds only: in debug builds this compilation takes
+            // multiple wall-clock seconds per process, which multiplied across
+            // every short-lived MCP subprocess in the integration suite blew
+            // the CI job budget (>60 min). Debug builds keep plain lazy
+            // initialization; release builds precompile here so no single
+            // request is charged for it.
+            #[cfg(not(debug_assertions))]
             eggsact::calc::normalize::warm_calculator_regex_cache();
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()

@@ -467,6 +467,31 @@ pub(crate) async fn execute_tool_bounded(
     .await
 }
 
+/// Ensures the calculator regex cache warm-up has been started, exactly once
+/// per process, on a detached OS thread (release builds only).
+///
+/// See the comment at the call site in [`execute_tool_bounded_inner`] for why
+/// this must not run inline on an async runtime thread and why debug builds
+/// skip warm-up entirely.
+#[cfg(not(debug_assertions))]
+fn ensure_calculator_warmed_detached() {
+    static CALC_WARMUP_STARTED: AtomicBool = AtomicBool::new(false);
+    if CALC_WARMUP_STARTED.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let spawned = std::thread::Builder::new()
+        .name("calc-regex-warmup".into())
+        .spawn(crate::calc::normalize::warm_calculator_regex_cache);
+    if let Err(err) = spawned {
+        // Thread spawn failed (thread-creator limits): fall back to warming
+        // inline. Slow, but correct — and better than never compiling the
+        // patterns at all.
+        CALC_WARMUP_STARTED.store(false, Ordering::Release);
+        crate::calc::normalize::warm_calculator_regex_cache();
+        let _ = err;
+    }
+}
+
 /// Core implementation shared by production and test paths.
 ///
 /// `metrics` must be `'static` because it is captured by `spawn_blocking`.
@@ -486,7 +511,25 @@ async fn execute_tool_bounded_inner(
     // Warm one-time calculator initialization before starting the bounded
     // dispatch window. This keeps regex compilation out of the first call's
     // elapsed-time budget for both MCP and in-process execution.
-    crate::calc::normalize::warm_calculator_regex_cache();
+    //
+    // Release builds only. In debug builds these ~40 lazy regex compilations
+    // (several embedding the large UNIT_ALT alternation) take multiple
+    // wall-clock SECONDS of full-CPU time per process — which both starved the
+    // runtime timer wheel when run inline (hanging CI's cooperative-cancel
+    // test) and, even detached, added that cost to EVERY short-lived process:
+    // each CLI invocation and each MCP server subprocess in the integration
+    // test suite. Debug builds therefore keep plain lazy initialization.
+    //
+    // The warm-up is also started on a detached OS thread rather than inline:
+    // running it on the calling async thread delayed arming the bounded
+    // `tokio::time::timeout` below by seconds and starved any in-flight
+    // watchdog timers. A detached thread keeps the timer wheel free; LazyLock
+    // initialization makes later concurrent derefs safe once compilation
+    // finishes. Trade-off: a request racing the background compile may still
+    // charge some remaining compilation to its budget — strictly better than
+    // blocking every caller's runtime thread behind one initializer.
+    #[cfg(not(debug_assertions))]
+    ensure_calculator_warmed_detached();
     let timeout_ms = budget.max_elapsed_ms;
     let tool_name_for_timeout = tool_name.clone();
 
@@ -1570,11 +1613,22 @@ mod deterministic_tests {
 
         // Non-capturing closure: can be coerced to fn pointer.
         // Spins on the thread-local cancel flag installed by the coordinator.
+        //
+        // The hard 30 s bail-out is load-bearing: `spawn_blocking` closures
+        // cannot be aborted, so if this handler spun forever, runtime shutdown
+        // after ANY assertion failure in this test would block on the join and
+        // wedge the whole test process (that is precisely how CI hung for
+        // >60 minutes). Bounding the spin guarantees the blocking thread — and
+        // therefore the process — always terminates.
         fn cancel_polling_handler(_args: &Value) -> ToolResponse {
+            let give_up_at = std::time::Instant::now() + Duration::from_secs(30);
             while let Some(flag) = crate::mcp::budget::current_cancel_flag() {
                 if flag.load(Ordering::Acquire) {
                     COOPERATIVE_CANCEL_OBSERVED.store(true, Ordering::SeqCst);
                     return ToolResponse::success(serde_json::json!("cancelled"), None);
+                }
+                if std::time::Instant::now() >= give_up_at {
+                    return ToolResponse::success(serde_json::json!("handler-bailout"), None);
                 }
                 std::hint::spin_loop();
             }
@@ -1607,16 +1661,45 @@ mod deterministic_tests {
             metrics.clone(),
         ));
 
-        // Wait for the handler to observe the cancel flag (it spins on it).
-        // Use a bounded watchdog to prevent a hung test — but the watchdog
-        // must not establish the expected order.
+        // Wait for the handler to observe the cancel flag. The wait runs on
+        // a dedicated OS thread that polls the static and forwards the
+        // observation through a `tokio::sync::Notify`; the test task parks on
+        // `notified()` inside a 5 s watchdog so the runtime's timer wheel
+        // stays free to fire the coordinator's 50 ms timeout. (An in-runtime
+        // `yield_now` spin here is what allowed the historical hang: once the
+        // watchdog started spinning, the late-armed coordinator timer could
+        // starve behind it.)
+        let observed = Arc::new(tokio::sync::Notify::new());
+        let observed_for_poller = observed.clone();
+        let cancel_poller = std::thread::Builder::new()
+            .name("cooperative-cancel-poller".into())
+            .spawn(move || {
+                // Polled on a dedicated OS thread so the loop is independent
+                // of whichever runtime scheduling decisions the test is
+                // making. A bounded deadline guarantees the poller exits
+                // even if the coordinator never sets the flag — otherwise
+                // the panic from the watchdog's `assert!` would unwind the
+                // test thread while this thread keeps the process alive.
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                while !COOPERATIVE_CANCEL_OBSERVED.load(Ordering::Acquire) {
+                    if std::time::Instant::now() >= deadline {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                observed_for_poller.notify_one();
+            })
+            .expect("failed to spawn cancel poller");
+
         let watchdog = tokio::time::timeout(Duration::from_secs(5), async {
-            while !COOPERATIVE_CANCEL_OBSERVED.load(Ordering::SeqCst) {
-                tokio::task::yield_now().await;
-            }
+            observed.notified().await;
         });
+        let observed_in_time = watchdog.await.is_ok();
+        cancel_poller
+            .join()
+            .expect("cancel poller thread must not panic");
         assert!(
-            watchdog.await.is_ok(),
+            observed_in_time,
             "handler must observe the cancel flag within 5s"
         );
 

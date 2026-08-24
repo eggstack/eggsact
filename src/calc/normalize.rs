@@ -1068,6 +1068,12 @@ fn word_boundary_regex(word: &str) -> String {
 ///
 /// The MCP budget measures handler execution, so one-time regex compilation
 /// must not be charged to the first request that happens to normalize text.
+///
+/// NOTE: callers must invoke this OFF the async runtime thread (see
+/// `ensure_calculator_warmed_detached` in `mcp::execution`). In debug builds
+/// the unit-alternation patterns below take multiple wall-clock seconds to
+/// compile, and running that inline on a runtime thread starves its timer
+/// wheel.
 pub fn warm_calculator_regex_cache() {
     let _ = &*PCT_SYMBOL_RE;
     let _ = &*PERCENT_RE;
