@@ -88,6 +88,10 @@ impl SyncExecutionPool {
     /// submission is rejected with `SyncPoolError::QueueFull`.
     pub fn with_limits(worker_count: usize, queue_capacity: usize) -> Self {
         let (sender, receiver) = sync_channel(queue_capacity);
+        // NOTE: workers share the receiver behind a mutex because
+        // std::sync::mpsc::Receiver is not Sync; only one worker can block in
+        // recv() at a time. Replacing this with a lock-free multi-consumer
+        // channel (e.g. crossbeam-channel) would remove that serialization.
         let receiver = Arc::new(std::sync::Mutex::new(receiver));
         let stuck = Arc::new(AtomicUsize::new(0));
 

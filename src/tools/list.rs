@@ -166,17 +166,17 @@ pub fn list_compare(args: &Value) -> ToolResponse {
     let b_transformed: Vec<String> = b.iter().map(&transform).collect();
 
     use std::collections::HashMap;
-    let mut a_counts: HashMap<String, usize> = HashMap::new();
-    let mut b_counts: HashMap<String, usize> = HashMap::new();
+    let mut a_counts: HashMap<&str, usize> = HashMap::new();
+    let mut b_counts: HashMap<&str, usize> = HashMap::new();
     for x in &a_transformed {
-        *a_counts.entry(x.clone()).or_insert(0) += 1;
+        *a_counts.entry(x.as_str()).or_insert(0) += 1;
     }
     for x in &b_transformed {
-        *b_counts.entry(x.clone()).or_insert(0) += 1;
+        *b_counts.entry(x.as_str()).or_insert(0) += 1;
     }
 
-    let a_set: std::collections::HashSet<String> = a_transformed.iter().cloned().collect();
-    let b_set: std::collections::HashSet<String> = b_transformed.iter().cloned().collect();
+    let a_set: std::collections::HashSet<&str> = a_transformed.iter().map(|s| s.as_str()).collect();
+    let b_set: std::collections::HashSet<&str> = b_transformed.iter().map(|s| s.as_str()).collect();
 
     // In set mode, only_in_a/only_in_b use set membership (items not in other set at all)
     // In multiset mode, use count comparison (items where count_a > count_b)
@@ -185,7 +185,7 @@ pub fn list_compare(args: &Value) -> ToolResponse {
         a.iter()
             .enumerate()
             .filter(|(i, _)| {
-                let t = &a_transformed[*i];
+                let t = a_transformed[*i].as_str();
                 a_counts.get(t).copied().unwrap_or(0) > b_counts.get(t).copied().unwrap_or(0)
             })
             .map(|(_, v)| v.clone())
@@ -193,8 +193,9 @@ pub fn list_compare(args: &Value) -> ToolResponse {
     } else {
         // set: use set membership - items not present in b at all
         a.iter()
-            .filter(|v| !b_set.contains(&transform(v)))
-            .cloned()
+            .enumerate()
+            .filter(|(i, _)| !b_set.contains(a_transformed[*i].as_str()))
+            .map(|(_, v)| v.clone())
             .collect()
     };
     let only_b_orig: Vec<Value> = if treat_as_multiset_val {
@@ -202,7 +203,7 @@ pub fn list_compare(args: &Value) -> ToolResponse {
         b.iter()
             .enumerate()
             .filter(|(i, _)| {
-                let t = &b_transformed[*i];
+                let t = b_transformed[*i].as_str();
                 b_counts.get(t).copied().unwrap_or(0) > a_counts.get(t).copied().unwrap_or(0)
             })
             .map(|(_, v)| v.clone())
@@ -210,8 +211,9 @@ pub fn list_compare(args: &Value) -> ToolResponse {
     } else {
         // set: use set membership - items not present in a at all
         b.iter()
-            .filter(|v| !a_set.contains(&transform(v)))
-            .cloned()
+            .enumerate()
+            .filter(|(i, _)| !a_set.contains(b_transformed[*i].as_str()))
+            .map(|(_, v)| v.clone())
             .collect()
     };
 
@@ -221,12 +223,12 @@ pub fn list_compare(args: &Value) -> ToolResponse {
         duplicates_a = a_counts
             .iter()
             .filter(|(_, c)| **c > 1)
-            .map(|(k, _)| k.clone())
+            .map(|(k, _)| k.to_string())
             .collect();
         duplicates_b = b_counts
             .iter()
             .filter(|(_, c)| **c > 1)
-            .map(|(k, _)| k.clone())
+            .map(|(k, _)| k.to_string())
             .collect();
     }
 
@@ -234,16 +236,33 @@ pub fn list_compare(args: &Value) -> ToolResponse {
     if include_near_matches && near_match_threshold > 0.0 {
         let threshold_int = near_match_threshold.round() as usize;
         if threshold_int > 0 {
+            // Bound worst-case work for large lists: skip pairs whose
+            // codepoint lengths cannot be within `threshold_int` edits, use
+            // the length-capped distance so long items never allocate an
+            // O(L^2) matrix, and stop after a fixed number of distance
+            // computations.
+            const MAX_NEAR_MATCH_DISTANCES: usize = 1_000_000;
             let mut seen_pairs: std::collections::HashSet<(String, String)> =
                 std::collections::HashSet::new();
-            for (i, a_item) in a.iter().enumerate() {
+            let a_lens: Vec<usize> = a_transformed.iter().map(|s| s.chars().count()).collect();
+            let b_lens: Vec<usize> = b_transformed.iter().map(|s| s.chars().count()).collect();
+            let mut comparisons = 0usize;
+            'outer: for (i, a_item) in a.iter().enumerate() {
                 let a_t = &a_transformed[i];
                 for (j, b_item) in b.iter().enumerate() {
                     let b_t = &b_transformed[j];
                     if a_t == b_t {
                         continue;
                     }
-                    let dist = crate::text::levenshtein_distance(a_t, b_t);
+                    if a_lens[i].abs_diff(b_lens[j]) > threshold_int {
+                        continue;
+                    }
+                    if comparisons >= MAX_NEAR_MATCH_DISTANCES {
+                        break 'outer;
+                    }
+                    comparisons += 1;
+                    let dist =
+                        crate::text::levenshtein_distance_with_limit(a_t, b_t, threshold_int);
                     if dist > 0 && dist <= threshold_int {
                         let a_str = a_item.as_str().unwrap_or("");
                         let b_str = b_item.as_str().unwrap_or("");
@@ -363,13 +382,13 @@ pub fn list_compare(args: &Value) -> ToolResponse {
         .with_tool("list_compare")
     } else {
         let mut count_deltas: serde_json::Map<String, Value> = serde_json::Map::new();
-        let all_keys: std::collections::HashSet<String> =
-            a_counts.keys().chain(b_counts.keys()).cloned().collect();
+        let all_keys: std::collections::HashSet<&str> =
+            a_counts.keys().chain(b_counts.keys()).copied().collect();
         for k in all_keys {
             let delta =
-                *a_counts.get(&k).unwrap_or(&0) as i64 - *b_counts.get(&k).unwrap_or(&0) as i64;
+                *a_counts.get(k).unwrap_or(&0) as i64 - *b_counts.get(k).unwrap_or(&0) as i64;
             if delta != 0 {
-                count_deltas.insert(k, Value::Number(delta.into()));
+                count_deltas.insert(k.to_string(), Value::Number(delta.into()));
             }
         }
 

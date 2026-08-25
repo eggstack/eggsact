@@ -457,7 +457,10 @@ fn test_bug021_sanitize_error_regex_before_ascii_strip() {
     let regex_pos = source
         .find("BARE_PATH_REGEX.replace_all")
         .expect("BARE_PATH_REGEX usage not found");
-    let ascii_pos = source.find("ascii_result").expect("ascii_result not found");
+    // The ASCII fold now lives in the initial collect of sanitize_error.
+    let ascii_pos = source
+        .find(".map(|c| if c.is_ascii() { c } else { '?' })")
+        .expect("ASCII stripping not found");
     assert!(
         ascii_pos < regex_pos,
         "BUG-021: ASCII stripping must happen before BARE_PATH_REGEX sanitization"

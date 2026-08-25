@@ -592,10 +592,9 @@ pub fn text_measure(args: &Value) -> ToolResponse {
     let mut variation_selector_count = 0;
     let mut regional_indicator_pairs = 0;
     let mut emoji_modifier_count = 0;
-    let chars: Vec<char> = text.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        let cp = chars[i] as u32;
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        let cp = c as u32;
         if cp == 0x200D {
             // ZWJ
             zwj_count += 1;
@@ -604,18 +603,17 @@ pub fn text_measure(args: &Value) -> ToolResponse {
             variation_selector_count += 1;
         } else if (0x1F1E6..=0x1F1FF).contains(&cp) {
             // regional indicator
-            if i + 1 < chars.len() {
-                let next_cp = chars[i + 1] as u32;
+            if let Some(&next) = chars.peek() {
+                let next_cp = next as u32;
                 if (0x1F1E6..=0x1F1FF).contains(&next_cp) {
                     regional_indicator_pairs += 1;
-                    i += 1; // skip the pair
+                    chars.next(); // skip the pair
                 }
             }
         } else if (0x1F3FB..=0x1F3FF).contains(&cp) {
             // emoji modifier
             emoji_modifier_count += 1;
         }
-        i += 1;
     }
     if zwj_count > 0 {
         warnings.push(format!(
@@ -1052,6 +1050,14 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
         classification = "compatibility_normalization_only".to_string();
     }
 
+    // Check the execution budget before running quadratic-time analysis
+    // (Levenshtein + diff spans) so cancelled/over-budget calls bail early.
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("text_diff_explain")
+            .unwrap_err();
+    }
+
     let distance = if raw_equal {
         0
     } else {
@@ -1061,12 +1067,6 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
     let all_spans = crate::text::diff_spans(a, b, max_diffs_to_use);
     let truncated = all_spans.len() >= max_diffs_to_use;
     let max_diffs_applied = max_diffs_to_use;
-
-    if budget_ctx.should_stop() {
-        return budget_ctx
-            .check_should_stop("text_diff_explain")
-            .unwrap_err();
-    }
 
     let prefix_len = common_prefix_len(a, b);
     let suffix_len = common_suffix_len(a, b);

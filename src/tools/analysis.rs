@@ -1039,18 +1039,27 @@ fn name_similarity(a: &str, b: &str) -> f64 {
     if m == 0 || n == 0 {
         return 0.0;
     }
-    // LCS length
-    let mut dp = vec![vec![0u32; n + 1]; m + 1];
+    // Bound worst-case work: skip the LCS when the table would exceed this
+    // cell budget (user-supplied names can be arbitrarily long).
+    const MAX_NAME_SIMILARITY_CELLS: usize = 1_000_000;
+    if m.saturating_mul(n) > MAX_NAME_SIMILARITY_CELLS {
+        return 0.0;
+    }
+    // LCS length, computed with two rolling rows (O(n) memory instead of an
+    // (m+1) x (n+1) table). Same recurrence, identical result.
+    let mut prev = vec![0u32; n + 1];
+    let mut curr = vec![0u32; n + 1];
     for i in 1..=m {
         for j in 1..=n {
-            if a_bytes[i - 1] == b_bytes[j - 1] {
-                dp[i][j] = dp[i - 1][j - 1] + 1;
+            curr[j] = if a_bytes[i - 1] == b_bytes[j - 1] {
+                prev[j - 1] + 1
             } else {
-                dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
-            }
+                prev[j].max(curr[j - 1])
+            };
         }
+        std::mem::swap(&mut prev, &mut curr);
     }
-    let lcs_len = dp[m][n] as f64;
+    let lcs_len = prev[n] as f64;
     let max_len = m.max(n) as f64;
     lcs_len / max_len
 }

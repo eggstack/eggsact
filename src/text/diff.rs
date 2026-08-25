@@ -62,8 +62,18 @@ fn char_slice(s: &str, chars: &[char], start: usize, end: usize) -> String {
     s[byte_start..byte_end].to_string()
 }
 
+/// Cap on the LCS DP table size for `diff_spans`. Inputs whose table would
+/// exceed this cell budget fall back to `coarse_diff_spans` instead of
+/// attempting an O(n·m) time+memory fill (DoS guard; mirrors
+/// `levenshtein_distance_with_limit`).
+const DIFF_SPANS_MAX_CELLS: u64 = 4_000_000;
+
 pub fn diff_spans(a: &str, b: &str, max_diffs: usize) -> Vec<DiffSpan> {
     if a.is_empty() && b.is_empty() {
+        return vec![];
+    }
+    // Identical inputs produce no diff spans; skip the DP entirely.
+    if a == b {
         return vec![];
     }
 
@@ -71,6 +81,12 @@ pub fn diff_spans(a: &str, b: &str, max_diffs: usize) -> Vec<DiffSpan> {
     let b_chars: Vec<char> = b.chars().collect();
     let a_len = a_chars.len();
     let b_len = b_chars.len();
+
+    // Bail out to a linear-time coarse diff when the LCS table would be too
+    // large (e.g. two ~100k-char inputs would need a ~40 GB allocation).
+    if (a_len as u64).saturating_mul(b_len as u64) > DIFF_SPANS_MAX_CELLS {
+        return coarse_diff_spans(a, &a_chars, b, &b_chars, max_diffs);
+    }
 
     // LCS dynamic programming with backtracking to find matching blocks.
     // This mirrors Python's difflib.SequenceMatcher which uses an LCS-based
@@ -170,6 +186,60 @@ pub fn diff_spans(a: &str, b: &str, max_diffs: usize) -> Vec<DiffSpan> {
     }
 
     spans
+}
+
+/// Linear-time fallback for inputs too large for the LCS table: the common
+/// prefix and suffix are equal regions, and the differing middle is emitted
+/// as a single span.
+fn coarse_diff_spans(
+    a: &str,
+    a_chars: &[char],
+    b: &str,
+    b_chars: &[char],
+    max_diffs: usize,
+) -> Vec<DiffSpan> {
+    if max_diffs == 0 {
+        return vec![];
+    }
+    let a_len = a_chars.len();
+    let b_len = b_chars.len();
+    let min_len = a_len.min(b_len);
+
+    let mut prefix = 0;
+    while prefix < min_len && a_chars[prefix] == b_chars[prefix] {
+        prefix += 1;
+    }
+    let mut suffix = 0;
+    while suffix < min_len - prefix && a_chars[a_len - 1 - suffix] == b_chars[b_len - 1 - suffix] {
+        suffix += 1;
+    }
+
+    let a_mid = prefix..a_len - suffix;
+    let b_mid = prefix..b_len - suffix;
+    if a_mid.is_empty() && b_mid.is_empty() {
+        return vec![];
+    }
+
+    // The caller only reaches here when `a != b`, so at least one middle
+    // region is non-empty.
+    debug_assert!(!a_mid.is_empty() || !b_mid.is_empty());
+    let kind = if !a_mid.is_empty() && !b_mid.is_empty() {
+        "replace"
+    } else if !b_mid.is_empty() {
+        "insert"
+    } else {
+        "delete"
+    };
+
+    vec![DiffSpan {
+        a_start: a_mid.start,
+        a_end: a_mid.end,
+        b_start: b_mid.start,
+        b_end: b_mid.end,
+        kind: kind.to_string(),
+        a_text: char_slice(a, a_chars, a_mid.start, a_mid.end),
+        b_text: char_slice(b, b_chars, b_mid.start, b_mid.end),
+    }]
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

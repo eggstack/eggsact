@@ -648,14 +648,18 @@ pub(crate) fn build_safe_repr(text: &str) -> String {
             ) =>
             {
                 let display = invisible_display_name(c);
-                result.push_str(&format!("\u{27E6}{}\u{27E7}", display));
+                result.push('\u{27E6}');
+                result.push_str(display);
+                result.push('\u{27E7}');
             }
             _ if (0xfe00..=0xfe0f).contains(&(c as u32)) => {
                 result.push_str("\u{27E6}VS\u{27E7}");
             }
             _ if matches!(c as u32, 0x202a..=0x202e | 0x2066..=0x2069) => {
                 let name = bidi_display_name(c);
-                result.push_str(&format!("\u{27E6}{}\u{27E7}", name));
+                result.push('\u{27E6}');
+                result.push_str(name);
+                result.push('\u{27E7}');
             }
             _ if is_combining_mark(c) => {
                 result.push('\u{25CC}');

@@ -42,8 +42,8 @@ pub use config::{
 pub use confusables::CONFUSABLES;
 pub use confusables::{find_confusables, has_confusables, lookup};
 pub use diff::{
-    common_prefix_suffix, diff_spans, first_diff, levenshtein_distance, CommonPrefixSuffix,
-    DiffSpan, FirstDiff,
+    common_prefix_suffix, diff_spans, first_diff, levenshtein_distance,
+    levenshtein_distance_with_limit, CommonPrefixSuffix, DiffSpan, FirstDiff,
 };
 pub use identifier::{
     identifier_analyze, identifier_inspect, identifier_table_inspect, IdentifierAnalyzeResult,

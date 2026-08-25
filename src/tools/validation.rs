@@ -400,6 +400,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
         violations: &mut Vec<serde_json::Value>,
         depth: usize,
         elements: &mut usize,
+        pattern_cache: &mut std::collections::HashMap<String, Option<regex::Regex>>,
     ) {
         if violations.len() >= MAX_SCHEMA_VIOLATIONS {
             return;
@@ -514,6 +515,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                                 violations,
                                 depth + 1,
                                 elements,
+                                pattern_cache,
                             );
                         }
                     }
@@ -571,6 +573,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                             violations,
                             depth + 1,
                             elements,
+                            pattern_cache,
                         );
                     }
                 }
@@ -611,7 +614,12 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                 }
 
                 if let Some(pattern) = schema_obj.get("pattern").and_then(|v| v.as_str()) {
-                    if let Ok(re) = regex::Regex::new(pattern) {
+                    // Memoize compiled patterns: the same schema pattern is
+                    // otherwise recompiled for every string value checked.
+                    if !pattern_cache.contains_key(pattern) {
+                        pattern_cache.insert(pattern.to_string(), regex::Regex::new(pattern).ok());
+                    }
+                    if let Some(re) = pattern_cache.get(pattern).and_then(|r| r.as_ref()) {
                         // Use find with start offset 0 to match Python's re.match behavior
                         // (match at start of string only)
                         let matched = re.find(str_val).map(|m| m.start() == 0).unwrap_or(false);
@@ -704,7 +712,17 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
         );
     }
 
-    validate("", &data, &schema_value, &mut violations, 0, &mut 0usize);
+    let mut pattern_cache: std::collections::HashMap<String, Option<regex::Regex>> =
+        std::collections::HashMap::new();
+    validate(
+        "",
+        &data,
+        &schema_value,
+        &mut violations,
+        0,
+        &mut 0usize,
+        &mut pattern_cache,
+    );
 
     let truncated = violations.len() >= MAX_SCHEMA_VIOLATIONS;
     let valid = violations.is_empty();

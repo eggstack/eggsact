@@ -64,6 +64,7 @@ static SEMVER_LAX_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z\.\-]+))?(?:\+([0-9A-Za-z\.\-]+))?$")
         .unwrap()
 });
+static NUMBER_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"\d+").unwrap());
 
 fn parse_pre_release_identifiers(ident: &str) -> Vec<String> {
     ident
@@ -177,7 +178,7 @@ fn python_semver_compare(a: &str, b: &str) -> VersionCompareResult {
 }
 
 fn python_loose_compare(a: &str, b: &str) -> VersionCompareResult {
-    let re = regex::Regex::new(r"\d+").unwrap();
+    let re = &*NUMBER_RE;
     let parts_a: Vec<u64> = re
         .find_iter(a)
         .filter_map(|m| m.as_str().parse::<u64>().ok())

@@ -132,20 +132,16 @@ static BARE_PATH_REGEX: LazyLock<fancy_regex::Regex> = LazyLock::new(|| {
 });
 
 pub fn sanitize_error(msg: &str) -> String {
-    let mut result: String = msg.chars().take(8192).collect();
-    let mut ascii_result = String::with_capacity(result.len());
-    for c in result.chars() {
-        if c.is_ascii() {
-            ascii_result.push(c);
-        } else {
-            ascii_result.push('?');
-        }
-    }
-    result = ascii_result;
+    // Single pass: cap length and fold non-ASCII to '?' in the initial collect.
+    let mut result: String = msg
+        .chars()
+        .take(8192)
+        .map(|c| if c.is_ascii() { c } else { '?' })
+        .collect();
     for (_name, re, replacement) in SANITIZE_REGEXES.iter() {
-        result = re.replace_all(&result, *replacement).to_string();
+        result = re.replace_all(&result, *replacement).into_owned();
     }
-    result = BARE_PATH_REGEX.replace_all(&result, "<path>").to_string();
+    result = BARE_PATH_REGEX.replace_all(&result, "<path>").into_owned();
     result
 }
 

@@ -8,6 +8,9 @@ const _DEFAULT_KEY_PATTERN: &str = r"^[A-Za-z_][A-Za-z0-9_]*$";
 static EXPANSION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*").unwrap());
 
+static INI_KEY_VALUE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([^=:\s]+)\s*[=:]\s*(.*)").unwrap());
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DotenvEntry {
     pub key: String,
@@ -233,7 +236,7 @@ pub fn ini_validate(text: &str, duplicate_policy: &str) -> IniValidateResult {
     let mut parse_ok = true;
     let mut current_section: Option<String> = None;
 
-    let key_value_re = Regex::new(r"^([^=:\s]+)\s*[=:]\s*(.*)").unwrap();
+    let key_value_re = &*INI_KEY_VALUE_RE;
 
     for (line_no, raw_line) in text.split('\n').enumerate() {
         let line_no = line_no + 1;

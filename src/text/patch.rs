@@ -2,6 +2,7 @@ use regex::Regex;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 
 use super::unicode_tools::detect_newline_style;
 
@@ -100,8 +101,11 @@ pub struct RenamePair {
     pub to: String,
 }
 
+static HUNK_HEADER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@").unwrap());
+
 fn parse_hunk_header(line: &str) -> Option<(usize, usize, usize, usize)> {
-    let re = Regex::new(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@").ok()?;
+    let re = &*HUNK_HEADER_RE;
     let caps = re.captures(line)?;
     let old_start: usize = caps.get(1)?.as_str().parse().ok()?;
     let old_count: usize = caps

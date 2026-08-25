@@ -1,4 +1,5 @@
 use crate::text::primitives::byte_offset_to_char_index;
+use crate::text::unicode_tools::unicode_casefold;
 use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
@@ -14,6 +15,9 @@ static ANSI_ESCAPE_RE: LazyLock<Regex> =
 
 static TERMINAL_CONTROL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[\x00-\x08\x0e-\x1f\x7f]|\x1b[()][AB012]|\x1b[=>78]").unwrap());
+
+static BASE64_LIKE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[A-Za-z0-9+/]{40,}(?:=){0,2}").unwrap());
 
 static DEFAULT_INSTRUCTION_PHRASES: &[&str] = &[
     "ignore previous",
@@ -285,7 +289,7 @@ fn _pi_find_terminal_controls(text: &str) -> Vec<Value> {
 
 fn _pi_find_base64_like_blobs(text: &str) -> Vec<Value> {
     let mut findings = Vec::new();
-    let re = Regex::new(r"[A-Za-z0-9+/]{40,}(?:=){0,2}").unwrap();
+    let re = &*BASE64_LIKE_RE;
     for m in re.find_iter(text) {
         let blob = m.as_str();
         let entropy_estimate: f64 = {
@@ -358,24 +362,48 @@ fn _pi_find_instruction_phrases(text: &str, phrase_patterns: Option<&[String]>) 
             .collect()
     };
     let mut findings = Vec::new();
-    for phrase in &phrases {
-        let pattern = format!("(?i){}", regex::escape(phrase));
-        let re = Regex::new(&pattern).unwrap();
-        if let Some(m) = re.find(text) {
-            let char_start =
-                byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count());
-            let char_end = byte_offset_to_char_index(text, m.end()).unwrap_or(text.chars().count());
-            findings.push(serde_json::json!({
-                "code": "INSTRUCTION_PHRASE",
-                "severity": "warn",
-                "message": format!("Instruction-like phrase '{}' at position {}", phrase, char_start),
-                "span": {"char_start": char_start, "char_end": char_end},
-                "details": {
-                    "phrase": phrase,
-                    "matched_lowercase": true,
-                },
-            }));
-        }
+    // Compile a single combined alternation instead of one regex per phrase,
+    // so the text is scanned once per call. Empty phrases are skipped (they
+    // would match at every position).
+    let non_empty: Vec<&str> = phrases
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|p| !p.is_empty())
+        .collect();
+    if non_empty.is_empty() {
+        return findings;
+    }
+    let pattern = format!(
+        "(?i)(?:{})",
+        non_empty
+            .iter()
+            .map(|p| regex::escape(p))
+            .collect::<Vec<_>>()
+            .join("|")
+    );
+    let re = Regex::new(&pattern).unwrap();
+    for m in re.find_iter(text) {
+        let matched = m.as_str();
+        // Patterns are escaped literals, so the matched text is one of the
+        // phrases modulo case; recover the phrase as written in the list.
+        let Some(phrase) = non_empty
+            .iter()
+            .find(|p| unicode_casefold(p) == unicode_casefold(matched))
+        else {
+            continue;
+        };
+        let char_start = byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count());
+        let char_end = byte_offset_to_char_index(text, m.end()).unwrap_or(text.chars().count());
+        findings.push(serde_json::json!({
+            "code": "INSTRUCTION_PHRASE",
+            "severity": "warn",
+            "message": format!("Instruction-like phrase '{}' at position {}", phrase, char_start),
+            "span": {"char_start": char_start, "char_end": char_end},
+            "details": {
+                "phrase": phrase,
+                "matched_lowercase": true,
+            },
+        }));
     }
     findings
 }

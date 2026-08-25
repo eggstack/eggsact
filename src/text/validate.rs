@@ -2048,16 +2048,13 @@ pub fn json_extract(
     #[allow(unused_assignments)]
     let mut path_so_far = String::new();
 
-    for (i, token) in tokens.iter().enumerate() {
+    for token in tokens.iter() {
         let decoded = decode_pointer_token(token);
-        path_so_far = format!(
-            "/{}",
-            tokens[..=i]
-                .iter()
-                .map(|t| encode_pointer_token(t))
-                .collect::<Vec<_>>()
-                .join("/")
-        );
+        // Append incrementally instead of re-encoding and joining all
+        // preceding tokens on every step (O(depth^2) -> O(depth) total).
+        // Every token contributes "/" + encoded(token).
+        path_so_far.push('/');
+        path_so_far.push_str(&encode_pointer_token(token));
 
         match current {
             serde_json::Value::Object(map) => {
@@ -2505,7 +2502,7 @@ pub fn json_compare(
                 }
 
                 // ignore_object_order = true (default)
-                for key in a_keys_set.difference(&b_keys_set).collect::<Vec<_>>() {
+                for key in a_keys_set.difference(&b_keys_set) {
                     let orig_key = &keys_a[key];
                     if treat_missing_null_as_equal {
                         if let Some(val) = a_map.get(orig_key.as_str()) {
@@ -2543,7 +2540,7 @@ pub fn json_compare(
                     }
                 }
 
-                for key in b_keys_set.difference(&a_keys_set).collect::<Vec<_>>() {
+                for key in b_keys_set.difference(&a_keys_set) {
                     let orig_key = &keys_b[key];
                     if treat_missing_null_as_equal {
                         if let Some(val) = b_map.get(orig_key.as_str()) {
@@ -3060,6 +3057,7 @@ pub fn validate_schema_light(
         depth: usize,
         walk_count: &mut usize,
         violations: &mut Vec<SchemaViolation>,
+        pattern_cache: &mut HashMap<String, Option<Regex>>,
     ) {
         *walk_count += 1;
         if *walk_count > MAX_SCHEMA_ELEMENTS {
@@ -3173,6 +3171,7 @@ pub fn validate_schema_light(
                                     depth + 1,
                                     walk_count,
                                     violations,
+                                    pattern_cache,
                                 );
                             }
                         }
@@ -3226,6 +3225,7 @@ pub fn validate_schema_light(
                             depth + 1,
                             walk_count,
                             violations,
+                            pattern_cache,
                         );
                     }
                 }
@@ -3268,7 +3268,12 @@ pub fn validate_schema_light(
                     }
                 }
                 if let Some(serde_json::Value::String(pattern)) = schema_map.get("pattern") {
-                    if let Ok(re) = Regex::new(pattern) {
+                    // Memoize compiled patterns: the same schema pattern is
+                    // otherwise recompiled for every string value checked.
+                    if !pattern_cache.contains_key(pattern) {
+                        pattern_cache.insert(pattern.clone(), Regex::new(pattern).ok());
+                    }
+                    if let Some(re) = pattern_cache.get(pattern).and_then(|r| r.as_ref()) {
                         if !re.is_match(s).unwrap_or(false) {
                             violations.push(SchemaViolation {
                                 path: path.to_string(),
@@ -3298,7 +3303,16 @@ pub fn validate_schema_light(
         }
     }
 
-    validate_recursive("", data, schema_map, 0, &mut walk_count, &mut violations);
+    let mut pattern_cache: HashMap<String, Option<Regex>> = HashMap::new();
+    validate_recursive(
+        "",
+        data,
+        schema_map,
+        0,
+        &mut walk_count,
+        &mut violations,
+        &mut pattern_cache,
+    );
 
     let truncated = violations.len() >= MAX_SCHEMA_VIOLATIONS || walk_count > MAX_SCHEMA_ELEMENTS;
 

@@ -1706,10 +1706,8 @@ pub fn normalize(expr: &str) -> Result<String, String> {
     // NZ-13 + M21: Factorial postfix: "5!" -> "factorial(5)"
     // Iteratively handle nested factorial: "5!!" -> "factorial(5)!" -> "factorial(factorial(5))"
     // Also handles func(args)! e.g. "factorial(5)!" -> "factorial(factorial(5))"
-    let mut prev_fact = String::new();
-    while prev_fact != result {
-        prev_fact = result.clone();
-        result = try_replace_all("factorial", &FACTORIAL_RE, &result, |caps: &Captures| {
+    loop {
+        let next = try_replace_all("factorial", &FACTORIAL_RE, &result, |caps: &Captures| {
             let content = &caps[1];
             let bangs = &caps[2];
             let mut out = format!("factorial({})", content);
@@ -1718,6 +1716,10 @@ pub fn normalize(expr: &str) -> Result<String, String> {
             }
             out
         })?;
+        if next == result {
+            break;
+        }
+        result = next;
     }
 
     Ok(result)
