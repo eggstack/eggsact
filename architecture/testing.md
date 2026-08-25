@@ -9,14 +9,14 @@ See also: [Calculator](calculator.md), [MCP Server](mcp-server.md), [Agent API](
 ```
 tests/
   lib.rs                          # single test crate root, declares 5 modules
-  test_context_isolation.rs       # context isolation integration tests (819 lines)
-  calc/                           # calculator tests (5 files)
+  test_context_isolation.rs       # context isolation integration tests (2102 lines)
+  calc/                           # calculator tests (4 files + shared mod.rs)
   mcp/                            # MCP protocol + tool tests (28 files)
   text/                           # text processing tests (24 files)
   parity/                         # Python/Rust parity tests (11 files)
-  property/                       # property-based tests (11 files, 55 tests)
+  property/                       # property-based tests (10 files + mod.rs, 55 tests)
   fixtures/
-    accepted_parity_failures.txt  # 34 known parity failures for regression detection
+    accepted_parity_failures.txt  # 37 accepted parity failures for regression detection
 fuzz/
   Cargo.toml                      # isolated fuzz workspace (libfuzzer-sys)
   fuzz_targets/                   # 12 fuzz targets
@@ -38,7 +38,7 @@ All integration tests run via `cargo test --test lib`. Context isolation tests a
 
 ## Calculator Tests (`tests/calc/`)
 
-Five files covering the calculator core (`src/calc/`):
+Four test files (plus a shared `mod.rs`) covering the calculator core (`src/calc/`):
 
 | File | Coverage |
 |------|----------|
@@ -77,7 +77,7 @@ Key tests:
 - **MCP stdio coverage** — some tests exercise tools through the MCP stdio protocol (spawning the binary) to verify wire-level contracts.
 - **Non-empty string contracts** — verifies `machine_code` and `verdict` are non-empty strings, not just present.
 
-#### `test_comprehensive_parity.rs` (~2066 lines)
+#### `test_comprehensive_parity.rs` (~2130 lines)
 
 Thin-coverage tool tests, deterministic output verification, sequential multi-tool sessions, and cross-tool interaction patterns.
 
@@ -93,7 +93,7 @@ fn mcp_request_multi(requests: &[&str]) -> Vec<Value>
 - Panics on duplicate `id`s, missing `id`s, or unexpected `id`s.
 - Notifications (no `id`) are excluded from the returned vector.
 
-#### `test_hardening_and_gaps.rs` (~2380 lines)
+#### `test_hardening_and_gaps.rs` (~2420 lines)
 
 Security hardening, profile invariants, sanitization, cancellation, schema detail, and production review tests.
 
@@ -147,7 +147,7 @@ Walks every tool's input schema recursively and collects violations. This preven
 
 ## Text Tests (`tests/text/`)
 
-24 test files — one per `src/text/` module. Each tests the public API of its corresponding module.
+24 test files covering the `src/text/` modules (the regex engine classifier is exercised via the regex tool tests rather than its own file). Each tests the public API of its corresponding module.
 
 | File | Module Tested |
 |------|--------------|
@@ -209,15 +209,15 @@ Each parity helper spawns a fresh MCP process per call (single-request sessions)
 
 ### Known Failures
 
-As of 2026-07-08, there are **34 known failures** out of 418 parity tests. These are accepted behavioral differences, not regressions. See `docs/parity.md` for the full breakdown.
+There are **37 accepted parity failures**. These are accepted behavioral differences, not regressions. See `docs/parity.md` for the full breakdown.
 
-The fixture file `tests/fixtures/accepted_parity_failures.txt` lists all 34 test names:
+The fixture file `tests/fixtures/accepted_parity_failures.txt` lists all 37 test names:
 
 ```
 # Accepted parity failures (categories C1–C6 from docs/parity.md decision table).
 test_shell_split_comment_handling
 test_shell_split_quoted_hash
-test_prompt_input_inspect_clean
+test_shell_split_single_quotes
 test_unicode_policy_check_identifier_strict
 test_edit_preflight_basic
 test_tools_list_order_full
@@ -229,7 +229,7 @@ This file is used for regression detection: any parity failure NOT in this list 
 
 ## Context Isolation Tests
 
-`tests/test_context_isolation.rs` (819 lines) verifies per-request state isolation across multiple dimensions:
+`tests/test_context_isolation.rs` (2102 lines, 49 tests) verifies per-request state isolation across multiple dimensions. Representative tests:
 
 | Test | What It Verifies |
 |------|-----------------|
@@ -238,9 +238,9 @@ This file is used for regression detection: any parity failure NOT in this list 
 | `test_compatibility_mode_isolation` | StrictNative and EggcalcPython modes do not leak between calls |
 | `test_cancellation_isolation` | A cancelled context does not poison later uncancelled calls |
 | `test_budget_isolation` | Per-call budget overrides do not leak between registries |
-| `test_eval_context_isolation` | `call_json_with_execution_context` clones `eval_ctx` — handler mutations do not persist back |
-| `test_concurrent_isolation` | Multiple registries on separate threads maintain independent state |
-| `test_execution_context_with_custom_budget` | Custom `ToolBudget` overrides default limits per-call |
+| `test_execution_context_math_eval_clones_internally` | `call_json_with_execution_context` clones `eval_ctx` — handler mutations do not persist back |
+| `test_concurrent_mutable_contexts_are_independent` | Multiple mutable contexts on separate threads maintain independent state |
+| `test_with_current_eval_context_reentrant_access_is_rejected` | Re-entrant thread-local access panics via the exclusive-access guard |
 
 These tests use the in-process agent API (`ToolRegistry`, `call_json_with_execution_context`, `ExecutionContext`) — no MCP subprocess overhead.
 

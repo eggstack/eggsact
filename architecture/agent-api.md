@@ -295,11 +295,11 @@ Use this when you want to make the immutability intent explicit at the call site
 
 ### `call_json_with_execution_context_mut(name, args, ctx)` — Mutable Persistent Context
 
-**Deprecated since 0.4.0.** The mutable variant that persists handler state
+**Deprecated since 1.0.0.** The mutable variant that persists handler state
 mutations back to the caller's `ExecutionContext`.
 
 ```rust
-#[deprecated(since = "0.4.0")]
+#[deprecated(since = "1.0.0")]
 pub fn call_json_with_execution_context_mut(
     &self, name: &str, args: Value, ctx: &mut ExecutionContext
 ) -> Result<ToolResponse, ToolCallError>
@@ -325,7 +325,7 @@ handler state to accumulate across calls.
 |--------|-------------------|----------|
 | `call_json_with_execution_context` | Cloned (immutable) | Standard tool calls; state isolation between calls |
 | `call_json_with_execution_template` | Cloned (immutable) | Same as above, explicit immutability intent |
-| `call_json_with_execution_context_mut` | Shared (mutable) | **Deprecated since 0.4.0.** Does not persist calculator state through `math_eval`. Use `evaluate_with_context()`/`run_with_context()` for persistent calculator state. |
+| `call_json_with_execution_context_mut` | Shared (mutable) | **Deprecated since 1.0.0.** Does not persist calculator state through `math_eval`. Use `evaluate_with_context()`/`run_with_context()` for persistent calculator state. |
 
 **Do not mix** `call_json_with_execution_context_mut` and `evaluate_with_context`/`run_with_context` for the same `EvalContext` — both mutate the context, which can lead to unexpected interleaving.
 
@@ -377,7 +377,7 @@ This allows callers to override the registry's stored profile/audience/compat on
 
 | Method | Description | Model-Safe? |
 |--------|-------------|-------------|
-| `available_tools()` | **Deprecated** (since 0.3.0). Filters only `Hidden`. | No |
+| `available_tools()` | **Deprecated** (since 1.1.4). Filters only `Hidden`. | No |
 | `available_tools_model_safe()` | Excludes `HarnessOnly` + `Hidden`. | Yes |
 | `available_tools_for_audience(audience)` | Filters by the specified audience. | Depends on audience |
 | `available_tools_for_current_audience()` | Uses the registry's stored audience. | Depends on stored audience |
@@ -491,7 +491,7 @@ The `eval_ctx` field holds calculator state (PRNG seed, memory registers, user-d
 
 Two calls with identical seeds produce the same first random value. For persistent mutable state across calls, use `evaluate_with_context()` / `run_with_context()` directly (which operate on the caller's `EvalContext` without cloning), or use `call_json_with_execution_context_mut()` which shares the `EvalContext` directly.
 
-**Do not mix** `call_json_with_execution_context` and `evaluate_with_context` for the same `EvalContext` — the former clones and discards mutations, the latter persists them. Similarly, do not mix `call_json_with_execution_context_mut` (deprecated since 0.4.0) and `evaluate_with_context` for the same `EvalContext` without understanding the interleaving semantics. For persistent calculator state, prefer `evaluate_with_context()` / `run_with_context()` directly.
+**Do not mix** `call_json_with_execution_context` and `evaluate_with_context` for the same `EvalContext` — the former clones and discards mutations, the latter persists them. Similarly, do not mix `call_json_with_execution_context_mut` (deprecated since 1.0.0) and `evaluate_with_context` for the same `EvalContext` without understanding the interleaving semantics. For persistent calculator state, prefer `evaluate_with_context()` / `run_with_context()` directly.
 
 ---
 

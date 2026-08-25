@@ -7,7 +7,7 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | File | Purpose |
 |------|---------|
 | `server.rs` | Protocol orchestration: stdio read loop, request validation, JSON-RPC dispatch |
-| `execution.rs` | Execution coordinator: mutex-backed handler lifecycle, `SyncExecutionPool`, request timeout accounting |
+| `execution.rs` | Execution coordinator: mutex-backed handler lifecycle, request timeout accounting |
 | `runtime.rs` | Rate limiter, constants, profile management, generation-aware request tracking |
 | `sync_pool.rs` | Bounded synchronous execution pool (8 workers, 32-slot queue) for budget-aware APIs |
 | `registry/` | Tool registration: aggregation, listing, types |
@@ -309,7 +309,6 @@ Tools marked `composite: true` orchestrate other tools internally. All emit a `v
 | `command_preflight` | allow / review / block | Pre-checks a shell command using a policy engine. Classifies commands via per-policy allow/review/block matrices (`default`, `strict`, `permissive`), detects behavioral features (network, filesystem, process, env, shell features), detects wrapper programs (sh/bash/python/node with `-c`/`-e` flags → review) and script runners (make/just/task → review), checks destructive patterns, applies custom `policy_config` allow/deny lists, scans all argv entries for env mutation (`FOO=bar ...`), and runs regex safety on regex-like args. |
 | `config_preflight` | valid / valid_with_warnings / invalid | Pre-checks a config file using validation tools |
 | `text_security_inspect` | allow / review / block | Calls multiple text inspection tools and aggregates results |
-| `cargo_toml_inspect` | allow / review / block | Inspects Cargo.toml structure and naming |
 | `structured_data_compare` | — | Uses json_compare and list tools for structured data |
 
 ## Route-Critical Tools
@@ -554,7 +553,7 @@ Builder methods: `with_eval_context()`, `with_budget()`, `with_cancellation()`, 
 
 - **Profile/Audience**: Falls back to registry defaults when `None`. When `Some`, uses the context's values for tool filtering and exposure checks. Resolved via `prepare_tool_call_with_policy`.
 - **Compatibility mode**: Used for argument schema validation.
-- **EvalContext**: **Cloned** and set as thread-local via `budget::with_eval_context()`, making it available to calculator-backed tools (e.g., `math_eval` uses `run_with_context()` when a thread-local context is present). Mutations inside the handler do not persist back to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value. Use `call_json_with_execution_context_mut()` for the mutable variant where handler state persists (deprecated since 0.4.0 — does not persist calculator state through `math_eval`).
+- **EvalContext**: **Cloned** and set as thread-local via `budget::with_eval_context()`, making it available to calculator-backed tools (e.g., `math_eval` uses `run_with_context()` when a thread-local context is present). Mutations inside the handler do not persist back to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value. Use `call_json_with_execution_context_mut()` for the mutable variant where handler state persists (deprecated since 1.0.0 — does not persist calculator state through `math_eval`).
 - **Budget/Cancellation**: Resource limits and cooperative cancellation flag. The cancellation flag is set as a thread-local during dispatch so that high-risk handlers that create their own `BudgetContext` inherit cancellation.
 
 **MCP wire protocol boundary**: `call_json_with_execution_context` is an **in-process** API. It does not change the MCP JSON-RPC wire protocol. The MCP server still resolves its active profile from `EGGCALC_MCP_PROFILE` at init time. Per-request context overrides over the wire would require a future MCP request-level context API.
@@ -568,7 +567,7 @@ Legacy APIs remain as backward-compatible wrappers:
 | `call_json_with_context(name, args, budget, cancel_flag)` | Context with budget and cancellation |
 | `call_json_with_execution_context(name, args, ctx)` | Full context (immutable, clones eval_ctx) — **recommended for new code** |
 | `call_json_with_execution_template(name, args, ctx)` | Explicit immutable alias for `call_json_with_execution_context` |
-| `call_json_with_execution_context_mut(name, args, ctx)` | Mutable persistent context — **deprecated since 0.4.0**, does not persist calculator state through `math_eval` |
+| `call_json_with_execution_context_mut(name, args, ctx)` | Mutable persistent context — **deprecated since 1.0.0**, does not persist calculator state through `math_eval` |
 
 ### MCP startup env vars → runtime context
 

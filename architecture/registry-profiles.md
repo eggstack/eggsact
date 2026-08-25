@@ -98,7 +98,7 @@ specs/shell.rs → SHELL_TOOLS (4)
 specs/list.rs → LIST_TOOLS (3)
 specs/markdown.rs → MARKDOWN_TOOLS (2)
 specs/patch.rs → PATCH_TOOLS (5)
-specs/config.rs → CONFIG_TOOLS (4)
+specs/config.rs → CONFIG_TOOLS (3)
 specs/toml.rs → TOML_TOOLS (1)
 specs/identifier.rs → IDENTIFIER_TOOLS (3)
 specs/unicode.rs → UNICODE_TOOLS (2)
@@ -118,21 +118,23 @@ A test (`tool_registration_tables_are_in_sync`) verifies that `ALL_TOOLS_VEC.len
 
 ### Named Profiles
 
-11 named profiles control which tools are exposed to which consumers:
+11 named profiles control which tools are exposed to which consumers. Counts are what `tools/list` returns per audience (measured on v1.2.3):
 
-| Profile | Purpose | Tool Count | Audience |
-|---------|---------|------------|----------|
-| `full` | All non-hidden tools | ~80 | Model + Harness |
-| `default` | Essential + common tools | ~50 | Model |
-| `codegg_core_min` | Minimal coder-agent set | ~20 | Model |
-| `codegg_core` | Standard coder-agent set | ~35 | Model |
-| `codegg_preflight` | Preflight-focused set | ~15 | Harness |
-| `codegg_patch` | Patch editing set | ~12 | Model |
-| `codegg_config` | Config inspection set | ~10 | Model |
-| `codegg_unicode_security` | Unicode/security set | ~8 | Model |
-| `codegg_shell` | Shell command set | ~10 | Model |
-| `codegg_repo_audit` | Repository audit set | ~12 | Model |
-| `human_math` | Human-readable math | ~10 | Model |
+| Profile | Purpose | Model | Harness | Debug |
+|---------|---------|-------|---------|-------|
+| `full` | All non-hidden tools | 71 | 80 | 80 |
+| `default` | Essential + common tools | 25 | 25 | 25 |
+| `codegg_core_min` | Minimal coder-agent set | 6 | 6 | 6 |
+| `codegg_core` | Standard coder-agent set | 19 | 19 | 19 |
+| `codegg_preflight` | Preflight-focused set | 7 | 13 | 13 |
+| `codegg_patch` | Patch editing set | 10 | 12 | 12 |
+| `codegg_config` | Config inspection set | 14 | 14 | 14 |
+| `codegg_unicode_security` | Unicode/security set | 6 | 8 | 8 |
+| `codegg_shell` | Shell command set | 5 | 6 | 6 |
+| `codegg_repo_audit` | Repository audit set | 18 | 18 | 18 |
+| `human_math` | Human-readable math | 4 | 4 | 4 |
+
+Profiles are not audience-bound; the audience filter applies on top of profile membership (`Model` excludes `HarnessOnly`, both exclude `Hidden`).
 
 `Profile::from_str_opt()` is strict — returns `None` for unknown names. Use `Profile::custom(name)` for ad-hoc profiles.
 
@@ -169,10 +171,7 @@ A test (`tool_registration_tables_are_in_sync`) verifies that `ALL_TOOLS_VEC.len
 
 | Function | Purpose |
 |----------|---------|
-| `get_tool(name)` | Look up a tool by name or alias, checking audience/exposure |
-| `get_tool_unfiltered(name)` | Administrative lookup bypassing audience/exposure checks |
-| `has_tool(name)` | Check existence with profile/audience filtering |
-| `has_registered_tool(name)` | Check existence without filtering |
+| `get_tool(name)` | Look up a tool by exact name (unfiltered) |
 | `tool_handler_for(name)` | Get the handler function pointer |
 | `tools_for_profile(profile)` | All tools in a profile (no audience filter) |
 | `tools_for_profile_audience(profile, audience)` | Tools filtered by profile + audience exposure |
@@ -180,15 +179,17 @@ A test (`tool_registration_tables_are_in_sync`) verifies that `ALL_TOOLS_VEC.len
 | `compact_input_schema(schema)` | Truncate descriptions to 120 chars, strip defaults |
 | `find_close_match(name)` | Levenshtein-based tool name suggestions |
 
+Registry-check helpers live on `ToolRegistry` in `src/agent/mod.rs`: `has_tool(name)` (existence with profile/audience filtering), `get_tool_unfiltered(name)` (administrative lookup bypassing audience/exposure), and `has_registered_tool(name)` (existence without filtering).
+
 ### Schema Compaction
 
-`EGGCALC_MCP_SCHEMA_DETAIL` controls schema verbosity in `tools/list`:
+`EGGCALC_MCP_SCHEMA_DETAIL` controls schema verbosity in `tools/list` (`tools/list` also accepts a per-request `schema_detail` parameter):
 
 | Value | Behavior |
 |-------|----------|
-| `full` (default) | Full JSON Schema with descriptions, defaults |
-| `normal` | Truncated descriptions, no defaults |
-| `compact` | Minimal schema, no descriptions |
+| `full` (default) | Full JSON Schema with descriptions and defaults; deprecated field always emitted |
+| `normal` | Accepted value, currently identical output to `full` |
+| `compact` | Descriptions truncated to 120 chars, defaults stripped, schemas compacted, tier/tags dropped |
 
 ---
 
@@ -201,7 +202,7 @@ A subset of tools are classified as **route-critical** — they produce structur
 | `edit_preflight` | patch | allow / review / block |
 | `command_preflight` | shell | allow / review / block |
 | `config_preflight` | config | valid / valid_with_warnings / invalid |
-| `patch_apply_check` | patch | applies_cleanly / fails / with_warnings |
+| `patch_apply_check` | patch | allow / review / block |
 | `text_security_inspect` | text | allow / review / block |
 
 `ROUTE_CRITICAL_TOOLS` constant and `is_route_critical()` helper in `registry/listing.rs` identify these tools. Route-critical tools **must** always emit `machine_code` and `verdict` in their response envelope. Verified by fixture-backed route-contract tests.

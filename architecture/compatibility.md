@@ -32,16 +32,16 @@ The mapping is implemented in `json_type_name()` (`src/mcp/schema_validation.rs:
 
 | Consumer | Mode | File | Reason |
 |----------|------|------|--------|
-| MCP `tools/call` handler | `EggcalcPython` | `src/mcp/server.rs:249` | Preserves Python-parity error messages for existing MCP clients |
-| `ToolRegistry::new()` | `StrictNative` | `src/agent/mod.rs:329-335` | Rust-native consumers expect standard JSON Schema names |
-| `ToolRegistry::with_profile()` | `StrictNative` | `src/agent/mod.rs:340-346` | Same |
-| `ToolRegistry::with_profile_and_audience()` | `StrictNative` | `src/agent/mod.rs:351-357` | Same |
-| `ToolRegistry::with_compat_mode()` | explicit | `src/agent/mod.rs:370-373` | Override the default per-registry |
-| `ExecutionContext::mcp_default()` | `EggcalcPython` | `src/agent/mod.rs:822-833` | MCP dispatch contexts |
-| `ExecutionContext::agent_default()` | `StrictNative` | `src/agent/mod.rs:836-847` | In-process agent contexts |
-| `ExecutionContext::library_default()` | `StrictNative` | `src/agent/mod.rs:808-819` | Library API contexts |
-| `ExecutionContext::cli_default()` | `StrictNative` (default) | `src/agent/mod.rs:794-805` | CLI contexts |
-| Preflight wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`) | `StrictNative` (via `ToolRegistry::default()`) | `src/preflight/mod.rs:953,1154,1307,1413` | Rust-native consumers with fail-closed contract enforcement |
+| MCP `tools/call` handler | `EggcalcPython` | `src/mcp/server.rs:553` | Preserves Python-parity error messages for existing MCP clients |
+| `ToolRegistry::new()` | `StrictNative` | `src/agent/mod.rs:330-336` | Rust-native consumers expect standard JSON Schema names |
+| `ToolRegistry::with_profile()` | `StrictNative` | `src/agent/mod.rs:341-347` | Same |
+| `ToolRegistry::with_profile_and_audience()` | `StrictNative` | `src/agent/mod.rs:352-358` | Same |
+| `ToolRegistry::with_compat_mode()` | explicit | `src/agent/mod.rs:371-374` | Override the default per-registry |
+| `ExecutionContext::mcp_default()` | `EggcalcPython` | `src/agent/mod.rs:1029-1040` | MCP dispatch contexts |
+| `ExecutionContext::agent_default()` | `StrictNative` | `src/agent/mod.rs:1043-1054` | In-process agent contexts |
+| `ExecutionContext::library_default()` | `StrictNative` | `src/agent/mod.rs:1015-1026` | Library API contexts |
+| `ExecutionContext::cli_default()` | `StrictNative` (default) | `src/agent/mod.rs:1001-1012` | CLI contexts |
+| Preflight wrappers | `StrictNative` | `src/preflight/mod.rs` — `EditPreflight` uses the shared `DEFAULT_REGISTRY` (`LazyLock<ToolRegistry>` of `ToolRegistry::default()`); `CommandPreflight` (:1156), `ConfigPreflight` (:1309) and `TextSecurityInspect` (:1559) each construct `ToolRegistry::default()`; `PatchApplyCheck` (:1416) constructs `with_profile_and_audience(Profile::Full, ToolAudience::Harness)` | Rust-native consumers with fail-closed contract enforcement |
 
 ## Behavioral Differences
 
@@ -81,7 +81,7 @@ The `compat` parameter threads through these functions:
 | `json_type_name(value, compat)` | `schema_validation.rs:16` | Returns the type name string for error messages |
 | `validate_property(value, schema, path, compat)` | `schema_validation.rs:49` | Per-property validation, passes compat to inner |
 | `validate_property_inner(value, schema, path, max_depth, compat)` | `schema_validation.rs:58` | Recursive validation with compat-aware error messages |
-| `validate_arguments(name, arguments, compat)` | `schema_validation.rs:395` | Top-level argument validation, delegates to validate_property |
+| `validate_arguments(name, arguments, compat)` | `schema_validation.rs:407` | Top-level argument validation, delegates to validate_property |
 
 The mode propagates recursively through nested object/array validation — every level of `validate_property_inner` receives and forwards the compat parameter.
 
@@ -101,7 +101,7 @@ The mode propagates recursively through nested object/array validation — every
 ## Propagation Through the System
 
 ```
-MCP Server (server.rs:249)
+MCP Server (server.rs:553)
   └─ ToolRegistry::with_profile_and_audience(profile, audience)
        └─ .with_compat_mode(CompatibilityMode::EggcalcPython)
             └─ prepare_tool_call(name, args)
@@ -129,7 +129,7 @@ ExecutionContext::agent_default(profile, audience)
             └─ validate_arguments(name, args, ctx.compatibility_mode)
 ```
 
-The MCP server overrides the mode at `server.rs:249`:
+The MCP server overrides the mode at `server.rs:553`:
 
 ```rust
 let registry = ToolRegistry::with_profile_and_audience(profile, get_active_audience())
@@ -216,7 +216,7 @@ let err = compat.call_json("math_eval", args).unwrap_err();
 
 ### Unit Tests
 
-The `schema_validation::tests` module (`src/mcp/schema_validation.rs:452-718`) contains comprehensive tests for both modes:
+The `schema_validation::tests` module (`src/mcp/schema_validation.rs:464-731`) contains comprehensive tests for both modes:
 
 | Test | Mode | What It Verifies |
 |------|------|-----------------|
@@ -234,7 +234,7 @@ The `schema_validation::tests` module (`src/mcp/schema_validation.rs:452-718`) c
 
 ### Integration Tests
 
-The MCP server handler tests (`src/mcp/server.rs:765-935`) exercise the full `ToolRegistry::call_json()` path with `EggcalcPython` mode (matching the MCP server default):
+The MCP server handler tests (the `#[cfg(test)] mod tests` in `src/mcp/server.rs`, starting line 1052) exercise the full `ToolRegistry::call_json()` path with `EggcalcPython` mode (matching the MCP server default):
 
 | Test | What It Verifies |
 |------|-----------------|
@@ -299,5 +299,5 @@ No other changes are required — the mode only affects validation error message
 
 - **Both modes reject bools for numeric fields** — this is not configurable via compat mode.
 - **The mode is per-registry or per-context** — there is no global static. Each `ToolRegistry` or `ExecutionContext` carries its own mode.
-- **The MCP server always uses EggcalcPython** — this is hardcoded at `server.rs:249` and is not configurable via environment variable.
+- **The MCP server always uses EggcalcPython** — this is hardcoded at `server.rs:553` and is not configurable via environment variable.
 - **Preflight wrappers always use StrictNative** — they construct `ToolRegistry::default()` internally, which uses the default mode.

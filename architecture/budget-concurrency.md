@@ -131,7 +131,7 @@ Key invariant: all transitions happen under a single mutex lock, eliminating loa
 | `active_requests` | AtomicUsize | Requests currently being processed |
 | `active_blocking_handlers` | AtomicUsize | Blocking handlers currently executing |
 | `timed_out_handlers` | AtomicUsize | Handlers that timed out while Running |
-| `total_timeouts` | AtomicU64 | Total timeout attempts (including Queued) |
+| `total_timeouts` | AtomicUsize | Total timeout attempts (including Queued) |
 | `peak_blocking_concurrency` | AtomicUsize | Max concurrent blocking handlers observed |
 
 Invariant: at synchronized snapshots, `timed_out_handlers <= active_blocking_handlers`.

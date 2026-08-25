@@ -75,7 +75,7 @@ These constants are defined in `src/mcp/machine_codes.rs` (and re-exported from 
 
 ## Composite Tool Verdicts
 
-Composite tools (`edit_preflight`, `command_preflight`, `config_preflight`, `text_security_inspect`, `cargo_toml_inspect`) emit a `verdict` field in their `result` object via the `.with_verdict(verdict)` builder. Verdicts use the `verdict` constants above. Composite tools also emit a `machine_code` at the top level to summarize the overall outcome (e.g. `COMMAND_OK`, `SHELL_RISK`, `CONFIG_OK`, `TEXT_SECURITY_OK`).
+Composite tools (`edit_preflight`, `command_preflight`, `config_preflight`, `text_security_inspect`, `structured_data_compare`, `config_file_inspect` — the six specs with `composite: true`) emit a `verdict` field in their `result` object via the `.with_verdict(verdict)` builder. Verdicts use the `verdict` constants above. Composite tools also emit a `machine_code` at the top level to summarize the overall outcome (e.g. `COMMAND_OK`, `SHELL_RISK`, `CONFIG_OK`, `TEXT_SECURITY_OK`).
 
 All composite tools use `finding()` / `finding_with_location()` helpers with canonical `severity::*` and `disposition::*` constants for structured findings. Severity values map from legacy vocab: `"error"` → `severity::HIGH`, `"warn"` → `severity::MEDIUM`, `"info"` → `severity::INFO`.
 

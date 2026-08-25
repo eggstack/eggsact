@@ -25,7 +25,7 @@ These files are **never hand-edited**. Edit the source of truth and re-run the g
 
 ### What It Produces
 
-**2. Profile reference in `architecture/mcp-server.md`**
+**1. Profile reference in `architecture/mcp-server.md`**
 
 Inserted between markers under the `### Profile Reference` heading:
 
@@ -37,7 +37,7 @@ Inserted between markers under the `### Profile Reference` heading:
 
 The table lists each profile with Model tool count, Harness tool count, model tool names, and harness-only tool names.
 
-**3. `generated/tool-cards.md`**
+**2. `generated/tool-cards.md`**
 
 A standalone file (no markers) organized by codegg profile. Each tool gets a card with:
 
@@ -163,7 +163,7 @@ The Python `eggcalc` package is not available in GitHub Actions. Parity tests re
 CI excludes parity with `--skip parity`:
 
 ```bash
-cargo test --all-features --tests -- --skip parity
+cargo test --locked --all-features -- --skip parity --test-threads=4
 ```
 
 ### Running Locally
@@ -184,23 +184,21 @@ cargo test --all-features
 
 ### Known Failures
 
-As of 2026-07-08: **383 passed, 33 failed** (out of 418 parity tests).
-
-The 33 failures are accepted behavioral differences, not regressions. They are tracked in:
+There are **37 accepted parity failures**. These are accepted behavioral differences, not regressions. They are tracked in:
 
 - `docs/parity.md` — full decision table with category definitions (C1–C6)
-- `tests/fixtures/accepted_parity_failures.txt` — 33 test names for regression detection
+- `tests/fixtures/accepted_parity_failures.txt` — 37 test names for regression detection
 
 | Category | Count | Root Cause |
 |----------|-------|------------|
 | C1 | 9 | Shell tokenization drift (`shell_split` comment/quote/escape handling) |
 | C2 | 4 | Prompt input inspect output shape differences |
 | C3 | 3 | Unicode policy check finding structure differences |
-| C4 | 7 | Miscellaneous tool output drift (metadata, error envelopes, cosmetic) |
+| C4 | 11 | Miscellaneous tool output drift (metadata, error envelopes, cosmetic) |
 | C5 | 8 | `tools/list` ordering and Rust superset (80 vs 67 tools) |
 | C6 | 2 | Raw MCP response comparison — needs Harness audience in test |
 
-These accumulated across phases 06–09. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE` env var support.
+These accumulated across phases 06–09. An earlier Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE` env var support.
 
 ## Diagnostics
 
@@ -235,30 +233,36 @@ The `runtime_diagnostics` tool returns a JSON object:
   "active_profile": "full",
   "active_audience": "Model",
   "tool_count": 80,
-  "route_critical_tools": ["edit_preflight", "command_preflight", ...],
+  "route_critical_tools": ["edit_preflight", "command_preflight", "config_preflight", "patch_apply_check", "text_security_inspect"],
   "profile_tool_count": 80,
-  "model_visible_tool_count": 74,
+  "model_visible_tool_count": 71,
   "harness_visible_tool_count": 80,
   "compatibility_mode": "eggcalc_python",
-  "budget_tier_summary": { "cheap": 42, "moderate": 28, "heavy": 10 },
+  "budget_tier_summary": { "cheap": 42, "moderate": 33, "heavy": 5 },
   "runtime": {
     "active_profile": "full",
-    "active_audience": "Model",
+    "active_audience": "Harness",
     "schema_detail": "full",
     "limits": {
-      "max_requests_per_second": 10,
       "max_in_flight_requests": 32,
       "max_tool_workers": 16,
-      "max_request_bytes": 1048576,
-      "max_output_bytes": 1048576
+      "max_request_bytes": 1000000,
+      "max_output_bytes": 1000000
+    },
+    "live_metrics": {
+      "active_requests": 1,
+      "active_blocking_handlers": 1,
+      "timed_out_handlers": 0,
+      "total_timeouts": 0,
+      "peak_blocking_concurrency": 1,
+      "sync_pool_stuck_workers": 0
     }
   },
-  "known_env_vars": ["EGGCALC_NO_CONFIG", "EGGCALC_MCP_PROFILE", ...],
-  "compatibility_mode": "eggcalc_python",
-  "route_critical_tools": [...],
-  "budget_tier_summary": {"cheap": N, "moderate": N, "heavy": N},
+  "known_env_vars": ["EGGCALC_NO_CONFIG", "EGGCALC_MCP_PROFILE", "EGGCALC_MCP_AUDIENCE", "EGGCALC_MCP_SCHEMA_DETAIL"]
 }
 ```
+
+(The tool is harness-only; the envelope wraps this object as `{ok, tool, result, machine_code}`.)
 
 Two companion tools provide deeper introspection:
 
@@ -288,30 +292,29 @@ git diff README.md architecture/mcp-server.md generated/tool-cards.md
 # 3. Verify generated docs are current
 cargo run --features dev-tools --bin generate-docs -- --check
 
-# 4. Or run individual gates in order
+# 4. Or run individual gates in order (see AGENTS.md for the canonical list)
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features --lib
-cargo test --all-features --bins
-cargo test --all-features --tests -- --skip parity
-cargo test --doc
-cargo run --features dev-tools --bin generate-docs -- --check
-cargo package --verbose
+cargo run --locked --features dev-tools --bin generate-docs -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features --lib
+cargo test --locked --all-features --bins
+cargo test --locked --all-features -- --skip parity --test-threads=4
+cargo test --locked --doc
+cargo deny check advisories bans licenses sources
 ```
 
 ### CI Enforcement
 
-GitHub Actions CI runs on push/PR to `main`:
+A single **Linux correctness** job runs on push/PR to `main` (`.github/workflows/ci.yml`):
 
 1. `cargo fmt --all -- --check`
-2. `cargo clippy --all-targets --all-features -- -D warnings`
-3. `cargo test --all-features --lib` (unit tests)
-4. `cargo test --all-features --bins` (binary tests)
-5. `cargo test --all-features --tests -- --skip parity` (integration, parity excluded)
-6. `cargo test --doc` (doc tests)
-7. `cargo run --features dev-tools --bin generate-docs -- --check` (generated docs freshness)
-8. `cargo package --verbose` (after all checks pass)
+2. `cargo run --locked --features dev-tools --bin generate-docs -- --check` (generated docs freshness)
+3. `cargo clippy --locked --all-targets --all-features -- -D warnings`
+4. `cargo test --locked --all-features -- --skip parity --test-threads=4`
+5. `cargo test --locked --doc`
 
-The `--check` gate in step 7 ensures that any `ToolSpec` change is accompanied by regenerated docs. A failing check means the registry changed but the generated output was not refreshed — the PR must re-run the generator before CI will pass.
+MSRV, cargo-deny, platform checks, latest-compatible deps, and parity run via scheduled/manual workflows (`maintenance.yml`, `latest-compatible.yml`, `parity.yml`). See `docs/verification.md`.
+
+The `--check` gate in step 2 ensures that any `ToolSpec` change is accompanied by regenerated docs. A failing check means the registry changed but the generated output was not refreshed — the PR must re-run the generator before CI will pass.
 
 CI does **not** publish to crates.io. The maintainer publishes manually per `docs/release.md`.

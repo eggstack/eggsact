@@ -58,7 +58,7 @@ pub struct ValidateJsonResult {
 
 - **Library functions** return `Result<T, String>` for validation/parsing errors, or direct result types when failures are representable in the struct fields (e.g., `valid: false`).
 - **MCP tool wrappers** in `tools/*.rs` convert to `ToolResponse` via the `ToolResponse` builder.
-- **Input limits** are enforced with named constants (e.g., `MAX_INPUT_LENGTH = 100_000`, `MAX_PATTERN_LENGTH = 1000`). Oversized inputs fail early with descriptive error messages.
+- **Input limits** are enforced with named constants (e.g., `MAX_TEXT_LENGTH = 100_000`, `MAX_PATTERN_LENGTH = 1000`). Oversized inputs fail early with descriptive error messages.
 
 ### Testing
 
@@ -176,7 +176,7 @@ pub struct FirstDiff {
 
 ## Validation (`validate.rs`)
 
-Syntax validation, bracket balancing, regex testing, JSON shape analysis, and JSON comparison. The largest module at 1,500+ lines.
+Syntax validation, bracket balancing, regex testing, JSON shape analysis, and JSON comparison. The largest module at 3,400+ lines.
 
 ### Functions
 
@@ -191,7 +191,7 @@ Syntax validation, bracket balancing, regex testing, JSON shape analysis, and JS
 | `json_shape(text, max_depth, max_keys, max_array_items)` | Analyze JSON structure depth, key names, array item types. Returns `JsonShapeResult` with recursive shape and summary string. |
 | `json_canonicalize(text)` | Produce deterministic JSON (sorted keys, normalized whitespace) |
 | `json_compare(a, b)` | Structural JSON comparison |
-| `json_extract(text, path)` | Extract value at JSONPath |
+| `json_extract(text, pointer, max_output_chars)` | Extract value at JSON Pointer (RFC 6901) |
 | `list_dedupe(items)` | Deduplicate list items |
 | `list_sort(items, ...)` | Sort list items |
 | `validate_schema_light(text, schema)` | Lightweight schema validation |
@@ -265,7 +265,7 @@ Apply a chain of named operations. Operations are case-insensitive and applied s
 | `trim` | Strip leading/trailing whitespace |
 | `trim_trailing_whitespace` | Strip trailing whitespace per line |
 | `trim_lines` | Strip leading/trailing whitespace per line |
-| `normalize_newlines_lf` / `normalize_newline` | Convert `\r\n` and `\r` to `\n` |
+| `normalize_newlines_lf` / `normalize_newlines` | Convert `\r\n` and `\r` to `\n` |
 | `ensure_final_newline` | Add trailing `\n` if missing |
 | `strip_final_newline` | Remove trailing `\n` if present |
 | `remove_zero_width` | Remove ZWSP, ZWNJ, ZWJ, WORD JOINER |
@@ -573,10 +573,10 @@ Utility functions for character analysis:
 
 ### Confusables (`confusables.rs`)
 
-Static confusables map loaded from generated data at startup via `LazyLock`:
+Static confusables map loaded from generated data at startup:
 
 ```rust
-pub static CONFUSABLES: LazyLock<HashMap<&'static str, &'static str>>
+pub static CONFUSABLES: &[(u32, &str)]
 ```
 
 Source data: `src/text/confusables_generated.rs` (auto-generated from
@@ -775,7 +775,7 @@ Batch analysis of identifier tables (e.g., all names in a codebase). Checks:
 
 ### Keyword lists
 
-Full keyword lists for Python (35), Rust (38), JavaScript (36), and TypeScript (72, includes JS + TS-specific).
+Full keyword lists for Python (35), Rust (38), JavaScript (38), and TypeScript (71, includes JS + TS-specific).
 
 ## Config (`config.rs`)
 

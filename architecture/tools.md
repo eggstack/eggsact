@@ -60,7 +60,6 @@ Public serialized map fields use `BTreeMap` for stable lexicographic key orderin
 | `MAX_SCHEMA_DEPTH` | 32 | Max schema nesting depth |
 | `MAX_SCHEMA_ELEMENTS` | 10,000 | Max schema elements traversed |
 | `MAX_METADATA_FIELD_LENGTH` | 1,000 | Max metadata field length for edit_preflight |
-| `REGEX_TIMEOUT_SECONDS` | 5 | Timeout for regex execution |
 | `MAX_EXPRESSION_LENGTH` | 10,000 | Max math expression length |
 
 ### Utility Functions
@@ -381,9 +380,9 @@ Route-critical tools **must** always emit `machine_code` and `verdict` in their 
 
 | Tool | Description | Notable Details |
 |------|-------------|-----------------|
-| `validate_regex` | Validate regex syntax | Safety check first (blocks medium/high risk). Runs on dedicated thread with 5s timeout. Reports engine_used (`"rust-regex"` or `"fancy-regex"`), dialect (`"eggsact-regex"`), unsupported_features. |
+| `validate_regex` | Validate regex syntax | Safety check first (blocks medium/high risk). Reports engine_used (`"rust-regex"` or `"fancy-regex"`), dialect (`"eggsact-regex"`), unsupported_features. |
 | `regex_safety_check` | Check regex for ReDoS vulnerabilities | Reports risk level (none/medium/high) and findings. Used internally by command_preflight. |
-| `regex_finditer` | Find all regex matches | Safety check, 5s timeout, configurable max_matches (hard cap 1,000). Reports match, span, groups, groupdict, optional line/column. Engine auto-selection via `classify_pattern()`. |
+| `regex_finditer` | Find all regex matches | Safety check, configurable max_matches (hard cap 1,000, default 100 via `MAX_MATCHES_REGEX`). Reports match, span, groups, groupdict, optional line/column. Engine auto-selection via `classify_pattern()`. |
 
 ### List (3 tools)
 
@@ -414,7 +413,7 @@ Route-critical tools **must** always emit `machine_code` and `verdict` in their 
 
 | Tool | Description | Notable Details |
 |------|-------------|-----------------|
-| `dotenv_validate` | Validate .env files | Custom key_pattern regex (safety-checked), allow_export, duplicate_policy (warn/error/allow). Runs on dedicated thread with 5s timeout (ReDoS protection). |
+| `dotenv_validate` | Validate .env files | Custom key_pattern regex (safety-checked), allow_export, duplicate_policy (warn/error/allow). Safety check bounds ReDoS risk; wall-clock limits come from the budget tier, not an in-handler timeout. |
 | `ini_validate` | Validate INI files | Reports sections, keys_by_section, duplicates, invalid_lines. |
 | `config_preflight` | Pre-check config files (composite) | See [Composite Tools](#composite-tools) section above. |
 

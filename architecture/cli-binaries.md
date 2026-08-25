@@ -72,9 +72,9 @@ eggsact diagnostics (v1.2.3)
 Tools: 80 total
 
 Profiles:
-  codegg_core: 19 tools
-  codegg_core_min: 6 tools
   full: 80 tools
+  default: 25 tools
+  codegg_core_min: 6 tools
   ...
 
 Route-critical tools:
@@ -89,7 +89,7 @@ Compatibility mode (default by surface):
   In-process API:   StrictNative
 
 Runtime:
-  Active profile: codegg_core_min
+  Active profile: full
   Active audience: Model
   Schema detail: full
   Limits: 32 in-flight, 16 workers, 1000000 bytes request, 1000000 bytes output
@@ -114,7 +114,7 @@ Known env vars (names only, no values):
   "tool_count": 80,
   "profiles": {
     "full": 80,
-    "default": 50,
+    "default": 25,
     "codegg_core_min": 6,
     "codegg_core": 19,
     "codegg_preflight": 13,
@@ -122,7 +122,8 @@ Known env vars (names only, no values):
     "codegg_config": 14,
     "codegg_unicode_security": 8,
     "codegg_shell": 6,
-    "codegg_repo_audit": 18
+    "codegg_repo_audit": 18,
+    "human_math": 4
   },
   "compatibility_mode": {
     "mcp_server": "EggcalcPython",
@@ -141,7 +142,7 @@ Known env vars (names only, no values):
     "heavy": "1 MB in / 2 MB out, 30s, 100 findings"
   },
   "runtime": {
-    "active_profile": "codegg_core_min",
+    "active_profile": "full",
     "active_audience": "Model",
     "schema_detail": "full",
     "limits": {
@@ -213,7 +214,7 @@ cargo test --lib main
 
 ## `generate-docs` Binary (`src/bin/generate_docs.rs`)
 
-Generates documentation from the `ToolSpec` registry. The `ToolSpec` entries in `src/mcp/specs/` are the single source of truth; this binary reads them and produces three output files.
+Generates documentation from the `ToolSpec` registry. The `ToolSpec` entries in `src/mcp/specs/` are the single source of truth; this binary reads them and produces two generated outputs.
 
 ```bash
 cargo run --features dev-tools --bin generate-docs            # regenerate all docs (in-place)
@@ -269,7 +270,7 @@ The generator is resilient to malformed marker blocks. `find_all_generated_spans
 
 ### Internal Tests
 
-The binary includes 11 unit tests (`tests` module) plus 4 marker-integrity tests (`generated_marker_integrity` module):
+The binary includes 14 unit tests covering generation invariants, marker spans, and orphan-block handling:
 
 | Test | Purpose |
 |------|---------|
@@ -279,7 +280,6 @@ The binary includes 11 unit tests (`tests` module) plus 4 marker-integrity tests
 | `tool_cards_reference_only_known_tools` | No unknown tool names in tool cards |
 | `tool_card_required_args_match_schema` | Required args in cards match JSON schemas |
 | `stale_docs_message_uses_cargo_bin_name` | Error message uses `generate-docs` (dash, not underscore) |
-| `regenerate_command_uses_dash_form` | `REGENERATE_COMMAND` constant uses dash form |
 | `mcp_server_doc_markers_are_well_formed` | mcp-server.md has exactly one well-ordered marker pair |
 
 ### When to Regenerate
@@ -365,7 +365,7 @@ cargo run --locked --features dev-tools --bin generate-docs -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-features --lib
 cargo test --locked --all-features --bins
-cargo test --locked --all-features --tests -- --skip parity
+cargo test --locked --all-features -- --skip parity --test-threads=4
 cargo test --locked --doc
 cargo deny check advisories bans licenses sources
 cargo package --locked --verbose

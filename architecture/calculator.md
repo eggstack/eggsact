@@ -7,8 +7,8 @@ The `src/calc/` module is the mathematical brain of eggsact. It accepts natural 
 | File | Lines | Purpose |
 |------|-------|---------|
 | `context.rs` | 77 | Per-evaluation mutable state (`EvalContext`) for PRNG, memory registers, user variables, and function permissions |
-| `normalize.rs` | ~2100 | Natural language pipeline: NL→math tokenization, 30-step `normalize()`, unit preprocessing, `split_at_operators()`, `run()`/`run_with_context()` orchestration |
-| `evaluator.rs` | ~3740 | AST-based expression evaluator: tokenizer, recursive-descent parser, ~100 functions, big-integer arithmetic, helper algorithms |
+| `normalize.rs` | ~2270 | Natural language pipeline: NL→math tokenization, 33-step `normalize()`, unit preprocessing, `split_at_operators()`, `run()`/`run_with_context()` orchestration |
+| `evaluator.rs` | ~3790 | AST-based expression evaluator: tokenizer, recursive-descent parser, ~100 functions, big-integer arithmetic, helper algorithms |
 | `units.rs` | ~2350 | Unit system: definitions, 500+ aliases, conversion factors, physical constants metadata, temperature conversion algorithm |
 
 ```
@@ -19,7 +19,7 @@ The `src/calc/` module is the mathematical brain of eggsact. It accepts natural 
                                     │
                  ┌──────────────────▼───────────────────────────┐
                  │           normalize.rs                        │
-                 │  1. normalize() — 30-step NL pipeline         │
+                 │  1. normalize() — 33-step NL pipeline         │
                  │  2. split_at_operators() — tokenization       │
                  │  3. preprocess_units() — unit detection/conversion │
                  │  4. add_same_unit_division_parens()            │
@@ -99,7 +99,7 @@ pub struct EvalContext {
 | Field | Type | Purpose |
 |-------|------|---------|
 | `allow_random` | `bool` | Gates `random()`, `randint()`, `uniform()`, `randn()`, `gauss()`, `seed()` |
-| `allow_side_effects` | `bool` | Gates `store()`, `recall()`, `mplus()`, `mminus()`, `mc()`, `mr()`, `setvar()`, `getvar()`, `delvar()`, `listvars()`, `clearvars()` |
+| `allow_side_effects` | `bool` | Gates `store()`, `recall()`, `m()`, `mplus()`, `mminus()`, `mc()`, `mr()`, `setvar()`, `getvar()`, `delvar()`, `listvars()`, `clearvars()` |
 | `prng_state` | `u64` | xorshift64 PRNG seed (default: `123456789`) |
 | `gauss_spare` | `Option<f64>` | Box-Muller spare value for `randn()`/`gauss()` |
 | `memory_registers` | `HashMap<String, f64>` | Calculator memory slots (`M`, `R0`–`R9`) |
@@ -154,11 +154,11 @@ The `run()` function orchestrates the full pipeline:
 ```
 ┌─────────────┐    ┌──────────────────┐    ┌───────────────────┐    ┌──────────────┐    ┌───────────────┐
 │  Input text  │───▶│  normalize()     │───▶│  split_at_        │───▶│  preprocess_ │───▶│  evaluate()   │
-│  "thirty + 5"│    │  30-step NL→math │    │  operators()      │    │  units()     │    │  or convert() │
+│  "thirty + 5"│    │  33-step NL→math │    │  operators()      │    │  units()     │    │  or convert() │
 └─────────────┘    └──────────────────┘    └───────────────────┘    └──────────────┘    └───────────────┘
 ```
 
-### The Complete 31-Step `normalize()` Pipeline
+### The Complete 33-Step `normalize()` Pipeline
 
 Every input passes through these steps in order. Steps marked with a reference ID correspond to specific bug fixes or parity requirements.
 
@@ -360,7 +360,7 @@ Returns `(re_tokens, Option<target_unit>)`.
 ### `run()` and `run_with_context()` Pipeline
 
 ```
-1.  normalize(expr)                              — 30-step NL→math
+1.  normalize(expr)                              — 33-step NL→math
 2.  handle_convert_pattern(normalized)            — detect convert() → early return
 3.  handle_temp_pattern(normalized)               — detect temp() → early return
 4.  split_at_operators(normalized)                — tokenize
@@ -725,7 +725,7 @@ fn is_prime(n: i64) -> bool {
 
 `set_mcp_mode()` (legacy, idempotent) disables:
 - **Random functions**: `random`, `randint`, `randrange`, `uniform`, `randn`, `gauss`, `seed`
-- **Side-effect functions**: `store`, `recall`, `mplus`, `mminus`, `mc`, `mr`, `setvar`, `getvar`, `delvar`, `listvars`, `clearvars`
+- **Side-effect functions**: `store`, `recall`, `m`, `mplus`, `mminus`, `mc`, `mr`, `setvar`, `getvar`, `delvar`, `listvars`, `clearvars`
 
 Uses `AtomicBool` flags (`ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS`) checked at dispatch time. The context-aware API (`evaluate_with_context`) reads from `EvalContext` fields instead of the global flags.
 

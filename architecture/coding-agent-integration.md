@@ -126,7 +126,7 @@ let tools = registry.available_tools_for_audience(ToolAudience::Harness);
 // Current audience (set at construction time)
 let tools = registry.available_tools_for_current_audience();
 
-// Legacy (deprecated since 0.3.0) — only filters Hidden, not model-safe
+// Legacy (deprecated since 1.1.4) — only filters Hidden, not model-safe
 #[allow(deprecated)]
 let tools = registry.available_tools();
 ```
@@ -154,19 +154,21 @@ pub struct ToolView {
 
 Profiles control which subset of tools is available. The active profile is set once at server startup via `EGGCALC_MCP_PROFILE` (MCP) or at `ToolRegistry` construction (in-process).
 
-| Profile | Tools | Audience | Use Case |
-|---------|-------|----------|----------|
-| `full` | 80 | Model | All non-hidden tools |
-| `default` | varies | Model | Default tool set |
-| `codegg_core_min` | 6 | Model | Minimal model-visible tools for constrained sessions |
-| `codegg_core` | 19 | Model | Normal coding sessions with text, math, path, JSON, analysis |
-| `codegg_preflight` | 13 | Harness | Harness-driven edit/command/config/patch/dependency preflight |
-| `codegg_patch` | 12 | Model | Edit, patch, symbol-diff, and patch-risk workflows |
-| `codegg_config` | 14 | Model | Config validation (JSON, TOML, dotenv, INI, Cargo.toml, structured) |
-| `codegg_unicode_security` | 8 | Model | Suspicious text/identifier review (unicode, confusables, invisible chars) |
-| `codegg_shell` | 6 | Model | Command planning, shell parsing, and preflight checks |
-| `codegg_repo_audit` | 18 | Model | Repository inspection (manifest, config, lockfile, language, structure) |
-| `human_math` | 4 | Model | Calculator-only: math_eval, unit_convert, unit_info, constant_lookup |
+Counts are what `tools/list` returns per audience (measured on v1.2.3):
+
+| Profile | Model | Harness | Debug | Use Case |
+|---------|-------|---------|-------|----------|
+| `full` | 71 | 80 | 80 | All non-hidden tools |
+| `default` | 25 | 25 | 25 | Default tool set |
+| `codegg_core_min` | 6 | 6 | 6 | Minimal model-visible tools for constrained sessions |
+| `codegg_core` | 19 | 19 | 19 | Normal coding sessions with text, math, path, JSON, analysis |
+| `codegg_preflight` | 7 | 13 | 13 | Harness-driven edit/command/config/patch/dependency preflight |
+| `codegg_patch` | 10 | 12 | 12 | Edit, patch, symbol-diff, and patch-risk workflows |
+| `codegg_config` | 14 | 14 | 14 | Config validation (JSON, TOML, dotenv, INI, Cargo.toml, structured) |
+| `codegg_unicode_security` | 6 | 8 | 8 | Suspicious text/identifier review (unicode, confusables, invisible chars) |
+| `codegg_shell` | 5 | 6 | 6 | Command planning, shell parsing, and preflight checks |
+| `codegg_repo_audit` | 18 | 18 | 18 | Repository inspection (manifest, config, lockfile, language, structure) |
+| `human_math` | 4 | 4 | 4 | Calculator-only: math_eval, unit_convert, unit_info, constant_lookup |
 
 ### Profile Construction (In-Process)
 
@@ -319,8 +321,8 @@ use eggsact::preflight::{EditPreflight, EditPreflightInput};
 let input = EditPreflightInput {
     file_path: Some("src/main.rs".to_string()),
     workspace_root: Some("/project".to_string()),
-    old_text: "fn main() {}".to_string(),
-    new_text: "fn main() { println!(\"hi\"); }".to_string(),
+    old: "fn main() {}".to_string(),
+    new: "fn main() { println!(\"hi\"); }".to_string(),
     ..Default::default()
 };
 
@@ -402,9 +404,9 @@ Then send standard MCP messages:
 1. **Harness starts** with `codegg_preflight` + `Harness` audience
 2. **Harness calls `tool_availability_explain`** to discover available tools
 3. **Model session** uses `codegg_core_min` + `Model` audience for tool listings
-4. **Before each edit**, harness calls `edit_preflight` (HarnessOnly) to get verdict
-5. **Before each command**, harness calls `command_preflight` (HarnessOnly) for safety
-6. **Before config writes**, harness calls `config_preflight` (HarnessOnly) to validate
+4. **Before each edit**, harness calls `edit_preflight` to get verdict
+5. **Before each command**, harness calls `command_preflight` for safety
+6. **Before config writes**, harness calls `config_preflight` to validate
 7. **After edit**, harness calls `patch_apply_check` to verify the patch is safe
 8. **Security checks** use `text_security_inspect` for Unicode anomalies
 
@@ -422,8 +424,8 @@ Control `tools/list` output verbosity:
 
 | Level | Description |
 |-------|-------------|
-| `full` | Complete input/output schemas (default) |
-| `normal` | Input schemas only |
-| `compact` | Names and descriptions only, no schemas |
+| `full` | Complete input/output schemas with descriptions and defaults (default) |
+| `normal` | Accepted value, currently identical output to `full` |
+| `compact` | Descriptions truncated to 120 chars, defaults stripped, schemas compacted, tier/tags dropped |
 
 Set via `EGGCALC_MCP_SCHEMA_DETAIL` env var or `tools/list` `schema_detail` parameter.
