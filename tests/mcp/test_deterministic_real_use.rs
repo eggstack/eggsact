@@ -12,6 +12,45 @@ use std::process::{Command, Stdio};
 use std::thread;
 
 fn mcp_request(request: &str) -> String {
+    // Containment for a flaky failure mode (BUG-101): under full-suite
+    // parallel load (`--test-threads=4`), the first tool call of a fresh
+    // debug-build server process pays lazy calculator/regex warm-up inside
+    // its own budget and can spuriously time out. Retry once before
+    // failing; a genuine product timeout fails both attempts. Same
+    // mitigation as `call_tool_and_get_result` in test_golden_fixtures.rs.
+    let first = mcp_request_once(request);
+    if response_indicates_timeout(&first) {
+        eprintln!("tool call timed out under load; retrying once");
+        return mcp_request_once(request);
+    }
+    first
+}
+
+fn response_indicates_timeout(response_str: &str) -> bool {
+    let Ok(response) = serde_json::from_str::<Value>(response_str) else {
+        return false;
+    };
+    let Some(text) = response
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c.as_array())
+        .and_then(|c| c.first())
+        .and_then(|f| f.get("text"))
+        .and_then(|t| t.as_str())
+    else {
+        return false;
+    };
+    serde_json::from_str::<Value>(text)
+        .ok()
+        .and_then(|v| {
+            v.get("error_type")
+                .and_then(|t| t.as_str())
+                .map(str::to_string)
+        })
+        .is_some_and(|t| t == "timeout")
+}
+
+fn mcp_request_once(request: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .env("EGGCALC_MCP_AUDIENCE", "Harness")

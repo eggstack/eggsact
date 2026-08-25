@@ -91,13 +91,19 @@ pub fn diff_spans(a: &str, b: &str, max_diffs: usize) -> Vec<DiffSpan> {
     // LCS dynamic programming with backtracking to find matching blocks.
     // This mirrors Python's difflib.SequenceMatcher which uses an LCS-based
     // approach to find optimal matching blocks and produce edit opcodes.
-    let mut dp = vec![vec![0u32; b_len + 1]; a_len + 1];
+    // Stored as a single flat buffer indexed as `i * stride + j` so skewed
+    // shapes (e.g. a_len >> b_len) don't materialize one heap allocation
+    // per row (PERF-102).
+    let stride = b_len + 1;
+    let mut dp = vec![0u32; (a_len + 1) * stride];
     for i in 1..=a_len {
         for j in 1..=b_len {
             if a_chars[i - 1] == b_chars[j - 1] {
-                dp[i][j] = dp[i - 1][j - 1] + 1;
+                dp[i * stride + j] = dp[(i - 1) * stride + (j - 1)] + 1;
             } else {
-                dp[i][j] = dp[i - 1][j - 1].max(dp[i - 1][j]).max(dp[i][j - 1]);
+                dp[i * stride + j] = dp[(i - 1) * stride + j]
+                    .max(dp[i * stride + (j - 1)])
+                    .max(dp[(i - 1) * stride + (j - 1)]);
             }
         }
     }
@@ -111,7 +117,7 @@ pub fn diff_spans(a: &str, b: &str, max_diffs: usize) -> Vec<DiffSpan> {
             match_positions_rev.push((i - 1, j - 1));
             i -= 1;
             j -= 1;
-        } else if dp[i - 1][j] >= dp[i][j - 1] {
+        } else if dp[(i - 1) * stride + j] >= dp[i * stride + (j - 1)] {
             i -= 1;
         } else {
             j -= 1;

@@ -235,6 +235,15 @@ Responses may arrive out of request order. **Clients must correlate by JSON-RPC 
 3. On timeout: `SyncPoolError::Timeout` returned to caller
 4. Handler may continue running on the worker thread
 
+The budget deadline is fixed at **enqueue time** (`Instant::now() + timeout`
+in `SyncExecutionPool::submit_cancellable`, `src/mcp/sync_pool.rs`), not at
+worker admission. Queue wait therefore counts against the job's budget: when
+all workers are busy, admission delay consumes part of the caller's timeout
+window, so a call can return `Timeout` before its handler ever starts.
+(Cancellation remains cooperative — an un-started handler observes the flag
+and exits early; the abandoned job keeps occupying its worker until reaped,
+tracked by the stuck-workers gauge.)
+
 ---
 
 ## Request Size Limits
