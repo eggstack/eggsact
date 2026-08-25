@@ -22,7 +22,7 @@ description: Use when adding a new MCP tool, modifying an existing tool, working
    ```bash
    cargo run --features dev-tools --bin generate-docs
    ```
-   This updates README tool tables, architecture profile references, and `generated/tool-cards.md`. Commit the generated files alongside your ToolSpec changes.
+   This updates the profile reference block in `architecture/mcp-server.md` and `generated/tool-cards.md`. (It does not touch README — that file is hand-maintained.) Commit the generated files alongside your ToolSpec changes.
 
 5. **Add tests** at the right layer:
    - Unit tests: `src/tools/<category>.rs` (inline `#[cfg(test)]`)
@@ -84,7 +84,7 @@ Every non-OK `ToolResponse` must carry a `machine_code`. Use constants from `src
 - Use `.with_verdict(verdict)` to set the verdict field inside result JSON.
 - Use `preflight_allow(tool)`, `preflight_review(tool, findings)`, or `preflight_block(tool, machine_code, findings)` for quick preflight response construction.
 - Use `ToolResponse::next_tool(name, reason, arguments_hint)` for structured `recommended_next_tool`.
-- **Cooperative budget checks**: Heavy and moderate handlers (e.g. `edit_preflight`, `command_preflight`, `config_preflight`) should create a `BudgetContext` via `BudgetContext::for_handler(tool_name)` and call `should_stop()` at key pipeline stages to respect cancellation and timeout signals. This is cooperative — it does not force-stop the handler, so check at natural boundaries (before expensive I/O, after sub-tool calls).
+- **Cooperative budget checks**: Heavy and moderate handlers (e.g. `edit_preflight`, `command_preflight`, `config_preflight`) should create a `BudgetContext` via the free function `budget::for_handler(ToolBudget::HEAVY)` (or the tier matching the tool's `cost`) and call `should_stop()` at key pipeline stages to respect cancellation and timeout signals. `for_handler` automatically picks up the thread-local cancellation flag set by the dispatcher. This is cooperative — it does not force-stop the handler, so check at natural boundaries (before expensive I/O, after sub-tool calls).
 
 See `architecture/machine-codes.md` for the full code table and design rationale.
 
@@ -100,9 +100,9 @@ Tool listing and filtering lives in `src/mcp/registry/listing.rs`, including `li
 
 For new tool integrations, prefer `call_json_with_execution_context()` over legacy `call_json()`. The `ExecutionContext` bundles eval context, compatibility mode, profile, audience, budget, and cancellation into a single per-request struct. Tool handler signatures remain `fn(&Value) -> ToolResponse` for compatibility — context is applied at the orchestration layer, not passed into handlers. Calculator-backed handlers retrieve `EvalContext` from a thread-local set by `budget::with_eval_context()` via `budget::with_current_eval_context()` (closure-scoped access).
 
-`call_json_with_execution_template()` is an explicit immutable alias for `call_json_with_execution_context`. `call_json_with_execution_context_mut()` (deprecated since 0.4.0) accepts `&mut ExecutionContext` and persists handler state mutations back to the caller's context — use for sequential calculator operations where state should accumulate. Note: it does **not** persist calculator state through `math_eval` (math_eval's evaluator runs in a `catch_unwind` closure and the MCP dispatch creates fresh `EvalContext` per call). For persistent calculator state, use `evaluate_with_context()`/`run_with_context()` directly.
+`call_json_with_execution_template()` is an explicit immutable alias for `call_json_with_execution_context`. `call_json_with_execution_context_mut()` (deprecated since 1.0.0) accepts `&mut ExecutionContext` and persists handler state mutations back to the caller's context — use for sequential calculator operations where state should accumulate. Note: it does **not** persist calculator state through `math_eval` (math_eval's evaluator runs in a `catch_unwind` closure and the MCP dispatch creates fresh `EvalContext` per call). For persistent calculator state, use `evaluate_with_context()`/`run_with_context()` directly.
 
-**Key invariant**: `ctx.eval_ctx` is **cloned** at dispatch for `call_json_with_execution_context` and `call_json_with_execution_template`; PRNG draws, memory mutations, and variable assignments inside the handler operate on the clone and **do not persist back** to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value. For `call_json_with_execution_context_mut` (deprecated since 0.4.0), the `EvalContext` is shared directly and mutations persist — but it does **not** persist calculator state through `math_eval`.
+**Key invariant**: `ctx.eval_ctx` is **cloned** at dispatch for `call_json_with_execution_context` and `call_json_with_execution_template`; PRNG draws, memory mutations, and variable assignments inside the handler operate on the clone and **do not persist back** to the caller's `ExecutionContext`. Two calls with identical seeds produce the same first random value. For `call_json_with_execution_context_mut` (deprecated since 1.0.0), the `EvalContext` is shared directly and mutations persist — but it does **not** persist calculator state through `math_eval`.
 
 For calculator operations, use `evaluate_with_context()` / `run_with_context()` when you need persistent mutable `EvalContext` behavior across multiple calls (PRNG draws accumulate, memory registers persist, user variables accumulate). These operate directly on the caller's `ctx`.
 

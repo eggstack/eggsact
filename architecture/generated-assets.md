@@ -220,9 +220,12 @@ eggsact --diagnostics --format json
 - Budget tier distribution (cheap/moderate/heavy)
 - Active profile, audience, schema detail
 - Runtime limits (in-flight, workers, request/output bytes)
+- Live runtime metrics (active requests, timeouts, blocking concurrency)
 - Environment variable names (no values)
-- Generated data existence checks (`confusables_generated.rs`, `tool-cards.md`)
-- Parity availability (`../eggcalc` exists)
+
+Since v1.2.2, diagnostics report only stable runtime/package facts — no
+source-tree-relative file existence checks and no development command strings,
+so output is identical for installed binaries and source checkouts.
 
 ### MCP Output (JSON)
 

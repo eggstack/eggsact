@@ -129,8 +129,8 @@ eggsact/
    ```bash
    cargo run --features dev-tools --bin generate-docs
    ```
-   This updates README tool tables, architecture profile references, and
-   `generated/tool-cards.md`.
+   This updates the profile reference block in `architecture/mcp-server.md`
+   and `generated/tool-cards.md`. README is hand-maintained and not touched.
 
 5. **Prefer reusable library code** under `src/text/` or `src/calc/` for business
    logic. Keep `src/tools/*.rs` wrappers thin so the same behavior is testable

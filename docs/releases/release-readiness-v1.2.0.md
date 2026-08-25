@@ -78,7 +78,7 @@ Local normal and AddressSanitizer fuzz-target builds also passed using
 The earlier extended fuzz run on `3e5b41c` (Run `30287151564`) passed all
 19/19 jobs. A re-dispatch on `3e5b41c` (Run `30306975485`) found a
 `calculator_normalization` backtrack-limit crash (`32E73 33`). This was
-fixed in corrective pass `75ea503` (see `docs/release-5-status.md` and
+fixed in corrective pass `75ea503` (see `release-5-status-v1.2.0.md` and
 `plans/2026-07-28-calculator-normalization-backtrack-limit-corrective-pass.md`).
 
 ### Latest-compatible dependencies

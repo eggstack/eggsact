@@ -83,14 +83,15 @@ tests/
   property/
     mod.rs                   # re-exports 10 property test modules
     test_calculator_properties.rs
-    test_diff_properties.rs
-    test_shell_properties.rs
-    test_regex_properties.rs
-    test_json_properties.rs
     test_config_properties.rs
-    test_unicode_properties.rs
+    test_diff_properties.rs
+    test_json_properties.rs
     test_markdown_properties.rs
     test_path_glob_properties.rs
+    test_regex_properties.rs
+    test_serialization_determinism.rs
+    test_shell_properties.rs
+    test_unicode_properties.rs
 ```
 
 Agent module unit tests (`src/agent/mod.rs` inline `#[cfg(test)]`) cover `ToolRegistry` profile filtering, unknown tool errors, argument validation, and `call_json` success paths.

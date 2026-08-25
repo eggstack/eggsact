@@ -647,7 +647,7 @@ The MCP server applies per-tool resource budgets during `tools/call` dispatch:
 6. After the handler returns, `truncate_response()` caps findings/output if the budget was exceeded
 7. `limits_applied` in the response envelope reports what was truncated
 
-Heavy and moderate tool handlers also create a `BudgetContext` via `BudgetContext::for_handler()` and poll `should_stop()` at meaningful pipeline stages (after format detection, before sub-tool dispatches, in iteration loops). High-risk handlers (`edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`, `text_security_inspect`) do the same at additional stages. Since `ToolHandler` signatures are `fn(&Value) -> ToolResponse`, the MCP server attaches the cancel flag to a shared context that handlers access via internal initialization.
+Heavy and moderate tool handlers also create a `BudgetContext` via the free function `budget::for_handler(ToolBudget)` (which auto-attaches the thread-local cancel flag) and poll `should_stop()` at meaningful pipeline stages (after format detection, before sub-tool dispatches, in iteration loops). High-risk handlers (`edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`, `text_security_inspect`) do the same at additional stages. Since `ToolHandler` signatures are `fn(&Value) -> ToolResponse`, the MCP server attaches the cancel flag to a shared context that handlers access via internal initialization.
 
 For the in-process agent API, `call_json_with_budget()` on `ToolRegistry` accepts a custom `ToolBudget` to override the default per-tool limits. Input is pre-checked against `max_input_bytes` and rejected with `INPUT_TOO_LARGE` before handler dispatch.
 

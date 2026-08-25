@@ -9,11 +9,14 @@
 eggsact = "1.2.3"
 ```
 
-The crate exposes three public modules:
+The crate exposes six public modules:
 
 - `eggsact::calc` -- math evaluation (natural language and direct expressions)
 - `eggsact::text` -- text processing utilities (measurement, diff, validation, transforms)
 - `eggsact::mcp` -- MCP server for AI tool integration
+- `eggsact::agent` -- in-process `ToolRegistry`, profiles, execution contexts
+- `eggsact::preflight` -- typed preflight wrappers (edit/command/config checks)
+- `eggsact::tools` -- tool handler implementations by category
 
 Core functions are re-exported at the crate root:
 
@@ -430,7 +433,7 @@ let harness_registry = ToolRegistry::with_profile_and_audience(
 );
 ```
 
-> **Note**: `available_tools()` is deprecated since 0.3.0. Use
+> **Note**: `available_tools()` is deprecated since 1.1.4. Use
 > `available_tools_model_safe()`, `available_tools_for_audience()`, or
 > `available_tools_for_current_audience()` instead.
 
@@ -468,7 +471,7 @@ let response = registry.call_json_with_execution_template(
     &ctx,
 )?;
 
-// Mutable context (DEPRECATED since 0.4.0 — see note below)
+// Mutable context (DEPRECATED since 1.0.0 — see note below)
 // Handler state mutations persist back to ctx, but math_eval state
 // (PRNG, registers, variables) is NOT preserved through the evaluator.
 // Use evaluate_with_context() / run_with_context() for persistent
@@ -485,7 +488,7 @@ let response = registry.call_json_with_execution_context_mut(
 )?;
 ```
 
-> **Deprecated since 0.4.0**: `call_json_with_execution_context_mut` does **not**
+> **Deprecated since 1.0.0**: `call_json_with_execution_context_mut` does **not**
 > persist calculator state (PRNG seed, memory registers, variables) through
 > `math_eval` — the sole calculator-backed tool. For persistent calculator
 > sessions, use `evaluate_with_context()` or `run_with_context()` directly. The

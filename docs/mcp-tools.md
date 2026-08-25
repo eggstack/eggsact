@@ -10,9 +10,9 @@ See also: [Math Features](math-features.md), [Library API](library-api.md), [MCP
 |----------|-------|
 | Protocol version | `2025-11-25` (preferred), `2024-11-05` (legacy) |
 | Server name | `eggsact` |
-| Server version | 1.2.3 |
+| Server version | crate version from `Cargo.toml` |
 | Transport | stdio JSON-RPC 2.0 |
-| Total tools | registered (see generated README table for current count) |
+| Total tools | 80, registered in `src/mcp/specs/` (single source of truth; per-profile counts in `architecture/mcp-server.md`) |
 
 The server communicates over stdin/stdout using newline-delimited JSON-RPC 2.0 messages. `tools/call` responses follow MCP shape: JSON-RPC `result.content[0].text` contains a JSON-encoded `ToolResponse` envelope with an `ok` boolean field.
 

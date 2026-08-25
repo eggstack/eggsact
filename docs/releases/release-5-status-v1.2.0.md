@@ -110,7 +110,7 @@ Gate), extended fuzz (19/19), latest-compatible, and Python parity.
 | Criterion | Evidence | Status |
 |-----------|----------|--------|
 | Releases 1–3 final correctness closure | `plans/2026-07-18-releases-1-3-final-correctness-plan.md` | Complete |
-| Release 4 verification infrastructure green | `docs/release-4-status.md` — all criteria met | Complete |
+| Release 4 verification infrastructure green | `release-4-status-v1.2.0.md` (this directory) — all criteria met | Complete |
 | Every planned fuzz target builds and runs | 12 targets build; all run in extended fuzz matrix | Complete |
 | Persistent corpora committed and seeded | 77 seeds across 12 targets (see table above) | Complete |
 | All required surfaces have fuzz coverage | Calculator, diff, shell, regex, JSON, TOML, Unicode, Markdown, glob — all covered | Complete |

@@ -299,8 +299,8 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 | `src/mcp/specs/*.rs` | — | ToolSpec declarations (20 files, one per category) |
 | `src/mcp/schemas/*.rs` | — | JSON-schema builders (20 files, one per category) |
 | `src/tools/helpers.rs` | ~1710 | Shared constants, utilities |
-| `src/tools/*.rs` | — | Tool implementations (19 files; the toml handler lives in `config.rs`) |
-| `src/text/*.rs` | — | Text processing library (25 files) |
+| `src/tools/*.rs` | — | Tool implementations (20 files; the toml handler lives in `config.rs`) |
+| `src/text/*.rs` | — | Text processing library (25 modules + generated `confusables_generated.rs` data file) |
 | `src/agent/mod.rs` | ~1810 | ToolRegistry, Profile, ExecutionContext |
 | `src/preflight/mod.rs` | ~3150 | Typed preflight wrappers |
 
