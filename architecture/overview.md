@@ -81,7 +81,7 @@ Each major component has a dedicated architecture doc. The table below serves as
 
 | Component | Doc | What It Covers | Key Files |
 |-----------|-----|----------------|-----------|
-| **Calculator Core** | [calculator.md](calculator.md) | NL normalization pipeline (31-step), AST evaluator (recursive descent, 8 precedence levels), 150+ unit definitions, 50+ physical/math constants, EvalContext for mutable per-call state, big-integer factorial/perm/comb, sentinel-based return protocol | `src/calc/{normalize,evaluator,units,context}.rs` |
+| **Calculator Core** | [calculator.md](calculator.md) | NL normalization pipeline (~35 tagged transformations), AST evaluator (recursive descent, 8 precedence levels), 150+ unit definitions (500+ aliases), 55 math constants + 54 physical constants, EvalContext for mutable per-call state, big-integer factorial/perm/comb, sentinel-based return protocol | `src/calc/{normalize,evaluator,units,context}.rs` |
 | **MCP Server** | [mcp-server.md](mcp-server.md) | JSON-RPC 2.0 over stdio, tokio concurrent dispatch via JoinSet, protocol negotiation, request lifecycle, schema validation (JSON Schema subset), bounded line allocation, cancellation model, python-compatible JSON serialization | `src/mcp/{server,protocol,response,compat,machine_codes}.rs` |
 | **Registry & Profiles** | [registry-profiles.md](registry-profiles.md) | `ToolSpec` single source of truth, `ALL_TOOLS_VEC` aggregation, 11 named profiles, `ToolAudience` (Model/Harness/Debug), `ToolExposure` levels, route-critical tools, schema compaction, Levenshtein suggestions | `src/mcp/registry/{types,all_tools,listing}.rs`, `src/mcp/specs/` |
 | **Budget & Concurrency** | [budget-concurrency.md](budget-concurrency.md) | `ToolBudget` (3 tiers), `BudgetContext` with cooperative cancellation, `SyncExecutionPool` (8 workers, 32-slot queue), `HandlerPhase` state machine, runtime metrics, timeout lifecycle, thread-local bridges | `src/mcp/{budget,execution,sync_pool,runtime}.rs` |
@@ -142,7 +142,7 @@ Two context structs carry mutable per-request state:
 
 ### Cooperative Cancellation
 
-Cancellation is cooperative, not forceful. An `Arc<AtomicBool>` flag is set on timeout. High-risk handlers (`edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`, `text_security_inspect`) check the flag at pipeline stages via `BudgetContext::should_stop()`.
+Cancellation is cooperative, not forceful. An `Arc<AtomicBool>` flag is set on timeout. Handlers that create a `BudgetContext` internally (via `crate::mcp::budget::for_handler(...)`) check the flag at pipeline stages via `BudgetContext::should_stop()`. Currently 20 handlers do this across ten tool files — the composite/route-critical tools (`edit_preflight`, `command_preflight`, `config_preflight`, `patch_apply_check`, `patch_summary`, `patch_contract_check`, `dependency_edit_preflight`) plus heavy analysis/repo/text tools (`config_file_inspect`, `text_security_inspect`, `text_diff_explain`, `structured_data_compare`, `regex_finditer`, `identifier_table_inspect`, `import_export_inspect`, `code_block_map`, `symbol_name_diff`, `lockfile_inspect`, `repo_tree_summarize`, `test_command_suggest`, `repo_language_detect`).
 
 ---
 
@@ -248,21 +248,23 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 
 ## Profile System
 
-11 named profiles control which tools are exposed. See [registry-profiles.md](registry-profiles.md) for the full reference.
+11 named profiles control which tools are exposed. Counts below are what `tools/list` returns per audience (measured against v1.2.3; see [registry-profiles.md](registry-profiles.md) for the full reference).
 
-| Profile | Purpose | Tool Count |
-|---------|---------|------------|
-| `full` | All non-hidden tools | ~80 |
-| `default` | Essential + common tools | ~50 |
-| `codegg_core_min` | Minimal coder-agent set | 6 |
-| `codegg_core` | Standard coder-agent set | 19 |
-| `codegg_preflight` | Preflight-focused set | 7 (Model) / 13 (Harness) |
-| `codegg_patch` | Patch editing set | 10 (Model) / 12 (Harness) |
-| `codegg_config` | Config inspection set | 14 |
-| `codegg_unicode_security` | Unicode/security set | 6 (Model) / 8 (Harness) |
-| `codegg_shell` | Shell command set | 5 (Model) / 6 (Harness) |
-| `codegg_repo_audit` | Repository audit set | 18 |
-| `human_math` | Human-readable math | 4 |
+| Profile | Model | Harness | Debug | Purpose |
+|---------|-------|---------|-------|---------|
+| `full` | 71 | 80 | 80 | All non-hidden tools |
+| `default` | 25 | 25 | 25 | Essential + common tools |
+| `codegg_core_min` | 6 | 6 | 6 | Minimal coder-agent set |
+| `codegg_core` | 19 | 19 | 19 | Standard coder-agent set |
+| `codegg_preflight` | 7 | 13 | 13 | Preflight-focused set |
+| `codegg_patch` | 10 | 12 | 12 | Patch editing set |
+| `codegg_config` | 14 | 14 | 14 | Config inspection set |
+| `codegg_unicode_security` | 6 | 8 | 8 | Unicode/security set |
+| `codegg_shell` | 5 | 6 | 6 | Shell command set |
+| `codegg_repo_audit` | 18 | 18 | 18 | Repository audit set |
+| `human_math` | 4 | 4 | 4 | Human-readable math |
+
+The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOnly` exposure), not from different profile memberships.
 
 **Audience levels**: `Model` (excludes HarnessOnly+Hidden), `Harness` (excludes Hidden), `Debug` (all non-hidden).
 
@@ -274,20 +276,20 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/main.rs` | 268 | CLI entry point, arg parsing, dispatch |
+| `src/main.rs` | 253 | CLI entry point, arg parsing, dispatch |
 | `src/lib.rs` | 82 | Library root, re-exports |
 | `src/calc/mod.rs` | — | Calculator module re-exports |
-| `src/calc/normalize.rs` | ~2100 | Natural language tokenization (31-step pipeline) |
-| `src/calc/evaluator.rs` | ~3700 | AST-based expression evaluator (100+ functions) |
-| `src/calc/units.rs` | ~2350 | Unit definitions (150+), aliases (500+), conversions |
+| `src/calc/normalize.rs` | ~2270 | Natural language tokenization (tagged transformation pipeline) |
+| `src/calc/evaluator.rs` | ~3800 | AST-based expression evaluator (100+ functions) |
+| `src/calc/units.rs` | ~2360 | Unit definitions (150+), aliases (560+), conversions |
 | `src/calc/context.rs` | 77 | EvalContext (mutable per-call state) |
-| `src/mcp/server.rs` | ~1100 | Protocol orchestration, stdio loop, concurrent dispatch |
+| `src/mcp/server.rs` | ~1730 | Protocol orchestration, stdio loop, concurrent dispatch |
 | `src/mcp/protocol.rs` | ~350 | JSON-RPC types |
 | `src/mcp/response.rs` | — | ToolResponse, python_json_dumps, finding helpers, truncation |
-| `src/mcp/runtime.rs` | ~770 | Rate limiter, constants, profile/audience management, metrics |
-| `src/mcp/budget.rs` | ~950 | ToolBudget (3 tiers), BudgetContext, thread-local bridges |
-| `src/mcp/execution.rs` | ~2100 | HandlerPhase state machine, execute_tool_handler, test hooks (`#[cfg(test)]`) |
-| `src/mcp/sync_pool.rs` | ~1140 | SyncExecutionPool (bounded worker pool) |
+| `src/mcp/runtime.rs` | ~750 | Rate limiter, constants, profile/audience management, metrics |
+| `src/mcp/budget.rs` | ~970 | ToolBudget (3 tiers), BudgetContext, thread-local bridges |
+| `src/mcp/execution.rs` | ~2260 | HandlerPhase state machine, execute_tool_handler, test hooks (`#[cfg(test)]`) |
+| `src/mcp/sync_pool.rs` | ~1260 | SyncExecutionPool (bounded worker pool) |
 | `src/mcp/schema_validation.rs` | — | Argument validation against tool schemas |
 | `src/mcp/compat.rs` | ~300 | CompatibilityMode (EggcalcPython vs StrictNative) |
 | `src/mcp/machine_codes.rs` | ~600 | ~145 machine-readable response code constants |
@@ -296,11 +298,11 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | `src/mcp/registry/listing.rs` | ~530 | Filtering, audience, schema compaction, suggestions |
 | `src/mcp/specs/*.rs` | — | ToolSpec declarations (20 files, one per category) |
 | `src/mcp/schemas/*.rs` | — | JSON-schema builders (20 files, one per category) |
-| `src/tools/helpers.rs` | ~1430 | Shared constants, utilities |
-| `src/tools/*.rs` | — | Tool implementations (19 files) |
+| `src/tools/helpers.rs` | ~1710 | Shared constants, utilities |
+| `src/tools/*.rs` | — | Tool implementations (19 files; the toml handler lives in `config.rs`) |
 | `src/text/*.rs` | — | Text processing library (25 files) |
-| `src/agent/mod.rs` | ~1400 | ToolRegistry, Profile, ExecutionContext |
-| `src/preflight/mod.rs` | ~2400 | Typed preflight wrappers |
+| `src/agent/mod.rs` | ~1810 | ToolRegistry, Profile, ExecutionContext |
+| `src/preflight/mod.rs` | ~3150 | Typed preflight wrappers |
 
 ### Tests
 
@@ -308,8 +310,8 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 |-----------|-------|----------------|
 | `tests/calc/` | 4 | Calculator unit tests (normalize, evaluator, units, regression) |
 | `tests/mcp/` | 28 | MCP protocol, tool tests, route contracts, concurrency, hardening |
-| `tests/text/` | 25 | Text processing module tests (one per module + regression) |
-| `tests/parity/` | 12 | Python/Rust parity tests (requires `eggcalc` at `../eggcalc`) |
+| `tests/text/` | 24 | Text processing module tests (+ regression; regex engine tested via tools) |
+| `tests/parity/` | 11 | Python/Rust parity tests (requires `eggcalc` at `../eggcalc`) |
 | `tests/property/` | 10 | Property-based tests (55 tests: round-trip, idempotence, determinism, symmetry) |
 | `tests/test_context_isolation.rs` | 1 | Context isolation integration test |
 
