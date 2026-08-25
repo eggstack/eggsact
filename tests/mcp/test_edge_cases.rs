@@ -2169,16 +2169,16 @@ fn test_cargo_toml_inspect_empty() {
 
 #[test]
 fn test_math_large_power_2_63_boundary() {
-    // BUG-MATH-002: 2**63 should be 9223372036854775808 (i64::MAX + 1)
-    // but Rust returns 9223372036854775807 (i64::MAX) — off by one.
-    // This test documents the known bug.
+    // BUG-MATH-002 (fixed): 2**63 = 9223372036854775808 overflows i64, so
+    // the saturating int cast used to print i64::MAX (9223372036854775807)
+    // — off by one. The result now takes the float path like other values
+    // beyond i64 range.
     let r = call_tool("math_eval", serde_json::json!({"expression": "2 ** 63"}));
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
-    // Documents BUG-MATH-002: current (buggy) behavior
     assert_eq!(
         r["result"]["value"].as_str().unwrap(),
-        "9223372036854775807",
-        "BUG-MATH-002: 2**63 off by one (i64 boundary issue)"
+        "9223372036854776000",
+        "BUG-MATH-002: 2**63 must not be truncated to i64::MAX"
     );
 }
 

@@ -394,7 +394,10 @@ monotonically increasing generations at registration time. `register_request()`
 returns `(RequestGuard, RequestRegistration)`. `complete_request()` is async
 and removes entries only when the generation matches, preventing stale completions
 from evicting newer requests that reused the same ID. `RequestGuard::Drop` is a
-debug-only assertion — it is NOT the correctness mechanism. The server uses an
+panic-proof fallback: it removes its own entry (generation-checked, via
+`try_lock`) if it is somehow still registered, so a task panicking before the
+awaited cleanup cannot leak the in-flight slot; in the normal flow it is a
+no-op. The server uses an
 outer/inner task pattern: `tokio::spawn` for the inner handler, with an awaited
 `complete_request` after the join completes.
 

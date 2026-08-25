@@ -679,7 +679,10 @@ pub fn text_window(
         .collect();
 
     let at_codepoint = if cp_idx < total_codepoints {
-        let ch = text.chars().nth(cp_idx).unwrap();
+        let ch = text
+            .chars()
+            .nth(cp_idx)
+            .expect("invariant: cp_idx < total_codepoints guarantees a char at cp_idx");
         let codepoint_str = format!("U+{:04X}", ch as u32);
         let category = get_unicode_category(ch);
         let name_val = unicodedata_name(ch);

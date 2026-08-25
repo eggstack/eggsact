@@ -2303,15 +2303,9 @@ pub fn json_compare(
 
     fn normalize_key(key: &str, casefold: bool) -> String {
         if casefold {
-            let mut result = String::with_capacity(key.len());
-            for c in key.chars() {
-                if c == '\u{00DF}' {
-                    result.push_str("ss");
-                } else {
-                    result.extend(c.to_lowercase());
-                }
-            }
-            result
+            // True Unicode case folding, consistent with the casefold
+            // operations elsewhere in the text library (Σ/ς, ligatures…).
+            crate::text::unicode_tools::unicode_casefold(key)
         } else {
             key.to_string()
         }

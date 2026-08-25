@@ -243,7 +243,9 @@ fn convert_captures_fancy<'t>(
     caps: &fancy_regex::Captures<'t>,
     text: &'t str,
 ) -> CompiledCaptures<'t> {
-    let full = caps.get(0).unwrap();
+    let full = caps
+        .get(0)
+        .expect("invariant: group 0 always present after a successful match");
     let mut groups = Vec::new();
 
     for i in 1..caps.len() {
@@ -269,7 +271,9 @@ fn convert_captures_std<'t>(
     text: &'t str,
     pos: usize,
 ) -> CompiledCaptures<'t> {
-    let full = caps.get(0).unwrap();
+    let full = caps
+        .get(0)
+        .expect("invariant: group 0 always present after a successful match");
     let mut groups = Vec::new();
 
     for i in 1..caps.len() {

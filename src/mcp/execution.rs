@@ -782,10 +782,15 @@ pub(crate) async fn execute_tool_bounded_with_hooks(
 
 /// Build a JSON-RPC tool response from an `ExecutionOutcome`, applying
 /// budget-aware truncation and size checks.
+///
+/// `id` is the originating request ID, attached to the error response when
+/// the handler task's join fails (JSON-RPC 2.0 requires `id` on responses
+/// to requests so clients can correlate them).
 pub(crate) fn build_tool_response(
     outcome: ExecutionOutcome,
     tool_name: &str,
     budget: &ToolBudget,
+    id: Option<Value>,
 ) -> serde_json::Value {
     match outcome.tool_response {
         Ok(mut response) => {
@@ -820,16 +825,14 @@ pub(crate) fn build_tool_response(
                 crate::mcp::response::wrap_tool_response(&response)
             }
         }
-        Err(join_err) => serde_json::json!({
-            "jsonrpc": "2.0",
-            "error": {
-                "code": -32000,
-                "message": format!(
-                    "Tool execution error: {}",
-                    runtime::truncate_2000(&sanitize_error(&join_err.to_string()))
-                ),
-            },
-        }),
+        Err(join_err) => crate::mcp::protocol::json_rpc_error(
+            -32000,
+            format!(
+                "Tool execution error: {}",
+                runtime::truncate_2000(&sanitize_error(&join_err.to_string()))
+            ),
+            id,
+        ),
     }
 }
 

@@ -64,6 +64,7 @@ pub fn runtime_diagnostics(_args: &Value) -> ToolResponse {
                 "timed_out_handlers": metrics.timed_out_handlers,
                 "total_timeouts": metrics.total_timeouts,
                 "peak_blocking_concurrency": metrics.peak_blocking_concurrency,
+                "sync_pool_stuck_workers": crate::mcp::sync_pool::sync_pool().stuck_workers(),
             },
         },
         "known_env_vars": [

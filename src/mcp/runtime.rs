@@ -7,35 +7,49 @@ use std::sync::{Arc, LazyLock, RwLock};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
-/// RAII guard for an active request entry. On drop, performs a debug-only
-/// assertion that the entry has already been cleaned up by `complete_request`.
-/// Correctness cleanup is handled by `complete_request()`, not by this guard.
+/// RAII guard for an active request entry.
+///
+/// The awaited `complete_request()` is the primary cleanup path. As a
+/// panic-proof fallback, this guard's `Drop` also removes its own entry
+/// (generation-checked) if it is somehow still registered — so a task that
+/// panics before reaching `complete_request()` cannot leak the in-flight
+/// slot. In the normal flow the entry is already gone and the drop is a
+/// no-op.
 #[doc(hidden)]
 pub struct RequestGuard {
     active: ActiveRequests,
     request_id: Value,
+    generation: u64,
 }
 
 impl RequestGuard {
     #[doc(hidden)]
-    pub fn new(active: ActiveRequests, _cancel_flag: &Arc<AtomicBool>, request_id: Value) -> Self {
-        Self { active, request_id }
+    pub fn new(
+        active: ActiveRequests,
+        _cancel_flag: &Arc<AtomicBool>,
+        request_id: Value,
+        generation: u64,
+    ) -> Self {
+        Self {
+            active,
+            request_id,
+            generation,
+        }
     }
 }
 
 impl Drop for RequestGuard {
     fn drop(&mut self) {
-        // Debug-only assertion: if the map still has our entry, something
-        // went wrong with the awaited cleanup path. In release builds,
-        // this is a no-op — correctness is via complete_request().
-        #[cfg(debug_assertions)]
-        {
-            if let Ok(map) = self.active.try_lock() {
-                debug_assert!(
-                    !map.contains_key(&self.request_id),
-                    "RequestGuard dropped but entry still active for {:?}",
-                    self.request_id
-                );
+        // Best-effort fallback cleanup (try_lock only): under normal flow
+        // `complete_request()` already removed the entry, making this a
+        // no-op. If the enclosing request task panicked before cleanup,
+        // unwinding drops this guard and frees the in-flight slot here.
+        // A contended lock skips cleanup; correctness does not depend on it.
+        if let Ok(mut map) = self.active.try_lock() {
+            if let Some(entry) = map.get(&self.request_id) {
+                if entry.generation == self.generation {
+                    map.remove(&self.request_id);
+                }
             }
         }
     }
@@ -642,7 +656,7 @@ pub async fn register_request(
         },
     );
     Ok((
-        RequestGuard::new(active.clone(), cancel_flag, request_id.clone()),
+        RequestGuard::new(active.clone(), cancel_flag, request_id.clone(), generation),
         RequestRegistration {
             id: request_id,
             generation,

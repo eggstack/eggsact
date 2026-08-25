@@ -284,7 +284,7 @@ fn in_flight_limit_is_reasonable() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// RequestGuard RAII (debug-only assertions)
+// RequestGuard RAII (panic-proof fallback cleanup)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
@@ -306,7 +306,7 @@ async fn request_guard_drop_does_not_remove_entry() {
     // Create a guard, remove the entry manually, then drop the guard.
     // The guard's drop should be a no-op (entry already gone).
     {
-        let _guard = RequestGuard::new(active.clone(), &flag, request_id.clone());
+        let _guard = RequestGuard::new(active.clone(), &flag, request_id.clone(), 0);
         let mut map = active.lock().await;
         map.remove(&request_id);
         assert_eq!(map.len(), 0);
@@ -345,7 +345,7 @@ async fn request_guard_drop_does_not_affect_other_entries() {
     // need to accept this. We manually remove the entry first to avoid the
     // assertion.
     {
-        let _guard = RequestGuard::new(active.clone(), &flag2, request_id.clone());
+        let _guard = RequestGuard::new(active.clone(), &flag2, request_id.clone(), 0);
         let mut map = active.lock().await;
         map.remove(&request_id);
         drop(map);
@@ -384,12 +384,68 @@ async fn request_guard_handles_already_removed_entry() {
         map.remove(&request_id);
     }
 
-    // Guard drop on a missing entry should be a no-op (no debug assertion fire)
+    // Guard drop on a missing entry should be a no-op
     {
-        let _guard = RequestGuard::new(active.clone(), &flag, request_id);
+        let _guard = RequestGuard::new(active.clone(), &flag, request_id, 0);
     }
     let map = active.lock().await;
     assert_eq!(map.len(), 0);
+}
+
+#[tokio::test]
+async fn request_guard_drop_removes_stale_entry() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    let request_id = json!("guard-test-stale");
+
+    // Simulate a task that panicked before complete_request(): the entry is
+    // still registered when the guard drops. The guard's fallback cleanup
+    // must remove it so the in-flight slot cannot leak.
+    {
+        let mut map = active.lock().await;
+        map.insert(
+            request_id.clone(),
+            eggsact::mcp::runtime::test_support::make_active_request(flag.clone()),
+        );
+        assert_eq!(map.len(), 1);
+    }
+    {
+        // test_support entries use generation 0.
+        let _guard = RequestGuard::new(active.clone(), &flag, request_id.clone(), 0);
+    }
+
+    let map = active.lock().await;
+    assert_eq!(
+        map.len(),
+        0,
+        "guard drop must free the slot via fallback cleanup"
+    );
+}
+
+#[tokio::test]
+async fn request_guard_drop_respects_generation_mismatch() {
+    let active = new_active_requests();
+    let flag = Arc::new(AtomicBool::new(false));
+    let request_id = json!("guard-test-generation");
+
+    // Entry registered with generation 0; the stale guard claims a later
+    // generation (recycled ID), so its drop must NOT evict the newer entry.
+    {
+        let mut map = active.lock().await;
+        map.insert(
+            request_id.clone(),
+            eggsact::mcp::runtime::test_support::make_active_request(flag.clone()),
+        );
+    }
+    {
+        let _guard = RequestGuard::new(active.clone(), &flag, request_id.clone(), 999);
+    }
+
+    let map = active.lock().await;
+    assert!(
+        map.contains_key(&request_id),
+        "generation-mismatched guard must not evict a newer entry"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

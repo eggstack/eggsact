@@ -665,9 +665,14 @@ fn test_format_result_i64_boundary() {
     let r = evaluate("1000000000000000").unwrap();
     assert_eq!(r.1, "int", "1e15 should be formatted as int");
 
-    // Large value still within i64 range
+    // i64::MAX is NOT exactly representable in f64 — the literal parses up
+    // to 2^63 — so after the format_result boundary fix it takes the float
+    // path instead of a saturating cast that silently printed i64::MAX.
     let r = evaluate("9223372036854775807").unwrap(); // i64::MAX
-    assert_eq!(r.1, "int", "i64::MAX should be formatted as int");
+    assert_eq!(
+        r.1, "float",
+        "i64::MAX rounds to 2^63 in f64; it must not masquerade as an exact int"
+    );
 
     // Fractional value should be float
     let r = evaluate("1.5").unwrap();

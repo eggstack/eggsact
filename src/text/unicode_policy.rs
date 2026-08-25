@@ -3,6 +3,8 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use unicode_normalization::UnicodeNormalization;
 
+use crate::text::unicode_tools::unicode_casefold;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PolicyFinding {
     pub rule: String,
@@ -792,7 +794,7 @@ fn canonicalize_identifier_compare(text: &str) -> (String, Vec<String>, Vec<Stri
         ops.push("NFC".to_string());
     }
 
-    let folded = current.to_lowercase();
+    let folded = unicode_casefold(&current);
     if folded != current {
         current = folded;
         ops.push("casefold".to_string());
@@ -812,7 +814,7 @@ fn canonicalize_human_label_compare(text: &str) -> (String, Vec<String>, Vec<Str
         ops.push("NFC".to_string());
     }
 
-    let folded = current.to_lowercase();
+    let folded = unicode_casefold(&current);
     if folded != current {
         current = folded;
         ops.push("casefold".to_string());
@@ -845,7 +847,7 @@ fn canonicalize_json_key_compare(text: &str) -> (String, Vec<String>, Vec<String
         ops.push("NFC".to_string());
     }
 
-    let folded = current.to_lowercase();
+    let folded = unicode_casefold(&current);
     if folded != current {
         current = folded;
         ops.push("casefold".to_string());

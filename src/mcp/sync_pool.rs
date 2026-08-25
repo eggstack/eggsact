@@ -1,5 +1,5 @@
 use crate::mcp::response::ToolResponse;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,6 +15,17 @@ struct SyncJob {
     reply: SyncSender<ToolResponse>,
     cancel_flag: Arc<AtomicBool>,
     deadline: Instant,
+    /// Set by the submitter when its wait times out. The worker checks this
+    /// after finishing the job to release the pool-health "stuck" gauge.
+    abandoned: Arc<AtomicBool>,
+}
+
+/// Caller-side handle for an in-flight job.
+struct PendingJob {
+    reply_rx: Receiver<ToolResponse>,
+    cancel_flag: Arc<AtomicBool>,
+    abandoned: Arc<AtomicBool>,
+    stuck: Arc<AtomicUsize>,
 }
 
 #[cfg(test)]
@@ -57,6 +68,11 @@ impl TestEnqueueSignal {
 pub(crate) struct SyncExecutionPool {
     sender: SyncSender<SyncJob>,
     worker_count: usize,
+    /// Number of jobs whose submitter timed out but whose handler is still
+    /// occupying (or about to occupy) a worker. A sustained non-zero value
+    /// means the pool's effective capacity is reduced by handlers that
+    /// ignore cooperative cancellation.
+    stuck: Arc<AtomicUsize>,
 }
 
 impl SyncExecutionPool {
@@ -73,18 +89,21 @@ impl SyncExecutionPool {
     pub fn with_limits(worker_count: usize, queue_capacity: usize) -> Self {
         let (sender, receiver) = sync_channel(queue_capacity);
         let receiver = Arc::new(std::sync::Mutex::new(receiver));
+        let stuck = Arc::new(AtomicUsize::new(0));
 
         for _ in 0..worker_count {
             let rx = receiver.clone();
+            let stuck = stuck.clone();
             std::thread::Builder::new()
                 .name("eggsact-sync-worker".to_string())
-                .spawn(move || worker_loop(rx))
+                .spawn(move || worker_loop(rx, stuck))
                 .expect("failed to spawn sync worker");
         }
 
         Self {
             sender,
             worker_count,
+            stuck,
         }
     }
 
@@ -104,7 +123,7 @@ impl SyncExecutionPool {
         self.submit_cancellable(handler, timeout, Arc::new(AtomicBool::new(false)))
     }
 
-    /// Enqueue a job into the worker queue and return the reply receiver.
+    /// Enqueue a job into the worker queue and return a handle for waiting.
     ///
     /// Shared by `submit_cancellable` and the test-only
     /// `submit_cancellable_with_enqueue_signal`.
@@ -113,13 +132,15 @@ impl SyncExecutionPool {
         handler: impl FnOnce() -> ToolResponse + Send + 'static,
         cancel_flag: &Arc<AtomicBool>,
         deadline: Instant,
-    ) -> Result<Receiver<ToolResponse>, SyncPoolError> {
+    ) -> Result<PendingJob, SyncPoolError> {
         let (reply_tx, reply_rx) = sync_channel(1);
+        let abandoned = Arc::new(AtomicBool::new(false));
         let job = SyncJob {
             handler: Box::new(handler),
             reply: reply_tx,
             cancel_flag: cancel_flag.clone(),
             deadline,
+            abandoned: abandoned.clone(),
         };
 
         self.sender.try_send(job).map_err(|e| match e {
@@ -129,7 +150,12 @@ impl SyncExecutionPool {
             std::sync::mpsc::TrySendError::Disconnected(_) => SyncPoolError::Shutdown,
         })?;
 
-        Ok(reply_rx)
+        Ok(PendingJob {
+            reply_rx,
+            cancel_flag: cancel_flag.clone(),
+            abandoned,
+            stuck: self.stuck.clone(),
+        })
     }
 
     /// Submit a job to the pool with an explicit cancellation flag.
@@ -143,8 +169,8 @@ impl SyncExecutionPool {
         cancel_flag: Arc<AtomicBool>,
     ) -> Result<ToolResponse, SyncPoolError> {
         let deadline = Instant::now() + timeout;
-        let reply_rx = self.enqueue_job(handler, &cancel_flag, deadline)?;
-        wait_for_reply(&reply_rx, timeout, &cancel_flag)
+        let pending = self.enqueue_job(handler, &cancel_flag, deadline)?;
+        wait_for_reply(&pending, timeout)
     }
 
     /// Test-only submission helper that signals after the job is queued.
@@ -157,9 +183,9 @@ impl SyncExecutionPool {
         signal: Arc<TestEnqueueSignal>,
     ) -> Result<ToolResponse, SyncPoolError> {
         let deadline = Instant::now() + timeout;
-        let reply_rx = self.enqueue_job(handler, &cancel_flag, deadline)?;
+        let pending = self.enqueue_job(handler, &cancel_flag, deadline)?;
         signal.signal();
-        wait_for_reply(&reply_rx, timeout, &cancel_flag)
+        wait_for_reply(&pending, timeout)
     }
 
     /// Return the number of worker threads in this pool.
@@ -167,9 +193,27 @@ impl SyncExecutionPool {
     pub fn worker_count(&self) -> usize {
         self.worker_count
     }
+
+    /// Number of jobs whose submitter timed out but whose handler has not
+    /// yet been reaped by a worker. While this gauge is non-zero, the pool's
+    /// effective worker capacity is reduced; handlers stuck indefinitely
+    /// keep it elevated permanently (threads are never killed).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn stuck_workers(&self) -> usize {
+        self.stuck.load(Ordering::SeqCst)
+    }
 }
 
-fn worker_loop(receiver: Arc<std::sync::Mutex<Receiver<SyncJob>>>) {
+/// Release the pool-health "stuck" gauge for a job whose submitter already
+/// timed out. Called exactly once per abandoned job, when the worker finishes
+/// (or skips) it — so the 1:1 increment/decrement pairing never underflows.
+fn reap_if_abandoned(job_abandoned: &AtomicBool, stuck: &AtomicUsize) {
+    if job_abandoned.load(Ordering::SeqCst) {
+        stuck.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+fn worker_loop(receiver: Arc<std::sync::Mutex<Receiver<SyncJob>>>, stuck: Arc<AtomicUsize>) {
     loop {
         let job = {
             let rx = receiver.lock().unwrap();
@@ -190,6 +234,7 @@ fn worker_loop(receiver: Arc<std::sync::Mutex<Receiver<SyncJob>>>) {
                 None,
                 None,
             ));
+            reap_if_abandoned(&job.abandoned, &stuck);
             continue;
         }
 
@@ -204,6 +249,7 @@ fn worker_loop(receiver: Arc<std::sync::Mutex<Receiver<SyncJob>>>) {
                 None,
                 None,
             ));
+            reap_if_abandoned(&job.abandoned, &stuck);
             continue;
         }
 
@@ -227,6 +273,7 @@ fn worker_loop(receiver: Arc<std::sync::Mutex<Receiver<SyncJob>>>) {
             }
         };
         let _ = job.reply.send(response);
+        reap_if_abandoned(&job.abandoned, &stuck);
     }
 }
 
@@ -275,19 +322,19 @@ impl SyncPoolError {
 
 /// Wait for a worker reply and classify the outcome.
 ///
-/// On timeout, sets the cancellation flag before returning `SyncPoolError::Timeout`
-/// so the handler (if still running or queued) can observe the cancellation and
-/// exit early. On disconnected sender, returns `SyncPoolError::Shutdown` without
-/// setting the flag (the pool channel has shut down, not this invocation).
-fn wait_for_reply(
-    reply_rx: &Receiver<ToolResponse>,
-    timeout: Duration,
-    cancel_flag: &Arc<AtomicBool>,
-) -> Result<ToolResponse, SyncPoolError> {
-    match reply_rx.recv_timeout(timeout) {
+/// On timeout, marks the job as abandoned (raising the pool-health "stuck"
+/// gauge until a worker reaps it) and sets the cancellation flag before
+/// returning `SyncPoolError::Timeout` so the handler (if still running or
+/// queued) can observe the cancellation and exit early. On disconnected
+/// sender, returns `SyncPoolError::Shutdown` without setting the flag (the
+/// pool channel has shut down, not this invocation).
+fn wait_for_reply(pending: &PendingJob, timeout: Duration) -> Result<ToolResponse, SyncPoolError> {
+    match pending.reply_rx.recv_timeout(timeout) {
         Ok(response) => Ok(response),
         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            cancel_flag.store(true, Ordering::SeqCst);
+            pending.abandoned.store(true, Ordering::SeqCst);
+            pending.stuck.fetch_add(1, Ordering::SeqCst);
+            pending.cancel_flag.store(true, Ordering::SeqCst);
             Err(SyncPoolError::Timeout)
         }
         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(SyncPoolError::Shutdown),
@@ -435,6 +482,57 @@ mod tests {
             "timeout should return within configured bound, took {:?}",
             elapsed
         );
+    }
+
+    #[test]
+    fn stuck_worker_gauge_tracks_abandoned_handlers() {
+        let pool = Arc::new(SyncExecutionPool::with_limits(1, 1));
+        let gate = Arc::new(BlockingJobGate::new());
+
+        // Handler blocks on the gate and ignores cooperative cancellation,
+        // so the worker stays occupied after the caller times out.
+        let p1 = pool.clone();
+        let gate_for_job = gate.clone();
+        let h1 = std::thread::spawn(move || {
+            p1.submit(
+                move || {
+                    gate_for_job.arrive_and_wait();
+                    ToolResponse::success(serde_json::json!({}), Some("test"))
+                },
+                Duration::from_millis(50),
+            )
+        });
+        gate.wait_until_started();
+
+        // Wait past the 50ms timeout so the submitter has marked the job
+        // abandoned, then confirm the gauge reflects the lost capacity.
+        std::thread::sleep(Duration::from_millis(250));
+        assert_eq!(
+            pool.stuck_workers(),
+            1,
+            "handler running past its deadline must be counted as stuck"
+        );
+
+        // Releasing the handler lets the worker reap it and restore the
+        // gauge to zero.
+        gate.release();
+        let result = h1.join().expect("submitter panic");
+        assert!(matches!(result, Err(SyncPoolError::Timeout)));
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while pool.stuck_workers() != 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "stuck gauge must drop back to zero after the handler finishes"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        // Pool remains usable.
+        let r = pool.submit(
+            move || ToolResponse::success(serde_json::json!("sentinel"), Some("test")),
+            Duration::from_secs(5),
+        );
+        assert!(r.unwrap().ok, "pool must remain usable");
     }
 
     #[test]
@@ -972,13 +1070,27 @@ mod tests {
 
     // ── wait_for_reply classification tests ──────────────────────────
 
+    #[cfg(test)]
+    fn test_pending_job(
+        reply_rx: Receiver<ToolResponse>,
+        cancel_flag: Arc<AtomicBool>,
+    ) -> PendingJob {
+        PendingJob {
+            reply_rx,
+            cancel_flag,
+            abandoned: Arc::new(AtomicBool::new(false)),
+            stuck: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
     #[test]
     fn wait_for_reply_success_returns_response() {
         let (tx, rx) = sync_channel(1);
         let flag = Arc::new(AtomicBool::new(false));
         tx.send(ToolResponse::success(serde_json::json!("ok"), Some("test")))
             .unwrap();
-        let result = wait_for_reply(&rx, Duration::from_secs(1), &flag);
+        let pending = test_pending_job(rx, flag.clone());
+        let result = wait_for_reply(&pending, Duration::from_secs(1));
         assert!(result.is_ok());
         assert!(result.unwrap().ok);
         assert!(
@@ -991,7 +1103,8 @@ mod tests {
     fn wait_for_reply_timeout_sets_cancel_flag() {
         let (_tx, rx) = sync_channel::<ToolResponse>(1);
         let flag = Arc::new(AtomicBool::new(false));
-        let result = wait_for_reply(&rx, Duration::from_millis(10), &flag);
+        let pending = test_pending_job(rx, flag.clone());
+        let result = wait_for_reply(&pending, Duration::from_millis(10));
         assert!(
             matches!(result, Err(SyncPoolError::Timeout)),
             "expected Timeout, got {:?}",
@@ -1005,7 +1118,8 @@ mod tests {
         let (tx, rx) = sync_channel::<ToolResponse>(1);
         let flag = Arc::new(AtomicBool::new(false));
         drop(tx);
-        let result = wait_for_reply(&rx, Duration::from_secs(1), &flag);
+        let pending = test_pending_job(rx, flag.clone());
+        let result = wait_for_reply(&pending, Duration::from_secs(1));
         assert!(
             matches!(result, Err(SyncPoolError::Shutdown)),
             "expected Shutdown, got {:?}",
@@ -1021,7 +1135,8 @@ mod tests {
     fn wait_for_reply_timeout_with_sender_retained_sets_cancel() {
         let (_tx, rx) = sync_channel::<ToolResponse>(1);
         let flag = Arc::new(AtomicBool::new(false));
-        let result = wait_for_reply(&rx, Duration::from_millis(5), &flag);
+        let pending = test_pending_job(rx, flag.clone());
+        let result = wait_for_reply(&pending, Duration::from_millis(5));
         assert!(matches!(result, Err(SyncPoolError::Timeout)));
         assert!(flag.load(Ordering::SeqCst));
         // Sender is still alive — this is a timeout, not shutdown.

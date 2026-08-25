@@ -480,24 +480,26 @@ pub fn unescape_text(text: &str, mode: &str) -> UnescapeTextResult {
                 text.to_string()
             } else {
                 let inner = &text[1..text.len() - 1];
-                let simple = inner
-                    .replace("\\'", "'")
-                    .replace("\\\"", "\"")
-                    .replace("\\n", "\n")
-                    .replace("\\t", "\t")
-                    .replace("\\r", "\r")
-                    .replace("\\0", "\0")
-                    .replace("\\a", "\x07")
-                    .replace("\\b", "\x08")
-                    .replace("\\f", "\x0C")
-                    .replace("\\v", "\x0B")
-                    .replace("\\\\", "\\");
+                // Single left-to-right scanner over the raw inner text.
+                // Handling all escapes in one pass cannot mis-pair escapes
+                // (e.g. `\\n` must stay backslash+'n', not become LF).
                 let mut result = String::new();
-                let mut chars = simple.chars();
+                let mut chars = inner.chars();
                 while let Some(c) = chars.next() {
                     if c == '\\' {
                         if let Some(next) = chars.next() {
                             match next {
+                                '\'' => result.push('\''),
+                                '"' => result.push('"'),
+                                'n' => result.push('\n'),
+                                't' => result.push('\t'),
+                                'r' => result.push('\r'),
+                                '0' => result.push('\0'),
+                                'a' => result.push('\x07'),
+                                'b' => result.push('\x08'),
+                                'f' => result.push('\x0C'),
+                                'v' => result.push('\x0B'),
+                                '\\' => result.push('\\'),
                                 'x' => {
                                     let hex: String = chars.by_ref().take(2).collect();
                                     if let Ok(byte) = u8::from_str_radix(&hex, 16) {
@@ -735,7 +737,11 @@ pub fn text_hash(text: &str, algorithms: &[String], encoding: &str) -> TextHashR
 
     let algo_count = hashes.len();
     let summary = if algo_count == 1 {
-        let algo_name = hashes.keys().next().unwrap().to_uppercase();
+        let algo_name = hashes
+            .keys()
+            .next()
+            .expect("invariant: algo_count == 1 means hashes has exactly one entry")
+            .to_uppercase();
         format!(
             "{} computed for {} {} bytes",
             algo_name, byte_count, encoding

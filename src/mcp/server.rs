@@ -89,12 +89,18 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
     // The last byte of the most recently consumed chunk lets us detect CRLF
     // when the LF is the first byte in the next fill.
     let mut last_byte: Option<u8> = None;
+    // A mid-line I/O error means the stream broke; whatever was buffered so
+    // far is a partial frame and must not be surfaced as a complete line.
+    let mut io_errored = false;
 
     loop {
         let (chunk_len, last_chunk_byte, newline_pos, byte_before_lf) = {
             let chunk = match reader.fill_buf().await {
                 Ok(c) => c,
-                Err(_) => break,
+                Err(_) => {
+                    io_errored = true;
+                    break;
+                }
             };
             if chunk.is_empty() {
                 break;
@@ -137,7 +143,10 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
             if can_take > 0 {
                 let chunk = match reader.fill_buf().await {
                     Ok(c) => c,
-                    Err(_) => break,
+                    Err(_) => {
+                        io_errored = true;
+                        break;
+                    }
                 };
                 buf.extend_from_slice(&chunk[..can_take]);
             }
@@ -151,7 +160,10 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
         if can_take > 0 {
             let chunk = match reader.fill_buf().await {
                 Ok(c) => c,
-                Err(_) => break,
+                Err(_) => {
+                    io_errored = true;
+                    break;
+                }
             };
             buf.extend_from_slice(&chunk[..can_take]);
         }
@@ -160,8 +172,12 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
         reader.consume(chunk_len);
     }
 
-    // EOF.
-    if bytes_before_lf > max_bytes {
+    // EOF, or a mid-line I/O error. On an I/O error the buffered bytes are a
+    // truncated frame — return `Eof` (stop reading) rather than misclassifying
+    // partial input as a complete line.
+    if io_errored {
+        LimitedLine::Eof
+    } else if bytes_before_lf > max_bytes {
         LimitedLine::TooLarge {
             observed_at_least: bytes_before_lf,
         }
@@ -611,6 +627,7 @@ async fn handle_request_async(
                         outcome,
                         &name_owned,
                         &tool_budget,
+                        request.id.clone(),
                     ))
                 }
 
@@ -1418,6 +1435,72 @@ mod truncate_utf8_bytes_tests {
         let mut cursor = std::io::Cursor::new(data);
         let result = read_bounded_line(&mut cursor, 1000).await;
         assert!(matches!(result, LimitedLine::Eof));
+    }
+
+    /// Reader serving its data in small chunks, then erroring instead of
+    /// returning a clean EOF — simulates a stream breaking mid-line.
+    struct FailingAfterData {
+        data: Vec<u8>,
+        pos: usize,
+        chunk: usize,
+    }
+
+    impl tokio::io::AsyncRead for FailingAfterData {
+        fn poll_read(
+            mut self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            if self.pos >= self.data.len() {
+                return std::task::Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "simulated mid-line failure",
+                )));
+            }
+            let end = (self.pos + self.chunk).min(self.data.len());
+            buf.put_slice(&self.data[self.pos..end]);
+            self.pos = end;
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    impl tokio::io::AsyncBufRead for FailingAfterData {
+        fn poll_fill_buf(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<&[u8]>> {
+            let this = self.get_mut();
+            if this.pos >= this.data.len() {
+                return std::task::Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "simulated mid-line failure",
+                )));
+            }
+            let end = (this.pos + this.chunk).min(this.data.len());
+            std::task::Poll::Ready(Ok(&this.data[this.pos..end]))
+        }
+
+        fn consume(mut self: std::pin::Pin<&mut Self>, amt: usize) {
+            self.pos = (self.pos + amt).min(self.data.len());
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_line_midline_io_error_not_surfaced_as_line() {
+        use super::*;
+        // Bytes arrive without any LF, then the stream errors. The buffered
+        // partial frame must NOT be misclassified as a complete Line.
+        let mut reader = FailingAfterData {
+            data: b"partial".to_vec(),
+            pos: 0,
+            chunk: 3,
+        };
+        let result = read_bounded_line(&mut reader, 1000).await;
+        assert!(
+            matches!(result, LimitedLine::Eof),
+            "mid-line I/O error must stop input processing, got {:?}",
+            result
+        );
     }
 
     #[tokio::test]

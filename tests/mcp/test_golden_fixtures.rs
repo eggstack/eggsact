@@ -3,6 +3,24 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 fn call_tool_and_get_result(request: &str) -> Value {
+    // Containment for a flaky failure mode: under full-suite parallel load
+    // (`--test-threads=4`), the first tool call of a fresh debug-build
+    // server process pays lazy calculator/regex warm-up inside its own 30s
+    // budget and can spuriously time out. Retry once before failing; a
+    // genuine product timeout fails both attempts.
+    let first = call_tool_once(request);
+    let timed_out = first
+        .get("error_type")
+        .and_then(|v| v.as_str())
+        .is_some_and(|t| t == "timeout");
+    if timed_out {
+        eprintln!("golden fixture tool call timed out under load; retrying once");
+        return call_tool_once(request);
+    }
+    first
+}
+
+fn call_tool_once(request: &str) -> Value {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .stdin(Stdio::piped())

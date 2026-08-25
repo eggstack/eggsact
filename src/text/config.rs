@@ -129,7 +129,7 @@ pub fn dotenv_validate(
             continue;
         }
 
-        let eq_pos = eq_pos.unwrap();
+        let eq_pos = eq_pos.expect("invariant: eq_pos.is_some() checked above (p < 1 rejected)");
         let key = line[..eq_pos].trim().to_string();
         let raw_value = line[eq_pos + 1..].to_string();
 
@@ -150,7 +150,10 @@ pub fn dotenv_validate(
             && (value.starts_with('\'') || value.starts_with('"'))
             && value.chars().next() == value.chars().last()
         {
-            let first_char = value.chars().next().unwrap();
+            let first_char = value
+                .chars()
+                .next()
+                .expect("invariant: value.len() >= 2 means at least one char");
             quote_style = first_char.to_string();
             value = value[1..value.len() - 1].to_string();
         } else {
