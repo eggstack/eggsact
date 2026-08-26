@@ -601,15 +601,24 @@ fn detect_behavioral_features(
 
     // Environment mutation detection (FOO=bar cmd pattern)
     // Scan all argv entries for env prefix assignments (shell_split may split FOO=bar cargo test)
-    for arg in argv {
-        if arg.contains('=') && !arg.starts_with('-') && !arg.starts_with('/') {
-            result.push((
-                machine_codes::SHELL_ENV_MUTATION,
-                "EnvMutation",
-                "command mutates environment variables",
-            ));
-            break;
-        }
+    let is_assignment = argv.first().is_some_and(|arg| {
+        arg.split_once('=').is_some_and(|(name, _)| {
+            !name.is_empty()
+                && name.chars().enumerate().all(|(i, c)| {
+                    if i == 0 {
+                        c.is_ascii_alphabetic() || c == '_'
+                    } else {
+                        c.is_ascii_alphanumeric() || c == '_'
+                    }
+                })
+        })
+    });
+    if is_assignment {
+        result.push((
+            machine_codes::SHELL_ENV_MUTATION,
+            "EnvMutation",
+            "command mutates environment variables",
+        ));
     }
 
     // Shell feature-based detection

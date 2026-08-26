@@ -92,11 +92,18 @@ fn compare_pre_release(a: &[String], b: &[String]) -> i32 {
         let bi_int = bi.chars().all(|c| c.is_ascii_digit());
 
         if ai_int && bi_int {
-            let a_val = ai.parse::<u64>().unwrap_or(u64::MAX);
-            let b_val = bi.parse::<u64>().unwrap_or(u64::MAX);
-            let diff = (a_val as i128) - (b_val as i128);
-            if diff != 0 {
-                return if diff < 0 { -1 } else { 1 };
+            let a_digits = ai.trim_start_matches('0');
+            let b_digits = bi.trim_start_matches('0');
+            let a_digits = if a_digits.is_empty() { "0" } else { a_digits };
+            let b_digits = if b_digits.is_empty() { "0" } else { b_digits };
+            match a_digits
+                .len()
+                .cmp(&b_digits.len())
+                .then_with(|| a_digits.cmp(b_digits))
+            {
+                std::cmp::Ordering::Less => return -1,
+                std::cmp::Ordering::Greater => return 1,
+                std::cmp::Ordering::Equal => {}
             }
         } else if ai_int {
             return -1;
@@ -426,6 +433,27 @@ fn cargo_tilde_range(version: &ParsedVersion) -> (ParsedVersion, ParsedVersion) 
     (lower, upper)
 }
 
+fn cargo_range_satisfies(
+    candidate: &ParsedVersion,
+    lower: &ParsedVersion,
+    upper: &ParsedVersion,
+) -> bool {
+    if !version_gte(candidate, lower) || !version_less_than(candidate, upper) {
+        return false;
+    }
+
+    // Cargo only considers a pre-release when the requirement itself names a
+    // pre-release of the same core version.
+    if !candidate.pre_release.is_empty()
+        && (lower.pre_release.is_empty()
+            || (candidate.major, candidate.minor, candidate.patch)
+                != (lower.major, lower.minor, lower.patch))
+    {
+        return false;
+    }
+    true
+}
+
 fn cargo_wildcard_range(constraint: &str) -> (Option<ParsedVersion>, Option<ParsedVersion>) {
     let constraint_trimmed = constraint.trim().trim_end_matches('.');
     let parts: Vec<&str> = constraint_trimmed.split('.').collect();
@@ -558,7 +586,7 @@ pub fn check_version_constraint(
 
         let lower = lower.unwrap_or_else(|| unreachable!("checked is_none() above"));
         let upper = upper.unwrap_or_else(|| unreachable!("checked is_none() above"));
-        let satisfies = version_gte(&parsed_ver, &lower) && version_less_than(&parsed_ver, &upper);
+        let satisfies = cargo_range_satisfies(&parsed_ver, &lower, &upper);
         let pc = ParsedConstraint {
             raw: constraint.to_string(),
             scheme: scheme.to_string(),
@@ -613,7 +641,7 @@ pub fn check_version_constraint(
         }
 
         let (lower, upper) = cargo_caret_range(&parsed_bound);
-        let satisfies = version_gte(&parsed_ver, &lower) && version_less_than(&parsed_ver, &upper);
+        let satisfies = cargo_range_satisfies(&parsed_ver, &lower, &upper);
         let pc = ParsedConstraint {
             raw: constraint.to_string(),
             scheme: "cargo".to_string(),
@@ -663,7 +691,7 @@ pub fn check_version_constraint(
 
         let parsed_bound = parsed_bound.unwrap_or_else(|| unreachable!("checked is_none() above"));
         let (lower, upper) = cargo_tilde_range(&parsed_bound);
-        let satisfies = version_gte(&parsed_ver, &lower) && version_less_than(&parsed_ver, &upper);
+        let satisfies = cargo_range_satisfies(&parsed_ver, &lower, &upper);
         let pc = ParsedConstraint {
             raw: constraint.to_string(),
             scheme: "cargo".to_string(),

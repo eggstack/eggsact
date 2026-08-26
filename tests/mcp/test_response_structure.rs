@@ -3,6 +3,10 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 fn mcp_request(request: &str) -> String {
+    super::support::retry_mcp_request(|| mcp_request_once(request))
+}
+
+fn mcp_request_once(request: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .stdin(Stdio::piped())

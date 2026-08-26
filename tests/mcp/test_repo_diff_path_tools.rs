@@ -48,6 +48,20 @@ fn repo_tree_summarize_single_path_with_file_sizes() {
 }
 
 #[test]
+fn repo_tree_summarize_counts_extensionless_files_as_files() {
+    let registry = repo_audit_harness_registry();
+    let resp = registry
+        .call_json(
+            "repo_tree_summarize",
+            json!({"paths": ["Makefile", "LICENSE", "src/"]}),
+        )
+        .expect("registry call should succeed");
+    let result = result_json(&resp);
+    assert_eq!(result.get("file_count").unwrap(), 2);
+    assert_eq!(result.get("directory_count").unwrap(), 1);
+}
+
+#[test]
 fn repo_tree_summarize_max_paths_cap() {
     let registry = repo_audit_harness_registry();
     let paths: Vec<String> = (0..1500).map(|i| format!("file_{}.txt", i)).collect();
@@ -169,6 +183,20 @@ fn diff_risk_classify_security_sensitive_diff_returns_block() {
         result.get("machine_code").unwrap().as_str().unwrap(),
         "DIFF_RISK_BLOCK"
     );
+}
+
+#[test]
+fn diff_risk_classify_can_require_review_for_docs_only() {
+    let registry = full_model_registry();
+    let patch = "--- a/README\n+++ b/README\n@@ -1 +1 @@\n-old\n+new\n";
+    let resp = registry
+        .call_json(
+            "diff_risk_classify",
+            json!({"patch_text": patch, "policy": {"allow_docs_only": false}}),
+        )
+        .expect("registry call should succeed");
+    let result = resp.result.expect("result should be present");
+    assert_eq!(result.get("verdict").unwrap(), "review");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

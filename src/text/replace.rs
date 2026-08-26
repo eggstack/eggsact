@@ -265,11 +265,11 @@ pub fn text_replace_check_with_options(
         max_preview_chars,
     } = options;
 
-    if text.len() > MAX_TEXT_LENGTH {
+    let text_length = text.chars().count();
+    if text_length > MAX_TEXT_LENGTH {
         return Err(format!(
             "Input length {} exceeds MAX_TEXT_LENGTH {}",
-            text.len(),
-            MAX_TEXT_LENGTH
+            text_length, MAX_TEXT_LENGTH
         ));
     }
 

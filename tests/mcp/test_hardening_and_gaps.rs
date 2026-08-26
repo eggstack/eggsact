@@ -18,6 +18,10 @@ use std::process::{Command, Stdio};
 use eggsact::agent::{CompatibilityMode, Profile, ToolAudience, ToolRegistry};
 
 fn mcp_request(request: &str) -> String {
+    super::support::retry_mcp_request(|| mcp_request_once(request))
+}
+
+fn mcp_request_once(request: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .stdin(Stdio::piped())
@@ -1972,6 +1976,10 @@ fn test_core_tools_return_tool_field() {
 
 /// Spawn MCP server with a custom EGGCALC_MCP_PROFILE and send a single request.
 fn mcp_request_with_profile(request: &str, profile: &str) -> String {
+    super::support::retry_mcp_request(|| mcp_request_with_profile_once(request, profile))
+}
+
+fn mcp_request_with_profile_once(request: &str, profile: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .env("EGGCALC_MCP_PROFILE", profile)

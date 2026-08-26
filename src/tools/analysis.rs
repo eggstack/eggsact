@@ -541,18 +541,14 @@ fn extract_brace_blocks(
     out: &mut Vec<Value>,
 ) {
     let mut depth = 0i32;
-    let mut block_start: Option<usize> = None;
-    let mut current_sig = String::new();
+    let mut blocks: Vec<(usize, String, String, i32, bool)> = Vec::new();
 
     for (idx, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
 
-        if depth == 0 {
-            // Look for block-starting signatures
-            let sig = detect_brace_signature(trimmed, language);
-            if let Some((kind, name)) = sig {
-                block_start = Some(idx);
-                current_sig = format!("{} {}", kind, name);
+        if include_nested || depth == 0 {
+            if let Some((kind, name)) = detect_brace_signature(trimmed, language) {
+                blocks.push((idx, kind.to_string(), name, depth, false));
             }
         }
 
@@ -560,29 +556,38 @@ fn extract_brace_blocks(
         let close = trimmed.bytes().filter(|&b| b == b'}').count() as i32;
         depth += open - close;
 
-        if depth <= 0 && block_start.is_some() {
-            let start = block_start.unwrap() + 1;
-            let end = idx + 1;
-            if include_nested || depth == 0 && open == 0 && close > 0 || block_start.is_some() {
-                let parts: Vec<&str> = current_sig.splitn(2, ' ').collect();
-                let kind = parts.first().unwrap_or(&"").to_string();
-                let name = parts.get(1).unwrap_or(&"").to_string();
-                out.push(serde_json::json!({
-                    "kind": kind,
-                    "name": name,
-                    "start_line": start,
-                    "end_line": end,
-                    "confidence": "medium",
-                    "raw_signature": current_sig,
-                }));
-            }
-            block_start = None;
-            current_sig.clear();
-            if depth < 0 {
-                depth = 0;
+        if open > 0 {
+            if let Some(block) = blocks.last_mut() {
+                block.4 = true;
             }
         }
+
+        while blocks
+            .last()
+            .is_some_and(|block| block.4 && depth <= block.3)
+        {
+            let (start, kind, name, _, _) = blocks.pop().unwrap_or_else(|| unreachable!());
+            let raw_signature = format!("{} {}", kind, name);
+            out.push(serde_json::json!({
+                "kind": kind,
+                "name": name,
+                "start_line": start + 1,
+                "end_line": idx + 1,
+                "confidence": "medium",
+                "raw_signature": raw_signature,
+            }));
+        }
+        if depth < 0 {
+            depth = 0;
+        }
     }
+
+    out.sort_by_key(|block| {
+        block
+            .get("start_line")
+            .and_then(|line| line.as_u64())
+            .unwrap_or(0)
+    });
 }
 
 fn detect_brace_signature<'a>(line: &'a str, language: &str) -> Option<(&'a str, String)> {

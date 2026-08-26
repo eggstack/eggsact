@@ -82,11 +82,11 @@ fn extract_tables_recursive<'a>(
 }
 
 pub fn validate_toml(text: &str) -> Result<ValidateTomlResult, String> {
-    if text.len() > MAX_INPUT_LENGTH {
+    let text_length = text.chars().count();
+    if text_length > MAX_INPUT_LENGTH {
         return Err(format!(
             "Input length {} exceeds MAX_INPUT_LENGTH {}",
-            text.len(),
-            MAX_INPUT_LENGTH
+            text_length, MAX_INPUT_LENGTH
         ));
     }
 
@@ -157,11 +157,11 @@ pub fn validate_toml(text: &str) -> Result<ValidateTomlResult, String> {
 }
 
 pub fn toml_shape(text: &str, max_tables: usize) -> Result<TomlShapeResult, String> {
-    if text.len() > MAX_INPUT_LENGTH {
+    let text_length = text.chars().count();
+    if text_length > MAX_INPUT_LENGTH {
         return Err(format!(
             "Input length {} exceeds MAX_INPUT_LENGTH {}",
-            text.len(),
-            MAX_INPUT_LENGTH
+            text_length, MAX_INPUT_LENGTH
         ));
     }
 

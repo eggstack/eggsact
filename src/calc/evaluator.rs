@@ -815,6 +815,11 @@ fn parse_shift(
             Token::LShift => {
                 *pos += 1;
                 let right = parse_additive(tokens, pos, depth)?;
+                if left.fract() != 0.0 || right.fract() != 0.0 {
+                    return Err(EvaluationError::InvalidOperation(
+                        "Bitwise operations require integer arguments".to_string(),
+                    ));
+                }
                 let shift = right as i64;
                 if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                     return Err(EvaluationError::InvalidOperation(format!(
@@ -830,6 +835,11 @@ fn parse_shift(
             Token::RShift => {
                 *pos += 1;
                 let right = parse_additive(tokens, pos, depth)?;
+                if left.fract() != 0.0 || right.fract() != 0.0 {
+                    return Err(EvaluationError::InvalidOperation(
+                        "Bitwise operations require integer arguments".to_string(),
+                    ));
+                }
                 let shift = right as i64;
                 if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                     return Err(EvaluationError::InvalidOperation(format!(
@@ -860,6 +870,11 @@ fn parse_shift_with(
             Token::LShift => {
                 *pos += 1;
                 let right = parse_additive_with(tokens, pos, depth, ctx)?;
+                if left.fract() != 0.0 || right.fract() != 0.0 {
+                    return Err(EvaluationError::InvalidOperation(
+                        "Bitwise operations require integer arguments".to_string(),
+                    ));
+                }
                 let shift = right as i64;
                 if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                     return Err(EvaluationError::InvalidOperation(format!(
@@ -875,6 +890,11 @@ fn parse_shift_with(
             Token::RShift => {
                 *pos += 1;
                 let right = parse_additive_with(tokens, pos, depth, ctx)?;
+                if left.fract() != 0.0 || right.fract() != 0.0 {
+                    return Err(EvaluationError::InvalidOperation(
+                        "Bitwise operations require integer arguments".to_string(),
+                    ));
+                }
                 let shift = right as i64;
                 if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                     return Err(EvaluationError::InvalidOperation(format!(
@@ -1863,6 +1883,11 @@ fn evaluate_function(
             Ok((!(args[0] as i64)) as f64)
         }
         "bitlshift" if args.len() == 2 => {
+            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "bitlshift requires integer arguments".to_string(),
+                ));
+            }
             let shift = args[1] as i64;
             if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                 return Err(EvaluationError::InvalidOperation(format!(
@@ -1875,6 +1900,11 @@ fn evaluate_function(
             })?) as f64)
         }
         "bitrshift" if args.len() == 2 => {
+            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "bitrshift requires integer arguments".to_string(),
+                ));
+            }
             let shift = args[1] as i64;
             if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                 return Err(EvaluationError::InvalidOperation(format!(
@@ -2054,9 +2084,7 @@ fn evaluate_function(
                     a, b
                 )));
             }
-            let range = (b - a + 1) as u64;
-            let r = prng_random() * range as f64;
-            Ok((a + r.floor() as i64) as f64)
+            Ok(random_int_inclusive(a, b, prng_next_u64) as f64)
         }
         "randrange" if args.len() == 1 => {
             let a = args[0] as i64;
@@ -2862,9 +2890,7 @@ fn evaluate_function_with(
                     a, b
                 )));
             }
-            let range = (b - a + 1) as u64;
-            let r = prng_random_with(ctx) * range as f64;
-            Ok((a + r.floor() as i64) as f64)
+            Ok(random_int_inclusive(a, b, || prng_next_u64_with(ctx)) as f64)
         }
         "randrange" if args.len() == 1 => {
             let a = args[0] as i64;
@@ -3230,9 +3256,34 @@ fn xorshift64(state: &mut u64) -> u64 {
     *state
 }
 
-fn prng_random() -> f64 {
+fn prng_next_u64() -> u64 {
     let mut prng = PRNG_STATE.lock().unwrap_or_else(|e| e.into_inner());
-    xorshift64(&mut prng.0) as f64 / u64::MAX as f64
+    xorshift64(&mut prng.0)
+}
+
+fn prng_random() -> f64 {
+    prng_next_u64() as f64 / u64::MAX as f64
+}
+
+fn prng_next_u64_with(ctx: &mut EvalContext) -> u64 {
+    xorshift64(&mut ctx.prng_state)
+}
+
+fn random_int_inclusive(a: i64, b: i64, mut next: impl FnMut() -> u64) -> i64 {
+    let range = (b as i128 - a as i128 + 1) as u128;
+    let offset = if range == (u64::MAX as u128) + 1 {
+        next() as u128
+    } else {
+        let range = range as u64;
+        let limit = u64::MAX - u64::MAX % range;
+        loop {
+            let value = next();
+            if value < limit {
+                break (value % range) as u128;
+            }
+        }
+    };
+    (a as i128 + offset as i128) as i64
 }
 
 fn prng_seed(s: u64) {
@@ -3373,6 +3424,14 @@ mod tests {
     }
 
     #[test]
+    fn test_shifts_reject_fractional_operands() {
+        assert!(evaluate("3.5 << 1").is_err());
+        assert!(evaluate("3 >> 1.5").is_err());
+        assert!(evaluate("bitlshift(3.5, 1)").is_err());
+        assert!(evaluate("bitrshift(3, 1.5)").is_err());
+    }
+
+    #[test]
     fn test_bitwise_precedence() {
         // | has lower precedence than ^
         assert_eq!(val("1 | 2 ^ 3"), "1");
@@ -3432,6 +3491,12 @@ mod tests {
         let v: f64 = val("hypot(3, 4)").parse().unwrap();
         assert!((v - 5.0).abs() < 1e-10);
         assert_eq!(val("hypot(0, 0)"), "0");
+    }
+
+    #[test]
+    fn test_randint_full_positive_i64_range_does_not_overflow() {
+        let result = random_int_inclusive(0, i64::MAX, || 0);
+        assert_eq!(result, 0);
     }
 
     #[test]

@@ -19,6 +19,10 @@ use std::process::{Command, Stdio};
 use eggsact::agent::{Profile, ToolAudience, ToolRegistry};
 
 fn mcp_request(request: &str) -> String {
+    super::support::retry_mcp_request(|| mcp_request_once(request))
+}
+
+fn mcp_request_once(request: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .env("EGGCALC_MCP_AUDIENCE", "Harness")
@@ -2933,6 +2937,19 @@ fn test_env_mutation_detection() {
         .iter()
         .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("EnvMutation"));
     assert!(has_env, "expected EnvMutation finding in {:?}", findings);
+}
+
+#[test]
+fn test_equals_in_positional_argument_is_not_env_mutation() {
+    let result = call_tool(
+        "command_preflight",
+        serde_json::json!({"command": "echo key=value"}),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let findings = result["result"]["findings"].as_array().unwrap();
+    assert!(!findings
+        .iter()
+        .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("EnvMutation")));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

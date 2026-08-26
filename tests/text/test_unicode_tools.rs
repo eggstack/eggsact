@@ -178,6 +178,17 @@ fn test_mixed_scripts_mixed() {
     assert!(result.scripts.contains(&"Cyrillic".to_string()));
 }
 
+#[test]
+fn test_mixed_scripts_detects_arabic_and_indic() {
+    let arabic = detect_mixed_scripts("hello مرحبا");
+    assert!(arabic.mixed_scripts);
+    assert!(arabic.scripts.contains(&"Arabic".to_string()));
+
+    let indic = detect_mixed_scripts("hello नमस्ते");
+    assert!(indic.mixed_scripts);
+    assert!(indic.scripts.contains(&"Devanagari".to_string()));
+}
+
 // ─── build_safe_repr ─────────────────────────────────────────────────
 
 #[test]

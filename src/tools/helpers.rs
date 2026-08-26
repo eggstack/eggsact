@@ -1291,9 +1291,7 @@ pub(crate) fn classify_path(path: &str) -> (String, bool, bool) {
 
     // Check hidden/dot components
     let is_hidden = parts.iter().any(|p| p.starts_with('.'));
-    let is_dotfile = parts
-        .last()
-        .is_some_and(|p| p.starts_with('.') && p.contains('.'));
+    let is_dotfile = parts.last().is_some_and(|p| p.starts_with('.'));
 
     // Get filename and extension
     let filename = *parts.last().unwrap_or(&"");

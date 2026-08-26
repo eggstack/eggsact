@@ -1445,7 +1445,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
         .get("review_security_sensitive_paths")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    let _allow_docs_only = policy
+    let allow_docs_only = policy
         .get("allow_docs_only")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
@@ -1464,8 +1464,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
     let mut has_generated = false;
     let mut has_vendor = false;
     let mut has_binary = false;
-    let mut _docs_only = true;
-    let mut _tests_only = true;
+    let mut docs_only = true;
 
     for file in &parse_result.files {
         let path = if file.new_file.is_empty() || file.new_file == "/dev/null" {
@@ -1480,8 +1479,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
         match category.as_str() {
             "manifests" => {
                 has_dependency = true;
-                _docs_only = false;
-                _tests_only = false;
+                docs_only = false;
                 risk_categories.push("dependency_change".to_string());
                 files_by_category
                     .entry("dependency_change".to_string())
@@ -1497,8 +1495,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
             }
             "lockfiles" => {
                 has_dependency = true;
-                _docs_only = false;
-                _tests_only = false;
+                docs_only = false;
                 risk_categories.push("lockfile_change".to_string());
                 files_by_category
                     .entry("lockfile_change".to_string())
@@ -1514,8 +1511,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
             }
             "ci" => {
                 has_ci = true;
-                _docs_only = false;
-                _tests_only = false;
+                docs_only = false;
                 risk_categories.push("ci_change".to_string());
                 files_by_category
                     .entry("ci_change".to_string())
@@ -1531,8 +1527,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
             }
             "configs" => {
                 has_config = true;
-                _docs_only = false;
-                _tests_only = false;
+                docs_only = false;
                 risk_categories.push("config_change".to_string());
                 files_by_category
                     .entry("config_change".to_string())
@@ -1545,7 +1540,6 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
                     .entry("tests_change".to_string())
                     .or_default()
                     .push(path.to_string());
-                // tests_only stays true unless we see source/config/dependency/ci
             }
             "docs" => {
                 risk_categories.push("docs_change".to_string());
@@ -1553,12 +1547,10 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
                     .entry("docs_change".to_string())
                     .or_default()
                     .push(path.to_string());
-                // docs_only stays true unless we see source/config/dependency/ci
             }
             "generated" => {
                 has_generated = true;
-                _docs_only = false;
-                _tests_only = false;
+                docs_only = false;
                 risk_categories.push("generated_change".to_string());
                 files_by_category
                     .entry("generated_change".to_string())
@@ -1567,8 +1559,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
             }
             "vendor" => {
                 has_vendor = true;
-                _docs_only = false;
-                _tests_only = false;
+                docs_only = false;
                 risk_categories.push("vendor_change".to_string());
                 files_by_category
                     .entry("vendor_change".to_string())
@@ -1576,8 +1567,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
                     .push(path.to_string());
             }
             "scripts" => {
-                _docs_only = false;
-                _tests_only = false;
+                docs_only = false;
                 risk_categories.push("source_change".to_string());
                 files_by_category
                     .entry("source_change".to_string())
@@ -1587,8 +1577,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
             _ => {
                 // source or unknown
                 has_source = true;
-                _docs_only = false;
-                _tests_only = false;
+                docs_only = false;
                 risk_categories.push("source_change".to_string());
                 files_by_category
                     .entry("source_change".to_string())
@@ -1671,8 +1660,13 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
 
     // Determine overall verdict
     let has_blocking = has_security || has_binary;
-    let has_review_reasons =
-        has_ci || has_dependency || has_config || has_source || has_generated || has_vendor;
+    let has_review_reasons = has_ci
+        || has_dependency
+        || has_config
+        || has_source
+        || has_generated
+        || has_vendor
+        || (!allow_docs_only && !all_paths.is_empty() && docs_only);
 
     let (diff_verdict, machine_code) = if has_blocking {
         (verdict::BLOCK, machine_codes::DIFF_RISK_BLOCK)

@@ -3,6 +3,10 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 fn mcp_request(request: &str) -> String {
+    super::support::retry_mcp_request(|| mcp_request_once(request))
+}
+
+fn mcp_request_once(request: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .stdin(Stdio::piped())
@@ -441,6 +445,22 @@ fn test_code_block_map_rust_functions() {
         blocks[1].get("name"),
         Some(&Value::String("bar".to_string()))
     );
+}
+
+#[test]
+fn test_code_block_map_include_nested_controls_brace_blocks() {
+    let source = "fn outer() {\n    fn inner() {}\n}\n";
+    let without_nested = call_tool(
+        "code_block_map",
+        serde_json::json!({"source": source, "language": "rust", "include_nested": false}),
+    );
+    assert_eq!(without_nested["result"]["block_count"], 1);
+
+    let with_nested = call_tool(
+        "code_block_map",
+        serde_json::json!({"source": source, "language": "rust", "include_nested": true}),
+    );
+    assert_eq!(with_nested["result"]["block_count"], 2);
 }
 
 #[test]

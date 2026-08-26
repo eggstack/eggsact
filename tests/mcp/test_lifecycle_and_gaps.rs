@@ -18,6 +18,10 @@ use std::process::{Command, Stdio};
 use eggsact::agent::{Profile, ToolAudience, ToolRegistry};
 
 fn mcp_request(request: &str) -> String {
+    super::support::retry_mcp_request(|| mcp_request_once(request))
+}
+
+fn mcp_request_once(request: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_eggsact"))
         .arg("--mcp")
         .env("EGGCALC_MCP_AUDIENCE", "Harness")

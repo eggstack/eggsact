@@ -5,6 +5,12 @@ use eggsact::text::{
 };
 
 #[test]
+fn test_length_limits_count_characters_consistently() {
+    let multibyte_text = "😀".repeat(100_000);
+    assert!(validate_brackets(&multibyte_text).is_ok());
+}
+
+#[test]
 fn test_validate_brackets_balanced() {
     let result = validate_brackets("(a + b)").unwrap();
     assert!(result.balanced);
@@ -55,6 +61,11 @@ fn test_validate_regex_match() {
     assert_eq!(validate_regex(r"\d+", "123"), Ok(true));
     assert_eq!(validate_regex(r"\w+", "hello"), Ok(true));
     assert_eq!(validate_regex(r"^hello", "hello world"), Ok(true));
+}
+
+#[test]
+fn test_validate_regex_uses_fancy_backend_for_lookaround() {
+    assert_eq!(validate_regex(r"\d+(?=px)", "15px"), Ok(true));
 }
 
 #[test]

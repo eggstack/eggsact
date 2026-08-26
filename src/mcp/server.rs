@@ -45,7 +45,7 @@ fn truncate_utf8_bytes(input: &str, max_bytes: usize, suffix: &str) -> String {
     while end > 0 && !input.is_char_boundary(end) {
         end -= 1;
     }
-    let mut result = String::with_capacity(max_bytes + suffix.len());
+    let mut result = String::with_capacity(max_bytes);
     result.push_str(&input[..end]);
     result.push_str(suffix);
     result
@@ -193,10 +193,12 @@ fn string_from_utf8_lossy(bytes: &[u8]) -> String {
         .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned())
 }
 
-fn write_json_line(value: &Value) {
-    if let Ok(output) = serde_json::to_string(value) {
-        println!("{}", output);
-    }
+fn write_json_line(value: &Value) -> std::io::Result<()> {
+    let output = serde_json::to_string(value).map_err(std::io::Error::other)?;
+    let mut stdout = std::io::stdout().lock();
+    stdout.write_all(output.as_bytes())?;
+    stdout.write_all(b"\n")?;
+    stdout.flush()
 }
 
 fn build_server_capabilities() -> ServerCapabilities {
@@ -699,9 +701,14 @@ pub async fn main() -> ! {
     // Dedicated writer task: all stdout writes go through this channel
     // to prevent interleaved output from concurrent request handlers.
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Value>(64);
+    let writer_failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let writer_failed_task = writer_failed.clone();
     let writer_handle = tokio::spawn(async move {
         while let Some(response) = rx.recv().await {
-            write_json_line(&response);
+            if write_json_line(&response).is_err() {
+                writer_failed_task.store(true, Ordering::Relaxed);
+                break;
+            }
         }
     });
 
@@ -709,6 +716,9 @@ pub async fn main() -> ! {
     let mut join_set = tokio::task::JoinSet::new();
 
     loop {
+        if writer_failed.load(Ordering::Relaxed) {
+            break;
+        }
         let line = match read_bounded_line(&mut reader, MAX_REQUEST_BYTES).await {
             LimitedLine::Line(line) => line,
             LimitedLine::TooLarge { observed_at_least } => {

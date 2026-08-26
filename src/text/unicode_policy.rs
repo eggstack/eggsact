@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
+use unicode_general_category::get_general_category;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::text::unicode_tools::unicode_casefold;
@@ -108,29 +109,7 @@ fn normalize_unicode(text: &str, form: &str) -> Result<String, String> {
 }
 
 fn get_unicode_category(c: char) -> &'static str {
-    let cp = c as u32;
-    if cp <= 0x001F || (0x007F..=0x009F).contains(&cp) {
-        return "Cc";
-    }
-    if (0x0300..=0x036F).contains(&cp)
-        || (0x1DC0..=0x1DFF).contains(&cp)
-        || (0xFE20..=0xFE2F).contains(&cp)
-    {
-        return "Mn";
-    }
-    if (0x0600..=0x06FF).contains(&cp) || (0x0750..=0x077F).contains(&cp) {
-        return "Mc";
-    }
-    if (0x0900..=0x0DFF).contains(&cp) {
-        return "Mc";
-    }
-    if cp == 0x200C || cp == 0x200D {
-        return "Cf";
-    }
-    if cp == 0x200B || cp == 0x2060 {
-        return "Cf";
-    }
-    "Lo"
+    get_general_category(c).abbreviation()
 }
 
 fn find_invisibles(text: &str) -> Vec<char> {
@@ -241,7 +220,8 @@ pub fn unicode_policy_check(
         };
     }
 
-    if text.len() > 100_000 {
+    let text_length = text.chars().count();
+    if text_length > 100_000 {
         return UnicodePolicyCheckResult {
             pass: false,
             policy: policy.to_string(),
@@ -249,7 +229,7 @@ pub fn unicode_policy_check(
             findings: vec![PolicyFinding {
                 rule: "input_too_large".to_string(),
                 severity: "error".to_string(),
-                message: format!("Input length {} exceeds maximum 100000", text.len()),
+                message: format!("Input length {} exceeds maximum 100000", text_length),
             }],
             summary: "Input too large".to_string(),
         };

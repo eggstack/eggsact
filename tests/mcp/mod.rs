@@ -1,3 +1,4 @@
+pub(crate) mod support;
 pub mod test_additional_edge_cases;
 pub mod test_analysis_tools;
 pub mod test_boundary_conditions;

@@ -107,11 +107,11 @@ fn get_line_column(text: &str, index: usize) -> (i32, i32) {
 }
 
 pub fn validate_brackets(text: &str) -> Result<CheckBracketsResult, String> {
-    if text.len() > MAX_INPUT_LENGTH {
+    let text_length = text.chars().count();
+    if text_length > MAX_INPUT_LENGTH {
         return Err(format!(
             "Input length {} exceeds MAX_INPUT_LENGTH {}",
-            text.len(),
-            MAX_INPUT_LENGTH
+            text_length, MAX_INPUT_LENGTH
         ));
     }
     let pairs: HashMap<char, char> = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')]
@@ -373,7 +373,11 @@ fn context_at_position(input: &str, position: i32) -> String {
 fn sanitize_engine_error(msg: &str) -> String {
     let sanitized = msg.replace("0x", "addr");
     if sanitized.len() > 200 {
-        format!("{}...", &sanitized[..197])
+        let end = (0..=197)
+            .rev()
+            .find(|&index| sanitized.is_char_boundary(index))
+            .unwrap_or(0);
+        format!("{}...", &sanitized[..end])
     } else {
         sanitized
     }
@@ -794,7 +798,15 @@ pub fn regex_test(
 
 pub fn validate_regex(pattern: &str, text: &str) -> Result<bool, String> {
     check_pattern_complexity(pattern)?;
-    let re = Regex::new(pattern).map_err(|e| e.to_string())?;
+    let re = compile_regex(pattern, None, false, false, false).map_err(|e| match e {
+        CompileError::Unsupported(features) => {
+            format!(
+                "Pattern uses unsupported constructs: {}",
+                features.join(", ")
+            )
+        }
+        CompileError::Compile { error, .. } => error,
+    })?;
     match re.is_match(text) {
         Ok(b) => Ok(b),
         Err(e) => Err(e.to_string()),
@@ -883,6 +895,14 @@ mod tests {
     fn test_validate_regex_nesting_too_deep() {
         let nested_pattern = "(".repeat(10).to_string() + "a" + &")".repeat(10);
         assert!(validate_regex(&nested_pattern, "text").is_err());
+    }
+
+    #[test]
+    fn test_sanitize_engine_error_truncates_at_utf8_boundary() {
+        let message = "x".repeat(196) + "é";
+        let sanitized = sanitize_engine_error(&message);
+        assert!(sanitized.ends_with("..."));
+        assert!(sanitized.is_char_boundary(sanitized.len() - 3));
     }
 
     #[test]
@@ -1026,8 +1046,9 @@ pub fn json_shape(
     max_keys: usize,
     max_array_items: usize,
 ) -> Result<JsonShapeResult, String> {
-    if text.len() > MAX_PATTERN_LENGTH * 100 {
-        return Err(format!("Input length {} exceeds limit", text.len()));
+    let text_length = text.chars().count();
+    if text_length > MAX_PATTERN_LENGTH * 100 {
+        return Err(format!("Input length {} exceeds limit", text_length));
     }
 
     let parsed: serde_json::Value = match serde_json::from_str(text) {
@@ -1969,11 +1990,11 @@ pub fn json_extract(
     pointer: &str,
     max_output_chars: usize,
 ) -> Result<JsonExtractResult, String> {
-    if text.len() > MAX_INPUT_LENGTH {
+    let text_length = text.chars().count();
+    if text_length > MAX_INPUT_LENGTH {
         return Err(format!(
             "Input length {} exceeds MAX_INPUT_LENGTH {}",
-            text.len(),
-            MAX_INPUT_LENGTH
+            text_length, MAX_INPUT_LENGTH
         ));
     }
 
@@ -2221,18 +2242,18 @@ pub fn json_compare(
     treat_missing_null_as_equal: bool,
     max_diffs: usize,
 ) -> Result<JsonCompareResult, String> {
-    if a.len() > MAX_INPUT_LENGTH {
+    let a_length = a.chars().count();
+    if a_length > MAX_INPUT_LENGTH {
         return Err(format!(
             "Input 'a' length {} exceeds maximum {}",
-            a.len(),
-            MAX_INPUT_LENGTH
+            a_length, MAX_INPUT_LENGTH
         ));
     }
-    if b.len() > MAX_INPUT_LENGTH {
+    let b_length = b.chars().count();
+    if b_length > MAX_INPUT_LENGTH {
         return Err(format!(
             "Input 'b' length {} exceeds maximum {}",
-            b.len(),
-            MAX_INPUT_LENGTH
+            b_length, MAX_INPUT_LENGTH
         ));
     }
 
@@ -2776,11 +2797,11 @@ pub fn json_canonicalize(
 ) -> Result<JsonCanonicalizeResult, String> {
     use sha2::{Digest, Sha256};
 
-    if text.len() > MAX_INPUT_LENGTH {
+    let text_length = text.chars().count();
+    if text_length > MAX_INPUT_LENGTH {
         return Err(format!(
             "Input length {} exceeds MAX_INPUT_LENGTH {}",
-            text.len(),
-            MAX_INPUT_LENGTH
+            text_length, MAX_INPUT_LENGTH
         ));
     }
 

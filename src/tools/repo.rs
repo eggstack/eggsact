@@ -1018,12 +1018,7 @@ pub fn repo_tree_summarize(args: &Value) -> ToolResponse {
         if normalized.ends_with('/') || normalized.ends_with("/.") || normalized.ends_with("/..") {
             directory_count += 1;
         } else {
-            let filename = normalized.rsplit('/').next().unwrap_or("");
-            if filename.contains('.') {
-                file_count += 1;
-            } else {
-                directory_count += 1;
-            }
+            file_count += 1;
         }
     }
 

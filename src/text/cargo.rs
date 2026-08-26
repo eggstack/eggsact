@@ -190,7 +190,8 @@ pub fn cargo_toml_inspect(
     check_workspace: bool,
     check_dependencies: bool,
 ) -> CargoInspectResult {
-    if text.len() > MAX_INPUT_LENGTH {
+    let text_length = text.chars().count();
+    if text_length > MAX_INPUT_LENGTH {
         return CargoInspectResult {
             parse_ok: false,
             package: PackageInfo::default(),
@@ -201,8 +202,7 @@ pub fn cargo_toml_inspect(
             duplicate_or_confusable_dependency_names: Vec::new(),
             findings: vec![format!(
                 "Input length {} exceeds maximum {}",
-                text.len(),
-                MAX_INPUT_LENGTH
+                text_length, MAX_INPUT_LENGTH
             )],
         };
     }

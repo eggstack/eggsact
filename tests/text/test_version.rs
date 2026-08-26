@@ -170,6 +170,25 @@ fn test_constraint_explanation() {
     assert!(!result.explanation.is_empty());
 }
 
+#[test]
+fn test_cargo_prereleases_do_not_cross_range_upper_bound() {
+    let result = check_version_constraint("1.3.0-alpha.0", "~1.2.3-alpha.1", "cargo");
+    assert!(!result.satisfies);
+
+    let result = check_version_constraint("1.2.3-beta.0", "~1.2.3-alpha.1", "cargo");
+    assert!(result.satisfies);
+}
+
+#[test]
+fn test_prerelease_numeric_identifiers_beyond_u64_are_ordered() {
+    let result = check_version_constraint(
+        "1.0.0-18446744073709551616",
+        ">1.0.0-18446744073709551615",
+        "semver",
+    );
+    assert!(result.satisfies);
+}
+
 // ─── Pre-release ordering (dev/snapshot/pre) via constraints ────────
 // compare_pre_release uses alphabetical string comparison for non-numeric
 // Semantic pre-release ordering: dev/pre/snapshot < alpha < beta < rc

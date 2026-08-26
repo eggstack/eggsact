@@ -65,10 +65,10 @@ impl HandlerLifecycle {
         let mut phase = self.phase.lock().unwrap();
         match *phase {
             HandlerPhase::Queued => {
-                metrics
+                let current = metrics
                     .active_blocking_handlers
-                    .fetch_add(1, Ordering::Relaxed);
-                let current = metrics.active_blocking_handlers.load(Ordering::Relaxed);
+                    .fetch_add(1, Ordering::Relaxed)
+                    + 1;
                 metrics
                     .peak_blocking_concurrency
                     .fetch_max(current, Ordering::Relaxed);
@@ -135,7 +135,7 @@ impl HandlerLifecycle {
                 debug_assert!(false, "double completion detected");
             }
             HandlerPhase::Queued => {
-                debug_assert!(false, "finish called while still Queued");
+                *phase = HandlerPhase::Finished;
             }
         }
     }
