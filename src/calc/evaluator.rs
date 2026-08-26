@@ -366,6 +366,22 @@ fn check_result_value(v: f64) -> Result<f64, EvaluationError> {
     }
 }
 
+fn median(args: &[f64]) -> Result<f64, EvaluationError> {
+    if args.iter().any(|a| a.is_nan()) {
+        return Err(EvaluationError::InvalidOperation(
+            "median does not support NaN values".to_string(),
+        ));
+    }
+    let mut sorted = args.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = sorted.len() / 2;
+    if sorted.len().is_multiple_of(2) {
+        Ok((sorted[mid - 1] + sorted[mid]) / 2.0)
+    } else {
+        Ok(sorted[mid])
+    }
+}
+
 // ─── Tokens ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -1753,21 +1769,7 @@ fn evaluate_function(
             let s: f64 = args.iter().sum();
             check_result_value(s / args.len() as f64)
         }
-        "median" if !args.is_empty() => {
-            if args.iter().any(|a| a.is_nan()) {
-                return Err(EvaluationError::InvalidOperation(
-                    "median does not support NaN values".to_string(),
-                ));
-            }
-            let mut sorted = args.clone();
-            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let mid = sorted.len() / 2;
-            if sorted.len() % 2 == 0 {
-                Ok((sorted[mid - 1] + sorted[mid]) / 2.0)
-            } else {
-                Ok(sorted[mid])
-            }
-        }
+        "median" if !args.is_empty() => median(&args),
         "mode" if !args.is_empty() => {
             fn normalize_zero_bits(v: f64) -> u64 {
                 if v == 0.0 {
@@ -2558,21 +2560,7 @@ fn evaluate_function_with(
             let s: f64 = args.iter().sum();
             check_result_value(s / args.len() as f64)
         }
-        "median" if !args.is_empty() => {
-            if args.iter().any(|a| a.is_nan()) {
-                return Err(EvaluationError::InvalidOperation(
-                    "median does not support NaN values".to_string(),
-                ));
-            }
-            let mut sorted = args.clone();
-            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let mid = sorted.len() / 2;
-            if sorted.len() % 2 == 0 {
-                Ok((sorted[mid - 1] + sorted[mid]) / 2.0)
-            } else {
-                Ok(sorted[mid])
-            }
-        }
+        "median" if !args.is_empty() => median(&args),
         "mode" if !args.is_empty() => {
             fn normalize_zero_bits(v: f64) -> u64 {
                 if v == 0.0 {

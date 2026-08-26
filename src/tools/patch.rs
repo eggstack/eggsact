@@ -539,7 +539,15 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 );
             }
         }
-        _ => unreachable!(),
+        _ => {
+            return ToolResponse::error_with_code(
+                "invalid_arguments",
+                machine_codes::EDIT_MODE_INVALID,
+                &format!("Unsupported replacement_mode: {}", replacement_mode),
+                None,
+                Some("edit_preflight"),
+            );
+        }
     }
 
     // --- Metadata bounds checking ---
@@ -729,7 +737,15 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 }
             }
         }
-        _ => unreachable!(),
+        _ => {
+            return ToolResponse::error_with_code(
+                "invalid_arguments",
+                machine_codes::EDIT_MODE_INVALID,
+                &format!("Unsupported replacement_mode: {}", replacement_mode),
+                None,
+                Some("edit_preflight"),
+            );
+        }
     }
 
     // Check expected_fingerprint if provided (matching Python per-mode behavior)
@@ -982,7 +998,15 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 .get("new")
                 .and_then(|v| v.as_str())
                 .expect("line_range validation guarantees new is present"),
-            _ => unreachable!(),
+            _ => {
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::EDIT_MODE_INVALID,
+                    &format!("Unsupported replacement_mode: {}", replacement_mode),
+                    None,
+                    Some("edit_preflight"),
+                );
+            }
         };
         let us_args = serde_json::json!({
             "text": inspect_text,

@@ -545,7 +545,15 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                 ));
             }
         }
-        _ => unreachable!(),
+        _ => {
+            return ToolResponse::error_with_code(
+                "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
+                &format!("Unsupported format: {}", detected_format),
+                Some(vec![format!("Use one of: {}", valid_formats.join(", "))]),
+                Some("config_preflight"),
+            );
+        }
     }
 
     let parse_ok = config_verdict != verdict::INVALID;

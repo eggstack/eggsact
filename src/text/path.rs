@@ -704,11 +704,7 @@ pub fn path_scope_check(
         WindowsPrefix::None
     };
 
-    if matches!(target_prefix, WindowsPrefix::DriveRelative { .. }) {
-        let drive = match target_prefix {
-            WindowsPrefix::DriveRelative { drive } => drive,
-            _ => unreachable!(),
-        };
+    if let WindowsPrefix::DriveRelative { drive } = target_prefix {
         findings.push(format!(
             "Drive-relative target '{}' cannot be resolved lexically; \
              the result depends on the current directory on drive {}",

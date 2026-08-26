@@ -899,7 +899,7 @@ mod tests {
 
     #[test]
     fn test_sanitize_engine_error_truncates_at_utf8_boundary() {
-        let message = "x".repeat(196) + "é";
+        let message = "x".repeat(199) + "é";
         let sanitized = sanitize_engine_error(&message);
         assert!(sanitized.ends_with("..."));
         assert!(sanitized.is_char_boundary(sanitized.len() - 3));
@@ -1276,6 +1276,24 @@ pub struct RegexFindIterResult {
     pub policy_allowed: Option<bool>,
 }
 
+fn regex_finditer_internal_error(
+    engine_name: &str,
+    policy_allowed: Option<bool>,
+) -> RegexFindIterResult {
+    RegexFindIterResult {
+        valid_pattern: true,
+        matches: vec![],
+        truncated: false,
+        match_count: 0,
+        error: None,
+        engine_used: Some(engine_name.to_string()),
+        dialect: Some("eggsact-regex".to_string()),
+        unsupported_features: None,
+        execution_error: Some("Internal regex engine selection error".to_string()),
+        policy_allowed,
+    }
+}
+
 fn get_line_column_for_index(text: &str, index: usize) -> (i32, i32) {
     let chars: Vec<char> = text.chars().collect();
     let mut line = 0usize;
@@ -1454,7 +1472,7 @@ pub fn regex_finditer(
         // Rust-regex path: manual iteration with text slicing
         let std_re = match &compiled {
             CompiledRegex::Rust(re) => re.clone(),
-            _ => unreachable!(),
+            _ => return regex_finditer_internal_error(&engine_name, policy_allowed),
         };
 
         let mut matches_out = Vec::new();
@@ -1546,7 +1564,7 @@ pub fn regex_finditer(
         // Fancy-regex path: use captures_from_pos for lookaround/backreference support
         let fancy_re = match &compiled {
             CompiledRegex::Fancy(re) => re.clone(),
-            _ => unreachable!(),
+            _ => return regex_finditer_internal_error(&engine_name_clone, policy_allowed),
         };
 
         let mut matches_out = Vec::new();
@@ -1666,7 +1684,8 @@ pub fn regex_finditer(
 /// comparisons. Uses a relative tolerance so that numbers of very different
 /// magnitudes (e.g. `0.0` vs `1e-20`) are correctly distinguished instead of
 /// being collapsed by `f64::EPSILON` (which is absolute and meaningless near
-/// zero).
+/// zero). For subnormal magnitudes, the scaled tolerance can underflow to zero;
+/// this intentionally preserves strict equality near zero.
 fn floats_equivalent(a: f64, b: f64) -> bool {
     if a == b {
         return true;
@@ -2436,7 +2455,16 @@ pub fn json_compare(
                 let b_map = if let serde_json::Value::Object(m) = b_val {
                     m
                 } else {
-                    unreachable!()
+                    *same_type = false;
+                    diffs.push(JsonCompareDiff {
+                        path: path.to_string(),
+                        kind: "type_changed".to_string(),
+                        a_type: Some(a_type),
+                        b_type: Some(b_type),
+                        a_preview: value_preview(a_val, 30),
+                        b_preview: value_preview(b_val, 30),
+                    });
+                    return;
                 };
 
                 let a_keys_set: std::collections::HashSet<String> = a_map
@@ -2636,7 +2664,16 @@ pub fn json_compare(
                 let b_arr = if let serde_json::Value::Array(a) = b_val {
                     a
                 } else {
-                    unreachable!()
+                    *same_type = false;
+                    diffs.push(JsonCompareDiff {
+                        path: path.to_string(),
+                        kind: "type_changed".to_string(),
+                        a_type: Some(a_type),
+                        b_type: Some(b_type),
+                        a_preview: value_preview(a_val, 30),
+                        b_preview: value_preview(b_val, 30),
+                    });
+                    return;
                 };
 
                 if a_arr.len() != b_arr.len() {
