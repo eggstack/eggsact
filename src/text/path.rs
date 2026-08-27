@@ -216,6 +216,12 @@ fn _get_suffixes(name: &str) -> Vec<String> {
         return vec![];
     }
 
+    // Leading-dot files (".gitignore", ".env") with no other dots are not
+    // considered to have a suffix — matches pathlib/PurePosixPath semantics.
+    if name.starts_with('.') && parts.len() == 2 && parts[0].is_empty() {
+        return vec![];
+    }
+
     let mut suffixes = vec![];
     for i in 1..parts.len() {
         let suffix = format!(".{}", parts[i..].join("."));
@@ -304,9 +310,10 @@ pub fn path_analyze(path: &str, style: &str) -> PathAnalyzeResult {
         let full_suff = suffs.first().cloned();
         let stm = if let Some(ref fs) = full_suff {
             if !fs.is_empty() {
-                let name_len = name_str.len();
-                let fs_len = fs.len();
-                name_str[..name_len - fs_len].to_string()
+                name_str
+                    .strip_suffix(fs.as_str())
+                    .unwrap_or(name_str)
+                    .to_string()
             } else {
                 name_str.to_string()
             }
@@ -346,8 +353,12 @@ pub fn path_analyze(path: &str, style: &str) -> PathAnalyzeResult {
     }
 
     let mut normalized = normalized_parts.join(sep);
-    if root.is_some() && actual_style == "posix" {
-        normalized = format!("{}{}", sep, normalized);
+    if let Some(ref root_str) = root {
+        if actual_style == "posix" {
+            normalized = format!("{}{}", sep, normalized);
+        } else {
+            normalized = format!("{}{}{}", root_str, sep, normalized);
+        }
     }
 
     let mut summary_parts = vec![];
@@ -533,10 +544,24 @@ pub fn path_normalize(
                 let second_byte = first.len_utf8();
                 if second_byte < path.len() && path.as_bytes()[second_byte] == b':' {
                     let drive = &path[..=second_byte];
-                    let tail = normalized
-                        .strip_prefix(drive)
-                        .unwrap_or(normalized.as_str());
-                    normalized = format!("{}{}", drive, tail);
+                    let next = second_byte + 1;
+                    let is_drive_rooted =
+                        next < path.len() && matches!(path.as_bytes()[next], b'/' | b'\\');
+                    // Strip the drive letter from components so it appears
+                    // only in `normalized`, matching Python's pathlib split.
+                    if components.first() == Some(&drive) {
+                        components.remove(0);
+                    }
+                    let body = components.join(sep);
+                    normalized = if is_drive_rooted {
+                        if body.is_empty() {
+                            format!("{}{}", drive, sep)
+                        } else {
+                            format!("{}{}{}", drive, sep, body)
+                        }
+                    } else {
+                        format!("{}{}", drive, body)
+                    };
                 }
             }
         }

@@ -1,7 +1,12 @@
 use crate::mcp::machine_codes;
 use crate::mcp::schemas::{disposition, finding, severity, verdict, ToolResponse};
 use crate::tools::helpers::*;
+use regex::Regex;
 use serde_json::Value;
+use std::sync::LazyLock;
+
+static INLINE_FLAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\(\?([aiLmsux]+)\)").unwrap());
 
 pub fn dotenv_validate(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
@@ -87,8 +92,7 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
     }
 
     // Reject inline flags in pattern (e.g., (?s), (?i), (?x))
-    let inline_flag_re = regex::Regex::new(r"\(\?([aiLmsux]+)\)").unwrap();
-    if let Some(m) = inline_flag_re.find(key_pattern) {
+    if let Some(m) = INLINE_FLAG_RE.find(key_pattern) {
         return ToolResponse::error_with_code(
     "unsafe_pattern",
     machine_codes::INVALID_ARGUMENTS,

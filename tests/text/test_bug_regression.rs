@@ -565,8 +565,8 @@ fn test_bug201_path_normalize_windows_drive_letter() {
     );
     assert_eq!(
         result.components,
-        vec!["C:".to_string(), "foo".to_string(), "bar".to_string()],
-        "BUG-201: components should include the drive letter once"
+        vec!["foo".to_string(), "bar".to_string()],
+        "BUG-201: components should exclude the drive letter (it lives in `normalized`)"
     );
 }
 
