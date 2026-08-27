@@ -1373,9 +1373,9 @@ pub(crate) fn classify_path(path: &str) -> (String, bool, bool) {
             | ".flake8"
             | "pytest.ini"
             | "conftest.py"
-    ) || ext == "toml"
+    ) || (ext == "toml"
         && !filename.starts_with('.')
-        && (filename.contains("config") || filename.contains("Cargo"))
+        && (filename.contains("config") || filename.contains("Cargo")))
     {
         return ("configs".to_string(), is_hidden, is_dotfile);
     }

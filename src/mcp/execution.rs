@@ -62,7 +62,7 @@ impl HandlerLifecycle {
     /// Returns `CancelledBeforeStart` if the timeout already transitioned
     /// the phase to `TimedOutQueued`.
     fn begin_running(&self, metrics: &runtime::RuntimeMetrics) -> BeginRunning {
-        let mut phase = self.phase.lock().unwrap();
+        let mut phase = self.phase.lock().unwrap_or_else(|e| e.into_inner());
         match *phase {
             HandlerPhase::Queued => {
                 let current = metrics
@@ -92,7 +92,7 @@ impl HandlerLifecycle {
     /// Returns the phase the handler was in, which determines the timeout
     /// task's accounting actions.
     fn record_timeout(&self, metrics: &runtime::RuntimeMetrics) -> TimeoutDisposition {
-        let mut phase = self.phase.lock().unwrap();
+        let mut phase = self.phase.lock().unwrap_or_else(|e| e.into_inner());
         match *phase {
             HandlerPhase::Queued => {
                 *phase = HandlerPhase::TimedOutQueued;
@@ -113,7 +113,7 @@ impl HandlerLifecycle {
     ///
     /// This always runs (via catch_unwind), so gauges are always corrected.
     fn finish(&self, metrics: &runtime::RuntimeMetrics) {
-        let mut phase = self.phase.lock().unwrap();
+        let mut phase = self.phase.lock().unwrap_or_else(|e| e.into_inner());
         match *phase {
             HandlerPhase::Running => {
                 *phase = HandlerPhase::Finished;

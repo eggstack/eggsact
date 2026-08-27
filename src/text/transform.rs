@@ -558,8 +558,12 @@ pub fn unescape_text(text: &str, mode: &str) -> UnescapeTextResult {
             }
         }
         "unicode_escape" => {
-            let re1 = regex::Regex::new(r"\\u([0-9a-fA-F]{4})").unwrap();
-            let re2 = regex::Regex::new(r"\\U([0-9a-fA-F]{8})").unwrap();
+            static RE_U4: std::sync::LazyLock<regex::Regex> =
+                std::sync::LazyLock::new(|| regex::Regex::new(r"\\u([0-9a-fA-F]{4})").unwrap());
+            static RE_U8: std::sync::LazyLock<regex::Regex> =
+                std::sync::LazyLock::new(|| regex::Regex::new(r"\\U([0-9a-fA-F]{8})").unwrap());
+            let re1 = &*RE_U4;
+            let re2 = &*RE_U8;
             let mut result = text.to_string();
             result = re1
                 .replace_all(&result, |caps: &regex::Captures| {

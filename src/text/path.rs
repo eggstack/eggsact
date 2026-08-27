@@ -222,9 +222,20 @@ fn _get_suffixes(name: &str) -> Vec<String> {
         return vec![];
     }
 
+    let last_nonempty = parts.iter().rposition(|p| !p.is_empty()).unwrap_or(0);
+    let trimmed = &parts[..=last_nonempty];
+
     let mut suffixes = vec![];
-    for i in 1..parts.len() {
-        let suffix = format!(".{}", parts[i..].join("."));
+    for i in 1..trimmed.len() {
+        let tail: Vec<&str> = trimmed[i..]
+            .iter()
+            .filter(|p| !p.is_empty())
+            .copied()
+            .collect();
+        if tail.is_empty() {
+            break;
+        }
+        let suffix = format!(".{}", tail.join("."));
         suffixes.push(suffix);
     }
 

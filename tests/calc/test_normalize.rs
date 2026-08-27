@@ -1024,13 +1024,13 @@ fn test_nz12_solve_not_stripped() {
 // ─── NZ-14: MAX_TEXT_LENGTH alignment ────────────────────────────────
 
 #[test]
-fn test_nz14_max_text_length_10000() {
-    // Input longer than 10000 should be rejected
-    let long_input = "a".repeat(10001);
+fn test_nz14_max_text_length_100000() {
+    // Input longer than 100000 should be rejected
+    let long_input = "a".repeat(100_001);
     let result = normalize(&long_input);
     assert!(
         result.is_err(),
-        "NZ-14: Input longer than 10000 should be rejected"
+        "NZ-14: Input longer than 100000 should be rejected"
     );
 }
 

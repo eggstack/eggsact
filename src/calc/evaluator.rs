@@ -34,7 +34,7 @@ const MAX_NESTING_DEPTH: usize = 100;
 const MAX_EXPONENT: f64 = 10_000.0;
 const MAX_RESULT_VALUE: f64 = 1e308;
 const MAX_SHIFT_COUNT: usize = 50_000;
-const MAX_INPUT_LENGTH: usize = 10_000;
+const MAX_INPUT_LENGTH: usize = 100_000;
 // BUG-001 fix / parity B1: Python's `math.factorial` accepts arbitrarily
 // large n. Rust's f64-based `factorial()` overflows past 170, but the
 // Python reference returns a 309-digit int for factorial(170) and supports
@@ -346,9 +346,10 @@ fn format_result(result: f64) -> Result<EvaluateResult, String> {
     } else if result.fract() == 0.0
         && result >= i64::MIN as f64
         // `i64::MAX as f64` rounds UP to exactly 2^63, so the upper bound
-        // must be strictly below 2^63 to keep the saturating `as i64` cast exact.
+        // must be strictly below 2^63 to keep the cast exact.
         && result < 9_223_372_036_854_775_808.0
     {
+        // The strict upper bound ensures `result as i64` is exact (no saturation).
         Ok((format!("{}", result as i64), "int".to_string()))
     } else {
         Ok((format!("{}", result), "float".to_string()))
@@ -2676,6 +2677,11 @@ fn evaluate_function_with(
             Ok((!(args[0] as i64)) as f64)
         }
         "bitlshift" if args.len() == 2 => {
+            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "bitlshift requires integer arguments".to_string(),
+                ));
+            }
             let shift = args[1] as i64;
             if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                 return Err(EvaluationError::InvalidOperation(format!(
@@ -2688,6 +2694,11 @@ fn evaluate_function_with(
             })?) as f64)
         }
         "bitrshift" if args.len() == 2 => {
+            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "bitrshift requires integer arguments".to_string(),
+                ));
+            }
             let shift = args[1] as i64;
             if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                 return Err(EvaluationError::InvalidOperation(format!(
@@ -3657,7 +3668,7 @@ mod tests {
 
     #[test]
     fn test_input_length_limit() {
-        let long: String = "1 + ".repeat(3000);
+        let long: String = "1 + ".repeat(30_001);
         let r = evaluate(&long);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("exceeds"));

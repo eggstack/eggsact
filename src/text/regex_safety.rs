@@ -232,10 +232,10 @@ pub fn regex_safety_check(pattern: &str) -> RegexSafetyResult {
 
         if c == '+' || c == '*' {
             j = i + 1;
-            while j < pat_len && pattern.chars().nth(j) == Some(c) {
+            while j < pat_len && pat_chars[j] == c {
                 j += 1;
             }
-            if j < pat_len && pattern.chars().nth(j) == Some('?') {
+            if j < pat_len && pat_chars[j] == '?' {
                 j += 1;
             }
 
@@ -265,7 +265,7 @@ pub fn regex_safety_check(pattern: &str) -> RegexSafetyResult {
 
         if c == '{' {
             j = i + 1;
-            while j < pat_len && pattern.chars().nth(j) != Some('}') {
+            while j < pat_len && pat_chars[j] != '}' {
                 j += 1;
             }
             if j < pat_len {

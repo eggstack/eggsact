@@ -98,10 +98,12 @@ impl SyncExecutionPool {
         for _ in 0..worker_count {
             let rx = receiver.clone();
             let stuck = stuck.clone();
-            std::thread::Builder::new()
+            if let Err(e) = std::thread::Builder::new()
                 .name("eggsact-sync-worker".to_string())
                 .spawn(move || worker_loop(rx, stuck))
-                .expect("failed to spawn sync worker");
+            {
+                eprintln!("eggsact: failed to spawn sync worker: {e}");
+            }
         }
 
         Self {

@@ -356,18 +356,19 @@ pub static UNIT_BASE: LazyLock<HashMap<&'static str, UnitDefinition>> = LazyLock
             to_base: 604800.0,
         },
     );
+    // Julian year: 365.25 days × 86400 s
     m.insert(
         "yr",
         UnitDefinition {
             category: "time",
-            to_base: 31536000.0,
+            to_base: 31_557_600.0,
         },
     );
     m.insert(
         "year",
         UnitDefinition {
             category: "time",
-            to_base: 31536000.0,
+            to_base: 31_557_600.0,
         },
     );
     m.insert(
@@ -381,21 +382,21 @@ pub static UNIT_BASE: LazyLock<HashMap<&'static str, UnitDefinition>> = LazyLock
         "decade",
         UnitDefinition {
             category: "time",
-            to_base: 315360000.0,
+            to_base: 315_576_000.0,
         },
     );
     m.insert(
         "century",
         UnitDefinition {
             category: "time",
-            to_base: 3153600000.0,
+            to_base: 3_155_760_000.0,
         },
     );
     m.insert(
         "millennium",
         UnitDefinition {
             category: "time",
-            to_base: 31536000000.0,
+            to_base: 31_557_600_000.0,
         },
     );
 

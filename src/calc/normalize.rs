@@ -683,7 +683,7 @@ fn regex_escape(s: &str) -> String {
     result
 }
 
-const MAX_TEXT_LENGTH: usize = 10_000;
+const MAX_TEXT_LENGTH: usize = 100_000;
 
 #[doc(hidden)]
 pub static NUMBER_WORDS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
@@ -1267,11 +1267,11 @@ fn combine_number_parts(values: &[f64]) -> Vec<String> {
         }
     }
 
-    vec![format_number(total + group)]
+    vec![format_integer_or_float(total + group)]
 }
 
 /// Format a number for output, showing integers without decimal point.
-fn format_number(v: f64) -> String {
+pub(crate) fn format_integer_or_float(v: f64) -> String {
     if v.fract() == 0.0 && v.abs() < 1e15 {
         format!("{}", v as i64)
     } else {
@@ -1746,15 +1746,13 @@ pub fn split_at_operators(expr: &str) -> Vec<String> {
                 i += 1;
             }
             '+' | '-' if paren_depth == 0 => {
-                // Use negative lookbehind to preserve "e+" in scientific notation
-                if ch == '+' {
-                    let is_scientific = !current.is_empty()
-                        && matches!(current.chars().last(), Some('e') | Some('E'));
-                    if is_scientific {
-                        current.push(ch);
-                        i += 1;
-                        continue;
-                    }
+                // Use negative lookbehind to preserve "e+/e-" in scientific notation
+                let is_scientific =
+                    !current.is_empty() && matches!(current.chars().last(), Some('e') | Some('E'));
+                if is_scientific {
+                    current.push(ch);
+                    i += 1;
+                    continue;
                 }
                 if !current.trim().is_empty() {
                     tokens.push(current.trim().to_string());
@@ -2150,15 +2148,6 @@ pub fn run_with_context(
     }
 }
 
-/// Format a numeric result for display (integer if whole, float otherwise).
-fn format_numeric_result(v: f64) -> String {
-    if v.fract() == 0.0 && v.abs() < 1e15 {
-        format!("{}", v as i64)
-    } else {
-        format!("{}", v)
-    }
-}
-
 /// Handle `convert(value*unit, target_unit)` patterns.
 ///
 /// After normalization, expressions like "30 km/h in mph" become
@@ -2184,7 +2173,7 @@ fn handle_convert_pattern(normalized: &str) -> Option<Result<RunResult, String>>
         let value = num_str.parse::<f64>().ok()?;
         // Dimensionless to unit: just try to create the unit
         return Some(Ok((
-            format!("{} {}", format_numeric_result(value), to_unit),
+            format!("{} {}", format_integer_or_float(value), to_unit),
             "float".to_string(),
         )));
     }
@@ -2228,14 +2217,14 @@ fn handle_convert_value(value: f64, from_unit: &str, to_unit: &str) -> Result<Ru
         let converted =
             crate::calc::units::convert_temperature(value, &from_resolved, &to_resolved)?;
         Ok((
-            format!("{} {}", format_numeric_result(converted), to_resolved),
+            format!("{} {}", format_integer_or_float(converted), to_resolved),
             "float".to_string(),
         ))
     } else {
         let factor = crate::calc::units::get_conversion_factor(&from_resolved, &to_resolved)?;
         let converted = value * factor;
         Ok((
-            format!("{} {}", format_numeric_result(converted), to_resolved),
+            format!("{} {}", format_integer_or_float(converted), to_resolved),
             "float".to_string(),
         ))
     }
@@ -2253,7 +2242,7 @@ fn handle_temp_pattern(normalized: &str) -> Option<Result<RunResult, String>> {
             match crate::calc::units::convert_temperature(value, from_unit, to_unit) {
                 Ok(converted) => {
                     return Some(Ok((
-                        format!("{} {}", format_numeric_result(converted), to_unit),
+                        format!("{} {}", format_integer_or_float(converted), to_unit),
                         "float".to_string(),
                     )));
                 }

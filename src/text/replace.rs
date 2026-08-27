@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
@@ -62,15 +64,17 @@ fn normalize_for_match(s: &str, mode: &str) -> String {
     match mode {
         "nfc" => s.nfc().collect(),
         "nfkc" => s.nfkc().collect(),
-        "casefold" => s.to_lowercase(),
+        "casefold" => crate::text::unicode_tools::unicode_casefold(s),
         "whitespace_collapse" => collapse_whitespace(s),
         _ => s.to_string(),
     }
 }
 
+static WHITESPACE_RE: LazyLock<fancy_regex::Regex> =
+    LazyLock::new(|| fancy_regex::Regex::new(r"\s+").unwrap());
+
 fn collapse_whitespace(s: &str) -> String {
-    let re = fancy_regex::Regex::new(r"\s+").unwrap();
-    re.replace_all(s, " ").to_string()
+    WHITESPACE_RE.replace_all(s, " ").to_string()
 }
 
 fn detect_newline_style(text: &str) -> String {
@@ -543,6 +547,16 @@ mod tests {
             "preserve",
             false,
             2000,
+        )
+        .unwrap();
+        assert_eq!(result.match_count, 1);
+        assert!(result.would_change);
+    }
+
+    #[test]
+    fn test_text_replace_check_casefold_unicode() {
+        let result = text_replace_check(
+            "Straße", "Strasse", "Street", "casefold", None, false, "preserve", false, 2000,
         )
         .unwrap();
         assert_eq!(result.match_count, 1);
