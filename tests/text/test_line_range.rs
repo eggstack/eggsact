@@ -161,6 +161,29 @@ fn test_line_range_extract_mixed_newlines() {
 }
 
 #[test]
+fn test_line_range_extract_unicode_line_separator() {
+    let text = "first\u{2028}second";
+    let result = line_range_extract(text, 1, 2, 1, false, false).unwrap();
+    assert_eq!(result.line_count_total, 2);
+    assert_eq!(result.lines[0].text, "first");
+    assert_eq!(result.lines[1].text, "second");
+}
+
+#[test]
+fn test_line_range_compare_normalizes_unicode_line_separator() {
+    let result = line_range_compare(
+        "first\u{2028}second",
+        "first\nsecond",
+        1,
+        2,
+        1,
+        "normalize_newlines",
+    )
+    .unwrap();
+    assert!(result.equal);
+}
+
+#[test]
 fn test_line_range_compare_mixed_newlines() {
     let left = "line1\r\nline2\nline3";
     let right = "line1\r\nline2\nline3";

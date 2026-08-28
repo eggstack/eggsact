@@ -989,7 +989,9 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
         );
     }
 
-    if a.chars().count() > MAX_TEXT_LENGTH || b.chars().count() > MAX_TEXT_LENGTH {
+    let a_length = a.chars().count();
+    let b_length = b.chars().count();
+    if a_length > MAX_TEXT_LENGTH || b_length > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -1063,6 +1065,12 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
     } else {
         crate::text::levenshtein_distance(a, b)
     };
+
+    if budget_ctx.should_stop() {
+        return budget_ctx
+            .check_should_stop("text_diff_explain")
+            .unwrap_err();
+    }
 
     let all_spans = crate::text::diff_spans(a, b, max_diffs_to_use);
     let truncated = all_spans.len() >= max_diffs_to_use;
@@ -1266,7 +1274,8 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
         );
     }
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    let codepoints = text.chars().count();
+    if codepoints > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -1280,7 +1289,6 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
 
     // --- Metrics ---
     let bytes_utf8 = text.len();
-    let codepoints = text.chars().count();
     let graphemes = count_graphemes(text);
     let word_stats = word_metrics(text);
     let words = word_stats.words;
@@ -1462,7 +1470,7 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
 
     // --- Warnings ---
     let mut warnings: Vec<serde_json::Value> = Vec::new();
-    for inv in &invisibles_limited {
+    for inv in invisibles_limited.iter() {
         let name_str = inv.get("name").and_then(|v| v.as_str()).unwrap_or("");
         let idx = inv.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
         warnings.push(serde_json::json!({
@@ -1489,7 +1497,7 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
             "message": format!("Text contains mixed scripts: {}", scripts.join(", ")),
         }));
     }
-    for conf in &confusables_limited {
+    for conf in confusables_limited.iter() {
         let char_str = conf.get("char").and_then(|v| v.as_str()).unwrap_or("");
         let confusable_str = conf
             .get("confusable_with")
@@ -1703,7 +1711,7 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
     let mut findings: Vec<serde_json::Value> = Vec::new();
     let mut machine_code: Option<String> = None;
 
-    for inv in &invisibles_limited {
+    for inv in invisibles_limited.iter() {
         let idx = inv.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         let name_str = inv
             .get("name")
@@ -1717,7 +1725,7 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
             "details": {"codepoint": inv.get("codepoint"), "category": inv.get("category")},
         }));
     }
-    for conf in &confusables_limited {
+    for conf in confusables_limited.iter() {
         let idx = conf.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         findings.push(serde_json::json!({
             "code": "CONFUSABLE_CHAR",

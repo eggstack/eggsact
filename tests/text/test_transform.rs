@@ -238,6 +238,19 @@ fn test_unescape_text_no_escape() {
 }
 
 #[test]
+fn test_remove_zero_width_reports_character_index() {
+    let result = text_transform("é\u{200B}x", &["remove_zero_width".to_string()]);
+    assert_eq!(result.text, "éx");
+    assert_eq!(result.removed[0].index, 1);
+}
+
+#[test]
+fn test_unescape_unicode_escape_does_not_decode_synthesized_escape() {
+    let result = unescape_text(r"\u005cU0001F600", "unicode_escape");
+    assert_eq!(result.unescaped, r"\U0001F600");
+}
+
+#[test]
 fn test_unescape_python_double_backslash_before_n() {
     // Simulates Python: eval("'\\\\n'") → '\\n' (backslash + n)
     // Python input string: ' \\ \ n ' (quote, backslash, backslash, n, quote) = 5 chars

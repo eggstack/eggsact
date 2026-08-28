@@ -675,14 +675,14 @@ pub(crate) fn build_safe_repr(text: &str) -> String {
 // apply_detail_limit / inspect_max_items
 // ---------------------------------------------------------------------------
 
-pub(crate) fn apply_detail_limit(
-    arr: &[serde_json::Value],
+pub(crate) fn apply_detail_limit<'a>(
+    arr: &'a [serde_json::Value],
     max_items: usize,
-) -> Vec<serde_json::Value> {
+) -> std::borrow::Cow<'a, [serde_json::Value]> {
     if arr.len() > max_items {
-        arr.iter().take(max_items).cloned().collect()
+        std::borrow::Cow::Owned(arr.iter().take(max_items).cloned().collect())
     } else {
-        arr.to_vec()
+        std::borrow::Cow::Borrowed(arr)
     }
 }
 

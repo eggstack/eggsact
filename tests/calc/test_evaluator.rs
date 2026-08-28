@@ -168,6 +168,8 @@ fn test_floor_ceil() {
         evaluate("round(3.5)").unwrap(),
         ("4".to_string(), "int".to_string())
     );
+    assert_eq!(evaluate("round(2.5)").unwrap().0, "2");
+    assert_eq!(evaluate("round(2.5000000001)").unwrap().0, "3");
 }
 
 #[test]

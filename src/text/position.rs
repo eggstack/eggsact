@@ -71,7 +71,12 @@ fn split_lines_keepends(text: &str) -> Vec<&str> {
         let (byte_idx, ch) = chars[i];
         let ch_len = ch.len_utf8();
 
-        if ch == '\n' {
+        if ch == '\n'
+            || matches!(
+                ch,
+                '\x0b' | '\x0c' | '\x1c' | '\x1d' | '\x1e' | '\u{0085}' | '\u{2028}' | '\u{2029}'
+            )
+        {
             lines.push(&text[start..byte_idx + ch_len]);
             start = byte_idx + ch_len;
         } else if ch == '\r' {
@@ -89,11 +94,20 @@ fn split_lines_keepends(text: &str) -> Vec<&str> {
         i += 1;
     }
 
-    if start < text.len() {
+    if start < text.len()
+        || text
+            .chars()
+            .last()
+            .is_some_and(crate::text::primitives::is_line_break)
+    {
         lines.push(&text[start..]);
     }
 
     lines
+}
+
+fn trim_line_ending(line: &str) -> &str {
+    line.trim_end_matches(crate::text::primitives::is_line_break)
 }
 
 fn get_line_col(text: &str, codepoint_index: usize) -> (Vec<&str>, usize, usize) {
@@ -108,7 +122,8 @@ fn get_line_col(text: &str, codepoint_index: usize) -> (Vec<&str>, usize, usize)
         }
 
         match chars[i] {
-            '\n' => {
+            '\n' | '\x0b' | '\x0c' | '\x1c' | '\x1d' | '\x1e' | '\u{0085}' | '\u{2028}'
+            | '\u{2029}' => {
                 line_num += 1;
                 current_col = 0;
             }
@@ -133,45 +148,11 @@ fn get_line_col(text: &str, codepoint_index: usize) -> (Vec<&str>, usize, usize)
 }
 
 fn is_valid_byte_offset(text: &str, offset: usize) -> bool {
-    let utf8_bytes = text.as_bytes();
-    if offset > utf8_bytes.len() {
-        return false;
-    }
-    if offset == utf8_bytes.len() {
-        return true;
-    }
-
-    let byte = utf8_bytes[offset];
-
-    if byte < 0x80 {
-        return true;
-    }
-
-    if (0xC0..=0xDF).contains(&byte) {
-        if offset + 1 >= utf8_bytes.len() {
-            return false;
-        }
-        return (0x80..=0xBF).contains(&utf8_bytes[offset + 1]);
-    }
-
-    if (0xE0..=0xEF).contains(&byte) {
-        if offset + 2 >= utf8_bytes.len() {
-            return false;
-        }
-        return (0x80..=0xBF).contains(&utf8_bytes[offset + 1])
-            && (0x80..=0xBF).contains(&utf8_bytes[offset + 2]);
-    }
-
-    if (0xF0..=0xF7).contains(&byte) {
-        if offset + 3 >= utf8_bytes.len() {
-            return false;
-        }
-        return (0x80..=0xBF).contains(&utf8_bytes[offset + 1])
-            && (0x80..=0xBF).contains(&utf8_bytes[offset + 2])
-            && (0x80..=0xBF).contains(&utf8_bytes[offset + 3]);
-    }
-
-    false
+    // `text` is guaranteed valid UTF-8; a byte offset is valid iff it lies
+    // on a char boundary (including EOF). This correctly rejects overlong
+    // encodings, surrogates, and continuation bytes without hand-rolled
+    // validation (see B6).
+    text.is_char_boundary(offset)
 }
 
 fn codepoint_index_to_byte_offset(text: &str, codepoint_index: usize) -> usize {
@@ -196,7 +177,7 @@ fn line_column_to_codepoint_index(
 
     let col_index = column.checked_sub(column_base)?;
     let line_text_raw = lines[line_index];
-    let trimmed_len = line_text_raw.trim_end_matches(['\r', '\n']).chars().count();
+    let trimmed_len = trim_line_ending(line_text_raw).chars().count();
     if col_index > trimmed_len {
         return None;
     }
@@ -446,7 +427,7 @@ pub fn text_position(
 
         if line_index < lines.len() {
             let line_text_raw = lines[line_index];
-            let trimmed_len = line_text_raw.trim_end_matches(['\r', '\n']).chars().count();
+            let trimmed_len = trim_line_ending(line_text_raw).chars().count();
 
             if col_index > trimmed_len {
                 return TextPositionResult {
@@ -589,12 +570,26 @@ pub fn text_window(
     match kind.as_str() {
         "byte_offset" => {
             let bo = position.value.or(position.byte_offset).unwrap_or(0);
-            codepoint_index = Some(byte_offset_to_char_index(text, bo).unwrap_or(total_codepoints));
+            if bo > text.len() || !text.is_char_boundary(bo) {
+                warnings.push(format!(
+                    "byte_offset {} out of range or not on char boundary (clamped to EOF)",
+                    bo
+                ));
+                codepoint_index = Some(total_codepoints);
+            } else {
+                codepoint_index =
+                    Some(byte_offset_to_char_index(text, bo).unwrap_or(total_codepoints));
+            }
         }
         "codepoint_index" => {
             let cp = position.value.or(position.codepoint_index).unwrap_or(0);
             if cp <= total_codepoints {
                 codepoint_index = Some(cp);
+            } else {
+                warnings.push(format!(
+                    "codepoint_index {} beyond total codepoints {} (clamped to EOF)",
+                    cp, total_codepoints
+                ));
             }
         }
         "grapheme_index" => {
@@ -604,13 +599,45 @@ pub fn text_window(
                 codepoint_index =
                     Some(byte_offset_to_char_index(text, byte_idx).unwrap_or(total_codepoints));
             } else {
+                warnings.push(format!(
+                    "grapheme_index {} beyond total graphemes {} (clamped to EOF)",
+                    gi,
+                    graphemes.len()
+                ));
                 codepoint_index = Some(total_codepoints);
             }
         }
         "line_column" => {
             let ln = position.line.or(position.value).unwrap_or(1);
             let col = position.column.unwrap_or(1);
-            codepoint_index = line_column_to_codepoint_index(text, ln, col, line_base, column_base);
+            let resolved = line_column_to_codepoint_index(text, ln, col, line_base, column_base);
+            if resolved.is_none() {
+                let lines = split_lines_keepends(text);
+                let line_index = ln.checked_sub(line_base);
+                if line_index.is_none_or(|idx| idx >= lines.len()) {
+                    warnings.push(format!(
+                        "line_column out of range: line {} beyond total lines {} (clamped to EOF)",
+                        ln,
+                        lines.len()
+                    ));
+                } else {
+                    let line_text_raw = lines[line_index.unwrap()];
+                    let trimmed_len = line_text_raw.trim_end_matches(['\r', '\n']).chars().count();
+                    let col_index = col.checked_sub(column_base);
+                    if col_index.is_none_or(|idx| idx > trimmed_len) {
+                        warnings.push(format!(
+                            "line_column out of range: column {} beyond line {} length {} (clamped to EOF)",
+                            col, ln, trimmed_len
+                        ));
+                    } else {
+                        warnings.push(format!(
+                            "line_column out of range: line {} column {} invalid (clamped to EOF)",
+                            ln, col
+                        ));
+                    }
+                }
+            }
+            codepoint_index = resolved;
         }
         _ => {
             codepoint_index = Some(0);
@@ -635,9 +662,7 @@ pub fn text_window(
     let lines_all = split_lines_keepends(text);
     let line_index = line_num.saturating_sub(line_base);
     let line_text = if line_index < lines_all.len() {
-        lines_all[line_index]
-            .trim_end_matches(['\r', '\n'])
-            .to_string()
+        trim_line_ending(lines_all[line_index]).to_string()
     } else {
         String::new()
     };
@@ -656,7 +681,7 @@ pub fn text_window(
             if ln < lines_all.len() {
                 Some(LineInfo {
                     line: ln + line_base,
-                    text: lines_all[ln].trim_end_matches(['\r', '\n']).to_string(),
+                    text: trim_line_ending(lines_all[ln]).to_string(),
                 })
             } else {
                 None
@@ -670,7 +695,7 @@ pub fn text_window(
             if ln < lines_all.len() {
                 Some(LineInfo {
                     line: ln + line_base,
-                    text: lines_all[ln].trim_end_matches(['\r', '\n']).to_string(),
+                    text: trim_line_ending(lines_all[ln]).to_string(),
                 })
             } else {
                 None
@@ -740,7 +765,8 @@ fn get_line_col_for_cp(
         }
 
         match chars[i] {
-            '\n' => {
+            '\n' | '\x0b' | '\x0c' | '\x1c' | '\x1d' | '\x1e' | '\u{0085}' | '\u{2028}'
+            | '\u{2029}' => {
                 current_line += 1;
                 current_col = column_base;
             }
@@ -761,25 +787,7 @@ fn get_line_col_for_cp(
 }
 
 fn detect_newline_style(text: &str) -> String {
-    let crlf_count = text.matches("\r\n").count();
-    let lf_only = text.matches('\n').count() - crlf_count;
-    let cr_only = text.matches('\r').count() - crlf_count;
-
-    let has_crlf = crlf_count > 0;
-    let has_lf = lf_only > 0;
-    let has_cr = cr_only > 0;
-
-    if has_crlf && (has_lf || has_cr) {
-        "mixed".to_string()
-    } else if has_crlf {
-        "CRLF".to_string()
-    } else if has_lf {
-        "LF".to_string()
-    } else if has_cr {
-        "CR".to_string()
-    } else {
-        "none".to_string()
-    }
+    crate::text::primitives::detect_newline_style(text).to_string()
 }
 
 fn get_unicode_category(ch: char) -> String {

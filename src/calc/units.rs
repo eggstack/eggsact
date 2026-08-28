@@ -1810,67 +1810,14 @@ pub fn get_conversion_factor(from: &str, to: &str) -> Result<f64, String> {
 }
 
 pub fn is_unit(unit: &str) -> bool {
-    // Try exact match first
-    if let Some(normalized) = UNIT_ALIASES.get(unit) {
-        return UNIT_BASE.contains_key(*normalized);
-    }
-    if UNIT_BASE.contains_key(unit) {
-        return true;
-    }
-    // Try case variations as fallback
-    let lower = unit.to_lowercase();
-    if let Some(normalized) = UNIT_ALIASES.get(lower.as_str()) {
-        return UNIT_BASE.contains_key(*normalized);
-    }
-    if UNIT_BASE.contains_key(lower.as_str()) {
-        return true;
-    }
-    let upper = unit.to_uppercase();
-    if let Some(normalized) = UNIT_ALIASES.get(upper.as_str()) {
-        return UNIT_BASE.contains_key(*normalized);
-    }
-    if UNIT_BASE.contains_key(upper.as_str()) {
-        return true;
-    }
-    // Title case: capitalize first letter of each word
-    let title: String = unit
-        .split_whitespace()
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(first) => {
-                    let upper: String = first.to_uppercase().to_string();
-                    let rest: String = chars.collect::<String>().to_lowercase();
-                    format!("{}{}", upper, rest)
-                }
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
-    if let Some(normalized) = UNIT_ALIASES.get(title.as_str()) {
-        return UNIT_BASE.contains_key(*normalized);
-    }
-    if UNIT_BASE.contains_key(title.as_str()) {
-        return true;
-    }
-    // Capitalize: capitalize first letter only
-    let mut chars = unit.chars();
-    let capitalize = match chars.next() {
-        None => String::new(),
-        Some(first) => {
-            let upper: String = first.to_uppercase().to_string();
-            let rest: String = chars.collect::<String>().to_lowercase();
-            format!("{}{}", upper, rest)
-        }
-    };
-    if let Some(normalized) = UNIT_ALIASES.get(capitalize.as_str()) {
-        return UNIT_BASE.contains_key(*normalized);
-    }
-    if UNIT_BASE.contains_key(capitalize.as_str()) {
-        return true;
-    }
-    false
+    // Unit symbols are case-sensitive (for example, `b` is bit and `B` is
+    // byte). Only accept the curated aliases and canonical symbols so a
+    // case-folded spelling cannot be accepted here and rejected later by
+    // conversion.
+    UNIT_ALIASES
+        .get(unit)
+        .or_else(|| UNIT_BASE.get_key_value(unit).map(|(key, _)| key))
+        .is_some_and(|normalized| UNIT_BASE.contains_key(*normalized))
 }
 
 pub fn get_unit_info(unit: &str) -> Option<(String, &'static str)> {

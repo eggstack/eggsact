@@ -34,27 +34,7 @@ pub struct LineRangeExtractResult {
 }
 
 fn detect_newline_style(s: &str) -> &'static str {
-    let crlf_count = s.matches("\r\n").count();
-    let lf_only = s.matches('\n').count() - crlf_count;
-    let cr_only = s.matches('\r').count() - crlf_count;
-
-    let has_crlf = crlf_count > 0;
-    let has_lf = lf_only > 0;
-    let has_cr = cr_only > 0;
-
-    if has_crlf && (has_lf || has_cr) {
-        return "mixed";
-    }
-    if has_crlf {
-        return "CRLF";
-    }
-    if has_lf {
-        return "LF";
-    }
-    if has_cr {
-        return "CR";
-    }
-    "none"
+    crate::text::primitives::detect_newline_style(s)
 }
 
 fn fingerprint(text: &str) -> String {
@@ -103,7 +83,8 @@ fn split_line_segments(text: &str) -> Vec<LineSegment<'_>> {
 
     while let Some((idx, ch)) = iter.next() {
         match ch {
-            '\n' => {
+            '\n' | '\x0b' | '\x0c' | '\x1c' | '\x1d' | '\x1e' | '\u{0085}' | '\u{2028}'
+            | '\u{2029}' => {
                 segments.push(LineSegment {
                     text: &text[start..idx],
                     byte_start: start,
@@ -130,7 +111,12 @@ fn split_line_segments(text: &str) -> Vec<LineSegment<'_>> {
         }
     }
 
-    if start < text.len() {
+    if start < text.len()
+        || text
+            .chars()
+            .last()
+            .is_some_and(crate::text::primitives::is_line_break)
+    {
         segments.push(LineSegment {
             text: &text[start..],
             byte_start: start,
@@ -185,11 +171,11 @@ pub fn line_range_extract(
     include_line_numbers: bool,
     include_fingerprint: bool,
 ) -> Result<LineRangeExtractResult, String> {
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    let text_length = text.chars().count();
+    if text_length > MAX_TEXT_LENGTH {
         return Err(format!(
             "Input length {} exceeds MAX_TEXT_LENGTH {}",
-            text.chars().count(),
-            MAX_TEXT_LENGTH
+            text_length, MAX_TEXT_LENGTH
         ));
     }
 
@@ -315,18 +301,18 @@ pub fn line_range_compare(
     line_base: usize,
     comparison_mode: &str,
 ) -> Result<LineRangeCompareResult, String> {
-    if left_text.chars().count() > MAX_TEXT_LENGTH {
+    let left_length = left_text.chars().count();
+    if left_length > MAX_TEXT_LENGTH {
         return Err(format!(
             "left_text length {} exceeds MAX_TEXT_LENGTH {}",
-            left_text.chars().count(),
-            MAX_TEXT_LENGTH
+            left_length, MAX_TEXT_LENGTH
         ));
     }
-    if right_text.chars().count() > MAX_TEXT_LENGTH {
+    let right_length = right_text.chars().count();
+    if right_length > MAX_TEXT_LENGTH {
         return Err(format!(
             "right_text length {} exceeds MAX_TEXT_LENGTH {}",
-            right_text.chars().count(),
-            MAX_TEXT_LENGTH
+            right_length, MAX_TEXT_LENGTH
         ));
     }
 
@@ -363,7 +349,7 @@ pub fn line_range_compare(
     fn normalize_for_compare(s: &str, mode: &str) -> String {
         match mode {
             "ignore_trailing_whitespace" => s.trim_end().to_string(),
-            "normalize_newlines" => s.replace("\r\n", "\n").replace('\r', "\n"),
+            "normalize_newlines" => crate::text::primitives::normalize_line_endings(s),
             _ => s.to_string(),
         }
     }

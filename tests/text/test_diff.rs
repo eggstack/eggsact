@@ -1,4 +1,4 @@
-use eggsact::text::{diff_spans, levenshtein_distance};
+use eggsact::text::{diff_spans, levenshtein_distance, levenshtein_distance_with_limit};
 
 #[test]
 fn test_levenshtein_identical() {
@@ -46,6 +46,13 @@ fn test_levenshtein_large_input_limit() {
     let long_b = "b".repeat(20_000);
     let result = levenshtein_distance(&long_a, &long_b);
     assert!(result <= 20_000);
+}
+
+#[test]
+fn test_levenshtein_product_cap() {
+    let a = "a".repeat(9_999);
+    let b = "b".repeat(9_999);
+    assert_eq!(levenshtein_distance_with_limit(&a, &b, 10_000), 9_999);
 }
 
 // PERF-102 regression: a skewed shape (a_len >> b_len) stays under the

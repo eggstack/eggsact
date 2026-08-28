@@ -63,6 +63,76 @@ pub fn count_graphemes(s: &str) -> usize {
     s.graphemes(true).count()
 }
 
+pub(crate) fn is_line_break(ch: char) -> bool {
+    matches!(
+        ch,
+        '\n' | '\r'
+            | '\x0b'
+            | '\x0c'
+            | '\x1c'
+            | '\x1d'
+            | '\x1e'
+            | '\u{0085}'
+            | '\u{2028}'
+            | '\u{2029}'
+    )
+}
+
+pub fn line_count(text: &str) -> usize {
+    if text.is_empty() {
+        return 0;
+    }
+    let mut count = 1;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if is_line_break(ch) {
+            count += 1;
+            if ch == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+        }
+    }
+    count
+}
+
+pub(crate) fn normalize_line_endings(text: &str) -> String {
+    let mut normalized = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if is_line_break(ch) {
+            if ch == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            normalized.push('\n');
+        } else {
+            normalized.push(ch);
+        }
+    }
+    normalized
+}
+
+pub fn detect_newline_style(text: &str) -> &'static str {
+    let crlf_count = text.matches("\r\n").count();
+    let lf_only = text.matches('\n').count() - crlf_count;
+    let cr_only = text.matches('\r').count() - crlf_count;
+
+    let has_crlf = crlf_count > 0;
+    let has_lf = lf_only > 0;
+    let has_cr = cr_only > 0;
+
+    if has_crlf && (has_lf || has_cr) {
+        "mixed"
+    } else if has_crlf {
+        "CRLF"
+    } else if has_lf {
+        "LF"
+    } else if has_cr {
+        "CR"
+    } else {
+        "none"
+    }
+}
+
 pub fn truncate_to_grapheme(s: &str, max_graphemes: usize) -> String {
     if max_graphemes == 0 || s.is_empty() {
         return String::new();

@@ -961,11 +961,33 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
         newline_check_result = Some(nc.clone());
         subresults.insert("newline_check".to_string(), nc);
         if mixed {
+            let consistent_style_mismatch = orig_style != "mixed"
+                && orig_style != "none"
+                && repl_style.as_deref().is_some_and(|style| {
+                    style != "mixed" && style != "none" && style != orig_style
+                });
+            let (finding_severity, finding_disposition, message) = if consistent_style_mismatch {
+                (
+                    severity::INFO,
+                    disposition::INFORMATIONAL,
+                    format!(
+                        "Replacement newline style ({}) differs from original ({})",
+                        repl_style.as_deref().unwrap_or("unknown"),
+                        orig_style
+                    ),
+                )
+            } else {
+                (
+                    severity::MEDIUM,
+                    disposition::CAUTION,
+                    "File has mixed newline styles (CRLF and LF)".to_string(),
+                )
+            };
             findings.push(finding(
                 "NEWLINE_INCONSISTENCY",
-                severity::MEDIUM,
-                "File has mixed newline styles (CRLF and LF)",
-                Some(disposition::CAUTION),
+                finding_severity,
+                &message,
+                Some(finding_disposition),
                 None,
             ));
         }

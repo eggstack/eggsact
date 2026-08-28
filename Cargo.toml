@@ -27,7 +27,6 @@ exclude = [
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 fancy-regex = "0.18"
-ahash = "0.8"
 sha2 = "0.10"
 sha1 = "0.10"
 md5 = "0.7"

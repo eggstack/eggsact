@@ -92,16 +92,30 @@ pub struct JsonShapeResult {
 fn get_line_column(text: &str, index: usize) -> (i32, i32) {
     let mut line = 1;
     let mut column = 1;
-    for (i, c) in text.char_indices() {
-        if i >= index {
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let (byte_idx, c) = chars[i];
+        if byte_idx >= index {
             break;
         }
-        if c == '\n' {
+        if c == '\r' {
+            // CRLF is a single line break
+            if i + 1 < chars.len() && chars[i + 1].1 == '\n' {
+                line += 1;
+                column = 1;
+                i += 2;
+                continue;
+            }
+            line += 1;
+            column = 1;
+        } else if c == '\n' {
             line += 1;
             column = 1;
         } else {
             column += 1;
         }
+        i += 1;
     }
     (line, column)
 }
@@ -413,12 +427,9 @@ fn check_pattern_complexity(pattern: &str) -> Result<(), String> {
             continue;
         }
 
-        if c == '[' {
-            nesting_depth += 1;
-            max_nesting = max_nesting.max(nesting_depth);
+        if c == '[' && !in_char_class {
             in_char_class = true;
-        } else if c == ']' {
-            nesting_depth = nesting_depth.saturating_sub(1);
+        } else if c == ']' && in_char_class {
             in_char_class = false;
         } else if c == '(' && !in_char_class {
             nesting_depth += 1;

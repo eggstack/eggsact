@@ -109,6 +109,21 @@ fn test_shell_split_unbalanced_quotes() {
     assert!(result.features.has_unbalanced_quotes);
 }
 
+#[test]
+fn test_shell_split_logical_and_is_not_background() {
+    let result = shell_split("sleep 1 &&", "posix", true);
+    assert!(!result.features.has_background);
+
+    let result = shell_split("cmd & && other", "posix", true);
+    assert!(!result.features.has_background);
+}
+
+#[test]
+fn test_shell_split_trailing_ampersand_is_background() {
+    let result = shell_split("sleep 1 &", "posix", true);
+    assert!(result.features.has_background);
+}
+
 // ─── BUG-209: shell_split must not treat `#` as comment inside a word ───
 // POSIX §2.3: a word beginning with `#` introduces a comment. A `#` that
 // appears mid-word is a literal character and belongs to the current token.

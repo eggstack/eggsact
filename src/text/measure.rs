@@ -77,8 +77,7 @@ pub fn char_category_metrics(text: &str) -> CharCategoryMetrics {
 }
 
 pub fn line_count(text: &str) -> usize {
-    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    normalized.lines().count()
+    crate::text::primitives::line_count(text)
 }
 
 pub fn char_frequency(text: &str) -> std::collections::BTreeMap<char, usize> {

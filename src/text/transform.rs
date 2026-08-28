@@ -246,10 +246,10 @@ fn remove_chars(
         .map(|(c, name)| (*c, *name))
         .collect();
 
-    for (index, ch) in text.char_indices() {
+    for (char_index, (_, ch)) in text.char_indices().enumerate() {
         if let Some(name) = char_map.get(&ch) {
             removed.push(RemovedChar {
-                index,
+                index: char_index,
                 ch,
                 codepoint: format!("U+{:04X}", ch as u32),
                 name: name.to_string(),
@@ -558,26 +558,20 @@ pub fn unescape_text(text: &str, mode: &str) -> UnescapeTextResult {
             }
         }
         "unicode_escape" => {
-            static RE_U4: std::sync::LazyLock<regex::Regex> =
-                std::sync::LazyLock::new(|| regex::Regex::new(r"\\u([0-9a-fA-F]{4})").unwrap());
-            static RE_U8: std::sync::LazyLock<regex::Regex> =
-                std::sync::LazyLock::new(|| regex::Regex::new(r"\\U([0-9a-fA-F]{8})").unwrap());
-            let re1 = &*RE_U4;
-            let re2 = &*RE_U8;
-            let mut result = text.to_string();
-            result = re1
-                .replace_all(&result, |caps: &regex::Captures| {
-                    let code = u32::from_str_radix(&caps[1], 16).unwrap_or(0);
-                    char::from_u32(code).unwrap_or('\u{FFFD}').to_string()
-                })
-                .to_string();
-            result = re2
-                .replace_all(&result, |caps: &regex::Captures| {
-                    let code = u32::from_str_radix(&caps[1], 16).unwrap_or(0);
-                    char::from_u32(code).unwrap_or('\u{FFFD}').to_string()
-                })
-                .to_string();
-            result
+            static RE_UNI: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+                regex::Regex::new(r"\\(?:u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8}))").unwrap()
+            });
+            let re = &*RE_UNI;
+            re.replace_all(text, |caps: &regex::Captures| {
+                let hex = caps
+                    .get(1)
+                    .or_else(|| caps.get(2))
+                    .map(|m| m.as_str())
+                    .unwrap_or("");
+                let code = u32::from_str_radix(hex, 16).unwrap_or(0);
+                char::from_u32(code).unwrap_or('\u{FFFD}').to_string()
+            })
+            .to_string()
         }
         "url_component" => match urlencoding::decode(text) {
             Ok(s) => s.to_string(),
@@ -816,22 +810,7 @@ pub fn text_fingerprint(
 
     let is_nfc = unescape_chars::normalize_nfc(text) == text;
 
-    let nl_style = {
-        let crlf_count = text.matches("\r\n").count();
-        let lf_only = text.matches('\n').count() - crlf_count;
-        let cr_only = text.matches('\r').count() - crlf_count;
-        if crlf_count > 0 && (lf_only > 0 || cr_only > 0) {
-            "mixed"
-        } else if crlf_count > 0 {
-            "CRLF"
-        } else if cr_only > 0 {
-            "CR"
-        } else if lf_only > 0 {
-            "LF"
-        } else {
-            "none"
-        }
-    };
+    let nl_style = crate::text::primitives::detect_newline_style(text);
 
     let mut norm_map: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     norm_map.insert("input_is_nfc".to_string(), serde_json::json!(is_nfc));

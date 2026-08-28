@@ -462,6 +462,14 @@ fn test_prefixed_unit_kw() {
 fn test_unit_alias_celsius() {
     assert!(is_unit("celsius"));
     assert!(is_unit("C"));
+    assert!(!is_unit("c"));
+}
+
+#[test]
+fn test_unit_symbols_do_not_cross_case_categories() {
+    assert!(!is_unit("Km"));
+    assert!(!is_unit("PA"));
+    assert!(is_unit("Pa"));
 }
 
 #[test]

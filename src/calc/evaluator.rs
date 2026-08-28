@@ -1470,18 +1470,7 @@ fn parse_args_with(
 
 /// Banker's rounding (round half to even), matching Python's round().
 fn banker_round(x: f64) -> f64 {
-    let floor = x.floor();
-    let frac = x - floor;
-    if (frac - 0.5).abs() < f64::EPSILON {
-        let even_floor = floor as i64;
-        if even_floor % 2 == 0 {
-            floor
-        } else {
-            floor + 1.0
-        }
-    } else {
-        x.round()
-    }
+    x.round_ties_even()
 }
 
 fn evaluate_function(

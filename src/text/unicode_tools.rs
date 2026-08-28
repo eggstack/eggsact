@@ -294,23 +294,7 @@ pub fn detect_mixed_scripts(text: &str) -> MixedScriptsResult {
 }
 
 pub fn detect_newline_style(text: &str) -> String {
-    let has_crlf = text.contains("\r\n");
-    let standalone_cr = text.matches('\r').count() - text.matches("\r\n").count();
-    let standalone_lf = text.matches('\n').count() - text.matches("\r\n").count();
-
-    if (has_crlf && (standalone_cr > 0 || standalone_lf > 0))
-        || (standalone_cr > 0 && standalone_lf > 0)
-    {
-        "mixed".to_string()
-    } else if has_crlf {
-        "CRLF".to_string()
-    } else if standalone_cr > 0 {
-        "CR".to_string()
-    } else if standalone_lf > 0 {
-        "LF".to_string()
-    } else {
-        "none".to_string()
-    }
+    crate::text::primitives::detect_newline_style(text).to_string()
 }
 
 pub fn unicode_scripts(s: &str) -> Vec<String> {

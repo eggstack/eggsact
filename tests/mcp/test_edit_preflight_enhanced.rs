@@ -152,6 +152,29 @@ fn test_edit_preflight_newline_check_detects_mixed() {
 }
 
 #[test]
+fn test_edit_preflight_consistent_newline_style_change_is_informational() {
+    let r = call_tool(
+        "edit_preflight",
+        serde_json::json!({
+            "original": "line1\nline2",
+            "old": "line2",
+            "new": "line2\r\n",
+            "replacement_mode": "literal",
+            "newline_policy": "check"
+        }),
+    );
+    assert_eq!(r["ok"], true);
+    assert_eq!(r["result"]["verdict"], "allow");
+    let finding = r["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["code"] == "NEWLINE_INCONSISTENCY")
+        .unwrap();
+    assert_eq!(finding["severity"], "info");
+}
+
+#[test]
 fn test_edit_preflight_newline_skip_by_default() {
     let r = call_tool(
         "edit_preflight",

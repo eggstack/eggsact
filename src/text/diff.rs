@@ -4,10 +4,10 @@ pub fn levenshtein_distance(a: &str, b: &str) -> usize {
 }
 
 pub fn levenshtein_distance_with_limit(a: &str, b: &str, max_len: usize) -> usize {
-    let a_chars: Vec<char> = a.chars().collect();
-    let b_chars: Vec<char> = b.chars().collect();
-    let a_len = a_chars.len();
-    let b_len = b_chars.len();
+    let mut a_chars: Vec<char> = a.chars().collect();
+    let mut b_chars: Vec<char> = b.chars().collect();
+    let mut a_len = a_chars.len();
+    let mut b_len = b_chars.len();
 
     if a_len > max_len || b_len > max_len {
         return std::cmp::max(a_len, b_len);
@@ -20,26 +20,48 @@ pub fn levenshtein_distance_with_limit(a: &str, b: &str, max_len: usize) -> usiz
         return a_len;
     }
 
-    let mut matrix = vec![vec![0usize; b_len + 1]; a_len + 1];
-
-    for (i, row) in matrix.iter_mut().enumerate().take(a_len + 1) {
-        row[0] = i;
-    }
-    for (j, cell) in matrix[0].iter_mut().enumerate().take(b_len + 1) {
-        *cell = j;
+    if a == b {
+        return 0;
     }
 
-    for (i, ac) in a_chars.iter().enumerate() {
-        for (j, bc) in b_chars.iter().enumerate() {
-            let cost = if ac == bc { 0 } else { 1 };
-            matrix[i + 1][j + 1] = std::cmp::min(
-                std::cmp::min(matrix[i][j + 1] + 1, matrix[i + 1][j] + 1),
-                matrix[i][j] + cost,
+    // Keep the rolling rows proportional to the shorter input.
+    if b_len > a_len {
+        std::mem::swap(&mut a_chars, &mut b_chars);
+        // The dynamic-programming dimensions must follow the swapped
+        // character buffers as well.
+        std::mem::swap(&mut a_len, &mut b_len);
+    }
+
+    // DoS guard: same 4M-cell budget as diff_spans. Two 10k inputs would
+    // need ~100M cells (~800 MB with Vec<Vec>); bail to coarse result.
+    if (a_len as u64).saturating_mul(b_len as u64) > DIFF_SPANS_MAX_CELLS {
+        return std::cmp::max(a_len, b_len);
+    }
+
+    // Two-row Wagner-Fischer (O(min(n,m)) memory) instead of (n+1)*(m+1)
+    // matrix with per-row allocation.
+    let mut prev = vec![0usize; b_len + 1];
+    let mut curr = vec![0usize; b_len + 1];
+    for (j, v) in prev.iter_mut().enumerate() {
+        *v = j;
+    }
+    for i in 1..=a_len {
+        curr[0] = i;
+        for j in 1..=b_len {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+            curr[j] = std::cmp::min(
+                std::cmp::min(prev[j] + 1, curr[j - 1] + 1),
+                prev[j - 1] + cost,
             );
         }
+        std::mem::swap(&mut prev, &mut curr);
     }
 
-    matrix[a_len][b_len]
+    prev[b_len]
 }
 
 #[derive(Debug, serde::Serialize)]

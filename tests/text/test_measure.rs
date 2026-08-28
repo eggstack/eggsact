@@ -24,6 +24,8 @@ fn test_line_count() {
     assert_eq!(line_count("hello\nworld"), 2);
     assert_eq!(line_count("line1\nline2\nline3"), 3);
     assert_eq!(line_count("a\n\nb"), 3); // empty lines still count
+    assert_eq!(line_count("first\u{2028}second"), 2);
+    assert_eq!(line_count("first\n"), 2);
 }
 
 #[test]
