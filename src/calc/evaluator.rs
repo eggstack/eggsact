@@ -367,7 +367,23 @@ fn check_result_value(v: f64) -> Result<f64, EvaluationError> {
     }
 }
 
+fn checked_i64(value: f64, message: &str) -> Result<i64, EvaluationError> {
+    if !value.is_finite()
+        || value.fract() != 0.0
+        || value < i64::MIN as f64
+        || value >= 9_223_372_036_854_775_808.0
+    {
+        return Err(EvaluationError::InvalidOperation(message.to_string()));
+    }
+    Ok(value as i64)
+}
+
 fn median(args: &[f64]) -> Result<f64, EvaluationError> {
+    if args.is_empty() {
+        return Err(EvaluationError::InvalidOperation(
+            "median() requires at least one argument".to_string(),
+        ));
+    }
     if args.iter().any(|a| a.is_nan()) {
         return Err(EvaluationError::InvalidOperation(
             "median does not support NaN values".to_string(),
@@ -675,13 +691,8 @@ fn parse_bit_or(
         if let Token::BitOr = &tokens[*pos] {
             *pos += 1;
             let right = parse_bit_xor(tokens, pos, depth)?;
-            if left.fract() != 0.0 || right.fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "Bitwise operations require integer arguments".to_string(),
-                ));
-            }
-            let l = left as i64;
-            let r = right as i64;
+            let l = checked_i64(left, "Bitwise operations require integer arguments")?;
+            let r = checked_i64(right, "Bitwise operations require integer arguments")?;
             left = (l | r) as f64;
         } else {
             break;
@@ -701,13 +712,8 @@ fn parse_bit_or_with(
         if let Token::BitOr = &tokens[*pos] {
             *pos += 1;
             let right = parse_bit_xor_with(tokens, pos, depth, ctx)?;
-            if left.fract() != 0.0 || right.fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "Bitwise operations require integer arguments".to_string(),
-                ));
-            }
-            let l = left as i64;
-            let r = right as i64;
+            let l = checked_i64(left, "Bitwise operations require integer arguments")?;
+            let r = checked_i64(right, "Bitwise operations require integer arguments")?;
             left = (l | r) as f64;
         } else {
             break;
@@ -727,13 +733,8 @@ fn parse_bit_xor(
         if let Token::BitXor = &tokens[*pos] {
             *pos += 1;
             let right = parse_bit_and(tokens, pos, depth)?;
-            if left.fract() != 0.0 || right.fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "Bitwise operations require integer arguments".to_string(),
-                ));
-            }
-            let l = left as i64;
-            let r = right as i64;
+            let l = checked_i64(left, "Bitwise operations require integer arguments")?;
+            let r = checked_i64(right, "Bitwise operations require integer arguments")?;
             left = (l ^ r) as f64;
         } else {
             break;
@@ -753,13 +754,8 @@ fn parse_bit_xor_with(
         if let Token::BitXor = &tokens[*pos] {
             *pos += 1;
             let right = parse_bit_and_with(tokens, pos, depth, ctx)?;
-            if left.fract() != 0.0 || right.fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "Bitwise operations require integer arguments".to_string(),
-                ));
-            }
-            let l = left as i64;
-            let r = right as i64;
+            let l = checked_i64(left, "Bitwise operations require integer arguments")?;
+            let r = checked_i64(right, "Bitwise operations require integer arguments")?;
             left = (l ^ r) as f64;
         } else {
             break;
@@ -779,13 +775,8 @@ fn parse_bit_and(
         if let Token::BitAnd = &tokens[*pos] {
             *pos += 1;
             let right = parse_shift(tokens, pos, depth)?;
-            if left.fract() != 0.0 || right.fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "Bitwise operations require integer arguments".to_string(),
-                ));
-            }
-            let l = left as i64;
-            let r = right as i64;
+            let l = checked_i64(left, "Bitwise operations require integer arguments")?;
+            let r = checked_i64(right, "Bitwise operations require integer arguments")?;
             left = (l & r) as f64;
         } else {
             break;
@@ -805,13 +796,8 @@ fn parse_bit_and_with(
         if let Token::BitAnd = &tokens[*pos] {
             *pos += 1;
             let right = parse_shift_with(tokens, pos, depth, ctx)?;
-            if left.fract() != 0.0 || right.fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "Bitwise operations require integer arguments".to_string(),
-                ));
-            }
-            let l = left as i64;
-            let r = right as i64;
+            let l = checked_i64(left, "Bitwise operations require integer arguments")?;
+            let r = checked_i64(right, "Bitwise operations require integer arguments")?;
             left = (l & r) as f64;
         } else {
             break;
@@ -832,19 +818,14 @@ fn parse_shift(
             Token::LShift => {
                 *pos += 1;
                 let right = parse_additive(tokens, pos, depth)?;
-                if left.fract() != 0.0 || right.fract() != 0.0 {
-                    return Err(EvaluationError::InvalidOperation(
-                        "Bitwise operations require integer arguments".to_string(),
-                    ));
-                }
-                let shift = right as i64;
+                let shift = checked_i64(right, "Bitwise operations require integer arguments")?;
                 if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                     return Err(EvaluationError::InvalidOperation(format!(
                         "Shift count {} out of range",
                         shift
                     )));
                 }
-                let l = left as i64;
+                let l = checked_i64(left, "Bitwise operations require integer arguments")?;
                 left = l.checked_shl(shift as u32).ok_or_else(|| {
                     EvaluationError::InvalidOperation(format!("Shift left by {} overflows", shift))
                 })? as f64;
@@ -852,19 +833,14 @@ fn parse_shift(
             Token::RShift => {
                 *pos += 1;
                 let right = parse_additive(tokens, pos, depth)?;
-                if left.fract() != 0.0 || right.fract() != 0.0 {
-                    return Err(EvaluationError::InvalidOperation(
-                        "Bitwise operations require integer arguments".to_string(),
-                    ));
-                }
-                let shift = right as i64;
+                let shift = checked_i64(right, "Bitwise operations require integer arguments")?;
                 if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                     return Err(EvaluationError::InvalidOperation(format!(
                         "Shift count {} out of range",
                         shift
                     )));
                 }
-                let l = left as i64;
+                let l = checked_i64(left, "Bitwise operations require integer arguments")?;
                 left = l.checked_shr(shift as u32).ok_or_else(|| {
                     EvaluationError::InvalidOperation(format!("Shift right by {} overflows", shift))
                 })? as f64;
@@ -887,19 +863,14 @@ fn parse_shift_with(
             Token::LShift => {
                 *pos += 1;
                 let right = parse_additive_with(tokens, pos, depth, ctx)?;
-                if left.fract() != 0.0 || right.fract() != 0.0 {
-                    return Err(EvaluationError::InvalidOperation(
-                        "Bitwise operations require integer arguments".to_string(),
-                    ));
-                }
-                let shift = right as i64;
+                let shift = checked_i64(right, "Bitwise operations require integer arguments")?;
                 if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                     return Err(EvaluationError::InvalidOperation(format!(
                         "Shift count {} out of range",
                         shift
                     )));
                 }
-                let l = left as i64;
+                let l = checked_i64(left, "Bitwise operations require integer arguments")?;
                 left = l.checked_shl(shift as u32).ok_or_else(|| {
                     EvaluationError::InvalidOperation(format!("Shift left by {} overflows", shift))
                 })? as f64;
@@ -907,19 +878,14 @@ fn parse_shift_with(
             Token::RShift => {
                 *pos += 1;
                 let right = parse_additive_with(tokens, pos, depth, ctx)?;
-                if left.fract() != 0.0 || right.fract() != 0.0 {
-                    return Err(EvaluationError::InvalidOperation(
-                        "Bitwise operations require integer arguments".to_string(),
-                    ));
-                }
-                let shift = right as i64;
+                let shift = checked_i64(right, "Bitwise operations require integer arguments")?;
                 if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                     return Err(EvaluationError::InvalidOperation(format!(
                         "Shift count {} out of range",
                         shift
                     )));
                 }
-                let l = left as i64;
+                let l = checked_i64(left, "Bitwise operations require integer arguments")?;
                 left = l.checked_shr(shift as u32).ok_or_else(|| {
                     EvaluationError::InvalidOperation(format!("Shift right by {} overflows", shift))
                 })? as f64;
@@ -1111,8 +1077,8 @@ fn parse_power(
                 ));
             }
             if exp.fract() == 0.0 && base.fract() == 0.0 && exp.abs() < 1e15 && base.abs() < 1e15 {
-                let base_i = base as i64;
-                let exp_i = exp as i64;
+                let base_i = checked_i64(base, "Power operands must be i64 integers")?;
+                let exp_i = checked_i64(exp, "Power operands must be i64 integers")?;
                 if exp_i >= 0 && exp_i <= u32::MAX as i64 {
                     if let Some(result) = base_i.checked_pow(exp_i as u32) {
                         return Ok(result as f64);
@@ -1167,8 +1133,8 @@ fn parse_power_with(
             }
             // Safe power: use integer arithmetic for large integer exponents
             if exp.fract() == 0.0 && base.fract() == 0.0 && exp.abs() < 1e15 && base.abs() < 1e15 {
-                let base_i = base as i64;
-                let exp_i = exp as i64;
+                let base_i = checked_i64(base, "Power operands must be i64 integers")?;
+                let exp_i = checked_i64(exp, "Power operands must be i64 integers")?;
                 if exp_i >= 0 && exp_i <= u32::MAX as i64 {
                     if let Some(result) = base_i.checked_pow(exp_i as u32) {
                         return Ok(result as f64);
@@ -1204,12 +1170,7 @@ fn parse_unary(
         Token::BitNot => {
             *pos += 1;
             let value = parse_unary(tokens, pos, depth)?;
-            if value.fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "Bitwise NOT requires integer argument".to_string(),
-                ));
-            }
-            let i = value as i64;
+            let i = checked_i64(value, "Bitwise NOT requires integer argument")?;
             Ok((!i) as f64)
         }
         _ => parse_power(tokens, pos, depth),
@@ -1238,12 +1199,7 @@ fn parse_unary_with(
         Token::BitNot => {
             *pos += 1;
             let value = parse_unary_with(tokens, pos, depth, ctx)?;
-            if value.fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "Bitwise NOT requires integer argument".to_string(),
-                ));
-            }
-            let i = value as i64;
+            let i = checked_i64(value, "Bitwise NOT requires integer argument")?;
             Ok((!i) as f64)
         }
         _ => parse_power_with(tokens, pos, depth, ctx),
@@ -1625,8 +1581,8 @@ fn evaluate_function(
 
         // ── Factorial / Combinatorics ──
         "factorial" | "fact" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 || !(0..=MAX_FACTORIAL).contains(&n) {
+            let n = checked_i64(args[0], "factorial requires integer argument")?;
+            if !(0..=MAX_FACTORIAL).contains(&n) {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "factorial({}) out of range (0..={})",
                     args[0], MAX_FACTORIAL
@@ -1639,8 +1595,8 @@ fn evaluate_function(
             )))
         }
         "perm" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 || !(0..=MAX_FACTORIAL).contains(&n) {
+            let n = checked_i64(args[0], "perm requires integer argument")?;
+            if !(0..=MAX_FACTORIAL).contains(&n) {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "perm({}) out of range (0..={})",
                     args[0], MAX_FACTORIAL
@@ -1653,13 +1609,8 @@ fn evaluate_function(
             )))
         }
         "perm" | "npr" if args.len() == 2 => {
-            let n = args[0] as i64;
-            let r = args[1] as i64;
-            if args[0] != n as f64 || args[1] != r as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "perm requires integer arguments".to_string(),
-                ));
-            }
+            let n = checked_i64(args[0], "perm requires integer arguments")?;
+            let r = checked_i64(args[1], "perm requires integer arguments")?;
             if n < 0 || r < 0 || n > MAX_PERM_COMB || r > MAX_PERM_COMB {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "perm({}, {}) out of range",
@@ -1676,13 +1627,8 @@ fn evaluate_function(
             bigint_or_float(limbs)
         }
         "comb" | "ncr" if args.len() == 2 => {
-            let n = args[0] as i64;
-            let r = args[1] as i64;
-            if args[0] != n as f64 || args[1] != r as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "comb requires integer arguments".to_string(),
-                ));
-            }
+            let n = checked_i64(args[0], "comb requires integer arguments")?;
+            let r = checked_i64(args[1], "comb requires integer arguments")?;
             if n < 0 || r < 0 || n > MAX_PERM_COMB || r > MAX_PERM_COMB {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "comb({}, {}) out of range",
@@ -1710,7 +1656,10 @@ fn evaluate_function(
                     ));
                 }
             }
-            let ints: Vec<i64> = args.iter().map(|a| *a as i64).collect();
+            let ints: Vec<i64> = args
+                .iter()
+                .map(|a| checked_i64(*a, "gcd() requires integer arguments"))
+                .collect::<Result<_, _>>()?;
             if ints.contains(&i64::MIN) {
                 return Err(EvaluationError::ValueOverflow);
             }
@@ -1728,7 +1677,10 @@ fn evaluate_function(
                     ));
                 }
             }
-            let ints: Vec<i64> = args.iter().map(|a| *a as i64).collect();
+            let ints: Vec<i64> = args
+                .iter()
+                .map(|a| checked_i64(*a, "lcm() requires integer arguments"))
+                .collect::<Result<_, _>>()?;
             if ints.contains(&i64::MIN) {
                 return Err(EvaluationError::ValueOverflow);
             }
@@ -1843,80 +1795,54 @@ fn evaluate_function(
 
         // ── Bitwise functions ──
         "bitand" if args.len() == 2 => {
-            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitand requires integer arguments".to_string(),
-                ));
-            }
-            Ok(((args[0] as i64) & (args[1] as i64)) as f64)
+            let left = checked_i64(args[0], "bitand requires integer arguments")?;
+            let right = checked_i64(args[1], "bitand requires integer arguments")?;
+            Ok((left & right) as f64)
         }
         "bitor" if args.len() == 2 => {
-            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitor requires integer arguments".to_string(),
-                ));
-            }
-            Ok(((args[0] as i64) | (args[1] as i64)) as f64)
+            let left = checked_i64(args[0], "bitor requires integer arguments")?;
+            let right = checked_i64(args[1], "bitor requires integer arguments")?;
+            Ok((left | right) as f64)
         }
         "bitxor" if args.len() == 2 => {
-            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitxor requires integer arguments".to_string(),
-                ));
-            }
-            Ok(((args[0] as i64) ^ (args[1] as i64)) as f64)
+            let left = checked_i64(args[0], "bitxor requires integer arguments")?;
+            let right = checked_i64(args[1], "bitxor requires integer arguments")?;
+            Ok((left ^ right) as f64)
         }
         "bitnot" if args.len() == 1 => {
-            if args[0].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitnot requires integer argument".to_string(),
-                ));
-            }
-            Ok((!(args[0] as i64)) as f64)
+            let value = checked_i64(args[0], "bitnot requires integer argument")?;
+            Ok((!value) as f64)
         }
         "bitlshift" if args.len() == 2 => {
-            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitlshift requires integer arguments".to_string(),
-                ));
-            }
-            let shift = args[1] as i64;
+            let value = checked_i64(args[0], "bitlshift requires integer arguments")?;
+            let shift = checked_i64(args[1], "bitlshift requires integer arguments")?;
             if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "Shift count {} out of range",
                     shift
                 )));
             }
-            Ok(((args[0] as i64).checked_shl(shift as u32).ok_or_else(|| {
+            Ok((value.checked_shl(shift as u32).ok_or_else(|| {
                 EvaluationError::InvalidOperation(format!("Shift left by {} overflows", shift))
             })?) as f64)
         }
         "bitrshift" if args.len() == 2 => {
-            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitrshift requires integer arguments".to_string(),
-                ));
-            }
-            let shift = args[1] as i64;
+            let value = checked_i64(args[0], "bitrshift requires integer arguments")?;
+            let shift = checked_i64(args[1], "bitrshift requires integer arguments")?;
             if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "Shift count {} out of range",
                     shift
                 )));
             }
-            Ok(((args[0] as i64).checked_shr(shift as u32).ok_or_else(|| {
+            Ok((value.checked_shr(shift as u32).ok_or_else(|| {
                 EvaluationError::InvalidOperation(format!("Shift right by {} overflows", shift))
             })?) as f64)
         }
 
         // ── Base conversion ──
         "bin" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bin requires integer argument".to_string(),
-                ));
-            }
+            let n = checked_i64(args[0], "bin requires integer argument")?;
             let s = if n < 0 {
                 format!("-0b{:b}", n.wrapping_neg())
             } else {
@@ -1928,12 +1854,7 @@ fn evaluate_function(
             )))
         }
         "hex" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "hex requires integer argument".to_string(),
-                ));
-            }
+            let n = checked_i64(args[0], "hex requires integer argument")?;
             let s = if n < 0 {
                 format!("-0x{:x}", n.wrapping_neg())
             } else {
@@ -1945,12 +1866,7 @@ fn evaluate_function(
             )))
         }
         "oct" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "oct requires integer argument".to_string(),
-                ));
-            }
+            let n = checked_i64(args[0], "oct requires integer argument")?;
             let s = if n < 0 {
                 format!("-0o{:o}", n.wrapping_neg())
             } else {
@@ -1964,8 +1880,8 @@ fn evaluate_function(
 
         // ── Prime number functions ──
         "isprime" | "is_prime" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 || n > MAX_PRIME {
+            let n = checked_i64(args[0], "isprime requires integer argument")?;
+            if n > MAX_PRIME {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "isprime({}) out of range",
                     args[0]
@@ -1980,8 +1896,8 @@ fn evaluate_function(
             })
         }
         "nextprime" | "next_prime" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 || !(0..=MAX_PRIME).contains(&n) {
+            let n = checked_i64(args[0], "nextprime requires integer argument")?;
+            if !(0..=MAX_PRIME).contains(&n) {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "nextprime({}) out of range",
                     args[0]
@@ -1990,8 +1906,8 @@ fn evaluate_function(
             Ok(next_prime(n)? as f64)
         }
         "prevprime" | "prev_prime" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 || n <= 2 || n > MAX_PRIME {
+            let n = checked_i64(args[0], "prevprime requires integer argument")?;
+            if n <= 2 || n > MAX_PRIME {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "prevprime({}) out of range",
                     args[0]
@@ -2000,8 +1916,8 @@ fn evaluate_function(
             Ok(prev_prime(n)? as f64)
         }
         "primefactors" | "prime_factors" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 || n < 0 {
+            let n = checked_i64(args[0], "primefactors requires integer argument")?;
+            if n < 0 {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "primefactors({}) out of range",
                     args[0]
@@ -2063,13 +1979,8 @@ fn evaluate_function(
         // ── Random functions ──
         "random" | "rand" if args.is_empty() => Ok(prng_random()),
         "randint" if args.len() == 2 => {
-            let a = args[0] as i64;
-            let b = args[1] as i64;
-            if args[0] != a as f64 || args[1] != b as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "randint requires integer arguments".to_string(),
-                ));
-            }
+            let a = checked_i64(args[0], "randint requires integer arguments")?;
+            let b = checked_i64(args[1], "randint requires integer arguments")?;
             if a > b {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "randint: lower bound ({}) > upper bound ({})",
@@ -2079,28 +1990,18 @@ fn evaluate_function(
             Ok(random_int_inclusive(a, b, prng_next_u64) as f64)
         }
         "randrange" if args.len() == 1 => {
-            let a = args[0] as i64;
-            if args[0] != a as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "randrange requires integer argument".to_string(),
-                ));
-            }
+            let a = checked_i64(args[0], "randrange requires integer argument")?;
             if a <= 0 {
                 return Err(EvaluationError::InvalidOperation(
                     "randrange: argument must be positive".to_string(),
                 ));
             }
             let r = prng_random() * a as f64;
-            Ok((r.floor() as i64) as f64)
+            Ok(checked_i64(r.floor(), "randrange result out of range")? as f64)
         }
         "randrange" if args.len() == 2 => {
-            let a = args[0] as i64;
-            let b = args[1] as i64;
-            if args[0] != a as f64 || args[1] != b as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "randrange requires integer arguments".to_string(),
-                ));
-            }
+            let a = checked_i64(args[0], "randrange requires integer arguments")?;
+            let b = checked_i64(args[1], "randrange requires integer arguments")?;
             if a >= b {
                 return Err(EvaluationError::InvalidOperation(
                     "randrange: start must be less than stop".to_string(),
@@ -2108,7 +2009,9 @@ fn evaluate_function(
             }
             let range = (b - a) as u64;
             let r = prng_random() * range as f64;
-            Ok((a + r.floor() as i64) as f64)
+            let offset = checked_i64(r.floor(), "randrange result out of range")?;
+            Ok(a.checked_add(offset)
+                .ok_or(EvaluationError::ValueOverflow)? as f64)
         }
         "uniform" if args.len() == 2 => {
             let a = args[0];
@@ -2146,7 +2049,8 @@ fn evaluate_function(
             Ok(args[0])
         }
         "store" if args.len() == 2 => {
-            let name = format!("R{}", args[1] as i64);
+            let id = checked_i64(args[1], "register index requires integer argument")?;
+            let name = format!("R{}", id);
             let mut regs = MEMORY_REGISTERS.lock().unwrap_or_else(|e| e.into_inner());
             regs.insert(name, args[0]);
             Ok(args[0])
@@ -2156,7 +2060,8 @@ fn evaluate_function(
             Ok(*regs.get("M").unwrap_or(&0.0))
         }
         "recall" if args.len() == 1 => {
-            let name = format!("R{}", args[0] as i64);
+            let id = checked_i64(args[0], "register index requires integer argument")?;
+            let name = format!("R{}", id);
             let regs = MEMORY_REGISTERS.lock().unwrap_or_else(|e| e.into_inner());
             Ok(*regs.get(&name).unwrap_or(&0.0))
         }
@@ -2184,7 +2089,7 @@ fn evaluate_function(
             Ok(*regs.get("M").unwrap_or(&0.0))
         }
         "setvar" if args.len() == 2 => {
-            let var_id = args[1] as i64;
+            let var_id = checked_i64(args[1], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
             let mut vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
             if !vars.contains_key(&key) && vars.len() >= MAX_USER_VARIABLES {
@@ -2196,19 +2101,19 @@ fn evaluate_function(
             Ok(args[0])
         }
         "getvar" if args.len() == 1 => {
-            let var_id = args[0] as i64;
+            let var_id = checked_i64(args[0], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
             let vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
             Ok(*vars.get(&key).unwrap_or(&0.0))
         }
         "getvar" if args.len() == 2 => {
-            let var_id = args[0] as i64;
+            let var_id = checked_i64(args[0], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
             let vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
             Ok(*vars.get(&key).unwrap_or(&args[1]))
         }
         "delvar" if args.len() == 1 => {
-            let var_id = args[0] as i64;
+            let var_id = checked_i64(args[0], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
             let mut vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
             vars.remove(&key);
@@ -2407,8 +2312,8 @@ fn evaluate_function_with(
 
         // ── Factorial / Combinatorics ──
         "factorial" | "fact" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 || !(0..=MAX_FACTORIAL).contains(&n) {
+            let n = checked_i64(args[0], "factorial requires integer argument")?;
+            if !(0..=MAX_FACTORIAL).contains(&n) {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "factorial({}) out of range (0..={})",
                     args[0], MAX_FACTORIAL
@@ -2424,8 +2329,8 @@ fn evaluate_function_with(
             )))
         }
         "perm" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 || !(0..=MAX_FACTORIAL).contains(&n) {
+            let n = checked_i64(args[0], "perm requires integer argument")?;
+            if !(0..=MAX_FACTORIAL).contains(&n) {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "perm({}) out of range (0..={})",
                     args[0], MAX_FACTORIAL
@@ -2438,13 +2343,8 @@ fn evaluate_function_with(
             )))
         }
         "perm" | "npr" if args.len() == 2 => {
-            let n = args[0] as i64;
-            let r = args[1] as i64;
-            if args[0] != n as f64 || args[1] != r as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "perm requires integer arguments".to_string(),
-                ));
-            }
+            let n = checked_i64(args[0], "perm requires integer arguments")?;
+            let r = checked_i64(args[1], "perm requires integer arguments")?;
             if n < 0 || r < 0 || n > MAX_PERM_COMB || r > MAX_PERM_COMB {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "perm({}, {}) out of range",
@@ -2464,13 +2364,8 @@ fn evaluate_function_with(
             bigint_or_float(limbs)
         }
         "comb" | "ncr" if args.len() == 2 => {
-            let n = args[0] as i64;
-            let r = args[1] as i64;
-            if args[0] != n as f64 || args[1] != r as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "comb requires integer arguments".to_string(),
-                ));
-            }
+            let n = checked_i64(args[0], "comb requires integer arguments")?;
+            let r = checked_i64(args[1], "comb requires integer arguments")?;
             if n < 0 || r < 0 || n > MAX_PERM_COMB || r > MAX_PERM_COMB {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "comb({}, {}) out of range",
@@ -2501,7 +2396,10 @@ fn evaluate_function_with(
                     ));
                 }
             }
-            let ints: Vec<i64> = args.iter().map(|a| *a as i64).collect();
+            let ints: Vec<i64> = args
+                .iter()
+                .map(|a| checked_i64(*a, "gcd() requires integer arguments"))
+                .collect::<Result<_, _>>()?;
             if ints.contains(&i64::MIN) {
                 return Err(EvaluationError::ValueOverflow);
             }
@@ -2519,7 +2417,10 @@ fn evaluate_function_with(
                     ));
                 }
             }
-            let ints: Vec<i64> = args.iter().map(|a| *a as i64).collect();
+            let ints: Vec<i64> = args
+                .iter()
+                .map(|a| checked_i64(*a, "lcm() requires integer arguments"))
+                .collect::<Result<_, _>>()?;
             if ints.contains(&i64::MIN) {
                 return Err(EvaluationError::ValueOverflow);
             }
@@ -2634,80 +2535,54 @@ fn evaluate_function_with(
 
         // ── Bitwise functions ──
         "bitand" if args.len() == 2 => {
-            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitand requires integer arguments".to_string(),
-                ));
-            }
-            Ok(((args[0] as i64) & (args[1] as i64)) as f64)
+            let left = checked_i64(args[0], "bitand requires integer arguments")?;
+            let right = checked_i64(args[1], "bitand requires integer arguments")?;
+            Ok((left & right) as f64)
         }
         "bitor" if args.len() == 2 => {
-            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitor requires integer arguments".to_string(),
-                ));
-            }
-            Ok(((args[0] as i64) | (args[1] as i64)) as f64)
+            let left = checked_i64(args[0], "bitor requires integer arguments")?;
+            let right = checked_i64(args[1], "bitor requires integer arguments")?;
+            Ok((left | right) as f64)
         }
         "bitxor" if args.len() == 2 => {
-            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitxor requires integer arguments".to_string(),
-                ));
-            }
-            Ok(((args[0] as i64) ^ (args[1] as i64)) as f64)
+            let left = checked_i64(args[0], "bitxor requires integer arguments")?;
+            let right = checked_i64(args[1], "bitxor requires integer arguments")?;
+            Ok((left ^ right) as f64)
         }
         "bitnot" if args.len() == 1 => {
-            if args[0].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitnot requires integer argument".to_string(),
-                ));
-            }
-            Ok((!(args[0] as i64)) as f64)
+            let value = checked_i64(args[0], "bitnot requires integer argument")?;
+            Ok((!value) as f64)
         }
         "bitlshift" if args.len() == 2 => {
-            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitlshift requires integer arguments".to_string(),
-                ));
-            }
-            let shift = args[1] as i64;
+            let value = checked_i64(args[0], "bitlshift requires integer arguments")?;
+            let shift = checked_i64(args[1], "bitlshift requires integer arguments")?;
             if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "Shift count {} out of range",
                     shift
                 )));
             }
-            Ok(((args[0] as i64).checked_shl(shift as u32).ok_or_else(|| {
+            Ok((value.checked_shl(shift as u32).ok_or_else(|| {
                 EvaluationError::InvalidOperation(format!("Shift left by {} overflows", shift))
             })?) as f64)
         }
         "bitrshift" if args.len() == 2 => {
-            if args[0].fract() != 0.0 || args[1].fract() != 0.0 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bitrshift requires integer arguments".to_string(),
-                ));
-            }
-            let shift = args[1] as i64;
+            let value = checked_i64(args[0], "bitrshift requires integer arguments")?;
+            let shift = checked_i64(args[1], "bitrshift requires integer arguments")?;
             if shift < 0 || shift as usize > MAX_SHIFT_COUNT {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "Shift count {} out of range",
                     shift
                 )));
             }
-            Ok(((args[0] as i64).checked_shr(shift as u32).ok_or_else(|| {
+            Ok((value.checked_shr(shift as u32).ok_or_else(|| {
                 EvaluationError::InvalidOperation(format!("Shift right by {} overflows", shift))
             })?) as f64)
         }
 
         // ── Base conversion ──
         "bin" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "bin requires integer argument".to_string(),
-                ));
-            }
+            let n = checked_i64(args[0], "bin requires integer argument")?;
             let s = if n < 0 {
                 format!("-0b{:b}", n.wrapping_neg())
             } else {
@@ -2719,12 +2594,7 @@ fn evaluate_function_with(
             )))
         }
         "hex" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "hex requires integer argument".to_string(),
-                ));
-            }
+            let n = checked_i64(args[0], "hex requires integer argument")?;
             let s = if n < 0 {
                 format!("-0x{:x}", n.wrapping_neg())
             } else {
@@ -2736,12 +2606,7 @@ fn evaluate_function_with(
             )))
         }
         "oct" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "oct requires integer argument".to_string(),
-                ));
-            }
+            let n = checked_i64(args[0], "oct requires integer argument")?;
             let s = if n < 0 {
                 format!("-0o{:o}", n.wrapping_neg())
             } else {
@@ -2755,8 +2620,8 @@ fn evaluate_function_with(
 
         // ── Prime number functions ──
         "isprime" | "is_prime" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 || n > MAX_PRIME {
+            let n = checked_i64(args[0], "isprime requires integer argument")?;
+            if n > MAX_PRIME {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "isprime({}) out of range",
                     args[0]
@@ -2771,11 +2636,11 @@ fn evaluate_function_with(
             })
         }
         "nextprime" | "next_prime" if args.len() == 1 => {
-            let n = args[0] as i64;
+            let n = checked_i64(args[0], "nextprime requires integer argument")?;
             // BUG-206: guard against inputs above MAX_PRIME so the
             // O(sqrt(n)) trial-division loop can't be turned into a
             // multi-second (or hung) MCP request.
-            if args[0] != n as f64 || !(0..=MAX_PRIME).contains(&n) {
+            if !(0..=MAX_PRIME).contains(&n) {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "nextprime({}) out of range",
                     args[0]
@@ -2784,9 +2649,9 @@ fn evaluate_function_with(
             Ok(next_prime(n)? as f64)
         }
         "prevprime" | "prev_prime" if args.len() == 1 => {
-            let n = args[0] as i64;
+            let n = checked_i64(args[0], "prevprime requires integer argument")?;
             // BUG-206: same guard as nextprime/isprime.
-            if args[0] != n as f64 || n <= 2 || n > MAX_PRIME {
+            if n <= 2 || n > MAX_PRIME {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "prevprime({}) out of range",
                     args[0]
@@ -2795,8 +2660,8 @@ fn evaluate_function_with(
             Ok(prev_prime(n)? as f64)
         }
         "primefactors" | "prime_factors" if args.len() == 1 => {
-            let n = args[0] as i64;
-            if args[0] != n as f64 || n < 0 {
+            let n = checked_i64(args[0], "primefactors requires integer argument")?;
+            if n < 0 {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "primefactors({}) out of range",
                     args[0]
@@ -2865,13 +2730,8 @@ fn evaluate_function_with(
         // ── Random functions ──
         "random" | "rand" if args.is_empty() => Ok(prng_random_with(ctx)),
         "randint" if args.len() == 2 => {
-            let a = args[0] as i64;
-            let b = args[1] as i64;
-            if args[0] != a as f64 || args[1] != b as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "randint requires integer arguments".to_string(),
-                ));
-            }
+            let a = checked_i64(args[0], "randint requires integer arguments")?;
+            let b = checked_i64(args[1], "randint requires integer arguments")?;
             if a > b {
                 return Err(EvaluationError::InvalidOperation(format!(
                     "randint: lower bound ({}) > upper bound ({})",
@@ -2881,28 +2741,18 @@ fn evaluate_function_with(
             Ok(random_int_inclusive(a, b, || prng_next_u64_with(ctx)) as f64)
         }
         "randrange" if args.len() == 1 => {
-            let a = args[0] as i64;
-            if args[0] != a as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "randrange requires integer argument".to_string(),
-                ));
-            }
+            let a = checked_i64(args[0], "randrange requires integer argument")?;
             if a <= 0 {
                 return Err(EvaluationError::InvalidOperation(
                     "randrange: argument must be positive".to_string(),
                 ));
             }
             let r = prng_random_with(ctx) * a as f64;
-            Ok((r.floor() as i64) as f64)
+            Ok(checked_i64(r.floor(), "randrange result out of range")? as f64)
         }
         "randrange" if args.len() == 2 => {
-            let a = args[0] as i64;
-            let b = args[1] as i64;
-            if args[0] != a as f64 || args[1] != b as f64 {
-                return Err(EvaluationError::InvalidOperation(
-                    "randrange requires integer arguments".to_string(),
-                ));
-            }
+            let a = checked_i64(args[0], "randrange requires integer arguments")?;
+            let b = checked_i64(args[1], "randrange requires integer arguments")?;
             if a >= b {
                 return Err(EvaluationError::InvalidOperation(
                     "randrange: start must be less than stop".to_string(),
@@ -2910,7 +2760,9 @@ fn evaluate_function_with(
             }
             let range = (b - a) as u64;
             let r = prng_random_with(ctx) * range as f64;
-            Ok((a + r.floor() as i64) as f64)
+            let offset = checked_i64(r.floor(), "randrange result out of range")?;
+            Ok(a.checked_add(offset)
+                .ok_or(EvaluationError::ValueOverflow)? as f64)
         }
         "uniform" if args.len() == 2 => {
             let a = args[0];
@@ -2946,13 +2798,15 @@ fn evaluate_function_with(
             Ok(args[0])
         }
         "store" if args.len() == 2 => {
-            let name = format!("R{}", args[1] as i64);
+            let id = checked_i64(args[1], "register index requires integer argument")?;
+            let name = format!("R{}", id);
             ctx.memory_registers.insert(name, args[0]);
             Ok(args[0])
         }
         "recall" if args.is_empty() => Ok(*ctx.memory_registers.get("M").unwrap_or(&0.0)),
         "recall" if args.len() == 1 => {
-            let name = format!("R{}", args[0] as i64);
+            let id = checked_i64(args[0], "register index requires integer argument")?;
+            let name = format!("R{}", id);
             Ok(*ctx.memory_registers.get(&name).unwrap_or(&0.0))
         }
         "mplus" | "m+" | "madd" if args.len() == 1 => {
@@ -2973,7 +2827,7 @@ fn evaluate_function_with(
         }
         "mr" | "mrecall" if args.is_empty() => Ok(*ctx.memory_registers.get("M").unwrap_or(&0.0)),
         "setvar" if args.len() == 2 => {
-            let var_id = args[1] as i64;
+            let var_id = checked_i64(args[1], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
             if !ctx.user_variables.contains_key(&key)
                 && ctx.user_variables.len() >= MAX_USER_VARIABLES_CTX
@@ -2986,17 +2840,17 @@ fn evaluate_function_with(
             Ok(args[0])
         }
         "getvar" if args.len() == 1 => {
-            let var_id = args[0] as i64;
+            let var_id = checked_i64(args[0], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
             Ok(*ctx.user_variables.get(&key).unwrap_or(&0.0))
         }
         "getvar" if args.len() == 2 => {
-            let var_id = args[0] as i64;
+            let var_id = checked_i64(args[0], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
             Ok(*ctx.user_variables.get(&key).unwrap_or(&args[1]))
         }
         "delvar" if args.len() == 1 => {
-            let var_id = args[0] as i64;
+            let var_id = checked_i64(args[0], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
             ctx.user_variables.remove(&key);
             Ok(0.0)

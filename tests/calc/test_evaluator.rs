@@ -385,6 +385,12 @@ fn test_bitwise_fractional_error() {
     assert!(result.is_err());
 }
 
+#[test]
+fn test_bitwise_out_of_i64_range_error() {
+    assert!(evaluate("1e20 & 1").is_err());
+    assert!(evaluate("bitand(1e20, 1)").is_err());
+}
+
 // ─── BUG-021: Negative modulo (Python-style floored) ─────────────────
 
 #[test]

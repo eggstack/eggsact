@@ -340,10 +340,10 @@ fn parse_comparison_constraint(constraint: &str) -> (String, String) {
     ("=".to_string(), constraint.to_string())
 }
 
-fn cargo_caret_range(version: &ParsedVersion) -> (ParsedVersion, ParsedVersion) {
+fn cargo_caret_range(version: &ParsedVersion) -> Option<(ParsedVersion, ParsedVersion)> {
     let upper = if version.major != 0 {
         ParsedVersion {
-            major: version.major + 1,
+            major: version.major.checked_add(1)?,
             minor: 0,
             patch: 0,
             pre_release: Vec::new(),
@@ -353,7 +353,7 @@ fn cargo_caret_range(version: &ParsedVersion) -> (ParsedVersion, ParsedVersion) 
     } else if version.minor != 0 {
         ParsedVersion {
             major: 0,
-            minor: version.minor + 1,
+            minor: version.minor.checked_add(1)?,
             patch: 0,
             pre_release: Vec::new(),
             build: String::new(),
@@ -363,7 +363,7 @@ fn cargo_caret_range(version: &ParsedVersion) -> (ParsedVersion, ParsedVersion) 
         ParsedVersion {
             major: 0,
             minor: 0,
-            patch: version.patch + 1,
+            patch: version.patch.checked_add(1)?,
             pre_release: Vec::new(),
             build: String::new(),
             raw: String::new(),
@@ -388,14 +388,14 @@ fn cargo_caret_range(version: &ParsedVersion) -> (ParsedVersion, ParsedVersion) 
         raw: String::new(),
     };
 
-    (lower, upper)
+    Some((lower, upper))
 }
 
-fn cargo_tilde_range(version: &ParsedVersion) -> (ParsedVersion, ParsedVersion) {
+fn cargo_tilde_range(version: &ParsedVersion) -> Option<(ParsedVersion, ParsedVersion)> {
     let upper = if version.minor == 0 && version.patch == 0 && !version.pre_release.is_empty() {
         ParsedVersion {
             major: version.major,
-            minor: version.minor + 1,
+            minor: version.minor.checked_add(1)?,
             patch: 0,
             pre_release: Vec::new(),
             build: String::new(),
@@ -413,7 +413,7 @@ fn cargo_tilde_range(version: &ParsedVersion) -> (ParsedVersion, ParsedVersion) 
     } else {
         ParsedVersion {
             major: version.major,
-            minor: version.minor + 1,
+            minor: version.minor.checked_add(1)?,
             patch: 0,
             pre_release: Vec::new(),
             build: String::new(),
@@ -430,7 +430,7 @@ fn cargo_tilde_range(version: &ParsedVersion) -> (ParsedVersion, ParsedVersion) 
         raw: format!("{}.{}.{}", version.major, version.minor, version.patch),
     };
 
-    (lower, upper)
+    Some((lower, upper))
 }
 
 fn cargo_range_satisfies(
@@ -468,15 +468,15 @@ fn cargo_wildcard_range(constraint: &str) -> (Option<ParsedVersion>, Option<Pars
             build: String::new(),
             raw: constraint.to_string(),
         };
-        let upper = ParsedVersion {
-            major: nums[0] + 1,
+        let upper = nums[0].checked_add(1).map(|major| ParsedVersion {
+            major,
             minor: 0,
             patch: 0,
             pre_release: Vec::new(),
             build: String::new(),
             raw: String::new(),
-        };
-        (Some(lower), Some(upper))
+        });
+        (Some(lower), upper)
     } else if nums.len() == 2 {
         let lower = ParsedVersion {
             major: nums[0],
@@ -486,15 +486,15 @@ fn cargo_wildcard_range(constraint: &str) -> (Option<ParsedVersion>, Option<Pars
             build: String::new(),
             raw: constraint.to_string(),
         };
-        let upper = ParsedVersion {
+        let upper = nums[1].checked_add(1).map(|minor| ParsedVersion {
             major: nums[0],
-            minor: nums[1] + 1,
+            minor,
             patch: 0,
             pre_release: Vec::new(),
             build: String::new(),
             raw: String::new(),
-        };
-        (Some(lower), Some(upper))
+        });
+        (Some(lower), upper)
     } else {
         (None, None)
     }
@@ -640,7 +640,19 @@ pub fn check_version_constraint(
             findings.push("Caret constraint ^0.0.0 matches only 0.0.0".to_string());
         }
 
-        let (lower, upper) = cargo_caret_range(&parsed_bound);
+        let Some((lower, upper)) = cargo_caret_range(&parsed_bound) else {
+            return VersionConstraintResult {
+                satisfies: false,
+                parsed_version: Some(parsed_ver),
+                parsed_constraint: None,
+                scheme: "cargo".to_string(),
+                explanation: format!(
+                    "Constraint '{}' exceeds the supported version range",
+                    constraint
+                ),
+                findings: vec!["Version range upper bound overflows u32".to_string()],
+            };
+        };
         let satisfies = cargo_range_satisfies(&parsed_ver, &lower, &upper);
         let pc = ParsedConstraint {
             raw: constraint.to_string(),
@@ -690,7 +702,19 @@ pub fn check_version_constraint(
         }
 
         let parsed_bound = parsed_bound.unwrap_or_else(|| unreachable!("checked is_none() above"));
-        let (lower, upper) = cargo_tilde_range(&parsed_bound);
+        let Some((lower, upper)) = cargo_tilde_range(&parsed_bound) else {
+            return VersionConstraintResult {
+                satisfies: false,
+                parsed_version: Some(parsed_ver),
+                parsed_constraint: None,
+                scheme: "cargo".to_string(),
+                explanation: format!(
+                    "Constraint '{}' exceeds the supported version range",
+                    constraint
+                ),
+                findings: vec!["Version range upper bound overflows u32".to_string()],
+            };
+        };
         let satisfies = cargo_range_satisfies(&parsed_ver, &lower, &upper);
         let pc = ParsedConstraint {
             raw: constraint.to_string(),
@@ -866,5 +890,26 @@ mod tests {
         assert!(dev < 0, "dev < alpha failed: got {}", dev);
         assert!(alpha < 0, "alpha < beta failed: got {}", alpha);
         assert!(beta < 0, "beta < rc failed: got {}", beta);
+    }
+
+    #[test]
+    fn test_cargo_ranges_reject_component_overflow() {
+        let max = ParsedVersion {
+            major: u32::MAX,
+            minor: 0,
+            patch: 0,
+            pre_release: Vec::new(),
+            build: String::new(),
+            raw: String::new(),
+        };
+        assert!(cargo_caret_range(&max).is_none());
+
+        let max_minor = ParsedVersion {
+            minor: u32::MAX,
+            patch: 1,
+            ..max.clone()
+        };
+        assert!(cargo_tilde_range(&max_minor).is_none());
+        assert!(!check_version_constraint("4294967295.0.0", "^4294967295.0.0", "cargo").satisfies);
     }
 }

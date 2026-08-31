@@ -193,8 +193,8 @@ fn test_replace_check_newline_style_none() {
     )
     .unwrap();
     assert_eq!(
-        result.newline_style_before, "LF",
-        "Text with no newlines should report newline_style_before as 'LF' (matching Python)"
+        result.newline_style_before, "none",
+        "Text with no newlines should report newline_style_before as 'none'"
     );
 }
 

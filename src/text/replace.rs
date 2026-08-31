@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
+use unicode_segmentation::UnicodeSegmentation;
 
 const MAX_TEXT_LENGTH: usize = 100_000;
 const MAX_PREVIEW_CHARS: usize = 2000;
@@ -77,6 +78,63 @@ fn collapse_whitespace(s: &str) -> String {
     WHITESPACE_RE.replace_all(s, " ").to_string()
 }
 
+struct NormalizedChunk {
+    normalized_end: usize,
+    original_start: usize,
+    original_end: usize,
+}
+
+fn normalize_with_map(text: &str, mode: &str) -> (String, Vec<NormalizedChunk>) {
+    let graphemes: Vec<&str> = text.graphemes(true).collect();
+    let mut normalized = String::new();
+    let mut chunks = Vec::new();
+    let mut original_index = 0;
+    let mut grapheme_index = 0;
+
+    while grapheme_index < graphemes.len() {
+        let original_start = original_index;
+        let is_whitespace = mode == "whitespace_collapse"
+            && graphemes[grapheme_index]
+                .chars()
+                .all(|ch| ch.is_whitespace());
+        if is_whitespace {
+            while grapheme_index < graphemes.len()
+                && graphemes[grapheme_index]
+                    .chars()
+                    .all(|ch| ch.is_whitespace())
+            {
+                original_index += graphemes[grapheme_index].chars().count();
+                grapheme_index += 1;
+            }
+            normalized.push(' ');
+        } else {
+            normalized.push_str(&normalize_for_match(graphemes[grapheme_index], mode));
+            original_index += graphemes[grapheme_index].chars().count();
+            grapheme_index += 1;
+        }
+        chunks.push(NormalizedChunk {
+            normalized_end: normalized.len(),
+            original_start,
+            original_end: original_index,
+        });
+    }
+
+    debug_assert_eq!(normalized, normalize_for_match(text, mode));
+    (normalized, chunks)
+}
+
+fn original_index_for_normalized_boundary(
+    chunks: &[NormalizedChunk],
+    normalized_offset: usize,
+) -> usize {
+    let chunk_index = chunks.partition_point(|chunk| chunk.normalized_end <= normalized_offset);
+    chunks
+        .get(chunk_index)
+        .map(|chunk| chunk.original_start)
+        .or_else(|| chunks.last().map(|chunk| chunk.original_end))
+        .unwrap_or(0)
+}
+
 fn detect_newline_style(text: &str) -> String {
     let crlf_count = text.matches("\r\n").count();
     let lf_only = text.matches('\n').count() - crlf_count;
@@ -95,7 +153,7 @@ fn detect_newline_style(text: &str) -> String {
     } else if has_cr {
         "CR".to_string()
     } else {
-        "LF".to_string()
+        "none".to_string()
     }
 }
 
@@ -297,16 +355,20 @@ pub fn text_replace_check_with_options(
 
     let mut findings: Vec<Finding> = Vec::new();
 
-    let text_norm = normalize_for_match(text, mode);
+    let (text_norm, normalized_chunks) = normalize_with_map(text, mode);
     let old_norm = normalize_for_match(old, mode);
 
     let old_chars = old.chars().count();
 
     let mut positions: Vec<PositionInfo> = Vec::new();
+    let mut match_ranges: Vec<(usize, usize)> = Vec::new();
     let mut search_start = 0;
 
     if old.is_empty() {
-        positions.extend((0..=text.chars().count()).map(|cp_idx| build_position(text, cp_idx, 0)));
+        for cp_idx in 0..=text.chars().count() {
+            positions.push(build_position(text, cp_idx, 0));
+            match_ranges.push((cp_idx, cp_idx));
+        }
     } else if mode == "exact" {
         // Search text directly for correct positions.
         while search_start <= text.len() {
@@ -315,20 +377,25 @@ pub fn text_replace_check_with_options(
                 let byte_idx = search_from + idx;
                 let cp_idx = text[..byte_idx].chars().count();
                 positions.push(build_position(text, cp_idx, old_chars));
+                match_ranges.push((cp_idx, cp_idx + old_chars));
                 search_start = byte_idx + old.len();
             } else {
                 break;
             }
         }
     } else {
-        // Search text_norm to preserve normalized matching, then map positions
-        // back to text via codepoint index.
+        // Search text_norm to preserve normalized matching, then map each hit
+        // back to the original grapheme/codepoint span that produced it.
         while search_start <= text_norm.len() {
             let search_from = search_start.min(text_norm.len());
             if let Some(idx) = text_norm[search_from..].find(&old_norm) {
                 let byte_idx = search_from + idx;
-                let cp_idx = text_norm[..byte_idx].chars().count();
-                positions.push(build_position(text, cp_idx, old_chars));
+                let normalized_end = byte_idx + old_norm.len();
+                let cp_start = original_index_for_normalized_boundary(&normalized_chunks, byte_idx);
+                let cp_end =
+                    original_index_for_normalized_boundary(&normalized_chunks, normalized_end);
+                positions.push(build_position(text, cp_start, cp_end - cp_start));
+                match_ranges.push((cp_start, cp_end));
                 search_start = byte_idx + old_norm.len();
             } else {
                 break;
@@ -380,14 +447,13 @@ pub fn text_replace_check_with_options(
     }
 
     let replaced_text = if would_change {
-        let old_chars = old.chars().count();
         let mut parts: Vec<String> = Vec::new();
         let mut last_cp = 0;
-        for pos in &positions {
+        for (pos, &(_, match_end)) in positions.iter().zip(match_ranges.iter()) {
             let mid_text = get_text_at_codepoint_range(text, last_cp, pos.codepoint_index);
             parts.push(mid_text);
             parts.push(new.to_string());
-            last_cp = pos.codepoint_index + old_chars;
+            last_cp = match_end;
         }
         parts.push(get_text_at_codepoint_range(
             text,
@@ -472,7 +538,7 @@ mod tests {
         assert_eq!(result.match_count, 1);
         assert!(result.unique_match);
         assert!(result.would_change);
-        assert_eq!(result.newline_style_before, "LF");
+        assert_eq!(result.newline_style_before, "none");
     }
 
     #[test]
@@ -561,6 +627,20 @@ mod tests {
         .unwrap();
         assert_eq!(result.match_count, 1);
         assert!(result.would_change);
+    }
+
+    #[test]
+    fn test_text_replace_check_nfkc_expansion_positions_and_replacement() {
+        let result = text_replace_check(
+            "aﬁb", "fi", "X", "nfkc", None, false, "preserve", true, 2000,
+        )
+        .unwrap();
+
+        assert_eq!(result.match_count, 1);
+        assert_eq!(result.positions[0].codepoint_index, 1);
+        assert_eq!(result.positions[0].byte_start, 1);
+        assert_eq!(result.positions[0].byte_end, 4);
+        assert_eq!(result.preview_after, "aXb");
     }
 
     #[test]

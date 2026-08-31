@@ -265,3 +265,27 @@ fn test_text_window_unicode_line_separator_is_a_line_break() {
     assert_eq!(result.line_text, "second");
     assert!(result.warnings.is_empty());
 }
+
+#[test]
+fn test_text_window_before_order_is_chronological() {
+    let pos = TextWindowPosition {
+        kind: "line_column".to_string(),
+        value: Some(4),
+        byte_offset: None,
+        codepoint_index: None,
+        grapheme_index: None,
+        line: Some(4),
+        column: Some(1),
+        line_base: Some(1),
+        column_base: Some(1),
+    };
+    let result = text_window("a\nb\nc\nd\ne", &pos, 2, false);
+    assert_eq!(
+        result
+            .before
+            .iter()
+            .map(|line| line.line)
+            .collect::<Vec<_>>(),
+        vec![2, 3]
+    );
+}

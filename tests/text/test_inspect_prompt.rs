@@ -295,3 +295,12 @@ fn test_prompt_inspect_result_checks_run_sorted() {
     };
     assert_eq!(result.checks_run, sorted);
 }
+
+#[test]
+fn test_prompt_inspect_long_line_crlf_line_number() {
+    let text = format!("a\r\n{}", "x".repeat(1001));
+    let checks = vec!["long_minified_lines".to_string()];
+    let result = prompt_input_inspect(&text, Some(&checks), None);
+    assert_eq!(result.findings.len(), 1);
+    assert_eq!(result.findings[0]["span"]["line"], 2);
+}

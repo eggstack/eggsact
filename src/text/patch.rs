@@ -531,6 +531,14 @@ pub fn patch_apply_check(
     let mut hunks_failed = 0;
 
     for (hunk_idx, hunk) in all_hunks.iter().enumerate() {
+        let old_start = hunk.old_start.saturating_sub(1);
+        let actual_end = old_start.saturating_add(hunk.old_count);
+        if !strict && old_start <= current_lines.len() && actual_end > current_lines.len() {
+            findings.push(format!(
+                "Hunk {} context truncated at end of original text",
+                hunk_idx
+            ));
+        }
         let (result, error) = apply_hunk(&current_lines, hunk, strict);
         if let Some(new_lines) = result {
             current_lines = new_lines;

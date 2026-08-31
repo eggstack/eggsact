@@ -126,7 +126,9 @@ pub fn text_transform(text: &str, operations: &[String]) -> TextTransformResult 
             }
             "strip_final_newline" => {
                 if current_text.ends_with('\n') {
-                    current_text.pop();
+                    while current_text.ends_with('\n') {
+                        current_text.pop();
+                    }
                     ops_applied.push("strip_final_newline".to_string());
                 }
             }

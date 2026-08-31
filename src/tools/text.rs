@@ -384,19 +384,29 @@ fn _pi_find_base64_like_blobs(text: &str) -> Vec<serde_json::Value> {
 
 fn _pi_find_long_minified_lines(text: &str) -> Vec<serde_json::Value> {
     let mut findings = Vec::new();
-    let mut offset = 0usize;
-    for line in text.split(['\n', '\r']) {
+    let mut char_offset = 0usize;
+    let mut byte_offset = 0usize;
+    for (line_idx, line) in text.lines().enumerate() {
         let line_len = line.chars().count();
         if line_len > 1000 {
             findings.push(serde_json::json!({
                 "code": "LONG_LINE",
                 "severity": "info",
-                "message": format!("Very long line ({} chars) at position {}", line_len, offset),
-                "span": {"char_start": offset, "char_end": offset + line_len},
+                "message": format!("Very long line {} ({} chars)", line_idx + 1, line_len),
+                "span": {"char_start": char_offset, "char_end": char_offset + line_len},
                 "details": {"length": line_len},
             }));
         }
-        offset += line.chars().count() + 1;
+
+        byte_offset += line.len();
+        char_offset += line_len;
+        if text[byte_offset..].starts_with("\r\n") {
+            byte_offset += 2;
+            char_offset += 2;
+        } else if text[byte_offset..].starts_with('\n') {
+            byte_offset += 1;
+            char_offset += 1;
+        }
     }
     findings
 }

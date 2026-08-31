@@ -267,7 +267,7 @@ Apply a chain of named operations. Operations are case-insensitive and applied s
 | `trim_lines` | Strip leading/trailing whitespace per line |
 | `normalize_newlines_lf` / `normalize_newlines` | Convert `\r\n` and `\r` to `\n` |
 | `ensure_final_newline` | Add trailing `\n` if missing |
-| `strip_final_newline` | Remove trailing `\n` if present |
+| `strip_final_newline` | Remove all trailing `\n` characters if present |
 | `remove_zero_width` | Remove ZWSP, ZWNJ, ZWJ, WORD JOINER |
 | `remove_bidi_controls` / `remove_bidi` | Remove LRE, RLE, PDF, LRO, RLO, LRI, RLI, FSI, PDI |
 | `visible_repr` | Replace whitespace/control chars with visible Unicode symbols (␠, ␉, ␊, ␍) and bracketed labels (`[ZWSP]`) |
@@ -827,6 +827,8 @@ Returns `PatchApplyCheckResult`:
 - `affected_line_ranges`: line ranges modified
 - `result_text` and `result_fingerprint` (optional)
 - Newline style before/after
+- In lenient mode, a hunk whose context extends past EOF is applied to the
+  available lines and reports a context-truncation finding.
 
 ### `patch_summary(patch_text)`
 
@@ -846,6 +848,9 @@ Extract and compare text by line ranges.
 ### `line_range_extract(text, start_line, end_line, line_base, include_line_numbers, include_fingerprint)`
 
 Extracts a slice of lines. Supports `line_base` 0 or 1. Returns extracted text, per-line data, byte/char offsets, newline style, and SHA-256 fingerprint.
+
+`line_count_total` includes the empty cursor line after a trailing newline;
+for example, `"a\n"` has two addressable lines, with line 2 containing `""`.
 
 ### `line_range_compare(left_text, right_text, start_line, end_line, line_base, comparison_mode)`
 

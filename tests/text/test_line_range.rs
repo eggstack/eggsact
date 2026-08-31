@@ -54,6 +54,14 @@ fn test_line_range_extract_empty_text() {
 }
 
 #[test]
+fn test_line_range_extract_trailing_newline_has_cursor_line() {
+    let result = line_range_extract("a\n", 2, 2, 1, false, false).unwrap();
+    assert_eq!(result.line_count_total, 2);
+    assert!(result.valid_range);
+    assert_eq!(result.text, "");
+}
+
+#[test]
 fn test_line_range_extract_with_fingerprint() {
     let text = "line1\nline2\nline3";
     let result = line_range_extract(text, 1, 3, 1, false, true).unwrap();

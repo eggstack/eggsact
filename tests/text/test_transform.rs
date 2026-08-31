@@ -148,6 +148,21 @@ fn test_text_transform_normalize_nfc() {
     assert!(!result.text.is_empty());
 }
 
+#[test]
+fn test_text_transform_strip_all_final_newlines() {
+    let result = text_transform("hello\n\n", &["strip_final_newline".to_string()]);
+    assert_eq!(result.text, "hello");
+
+    let result = text_transform(
+        "hello\n\n",
+        &[
+            "strip_final_newline".to_string(),
+            "ensure_final_newline".to_string(),
+        ],
+    );
+    assert_eq!(result.text, "hello\n");
+}
+
 // ─── escape_text ─────────────────────────────────────────────────────
 
 #[test]

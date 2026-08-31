@@ -69,6 +69,16 @@ fn test_patch_apply_check_empty_patch() {
 }
 
 #[test]
+fn test_patch_apply_check_reports_lenient_eof_truncation() {
+    let patch = "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,2 @@\n a\n-b\n-c\n";
+    let result = patch_apply_check("a\nb\n", patch, false, false, false);
+    assert!(result
+        .findings
+        .iter()
+        .any(|finding| finding.contains("context truncated at end")));
+}
+
+#[test]
 fn test_patch_apply_check_result_text() {
     let original = "line1\nold\nline3\n";
     let patch = "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n";

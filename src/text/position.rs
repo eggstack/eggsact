@@ -688,6 +688,7 @@ pub fn text_window(
             }
         })
         .collect();
+    let before: Vec<LineInfo> = before.into_iter().rev().collect();
 
     let after: Vec<LineInfo> = (0..context_lines)
         .filter_map(|offset| {
