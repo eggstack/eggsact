@@ -34,11 +34,11 @@ pub fn dotenv_validate(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("warn");
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("dotenv_validate"),
         );
@@ -156,11 +156,11 @@ pub fn ini_validate(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("warn");
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("ini_validate"),
         );
@@ -218,11 +218,11 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("config_preflight"),
         );
@@ -674,11 +674,11 @@ pub fn toml_shape_tool(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("normal");
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("toml_shape"),
         );

@@ -20,21 +20,21 @@ pub fn list_compare(args: &Value) -> ToolResponse {
         );
     }
 
-    // Validate all elements are strings
-    let mut total_chars = 0usize;
+    // Validate all elements are strings — byte budget (MAX_TEXT_LENGTH is byte-based)
+    let mut total_bytes = 0usize;
     let mut errors: Vec<String> = Vec::new();
     for (i, item) in a.iter().enumerate() {
         if !item.is_string() {
             errors.push(format!("[{}] is {}, not string", i, json_type_name(item)));
         } else {
-            total_chars += item.as_str().unwrap_or("").chars().count();
+            total_bytes += item.as_str().unwrap_or("").len();
         }
     }
     for (i, item) in b.iter().enumerate() {
         if !item.is_string() {
             errors.push(format!("[{}] is {}, not string", i, json_type_name(item)));
         } else {
-            total_chars += item.as_str().unwrap_or("").chars().count();
+            total_bytes += item.as_str().unwrap_or("").len();
         }
     }
     if !errors.is_empty() {
@@ -47,15 +47,15 @@ pub fn list_compare(args: &Value) -> ToolResponse {
         );
     }
 
-    let max_total_chars = MAX_TEXT_LENGTH * 2;
-    if total_chars > max_total_chars {
+    let max_total_bytes = MAX_TEXT_LENGTH * 2;
+    if total_bytes > max_total_bytes {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Total string length {} exceeds maximum", total_chars),
+            &format!("Total string length {} bytes exceeds maximum", total_bytes),
             Some(vec![format!(
-                "Maximum combined string length is {} characters",
-                max_total_chars
+                "Maximum combined string length is {} bytes",
+                max_total_bytes
             )]),
             Some("list_compare"),
         );
@@ -456,10 +456,7 @@ pub fn list_dedupe(args: &Value) -> ToolResponse {
     let oversized_indices: Vec<usize> = items
         .iter()
         .enumerate()
-        .filter(|(_, v)| {
-            v.as_str()
-                .is_some_and(|s| s.chars().count() > MAX_TEXT_LENGTH)
-        })
+        .filter(|(_, v)| v.as_str().is_some_and(|s| s.len() > MAX_TEXT_LENGTH))
         .map(|(i, _)| i)
         .collect();
     if !oversized_indices.is_empty() {
@@ -591,10 +588,7 @@ pub fn list_sort(args: &Value) -> ToolResponse {
     let oversized_indices: Vec<usize> = items
         .iter()
         .enumerate()
-        .filter(|(_, v)| {
-            v.as_str()
-                .is_some_and(|s| s.chars().count() > MAX_TEXT_LENGTH)
-        })
+        .filter(|(_, v)| v.as_str().is_some_and(|s| s.len() > MAX_TEXT_LENGTH))
         .map(|(i, _)| i)
         .collect();
     if !oversized_indices.is_empty() {

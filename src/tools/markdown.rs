@@ -33,11 +33,11 @@ pub fn markdown_structure(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("markdown_structure"),
         );
@@ -85,11 +85,11 @@ pub fn code_fence_extract(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("code_fence_extract"),
         );

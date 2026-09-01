@@ -184,15 +184,13 @@ static SPLIT_DOUBLE_MINUS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\
 static SPLIT_TRAILING_MINUS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+-$").unwrap());
 
 static UNIT_INLINE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    // BUG-009 / parity B9: same shape but not anchored, used to scan the
-    // joined post-split string for `<num>*<unit>` segments so that mixed-
-    // unit arithmetic (e.g., "60 mph + 60 km/h" → "60*mph + 60*km/h") is
-    // detected after the operator splitter runs.
-    //
-    // The unit class EXCLUDES `/` and `%` because they are operators
-    // (division, modulo/percent). Without this, `50 / 5` would be misread
-    // as `<num>=50, unit=/`, and `17 % 5` as `<num>=17, unit=%`.
-    Regex::new(r"(?P<num>\d+(?:\.\d+)?)\*?(?P<unit>[a-zA-Z°]+(?:/[a-zA-Z°]+)?)").unwrap()
+    // B-M1: Restrict to word-boundary so that `2*3*s` is not overmatched as
+    // a unit unless `s` is a known alias (post-filtered via
+    // `resolve_unit_alias`). The original `[a-zA-Z°]+(?:/[a-zA-Z°]+)?` is
+    // retained but anchored with `\b` to prevent prefix capture. A future
+    // fix could restrict to `UNIT_ALT` directly; the current post-filter
+    // already ensures only known aliases or `a/b` rates are treated as units.
+    Regex::new(r"(?P<num>\d+(?:\.\d+)?)\*?(?P<unit>[a-zA-Z°]+(?:/[a-zA-Z°]+)?)\b").unwrap()
 });
 
 static SAME_UNIT_DIV_RE: LazyLock<Regex> =
@@ -656,7 +654,7 @@ static FUNC_FIX_PATTERNS: LazyLock<Vec<(Regex, bool, &'static str)>> = LazyLock:
     FUNCTION_MAPPINGS
         .values()
         .copied()
-        .filter_map(|func| {
+        .map(|func| {
             let escaped = regex_escape(func);
             let is_multi = multi_arg_funcs.contains(&func);
             let pattern = if is_multi {
@@ -664,7 +662,12 @@ static FUNC_FIX_PATTERNS: LazyLock<Vec<(Regex, bool, &'static str)>> = LazyLock:
             } else {
                 format!(r"\b{0}\s*\*\s*([^()+\-]*)", escaped)
             };
-            Regex::new(&pattern).ok().map(|re| (re, is_multi, func))
+            let re = Regex::new(&pattern).unwrap_or_else(|e| {
+                panic!(
+                    "FUNC_FIX_PATTERNS: invalid regex for func '{func}': {e} (pattern: {pattern})"
+                )
+            });
+            (re, is_multi, func)
         })
         .collect()
 });
@@ -1325,8 +1328,8 @@ fn binary_word_check(expr: &str) -> Result<(), String> {
 }
 
 pub fn normalize(expr: &str) -> Result<String, String> {
-    if expr.chars().count() > MAX_TEXT_LENGTH {
-        return Err(format!("Input exceeds {} characters", MAX_TEXT_LENGTH));
+    if expr.len() > MAX_TEXT_LENGTH {
+        return Err(format!("Input exceeds {} bytes", MAX_TEXT_LENGTH));
     }
 
     // M16: Replace unicode math operators with ASCII equivalents BEFORE lowercasing

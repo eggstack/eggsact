@@ -376,11 +376,11 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("skip");
 
-    if original.chars().count() > MAX_TEXT_LENGTH {
+    if original.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Original text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Original text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("edit_preflight"),
         );
@@ -1182,7 +1182,7 @@ pub fn patch_contract_check(args: &Value) -> ToolResponse {
 
     let workspace_root = args.get("workspace_root").and_then(|v| v.as_str());
 
-    if patch_text.chars().count() > MAX_TEXT_LENGTH {
+    if patch_text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,

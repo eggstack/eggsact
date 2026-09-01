@@ -38,25 +38,13 @@ pub(crate) fn split_lines(text: &str) -> Vec<String> {
     let mut current = String::new();
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
-        match c {
-            '\n' => {
-                result.push(std::mem::take(&mut current));
+        if crate::text::primitives::is_line_break(c) {
+            if c == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
             }
-            '\r' => {
-                if chars.peek() == Some(&'\n') {
-                    chars.next();
-                }
-                result.push(std::mem::take(&mut current));
-            }
-            '\x0b' | '\x0c' | '\x1c' | '\x1d' | '\x1e' => {
-                result.push(std::mem::take(&mut current));
-            }
-            '\u{0085}' | '\u{2028}' | '\u{2029}' => {
-                result.push(std::mem::take(&mut current));
-            }
-            _ => {
-                current.push(c);
-            }
+            result.push(std::mem::take(&mut current));
+        } else {
+            current.push(c);
         }
     }
     result.push(current);

@@ -724,20 +724,20 @@ pub fn dependency_edit_preflight(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    if old_text.chars().count() > MAX_TEXT_LENGTH {
+    if old_text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("old_text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("old_text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("dependency_edit_preflight"),
         );
     }
-    if new_text.chars().count() > MAX_TEXT_LENGTH {
+    if new_text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("new_text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("new_text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("dependency_edit_preflight"),
         );

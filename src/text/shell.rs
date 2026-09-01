@@ -278,7 +278,9 @@ fn posix_shell_split(command: &str) -> (Vec<String>, bool, Option<String>) {
                             i += 2;
                             continue;
                         } else {
-                            current.push('\\');
+                            // POSIX: inside double quotes, backslash before
+                            // non-special characters loses the backslash
+                            // (e.g. "\a" -> "a"). Preserve only the char.
                             current.push(next);
                             token_started = true;
                             i += 2;

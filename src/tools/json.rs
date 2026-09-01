@@ -75,11 +75,11 @@ pub fn json_extract(args: &Value) -> ToolResponse {
         );
     }
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("json_extract"),
         );
@@ -97,8 +97,8 @@ pub fn json_extract(args: &Value) -> ToolResponse {
 
     if max_output_chars > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
-            "invalid_arguments",
-            machine_codes::INVALID_ARGUMENTS,
+            "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "max_output_chars {} exceeds {}",
                 max_output_chars, MAX_TEXT_LENGTH
@@ -416,8 +416,8 @@ pub fn json_compare(args: &Value) -> ToolResponse {
     }
     if max_diffs > 10_000 {
         return ToolResponse::error_with_code(
-            "invalid_arguments",
-            machine_codes::INVALID_ARGUMENTS,
+            "input_too_large",
+            machine_codes::INPUT_TOO_LARGE,
             &format!("max_diffs {} exceeds 10000", max_diffs),
             None,
             Some("json_compare"),
@@ -488,15 +488,9 @@ pub fn json_compare(args: &Value) -> ToolResponse {
 
     let (parsed_a, parsed_b) = match (parsed_a, parsed_b) {
         (Ok(parsed_a), Ok(parsed_b)) => (parsed_a, parsed_b),
-        _ => {
-            return ToolResponse::error_with_code(
-                "parse_error",
-                machine_codes::JSON_INVALID,
-                "Invalid JSON input",
-                None,
-                Some("json_compare"),
-            )
-        }
+        // Both Err cases already returned via the `!valid_a || !valid_b` branch
+        // above; remaining Err arms are unreachable.
+        _ => unreachable!("json_compare: parse results validated above are unexpectedly Err"),
     };
 
     let options = JsonCompareOptions {
@@ -606,11 +600,11 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("json_canonicalize"),
         );
@@ -828,11 +822,11 @@ pub fn json_query(args: &Value) -> ToolResponse {
     };
     let pointer = args.get("pointer").and_then(|v| v.as_str()).unwrap_or("");
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("json_query"),
         );
@@ -997,11 +991,11 @@ pub fn json_shape_tool(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_u64())
         .unwrap_or(5) as usize;
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("json_shape"),
         );
@@ -1138,20 +1132,20 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
         .unwrap_or(false);
     let max_diffs = args.get("max_diffs").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
-    if a.chars().count() > MAX_TEXT_LENGTH {
+    if a.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Input 'a' exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Input 'a' exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("structured_data_compare"),
         );
     }
-    if b.chars().count() > MAX_TEXT_LENGTH {
+    if b.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Input 'b' exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Input 'b' exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("structured_data_compare"),
         );

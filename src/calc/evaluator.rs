@@ -267,6 +267,12 @@ fn check_function_allowed_with(name: &str, ctx: &EvalContext) -> Result<(), Eval
 }
 
 /// Context-aware PRNG random using xorshift64.
+///
+/// Produces uniform `[0,1)` via `x as f64 / u64::MAX as f64`. `u64::MAX as f64`
+/// rounds to `2^64` (since `2^64-1` is not exactly representable), so the
+/// denominator is `2^64` and range is `[0, (2^64-1)/2^64)`. Equivalent to
+/// `x as f64 / 18446744073709551616.0`; bias is negligible and documented as
+/// intentional (see B-M4).
 fn prng_random_with(ctx: &mut EvalContext) -> f64 {
     xorshift64(&mut ctx.prng_state) as f64 / u64::MAX as f64
 }
@@ -290,8 +296,8 @@ fn prng_randn_with(ctx: &mut EvalContext) -> f64 {
     z0
 }
 
-/// Maximum number of user variables (cap to prevent unbounded growth).
-const MAX_USER_VARIABLES_CTX: usize = 1000;
+/// Maximum number of user variables for context-aware path (unified with legacy `MAX_USER_VARIABLES`).
+const MAX_USER_VARIABLES_CTX: usize = MAX_USER_VARIABLES;
 
 /// Evaluate a mathematical expression with explicit per-evaluation context.
 ///
@@ -300,8 +306,8 @@ const MAX_USER_VARIABLES_CTX: usize = 1000;
 /// and function permission checks.
 pub fn evaluate_with_context(expr: &str, ctx: &mut EvalContext) -> Result<EvaluateResult, String> {
     let expr = expr.trim();
-    if expr.chars().count() > MAX_INPUT_LENGTH {
-        return Err(format!("Input exceeds {} characters", MAX_INPUT_LENGTH));
+    if expr.len() > MAX_INPUT_LENGTH {
+        return Err(format!("Input exceeds {} bytes", MAX_INPUT_LENGTH));
     }
     match parse_expression_with(expr, &mut 0, ctx) {
         Ok(result) => format_result(result),
@@ -320,11 +326,16 @@ pub fn evaluate_with_context(expr: &str, ctx: &mut EvalContext) -> Result<Evalua
 /// Evaluate a mathematical expression and return the result as a string with type info.
 ///
 /// Uses global statics for PRNG state, memory registers, and user variables.
+/// This function is **not concurrency-safe**: concurrent callers share the
+/// same PRNG and memory registers via `MEMORY_REGISTERS`/`USER_VARIABLES`/
+/// `PRNG_STATE`. The MCP server path uses `evaluate_with_context()` with an
+/// isolated `EvalContext::mcp_mode()` and is not affected. For in-process
+/// concurrent use, prefer `evaluate_with_context()`.
 /// For per-evaluation isolated state, use [`evaluate_with_context`].
 pub fn evaluate(expr: &str) -> Result<EvaluateResult, String> {
     let expr = expr.trim();
-    if expr.chars().count() > MAX_INPUT_LENGTH {
-        return Err(format!("Input exceeds {} characters", MAX_INPUT_LENGTH));
+    if expr.len() > MAX_INPUT_LENGTH {
+        return Err(format!("Input exceeds {} bytes", MAX_INPUT_LENGTH));
     }
     match parse_expression(expr, &mut 0) {
         Ok(result) => format_result(result),
@@ -1434,6 +1445,12 @@ fn parse_args_with(
 fn banker_round(x: f64) -> f64 {
     x.round_ties_even()
 }
+
+// B-M3: `evaluate_function` and `evaluate_function_with` are ~800-line duplicated
+// twins differing only by `*static Mutex` vs `&mut EvalContext` plumbing.
+// A fix to one must be mirrored to the other. Before any further evaluator
+// work, extract a `trait EvalState` or `macro_rules!` to collapse the
+// duplication (see bugs.md B-M3 / O-2). This comment tracks the hazard.
 
 fn evaluate_function(
     name: &str,

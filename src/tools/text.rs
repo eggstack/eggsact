@@ -550,11 +550,11 @@ pub fn text_measure(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("normal");
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("text_measure"),
         );
@@ -996,7 +996,7 @@ pub fn text_diff_explain(args: &Value) -> ToolResponse {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Input exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Input exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("text_diff_explain"),
         );
@@ -1280,7 +1280,7 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("text_inspect"),
         );
@@ -1810,11 +1810,11 @@ pub fn text_count(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("raw");
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("text_count"),
         );
@@ -1934,7 +1934,7 @@ pub fn text_truncate(args: &Value) -> ToolResponse {
         }
     };
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -2006,11 +2006,11 @@ pub fn text_fingerprint_tool(args: &Value) -> ToolResponse {
             )
         }
     };
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("text_fingerprint"),
         );
@@ -2210,7 +2210,7 @@ pub fn text_hash(args: &Value) -> ToolResponse {
         );
     }
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -2330,7 +2330,7 @@ pub fn text_position(args: &Value) -> ToolResponse {
         );
     }
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -2465,7 +2465,7 @@ pub fn text_window(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -2679,7 +2679,7 @@ pub fn text_transform(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("normal");
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -2874,31 +2874,31 @@ pub fn text_replace_check_tool(args: &Value) -> ToolResponse {
         );
     }
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("text_replace_check"),
         );
     }
 
-    if old.chars().count() > MAX_TEXT_LENGTH {
+    if old.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("old exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("old exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("text_replace_check"),
         );
     }
 
-    if new.chars().count() > MAX_TEXT_LENGTH {
+    if new.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("new exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("new exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("text_replace_check"),
         );
@@ -3003,11 +3003,11 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("summary");
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("text_security_inspect"),
         );
@@ -3446,7 +3446,7 @@ pub fn escape_text(args: &Value) -> ToolResponse {
         );
     }
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -3547,7 +3547,7 @@ pub fn unescape_text(args: &Value) -> ToolResponse {
         );
     }
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -3832,7 +3832,7 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
         }
     };
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,

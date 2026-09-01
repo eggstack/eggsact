@@ -25,11 +25,11 @@ pub fn shell_split(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    if command.chars().count() > MAX_TEXT_LENGTH {
+    if command.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Command exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Command exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("shell_split"),
         );
@@ -119,10 +119,7 @@ pub fn shell_quote_join(args: &Value) -> ToolResponse {
     let oversized_indices: Vec<usize> = argv_raw
         .iter()
         .enumerate()
-        .filter(|(_, v)| {
-            v.as_str()
-                .is_some_and(|s| s.chars().count() > MAX_TEXT_LENGTH)
-        })
+        .filter(|(_, v)| v.as_str().is_some_and(|s| s.len() > MAX_TEXT_LENGTH))
         .map(|(i, _)| i)
         .collect();
     if !oversized_indices.is_empty() {
@@ -203,10 +200,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
             let oversized: Vec<usize> = arr
                 .iter()
                 .enumerate()
-                .filter(|(_, v)| {
-                    v.as_str()
-                        .is_some_and(|s| s.chars().count() > MAX_TEXT_LENGTH)
-                })
+                .filter(|(_, v)| v.as_str().is_some_and(|s| s.len() > MAX_TEXT_LENGTH))
                 .map(|(i, _)| i)
                 .collect();
             if !oversized.is_empty() {
@@ -261,10 +255,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
             let oversized: Vec<usize> = arr
                 .iter()
                 .enumerate()
-                .filter(|(_, v)| {
-                    v.as_str()
-                        .is_some_and(|s| s.chars().count() > MAX_TEXT_LENGTH)
-                })
+                .filter(|(_, v)| v.as_str().is_some_and(|s| s.len() > MAX_TEXT_LENGTH))
                 .map(|(i, _)| i)
                 .collect();
             if !oversized.is_empty() {
@@ -336,7 +327,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
     }
 
     if let Some(cmd) = left_command {
-        if cmd.chars().count() > MAX_TEXT_LENGTH {
+        if cmd.len() > MAX_TEXT_LENGTH {
             return ToolResponse::error_with_code(
                 "input_too_large",
                 machine_codes::INPUT_TOO_LARGE,
@@ -347,7 +338,7 @@ pub fn argv_compare(args: &Value) -> ToolResponse {
         }
     }
     if let Some(cmd) = right_command {
-        if cmd.chars().count() > MAX_TEXT_LENGTH {
+        if cmd.len() > MAX_TEXT_LENGTH {
             return ToolResponse::error_with_code(
                 "input_too_large",
                 machine_codes::INPUT_TOO_LARGE,
@@ -815,16 +806,41 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         .get("policy")
         .and_then(|v| v.as_str())
         .unwrap_or("default");
-    let _working_directory = args.get("working_directory").and_then(|v| v.as_str());
+    let working_directory = args.get("working_directory").and_then(|v| v.as_str());
 
-    if command.chars().count() > MAX_TEXT_LENGTH {
+    if command.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Command exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Command exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("command_preflight"),
         );
+    }
+
+    if let Some(wd) = working_directory {
+        if wd.len() > MAX_TEXT_LENGTH {
+            return ToolResponse::error_with_code(
+                "input_too_large",
+                machine_codes::INPUT_TOO_LARGE,
+                &format!(
+                    "working_directory length {} bytes exceeds {}",
+                    wd.len(),
+                    MAX_TEXT_LENGTH
+                ),
+                None,
+                Some("command_preflight"),
+            );
+        }
+        if wd.contains('\0') {
+            return ToolResponse::error_with_code(
+                "invalid_arguments",
+                machine_codes::INVALID_ARGUMENTS,
+                "working_directory must not contain null bytes",
+                None,
+                Some("command_preflight"),
+            );
+        }
     }
 
     let valid_platforms = ["posix", "windows", "auto"];
@@ -856,11 +872,11 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         .and_then(|pc| pc.get("max_command_length").and_then(|v| v.as_u64()))
         .unwrap_or(MAX_TEXT_LENGTH as u64);
 
-    if command.chars().count() > max_command_length as usize {
+    if command.len() > max_command_length as usize {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Command exceeds {} chars", max_command_length),
+            &format!("Command exceeds {} bytes", max_command_length),
             None,
             Some("command_preflight"),
         );
@@ -1242,6 +1258,19 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         }
     }
 
+    // Handle working_directory traversal hint so it appears in findings/summary.
+    if let Some(wd) = working_directory {
+        if wd.contains("..") {
+            findings.push(serde_json::json!({
+                "machine_code": machine_codes::PATH_HAS_TRAVERSAL,
+                "severity": "low",
+                "message": format!("working_directory '{}' contains '..' traversal", wd),
+                "disposition": "informational"
+            }));
+            code_list.push(machine_codes::PATH_HAS_TRAVERSAL.to_string());
+        }
+    }
+
     // 8. Determine verdict based on findings severity
     let has_critical = findings
         .iter()
@@ -1300,7 +1329,7 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
         "machine_code": primary_code,
         "summary": summary,
     });
-    if let Some(wd) = _working_directory {
+    if let Some(wd) = working_directory {
         result["working_directory"] = serde_json::json!(wd);
     }
     if !subresults.is_empty() {

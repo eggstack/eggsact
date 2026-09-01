@@ -445,14 +445,14 @@ pub fn regex_finditer_tool(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    let char_count = text.chars().count();
-    if char_count > MAX_TEXT_LENGTH {
+    let byte_len = text.len();
+    if byte_len > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             Some(vec![format!(
-                "Maximum input length is {} characters",
+                "Maximum input length is {} bytes",
                 MAX_TEXT_LENGTH
             )]),
             Some("regex_finditer"),

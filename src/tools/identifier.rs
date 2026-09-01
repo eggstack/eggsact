@@ -26,11 +26,11 @@ pub fn identifier_analyze(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("normal");
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("identifier_analyze"),
         );
@@ -168,7 +168,7 @@ pub fn identifier_inspect(args: &Value) -> ToolResponse {
     }
 
     for ident in &identifiers {
-        if ident.chars().count() > MAX_TEXT_LENGTH {
+        if ident.len() > MAX_TEXT_LENGTH {
             return ToolResponse::error_with_code(
                 "input_too_large",
                 machine_codes::INPUT_TOO_LARGE,
@@ -281,7 +281,7 @@ pub fn identifier_table_inspect(args: &Value) -> ToolResponse {
                     Some(obj) => match obj.get("name") {
                         Some(name_val) => match name_val.as_str() {
                             Some(name_str) => {
-                                if name_str.chars().count() > MAX_TEXT_LENGTH {
+                                if name_str.len() > MAX_TEXT_LENGTH {
                                     bad_entries.push(format!(
                                         "[{}] 'name' length {} exceeds MAX_TEXT_LENGTH {}",
                                         i,

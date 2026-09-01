@@ -30,11 +30,11 @@ pub fn unicode_policy_check(args: &Value) -> ToolResponse {
     };
     let normalization = args.get("normalization").and_then(|v| v.as_str());
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("unicode_policy_check"),
         );
@@ -119,11 +119,11 @@ pub fn canonicalize_text(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("canonicalize_text"),
         );

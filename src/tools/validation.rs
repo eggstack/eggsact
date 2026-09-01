@@ -206,11 +206,11 @@ pub fn validate_toml_tool(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("normal");
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Text exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Text exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("validate_toml"),
         );
@@ -328,7 +328,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
         );
     }
 
-    if text.chars().count() > MAX_TEXT_LENGTH {
+    if text.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,

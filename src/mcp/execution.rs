@@ -82,6 +82,12 @@ impl HandlerLifecycle {
                     "begin_running called in unexpected phase: {:?}",
                     other
                 );
+                if !cfg!(debug_assertions) {
+                    eprintln!(
+                        "warning: HandlerLifecycle::begin_running called in unexpected phase: {:?}",
+                        other
+                    );
+                }
                 BeginRunning::Error
             }
         }
@@ -117,22 +123,41 @@ impl HandlerLifecycle {
         match *phase {
             HandlerPhase::Running => {
                 *phase = HandlerPhase::Finished;
-                metrics
-                    .active_blocking_handlers
-                    .fetch_sub(1, Ordering::Relaxed);
+                // Saturating decrement to prevent underflow if gauges are
+                // somehow already zero (e.g., double completion bug in release).
+                if metrics.active_blocking_handlers.load(Ordering::Relaxed) > 0 {
+                    metrics
+                        .active_blocking_handlers
+                        .fetch_sub(1, Ordering::Relaxed);
+                } else {
+                    eprintln!(
+                        "warning: active_blocking_handlers underflow prevented in finish(Running)"
+                    );
+                }
             }
             HandlerPhase::TimedOutRunning => {
-                metrics.timed_out_handlers.fetch_sub(1, Ordering::Relaxed);
+                if metrics.timed_out_handlers.load(Ordering::Relaxed) > 0 {
+                    metrics.timed_out_handlers.fetch_sub(1, Ordering::Relaxed);
+                } else {
+                    eprintln!("warning: timed_out_handlers underflow prevented in finish(TimedOutRunning)");
+                }
                 *phase = HandlerPhase::Finished;
-                metrics
-                    .active_blocking_handlers
-                    .fetch_sub(1, Ordering::Relaxed);
+                if metrics.active_blocking_handlers.load(Ordering::Relaxed) > 0 {
+                    metrics
+                        .active_blocking_handlers
+                        .fetch_sub(1, Ordering::Relaxed);
+                } else {
+                    eprintln!("warning: active_blocking_handlers underflow prevented in finish(TimedOutRunning)");
+                }
             }
             HandlerPhase::TimedOutQueued => {
                 *phase = HandlerPhase::Finished;
             }
             HandlerPhase::Finished => {
                 debug_assert!(false, "double completion detected");
+                if !cfg!(debug_assertions) {
+                    eprintln!("warning: HandlerLifecycle::finish double completion detected");
+                }
             }
             HandlerPhase::Queued => {
                 *phase = HandlerPhase::Finished;
@@ -652,6 +677,13 @@ async fn execute_tool_bounded_inner(
                 gate.arrive_and_wait();
             }
 
+            // B-H3: MCP dispatch always uses a fresh `mcp_mode()` PRNG_state=123456789.
+            // Caller-supplied `ExecutionContext` seeding (via `agent::call_json_with_execution_context`)
+            // only affects the in-process `ToolRegistry` surface; `tools/call` over
+            // JSON-RPC intentionally does not propagate the seeding to preserve
+            // the `No per-call profile override` rule and deterministic replay
+            // boundaries. Documented as accepted behavior per
+            // `architecture/compatibility.md`.
             let mut mcp_eval_ctx = crate::calc::EvalContext::mcp_mode();
             let cancel_flag_handler = cancel_flag_block.clone();
 

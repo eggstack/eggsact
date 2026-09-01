@@ -33,11 +33,11 @@ pub fn version_compare_tool(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("semver");
 
-    if a.chars().count() > MAX_TEXT_LENGTH || b.chars().count() > MAX_TEXT_LENGTH {
+    if a.len() > MAX_TEXT_LENGTH || b.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
-            &format!("Version string exceeds {} chars", MAX_TEXT_LENGTH),
+            &format!("Version string exceeds {} bytes", MAX_TEXT_LENGTH),
             None,
             Some("version_compare"),
         );
@@ -130,7 +130,7 @@ pub fn version_constraint_check(args: &Value) -> ToolResponse {
             Some("version_constraint_check"),
         );
     }
-    if version.chars().count() > MAX_TEXT_LENGTH {
+    if version.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -139,7 +139,7 @@ pub fn version_constraint_check(args: &Value) -> ToolResponse {
             Some("version_constraint_check"),
         );
     }
-    if constraint.chars().count() > MAX_TEXT_LENGTH {
+    if constraint.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,

@@ -1358,15 +1358,15 @@ pub fn regex_finditer(
     include_line_column: bool,
     include_groups: bool,
 ) -> RegexFindIterResult {
-    if text.chars().count() > MAX_TEXT_LENGTH_REGEX {
+    if text.len() > MAX_TEXT_LENGTH_REGEX {
         return RegexFindIterResult {
             valid_pattern: false,
             matches: vec![],
             truncated: false,
             match_count: 0,
             error: Some(format!(
-                "Text length {} exceeds MAX_TEXT_LENGTH_REGEX {}",
-                text.chars().count(),
+                "Text length {} bytes exceeds MAX_TEXT_LENGTH_REGEX {}",
+                text.len(),
                 MAX_TEXT_LENGTH_REGEX
             )),
             engine_used: None,

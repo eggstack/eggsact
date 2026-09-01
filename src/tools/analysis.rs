@@ -15,7 +15,7 @@ pub fn import_export_inspect(args: &Value) -> ToolResponse {
         Err(resp) => return *resp,
     };
 
-    if source.chars().count() > MAX_TEXT_LENGTH {
+    if source.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -435,7 +435,7 @@ pub fn code_block_map(args: &Value) -> ToolResponse {
         Err(resp) => return *resp,
     };
 
-    if source.chars().count() > MAX_TEXT_LENGTH {
+    if source.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -889,7 +889,7 @@ pub fn symbol_name_diff(args: &Value) -> ToolResponse {
         Err(resp) => return *resp,
     };
 
-    if old_source.chars().count() > MAX_TEXT_LENGTH {
+    if old_source.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -902,7 +902,7 @@ pub fn symbol_name_diff(args: &Value) -> ToolResponse {
             Some("symbol_name_diff"),
         );
     }
-    if new_source.chars().count() > MAX_TEXT_LENGTH {
+    if new_source.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -1101,7 +1101,7 @@ pub fn lockfile_inspect(args: &Value) -> ToolResponse {
     }
 
     if let Some(b) = before {
-        if b.chars().count() > MAX_TEXT_LENGTH {
+        if b.len() > MAX_TEXT_LENGTH {
             return ToolResponse::error_with_code(
                 "input_too_large",
                 machine_codes::INPUT_TOO_LARGE,
@@ -1116,7 +1116,7 @@ pub fn lockfile_inspect(args: &Value) -> ToolResponse {
         }
     }
     if let Some(a) = after {
-        if a.chars().count() > MAX_TEXT_LENGTH {
+        if a.len() > MAX_TEXT_LENGTH {
             return ToolResponse::error_with_code(
                 "input_too_large",
                 machine_codes::INPUT_TOO_LARGE,
@@ -1131,7 +1131,7 @@ pub fn lockfile_inspect(args: &Value) -> ToolResponse {
         }
     }
     if let Some(d) = diff {
-        if d.chars().count() > MAX_TEXT_LENGTH {
+        if d.len() > MAX_TEXT_LENGTH {
             return ToolResponse::error_with_code(
                 "input_too_large",
                 machine_codes::INPUT_TOO_LARGE,

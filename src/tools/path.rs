@@ -79,7 +79,7 @@ pub fn path_analyze(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_str())
         .unwrap_or("normal");
 
-    if path.chars().count() > MAX_TEXT_LENGTH {
+    if path.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -236,7 +236,7 @@ pub fn path_compare(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    if left.chars().count() > MAX_TEXT_LENGTH {
+    if left.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -245,7 +245,7 @@ pub fn path_compare(args: &Value) -> ToolResponse {
             Some("path_compare"),
         );
     }
-    if right.chars().count() > MAX_TEXT_LENGTH {
+    if right.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -322,7 +322,7 @@ pub fn path_scope_check(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    if root.chars().count() > MAX_TEXT_LENGTH {
+    if root.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -331,7 +331,7 @@ pub fn path_scope_check(args: &Value) -> ToolResponse {
             Some("path_scope_check"),
         );
     }
-    if target.chars().count() > MAX_TEXT_LENGTH {
+    if target.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -403,7 +403,7 @@ pub fn glob_match_tool(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    if pattern.chars().count() > MAX_TEXT_LENGTH || path.chars().count() > MAX_TEXT_LENGTH {
+    if pattern.len() > MAX_TEXT_LENGTH || path.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -472,7 +472,7 @@ pub fn path_batch_scope_check(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    if root.chars().count() > MAX_TEXT_LENGTH {
+    if root.len() > MAX_TEXT_LENGTH {
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
@@ -518,11 +518,14 @@ pub fn path_batch_scope_check(args: &Value) -> ToolResponse {
     let mut findings = Vec::new();
     let mut seen_normalized: HashMap<String, Vec<String>> = HashMap::new();
     let mut all_inside = true;
+    let mut skipped_non_string: usize = 0;
+    let mut skipped_too_large: usize = 0;
 
     for target_val in targets {
         let target = match target_val.as_str() {
             Some(s) => s,
             None => {
+                skipped_non_string += 1;
                 findings.push(finding(
                     machine_codes::INVALID_ARGUMENTS,
                     severity::MEDIUM,
@@ -535,7 +538,8 @@ pub fn path_batch_scope_check(args: &Value) -> ToolResponse {
             }
         };
 
-        if target.chars().count() > MAX_TEXT_LENGTH {
+        if target.len() > MAX_TEXT_LENGTH {
+            skipped_too_large += 1;
             findings.push(finding(
                 machine_codes::INPUT_TOO_LARGE,
                 severity::HIGH,
@@ -649,6 +653,8 @@ pub fn path_batch_scope_check(args: &Value) -> ToolResponse {
         serde_json::json!({
             "all_inside_root": all_inside,
             "targets_checked": targets.len(),
+            "skipped_non_string_targets": skipped_non_string,
+            "skipped_too_large_targets": skipped_too_large,
             "escaping_targets": escaping_targets,
             "absolute_targets": absolute_targets,
             "dotdot_targets": dotdot_targets,

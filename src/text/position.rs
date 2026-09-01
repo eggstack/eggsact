@@ -71,12 +71,7 @@ fn split_lines_keepends(text: &str) -> Vec<&str> {
         let (byte_idx, ch) = chars[i];
         let ch_len = ch.len_utf8();
 
-        if ch == '\n'
-            || matches!(
-                ch,
-                '\x0b' | '\x0c' | '\x1c' | '\x1d' | '\x1e' | '\u{0085}' | '\u{2028}' | '\u{2029}'
-            )
-        {
+        if crate::text::primitives::is_line_break(ch) && ch != '\r' {
             lines.push(&text[start..byte_idx + ch_len]);
             start = byte_idx + ch_len;
         } else if ch == '\r' {
