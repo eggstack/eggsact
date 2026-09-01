@@ -979,12 +979,7 @@ pub async fn main() -> ! {
         let semaphore_clone = tool_semaphore.clone();
         let cancel_flag_clone = cancel_flag.clone();
         let session_state_clone = session_state.clone();
-        let request_clone = JsonRpcRequest {
-            jsonrpc: request.jsonrpc.clone(),
-            method: request.method.clone(),
-            params: request.params.clone(),
-            id: request.id.clone(),
-        };
+        let request_clone = request;
         let request_id_for_response = request_id.clone();
         let active_requests_clone = active_requests.clone();
         let registration_clone = registration.clone();

@@ -2,7 +2,20 @@ use crate::mcp::compat::CompatibilityMode;
 use crate::mcp::registry;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
+
+static PATTERN_CACHE: LazyLock<Mutex<HashMap<String, Result<regex::Regex, String>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn cached_pattern(pattern: &str) -> Result<regex::Regex, String> {
+    let mut cache = PATTERN_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(result) = cache.get(pattern) {
+        return result.clone();
+    }
+    let result = regex::Regex::new(pattern).map_err(|e| e.to_string());
+    cache.insert(pattern.to_string(), result.clone());
+    result
+}
 
 static SCHEMA_CACHE: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
     let tools = registry::mcp_tool_definitions();
@@ -166,7 +179,7 @@ pub(crate) fn validate_property_inner(
                 }
             }
             if let Some(pattern) = obj.get("pattern").and_then(|v| v.as_str()) {
-                match regex::Regex::new(pattern) {
+                match cached_pattern(pattern) {
                     Ok(re) => {
                         if re.find(s).is_none() {
                             return Some(format!(

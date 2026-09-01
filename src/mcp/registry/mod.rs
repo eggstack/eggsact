@@ -52,6 +52,11 @@ mod tests {
         }
     }
 
+    #[test]
+    fn tool_count_matches_documented_registry_size() {
+        assert_eq!(tool_count(), 80);
+    }
+
     // -- Hidden tools excluded from ordinary listing --
 
     #[test]

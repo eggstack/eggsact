@@ -54,14 +54,19 @@ pub fn patch_apply_check(args: &Value) -> ToolResponse {
     const MAX_ORIGINAL_LENGTH: usize = 200_000;
     const MAX_PATCH_LENGTH: usize = 100_000;
 
-    if original_text.chars().count() > MAX_ORIGINAL_LENGTH {
+    let original_chars = original_text.chars().count();
+    if original_chars > MAX_ORIGINAL_LENGTH || original_text.len() > MAX_ORIGINAL_LENGTH {
+        let length = if original_chars > MAX_ORIGINAL_LENGTH {
+            format!("{} characters", original_chars)
+        } else {
+            format!("{} bytes", original_text.len())
+        };
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Original text length {} exceeds maximum of {}",
-                original_text.chars().count(),
-                MAX_ORIGINAL_LENGTH
+                length, MAX_ORIGINAL_LENGTH
             ),
             Some(vec![format!(
                 "Maximum original text length is {}",
@@ -70,14 +75,19 @@ pub fn patch_apply_check(args: &Value) -> ToolResponse {
             Some("patch_apply_check"),
         );
     }
-    if patch_text.chars().count() > MAX_PATCH_LENGTH {
+    let patch_chars = patch_text.chars().count();
+    if patch_chars > MAX_PATCH_LENGTH || patch_text.len() > MAX_PATCH_LENGTH {
+        let length = if patch_chars > MAX_PATCH_LENGTH {
+            format!("{} characters", patch_chars)
+        } else {
+            format!("{} bytes", patch_text.len())
+        };
         return ToolResponse::error_with_code(
             "input_too_large",
             machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Patch text length {} exceeds maximum of {}",
-                patch_text.chars().count(),
-                MAX_PATCH_LENGTH
+                length, MAX_PATCH_LENGTH
             ),
             Some(vec![format!(
                 "Maximum patch text length is {}",

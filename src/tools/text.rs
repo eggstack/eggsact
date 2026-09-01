@@ -1,5 +1,8 @@
 use crate::mcp::machine_codes;
 use crate::mcp::response::{disposition, finding, severity, verdict, ToolResponse};
+use crate::text::inspect_prompt::{
+    ANSI_ESCAPE_RE, HTML_COMMENT_RE, MARKDOWN_LINK_RE, TERMINAL_CONTROL_RE,
+};
 use crate::text::measure::{char_category_metrics, word_metrics};
 use crate::text::position::{TextPositionResult, TextWindowPosition, TextWindowResult};
 use crate::text::primitives::byte_offset_to_char_index;
@@ -20,18 +23,6 @@ use unicode_normalization::UnicodeNormalization;
 // ---------------------------------------------------------------------------
 // prompt_input_inspect static regex patterns
 // ---------------------------------------------------------------------------
-
-static MARKDOWN_LINK_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[([^\]]{1,2000})\]\(([^)]{1,2000})\)").unwrap());
-
-static HTML_COMMENT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)<!--(.*?)-->").unwrap());
-
-static ANSI_ESCAPE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*[A-Za-z]").unwrap());
-
-static TERMINAL_CONTROL_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[\x00-\x08\x0e-\x1f\x7f]|\x1b[()][AB012]|\x1b[=>78]").unwrap());
 
 static DEFAULT_INSTRUCTION_RE: LazyLock<Regex> = LazyLock::new(|| {
     let escaped: Vec<String> = DEFAULT_INSTRUCTION_PHRASES

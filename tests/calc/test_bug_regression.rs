@@ -492,3 +492,31 @@ fn test_bug206_isprime_still_rejects_above_max_prime() {
     let result = evaluate("isprime(10000000000000)");
     assert!(result.is_err(), "isprime(1e13) should still be rejected");
 }
+
+// ─── B-01/B-02: randrange uses overflow-safe uniform integer sampling ───
+
+#[test]
+fn test_randrange_handles_large_ranges_without_overflow_or_float_bias_path() {
+    let (value, _) = evaluate("randrange(-9000000000000000000, 9000000000000000000)")
+        .expect("large randrange should not overflow");
+    let value = value
+        .parse::<f64>()
+        .expect("randrange result should be numeric");
+    assert!(
+        (-9e18..9e18).contains(&value),
+        "result out of range: {value}"
+    );
+
+    let (value, _) = evaluate("randrange(9000000000000000000)")
+        .expect("large single-argument randrange should not overflow");
+    let value = value
+        .parse::<f64>()
+        .expect("randrange result should be numeric");
+    assert!((0.0..9e18).contains(&value), "result out of range: {value}");
+}
+
+#[test]
+fn test_round_and_seed_reject_non_finite_arguments() {
+    let round_error = evaluate("round(1.5, 1.5)").expect_err("fractional ndigits must be rejected");
+    assert!(round_error.contains("finite integer"), "got: {round_error}");
+}

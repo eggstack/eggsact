@@ -8,6 +8,7 @@ enum CliCommand {
     Version,
     Mcp,
     Diagnostics { format: String },
+    Error(String),
     Evaluate(String),
 }
 
@@ -19,13 +20,51 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> CliCommand {
         [flag] if flag == "-h" || flag == "--help" => CliCommand::Help,
         [flag] if flag == "-V" || flag == "--version" => CliCommand::Version,
         [flag] if flag == "--mcp" => CliCommand::Mcp,
-        [flag] if flag == "--diagnostics" => CliCommand::Diagnostics {
-            format: "text".to_string(),
-        },
-        [s1, s2, fmt] if s1 == "--diagnostics" && s2 == "--format" => CliCommand::Diagnostics {
-            format: fmt.clone(),
-        },
-        _ => CliCommand::Evaluate(args.join(" ")),
+        _ => {
+            if !args.iter().any(|arg| arg == "--diagnostics") {
+                if args.iter().any(|arg| arg == "--format") {
+                    return CliCommand::Error(
+                        "--format is only valid with --diagnostics".to_string(),
+                    );
+                }
+                return CliCommand::Evaluate(args.join(" "));
+            }
+
+            let mut format = "text";
+            let mut format_seen = false;
+            let mut i = 0;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--diagnostics" => {}
+                    "--format" => {
+                        if format_seen || i + 1 >= args.len() {
+                            return CliCommand::Error(
+                                "--format requires exactly one value: json or text".to_string(),
+                            );
+                        }
+                        format_seen = true;
+                        format = args[i + 1].as_str();
+                        i += 1;
+                        if format != "json" && format != "text" {
+                            return CliCommand::Error(format!(
+                                "unknown diagnostics format '{}'; expected json or text",
+                                format
+                            ));
+                        }
+                    }
+                    other => {
+                        return CliCommand::Error(format!(
+                            "unexpected argument '{}' with --diagnostics",
+                            other
+                        ));
+                    }
+                }
+                i += 1;
+            }
+            CliCommand::Diagnostics {
+                format: format.to_string(),
+            }
+        }
     }
 }
 
@@ -157,7 +196,9 @@ fn print_diagnostics(format: &str) {
 }
 
 fn main() {
-    env::set_var("EGGCALC_NO_CONFIG", "1");
+    // SAFETY: this runs before the Tokio runtime is created or any threads
+    // are spawned, so no concurrent environment access is possible.
+    unsafe { env::set_var("EGGCALC_NO_CONFIG", "1") };
 
     match parse_args(env::args().skip(1)) {
         CliCommand::Help => print_usage(),
@@ -183,6 +224,11 @@ fn main() {
             rt.block_on(eggsact::mcp::server::main());
         }
         CliCommand::Diagnostics { format } => print_diagnostics(&format),
+        CliCommand::Error(error) => {
+            eprintln!("Error: {error}");
+            print_usage();
+            std::process::exit(2);
+        }
         CliCommand::Evaluate(expression) => match eggsact::calc::run(&expression) {
             Ok((result, _type)) => println!("{}", result),
             Err(e) => {
@@ -249,5 +295,31 @@ mod tests {
                 format: "json".to_string()
             }
         );
+    }
+
+    #[test]
+    fn parse_diagnostics_format_is_order_independent() {
+        assert_eq!(
+            parse_args(args(&["--format", "json", "--diagnostics"])),
+            CliCommand::Diagnostics {
+                format: "json".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn parse_diagnostics_rejects_unknown_format() {
+        assert!(matches!(
+            parse_args(args(&["--diagnostics", "--format", "xml"])),
+            CliCommand::Error(_)
+        ));
+    }
+
+    #[test]
+    fn parse_format_without_diagnostics_is_an_error() {
+        assert!(matches!(
+            parse_args(args(&["--format", "json"])),
+            CliCommand::Error(_)
+        ));
     }
 }

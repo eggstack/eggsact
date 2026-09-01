@@ -1153,7 +1153,7 @@ pub(crate) fn detect_duplicates_in_json(text: &str, duplicates: &mut Vec<String>
     let mut string_start: usize = 0;
     let mut keys_at_depth: Vec<std::collections::HashSet<String>> = Vec::new();
 
-    let bytes: Vec<u8> = trimmed.bytes().collect();
+    let bytes = trimmed.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];

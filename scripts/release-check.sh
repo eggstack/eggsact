@@ -19,6 +19,7 @@ echo "release-check: clippy"
 cargo clippy --locked --all-targets --all-features -- -D warnings
 
 echo "release-check: tests"
+echo "release-check: NOTE: parity tests are skipped; run 'cargo test --test lib parity' with ../eggcalc"
 cargo test --locked --all-features -- --skip parity --test-threads=4
 
 echo "release-check: doc tests"
@@ -29,6 +30,8 @@ if ! command -v cargo-deny >/dev/null 2>&1; then
   echo "cargo-deny is required: cargo install cargo-deny --version 0.19.0 --locked" >&2
   exit 1
 fi
+# cargo-deny 0.19.0 has no --locked flag; its metadata resolution is pinned
+# by Cargo.lock through the preceding locked Cargo checks.
 cargo deny check advisories bans licenses sources
 
 echo "release-check: package"

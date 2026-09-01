@@ -674,7 +674,7 @@ pub enum UnicodePolicy {
 impl UnicodePolicy {
     pub fn as_str(&self) -> &'static str {
         match self {
-            UnicodePolicy::Raw => "exact",
+            UnicodePolicy::Raw => "raw",
             UnicodePolicy::Nfc => "nfc",
             UnicodePolicy::Nfkc => "nfkc",
             UnicodePolicy::Casefold => "casefold",
@@ -1153,8 +1153,7 @@ impl CommandPreflight {
 
     /// Run command preflight analysis.
     pub fn run(input: &CommandPreflightInput) -> Result<CommandPreflightOutput, PreflightError> {
-        let registry = ToolRegistry::default();
-        Self::run_with_registry(&registry, input)
+        Self::run_with_registry(&DEFAULT_REGISTRY, input)
     }
 
     /// Run command preflight analysis using a caller-provided ToolRegistry.
@@ -1306,8 +1305,7 @@ impl ConfigPreflight {
 
     /// Run config preflight analysis.
     pub fn run(input: &ConfigPreflightInput) -> Result<ConfigPreflightOutput, PreflightError> {
-        let registry = ToolRegistry::default();
-        Self::run_with_registry(&registry, input)
+        Self::run_with_registry(&DEFAULT_REGISTRY, input)
     }
 
     /// Run config preflight analysis using a caller-provided ToolRegistry.
@@ -1556,7 +1554,7 @@ impl TextSecurityInspect {
     pub fn run(
         input: &TextSecurityInspectInput,
     ) -> Result<TextSecurityInspectOutput, PreflightError> {
-        let registry = ToolRegistry::default();
+        let registry = &DEFAULT_REGISTRY;
         let mut args = serde_json::json!({
             "text": input.text,
             "policy": input.policy,
@@ -2497,6 +2495,8 @@ mod tests {
         assert_eq!(EditUnicodePolicy::Default.as_str(), "default");
         assert_eq!(EditUnicodePolicy::SourceCode.as_str(), "source_code");
         assert_eq!(EditUnicodePolicy::Identifier.as_str(), "identifier");
+
+        assert_eq!(UnicodePolicy::Raw.as_str(), "raw");
     }
 
     #[test]

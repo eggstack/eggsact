@@ -1469,10 +1469,14 @@ pub fn normalize(expr: &str) -> Result<String, String> {
     // After "point" replacement, space-separated digit words after the decimal
     // become separate tokens. Iteratively concatenate them into a single
     // decimal number.
-    let mut prev_result = String::new();
-    while prev_result != result {
-        prev_result = result.clone();
-        result = try_replace_all("merge_decimal", &MERGE_DECIMAL_RE, &result, "$1$2")?;
+    // A bounded pass prevents pathological input from consuming the entire
+    // normalization budget while still handling ordinary decimal word runs.
+    for _ in 0..16 {
+        let next_result = try_replace_all("merge_decimal", &MERGE_DECIMAL_RE, &result, "$1$2")?;
+        if next_result == result {
+            break;
+        }
+        result = next_result;
     }
 
     // Combine consecutive number words: "twenty one" -> "21", "one hundred twenty two" -> "122"
@@ -1951,7 +1955,7 @@ pub fn preprocess_units(tokens: &[String]) -> Result<(Vec<String>, Option<String
         }
     }
 
-    let target_unit = match detected_unit.clone() {
+    let target_unit = match detected_unit.as_deref() {
         Some(u) => u,
         None => return Ok((tokens.to_vec(), None)),
     };
@@ -1978,7 +1982,7 @@ pub fn preprocess_units(tokens: &[String]) -> Result<(Vec<String>, Option<String
                     {
                         return caps[0].to_string();
                     }
-                    match crate::calc::units::get_conversion_factor(&canon, &target_unit) {
+                    match crate::calc::units::get_conversion_factor(&canon, target_unit) {
                         Ok(factor) => {
                             if let Ok(num) = num_str.parse::<f64>() {
                                 let converted = num * factor;
@@ -2009,7 +2013,7 @@ pub fn preprocess_units(tokens: &[String]) -> Result<(Vec<String>, Option<String
         re_tokens.retain(|t| t != "%");
     }
 
-    Ok((re_tokens, Some(target_unit)))
+    Ok((re_tokens, Some(target_unit.to_string())))
 }
 
 fn resolve_unit_alias(unit: &str) -> Option<String> {

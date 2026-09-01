@@ -4,16 +4,16 @@ use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-static MARKDOWN_LINK_RE: LazyLock<Regex> =
+pub(crate) static MARKDOWN_LINK_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[([^\]]{1,2000})\]\(([^)]{1,2000})\)").unwrap());
 
-static HTML_COMMENT_RE: LazyLock<Regex> =
+pub(crate) static HTML_COMMENT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?s)<!--(.*?)-->").unwrap());
 
-static ANSI_ESCAPE_RE: LazyLock<Regex> =
+pub(crate) static ANSI_ESCAPE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*[A-Za-z]").unwrap());
 
-static TERMINAL_CONTROL_RE: LazyLock<Regex> =
+pub(crate) static TERMINAL_CONTROL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[\x00-\x08\x0e-\x1f\x7f]|\x1b[()][AB012]|\x1b[=>78]").unwrap());
 
 static BASE64_LIKE_RE: LazyLock<Regex> =

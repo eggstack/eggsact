@@ -1551,6 +1551,11 @@ fn evaluate_function(
         "ceil" if args.len() == 1 => Ok(args[0].ceil()),
         "round" if args.len() == 1 => Ok(banker_round(args[0])),
         "round" if args.len() == 2 => {
+            if !args[1].is_finite() || args[1].fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "ndigits must be a finite integer".to_string(),
+                ));
+            }
             let ndigits = args[1] as i32;
             if !(-308..=308).contains(&ndigits) {
                 return Err(EvaluationError::InvalidOperation(format!(
@@ -2002,8 +2007,7 @@ fn evaluate_function(
                     "randrange: argument must be positive".to_string(),
                 ));
             }
-            let r = prng_random() * a as f64;
-            Ok(checked_i64(r.floor(), "randrange result out of range")? as f64)
+            Ok(random_int_inclusive(0, a - 1, prng_next_u64) as f64)
         }
         "randrange" if args.len() == 2 => {
             let a = checked_i64(args[0], "randrange requires integer arguments")?;
@@ -2013,11 +2017,7 @@ fn evaluate_function(
                     "randrange: start must be less than stop".to_string(),
                 ));
             }
-            let range = (b - a) as u64;
-            let r = prng_random() * range as f64;
-            let offset = checked_i64(r.floor(), "randrange result out of range")?;
-            Ok(a.checked_add(offset)
-                .ok_or(EvaluationError::ValueOverflow)? as f64)
+            Ok(random_int_inclusive(a, b - 1, prng_next_u64) as f64)
         }
         "uniform" if args.len() == 2 => {
             let a = args[0];
@@ -2043,7 +2043,12 @@ fn evaluate_function(
             Ok(0.0)
         }
         "seed" if args.len() == 1 => {
-            let s = args[0] as u64;
+            if !args[0].is_finite() {
+                return Err(EvaluationError::InvalidOperation(
+                    "seed requires a finite number".to_string(),
+                ));
+            }
+            let s = args[0].trunc() as i64 as u64;
             prng_seed(s);
             Ok(0.0)
         }
@@ -2280,6 +2285,11 @@ fn evaluate_function_with(
         "ceil" if args.len() == 1 => Ok(args[0].ceil()),
         "round" if args.len() == 1 => Ok(banker_round(args[0])),
         "round" if args.len() == 2 => {
+            if !args[1].is_finite() || args[1].fract() != 0.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "ndigits must be a finite integer".to_string(),
+                ));
+            }
             let ndigits = args[1] as i32;
             if !(-308..=308).contains(&ndigits) {
                 return Err(EvaluationError::InvalidOperation(format!(
@@ -2753,8 +2763,7 @@ fn evaluate_function_with(
                     "randrange: argument must be positive".to_string(),
                 ));
             }
-            let r = prng_random_with(ctx) * a as f64;
-            Ok(checked_i64(r.floor(), "randrange result out of range")? as f64)
+            Ok(random_int_inclusive(0, a - 1, || prng_next_u64_with(ctx)) as f64)
         }
         "randrange" if args.len() == 2 => {
             let a = checked_i64(args[0], "randrange requires integer arguments")?;
@@ -2764,11 +2773,7 @@ fn evaluate_function_with(
                     "randrange: start must be less than stop".to_string(),
                 ));
             }
-            let range = (b - a) as u64;
-            let r = prng_random_with(ctx) * range as f64;
-            let offset = checked_i64(r.floor(), "randrange result out of range")?;
-            Ok(a.checked_add(offset)
-                .ok_or(EvaluationError::ValueOverflow)? as f64)
+            Ok(random_int_inclusive(a, b - 1, || prng_next_u64_with(ctx)) as f64)
         }
         "uniform" if args.len() == 2 => {
             let a = args[0];
@@ -2793,7 +2798,12 @@ fn evaluate_function_with(
             Ok(0.0)
         }
         "seed" if args.len() == 1 => {
-            let s = args[0] as u64;
+            if !args[0].is_finite() {
+                return Err(EvaluationError::InvalidOperation(
+                    "seed requires a finite number".to_string(),
+                ));
+            }
+            let s = args[0].trunc() as i64 as u64;
             prng_seed_with(ctx, s);
             Ok(0.0)
         }
@@ -2996,20 +3006,55 @@ fn is_prime(n: i64) -> bool {
     if n < 2 {
         return false;
     }
-    if n < 4 {
-        return true;
-    }
-    if n % 2 == 0 || n % 3 == 0 {
-        return false;
-    }
-    let mut i = 5;
-    while i * i <= n {
-        if n % i == 0 || n % (i + 2) == 0 {
+    let n = n as u64;
+    for prime in [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37] {
+        if n == prime {
+            return true;
+        }
+        if n.is_multiple_of(prime) {
             return false;
         }
-        i += 6;
     }
-    true
+
+    let mut odd_part = n - 1;
+    let mut powers_of_two = 0;
+    while odd_part.is_multiple_of(2) {
+        odd_part /= 2;
+        powers_of_two += 1;
+    }
+
+    // These bases are deterministic for all values below 341,550,071,728,321,
+    // well above the MAX_PRIME limit used by the calculator.
+    [2, 3, 5, 7, 11, 13, 17].iter().all(|&base| {
+        let mut value = modular_pow(base, odd_part, n);
+        if value == 1 || value == n - 1 {
+            return true;
+        }
+        for _ in 1..powers_of_two {
+            value = modular_mul(value, value, n);
+            if value == n - 1 {
+                return true;
+            }
+        }
+        false
+    })
+}
+
+fn modular_mul(a: u64, b: u64, modulus: u64) -> u64 {
+    ((a as u128 * b as u128) % modulus as u128) as u64
+}
+
+fn modular_pow(mut base: u64, mut exponent: u64, modulus: u64) -> u64 {
+    let mut result = 1;
+    base %= modulus;
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            result = modular_mul(result, base, modulus);
+        }
+        base = modular_mul(base, base, modulus);
+        exponent >>= 1;
+    }
+    result
 }
 
 fn next_prime(n: i64) -> Result<i64, EvaluationError> {

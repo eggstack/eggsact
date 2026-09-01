@@ -127,9 +127,8 @@ static SANITIZE_REGEXES: LazyLock<Vec<(&'static str, regex::Regex, &'static str)
         ]
     });
 
-static BARE_PATH_REGEX: LazyLock<fancy_regex::Regex> = LazyLock::new(|| {
-    fancy_regex::Regex::new(r"(?<![/\w.])(/[\w./-]+\.\w{1,10})(?![/\w])").unwrap()
-});
+static BARE_PATH_REGEX: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"/[\w./-]+\.\w{1,10}").unwrap());
 
 pub fn sanitize_error(msg: &str) -> String {
     // Single pass: cap length and fold non-ASCII to '?' in the initial collect.
@@ -141,7 +140,21 @@ pub fn sanitize_error(msg: &str) -> String {
     for (_name, re, replacement) in SANITIZE_REGEXES.iter() {
         result = re.replace_all(&result, *replacement).into_owned();
     }
-    result = BARE_PATH_REGEX.replace_all(&result, "<path>").into_owned();
+    result = BARE_PATH_REGEX
+        .replace_all(&result, |captures: &regex::Captures<'_>| {
+            let path = captures.get(0).expect("regex match has group 0");
+            let before = result[..path.start()].chars().next_back();
+            let after = result[path.end()..].chars().next();
+            let valid_before =
+                before.is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '.' && c != '/');
+            let valid_after = after.is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '/');
+            if valid_before && valid_after {
+                "<path>".to_string()
+            } else {
+                path.as_str().to_string()
+            }
+        })
+        .into_owned();
     result
 }
 
