@@ -102,7 +102,10 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
         // line.
         let chunk = match reader.fill_buf().await {
             Ok(c) => c,
-            Err(_) => {
+            Err(e) => {
+                eprintln!(
+                    "warning: read_bounded_line I/O error after {bytes_before_lf} bytes: {e}"
+                );
                 io_errored = true;
                 break;
             }
@@ -164,7 +167,8 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
 
     // EOF, or a mid-line I/O error. On an I/O error the buffered bytes are a
     // truncated frame — return `Eof` (stop reading) rather than misclassifying
-    // partial input as a complete line.
+    // partial input as a complete line. The warning above ensures transport
+    // failures are not silently treated as clean shutdown.
     if io_errored {
         LimitedLine::Eof
     } else if bytes_before_lf > max_bytes {

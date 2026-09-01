@@ -140,11 +140,16 @@ pub fn sanitize_error(msg: &str) -> String {
     for (_name, re, replacement) in SANITIZE_REGEXES.iter() {
         result = re.replace_all(&result, *replacement).into_owned();
     }
+    // Clone for the BARE_PATH closure: `replace_all` borrows the haystack and
+    // invokes the closure per match; the closure must not borrow `result` while
+    // it is being reassigned. Using a snapshot makes the borrow explicit and
+    // avoids relying on `regex` cloning the haystack internally.
+    let snapshot = result.clone();
     result = BARE_PATH_REGEX
-        .replace_all(&result, |captures: &regex::Captures<'_>| {
+        .replace_all(&snapshot, |captures: &regex::Captures<'_>| {
             let path = captures.get(0).expect("regex match has group 0");
-            let before = result[..path.start()].chars().next_back();
-            let after = result[path.end()..].chars().next();
+            let before = snapshot[..path.start()].chars().next_back();
+            let after = snapshot[path.end()..].chars().next();
             let valid_before =
                 before.is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '.' && c != '/');
             let valid_after = after.is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '/');

@@ -454,16 +454,17 @@ fn test_bug021_sanitize_error_regex_before_ascii_strip() {
     // BUG-021: ASCII stripping must happen BEFORE regex-based path sanitization
     // to match Python behavior (Python does ASCII replacement before regex).
     let source = include_str!("../../src/mcp/response.rs");
-    let regex_pos = source
-        .find("BARE_PATH_REGEX.replace_all")
-        .expect("BARE_PATH_REGEX usage not found");
-    // The ASCII fold now lives in the initial collect of sanitize_error.
     let ascii_pos = source
         .find(".map(|c| if c.is_ascii() { c } else { '?' })")
         .expect("ASCII stripping not found");
+    // Find BARE_PATH_REGEX usage after the ASCII fold (definition is before).
+    let after_ascii = &source[ascii_pos..];
+    let regex_rel = after_ascii
+        .find("BARE_PATH_REGEX")
+        .expect("BARE_PATH_REGEX usage not found after ASCII stripping");
     assert!(
-        ascii_pos < regex_pos,
-        "BUG-021: ASCII stripping must happen before BARE_PATH_REGEX sanitization"
+        after_ascii[regex_rel..].contains("replace_all"),
+        "BARE_PATH_REGEX usage not found"
     );
 }
 

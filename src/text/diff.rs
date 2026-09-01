@@ -1,3 +1,8 @@
+fn is_cancelled() -> bool {
+    crate::mcp::budget::current_cancel_flag()
+        .is_some_and(|f| f.load(std::sync::atomic::Ordering::Relaxed))
+}
+
 #[allow(clippy::needless_range_loop)]
 pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     levenshtein_distance_with_limit(a, b, 10000)
@@ -46,6 +51,11 @@ pub fn levenshtein_distance_with_limit(a: &str, b: &str, max_len: usize) -> usiz
         *v = j;
     }
     for i in 1..=a_len {
+        // Cooperative cancellation: bail to coarse result if the caller timed
+        // out. Checked per row to avoid per-cell overhead.
+        if is_cancelled() {
+            return std::cmp::max(a_len, b_len);
+        }
         curr[0] = i;
         for j in 1..=b_len {
             let cost = if a_chars[i - 1] == b_chars[j - 1] {
@@ -119,6 +129,9 @@ pub fn diff_spans(a: &str, b: &str, max_diffs: usize) -> Vec<DiffSpan> {
     let stride = b_len + 1;
     let mut dp = vec![0u32; (a_len + 1) * stride];
     for i in 1..=a_len {
+        if is_cancelled() {
+            return coarse_diff_spans(a, &a_chars, b, &b_chars, max_diffs);
+        }
         for j in 1..=b_len {
             if a_chars[i - 1] == b_chars[j - 1] {
                 dp[i * stride + j] = dp[(i - 1) * stride + (j - 1)] + 1;

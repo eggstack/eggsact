@@ -1027,9 +1027,15 @@ pub(crate) fn compare_json_values(
                         let orig_key_a = a_keys_vec[i];
                         let orig_key_b = b_keys_vec[i];
                         let new_path = if path.is_empty() {
-                            format!("/{}", orig_key_a)
-                        } else {
+                            if orig_key_a == orig_key_b {
+                                format!("/{}", orig_key_a)
+                            } else {
+                                format!("/{}->{}", orig_key_a, orig_key_b)
+                            }
+                        } else if orig_key_a == orig_key_b {
                             format!("{}/{}", path, orig_key_a)
+                        } else {
+                            format!("{}/{}->{}", path, orig_key_a, orig_key_b)
                         };
                         compare_rec(
                             &obj_a[orig_key_a],
@@ -1181,7 +1187,9 @@ pub(crate) fn detect_duplicates_in_json(text: &str, duplicates: &mut Vec<String>
                     }
                 }
                 if is_key && depth > 0 {
-                    let key = String::from_utf8_lossy(&bytes[string_start..string_end]).to_string();
+                    let raw = String::from_utf8_lossy(&bytes[string_start..string_end]).to_string();
+                    // Decode JSON escapes (e.g. \uXXXX) so "\u0061" and "a" are treated as duplicates.
+                    let key = serde_json::from_str::<String>(&format!("\"{raw}\"")).unwrap_or(raw);
                     let idx = (depth - 1) as usize;
                     if idx < keys_at_depth.len() && !keys_at_depth[idx].insert(key.clone()) {
                         duplicates.push(key);

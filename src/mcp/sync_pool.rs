@@ -95,20 +95,22 @@ impl SyncExecutionPool {
         let receiver = Arc::new(std::sync::Mutex::new(receiver));
         let stuck = Arc::new(AtomicUsize::new(0));
 
+        let mut actual_workers = 0usize;
         for _ in 0..worker_count {
             let rx = receiver.clone();
             let stuck = stuck.clone();
-            if let Err(e) = std::thread::Builder::new()
+            match std::thread::Builder::new()
                 .name("eggsact-sync-worker".to_string())
                 .spawn(move || worker_loop(rx, stuck))
             {
-                eprintln!("eggsact: failed to spawn sync worker: {e}");
+                Ok(_) => actual_workers += 1,
+                Err(e) => eprintln!("eggsact: failed to spawn sync worker: {e}"),
             }
         }
 
         Self {
             sender,
-            worker_count,
+            worker_count: actual_workers,
             stuck,
         }
     }

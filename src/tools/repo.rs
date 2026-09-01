@@ -473,6 +473,30 @@ fn toml_key_values(text: &str) -> Vec<(String, String)> {
     pairs
 }
 
+/// Extract YAML key-value pairs (line-based heuristic for `key: value`).
+fn yaml_key_values(text: &str) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('-') {
+            continue;
+        }
+        // Strip inline comments after value (naive: split on '#')
+        let without_comment = trimmed.split('#').next().unwrap_or(trimmed).trim();
+        if let Some(idx) = without_comment.find(':') {
+            let key = without_comment[..idx].trim().to_string();
+            let val = without_comment[idx + 1..]
+                .trim()
+                .trim_matches(|c| c == '"' || c == '\'')
+                .to_string();
+            if !key.is_empty() {
+                pairs.push((key, val));
+            }
+        }
+    }
+    pairs
+}
+
 /// Recursively walk a `serde_json::Value` and emit (dotted.path, string_value) pairs.
 fn json_walk(value: &serde_json::Value, prefix: &str, out: &mut Vec<(String, String)>) {
     match value {
@@ -734,7 +758,7 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
         "pyproject" | "cargo_toml" | "toml" => {
             toml_parsed_kv_pairs(text).unwrap_or_else(|| toml_key_values(text))
         }
-        "yaml" => toml_key_values(text),
+        "yaml" => yaml_key_values(text),
         "dotenv" => dotenv_key_values(text),
         "ini" => ini_key_values(text),
         _ => dotenv_key_values(text),
@@ -1530,8 +1554,8 @@ pub fn repo_language_detect(args: &Value) -> ToolResponse {
         } else if lower == "makefile" || lower == "gnumakefile" {
             Some("makefile".to_string())
         } else {
-            let ext = match p.rfind('.') {
-                Some(idx) => &p[idx..],
+            let ext = match basename.rfind('.') {
+                Some(idx) => &basename[idx..],
                 None => "",
             };
             LANGUAGE_TABLE
@@ -1550,8 +1574,9 @@ pub fn repo_language_detect(args: &Value) -> ToolResponse {
             } else if name == "makefile" {
                 "Makefile".to_string()
             } else {
-                p.rfind('.')
-                    .map(|idx| p[idx..].to_string())
+                basename
+                    .rfind('.')
+                    .map(|idx| basename[idx..].to_string())
                     .unwrap_or_default()
             };
             if !ext_str.is_empty() && !entry.1.contains(&ext_str) {

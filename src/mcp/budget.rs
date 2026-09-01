@@ -114,7 +114,7 @@ pub fn with_current_eval_context<R>(f: impl FnOnce(Option<&mut EvalContext>) -> 
         let already_borrowed = EVAL_CONTEXT_MUTABLY_BORROWED.with(|cell| *cell.borrow());
         assert!(
             !already_borrowed,
-            "with_current_eval_context: re-entrant mutable access to the installed EvalContext is not allowed"
+            "with_current_eval_context: re-entrant mutable access to the installed EvalContext is not allowed; do not nest with_eval_context/with_current_eval_context"
         );
         EVAL_CONTEXT_MUTABLY_BORROWED.with(|cell| {
             *cell.borrow_mut() = true;

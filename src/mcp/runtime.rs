@@ -40,16 +40,25 @@ impl RequestGuard {
 
 impl Drop for RequestGuard {
     fn drop(&mut self) {
-        // Best-effort fallback cleanup (try_lock only): under normal flow
-        // `complete_request()` already removed the entry, making this a
-        // no-op. If the enclosing request task panicked before cleanup,
-        // unwinding drops this guard and frees the in-flight slot here.
-        // A contended lock skips cleanup; correctness does not depend on it.
+        // Primary cleanup is `complete_request()`; this Drop is a panic-proof
+        // fallback so a task that panics before reaching `complete_request`
+        // cannot leak its in-flight slot.
         if let Ok(mut map) = self.active.try_lock() {
             if let Some(entry) = map.get(&self.request_id) {
                 if entry.generation == self.generation {
                     map.remove(&self.request_id);
                 }
+            }
+            return;
+        }
+        // `try_lock` failed (contended). Fall back to a blocking lock so the
+        // slot is still freed even under contention. This blocks the current
+        // thread briefly, but the Drop path only runs on panic/unwind where
+        // leaking the slot (MAX_IN_FLIGHT_REQUESTS=32) is worse than blocking.
+        let mut map = self.active.blocking_lock();
+        if let Some(entry) = map.get(&self.request_id) {
+            if entry.generation == self.generation {
+                map.remove(&self.request_id);
             }
         }
     }

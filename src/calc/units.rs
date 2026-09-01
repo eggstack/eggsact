@@ -1811,9 +1811,13 @@ pub fn get_conversion_factor(from: &str, to: &str) -> Result<f64, String> {
 
 pub fn is_unit(unit: &str) -> bool {
     // Unit symbols are case-sensitive (for example, `b` is bit and `B` is
-    // byte). Only accept the curated aliases and canonical symbols so a
-    // case-folded spelling cannot be accepted here and rejected later by
-    // conversion.
+    // byte, `Pa` is pascal while `PA` is not). Only accept the curated aliases
+    // and canonical symbols so a case-folded spelling cannot be accepted here
+    // and rejected later by conversion. This is intentionally stricter than the
+    // calculator's `BARE_SIMPLE_UNIT_RE` which is `(?i)` for input tolerance;
+    // normalization there maps `Km`/`KM`→`km` via `UNIT_ALIASES`, but
+    // validation via `is_unit` remains strict — e.g. `is_unit("Km")` is
+    // false by design (see `test_is_unit_case_sensitive`).
     UNIT_ALIASES
         .get(unit)
         .or_else(|| UNIT_BASE.get_key_value(unit).map(|(key, _)| key))
