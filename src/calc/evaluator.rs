@@ -348,8 +348,14 @@ fn format_result(result: f64) -> Result<EvaluateResult, String> {
         // `i64::MAX as f64` rounds UP to exactly 2^63, so the upper bound
         // must be strictly below 2^63 to keep the cast exact.
         && result < 9_223_372_036_854_775_808.0
+        // Above 2^53 (9007199254740992.0), f64 cannot represent every integer
+        // exactly — `9007199254740993.0_f64 as i64 == 9007199254740992`.
+        // i64::MIN (-2^63) is exactly representable (it's a power of two),
+        // so we only fall back to the float formatter when the magnitude is
+        // in the imprecise range above 2^53, not for `i64::MIN` itself.
+        && (result.abs() <= 9_007_199_254_740_992.0 || result == i64::MIN as f64)
     {
-        // The strict upper bound ensures `result as i64` is exact (no saturation).
+        // The bounds keep the cast exact (no saturation, no rounding).
         Ok((format!("{}", result as i64), "int".to_string()))
     } else {
         Ok((format!("{}", result), "float".to_string()))

@@ -10,6 +10,8 @@ use unicode_segmentation::UnicodeSegmentation;
 // Constants
 // ---------------------------------------------------------------------------
 
+/// Maximum byte length for free-form string inputs (matches `max_text_bytes`
+/// in `mcp::budget`). Enforced via UTF-8 byte length, not Unicode scalar count.
 pub(crate) const MAX_TEXT_LENGTH: usize = 100_000;
 pub(crate) const MAX_INSPECT_ITEMS: usize = 100;
 pub(crate) const MAX_LIST_ITEMS: usize = 10_000;
@@ -73,14 +75,18 @@ pub(crate) fn _require_str<'a>(
     match args.get(field) {
         Some(v) => match v.as_str() {
             Some(s) => {
-                let codepoint_len = s.chars().count();
-                if codepoint_len > MAX_TEXT_LENGTH {
+                // Enforcement is byte-based to match the budget tier
+                // (`max_text_bytes` in `mcp::budget`). Counting Unicode scalar
+                // values here would diverge from the budget check and accept
+                // payloads that `check_text_bytes` then rejects.
+                let byte_len = s.len();
+                if byte_len > MAX_TEXT_LENGTH {
                     return Err(Box::new(ToolResponse::error_with_code(
                         "input_too_large",
                         machine_codes::INPUT_TOO_LARGE,
                         &format!(
-                            "{} length {} exceeds {}",
-                            field, codepoint_len, MAX_TEXT_LENGTH
+                            "{} length {} bytes exceeds {}",
+                            field, byte_len, MAX_TEXT_LENGTH
                         ),
                         None,
                         Some(tool),

@@ -94,28 +94,32 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
     let mut io_errored = false;
 
     loop {
-        let (chunk_len, last_chunk_byte, newline_pos, byte_before_lf) = {
-            let chunk = match reader.fill_buf().await {
-                Ok(c) => c,
-                Err(_) => {
-                    io_errored = true;
-                    break;
-                }
-            };
-            if chunk.is_empty() {
+        // Hold the chunk across both the metric extraction and any copy so
+        // we only `fill_buf` once per iteration. `tokio::io::BufReader`
+        // guarantees the slice is stable until `consume`, but the contract
+        // is implicit and brittle — collapsing to one `fill_buf` makes the
+        // invariant local and removes a redundant syscall-equivalent per
+        // line.
+        let chunk = match reader.fill_buf().await {
+            Ok(c) => c,
+            Err(_) => {
+                io_errored = true;
                 break;
             }
-            let last = *chunk.last().expect("non-empty chunk has a last byte");
-            let pos = chunk.iter().position(|&b| b == b'\n');
-            let before_lf = pos.and_then(|pos| {
-                if pos == 0 {
-                    last_byte
-                } else {
-                    Some(chunk[pos - 1])
-                }
-            });
-            (chunk.len(), last, pos, before_lf)
         };
+        if chunk.is_empty() {
+            break;
+        }
+        let chunk_len = chunk.len();
+        let last_chunk_byte = *chunk.last().expect("non-empty chunk has a last byte");
+        let newline_pos = chunk.iter().position(|&b| b == b'\n');
+        let byte_before_lf = newline_pos.and_then(|pos| {
+            if pos == 0 {
+                last_byte
+            } else {
+                Some(chunk[pos - 1])
+            }
+        });
 
         if let Some(pos) = newline_pos {
             // The LF itself is not part of the payload. A CR immediately
@@ -141,13 +145,6 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
             let payload_in_chunk = if pos > 0 && crlf { pos - 1 } else { pos };
             let can_take = max_bytes.saturating_sub(buf.len()).min(payload_in_chunk);
             if can_take > 0 {
-                let chunk = match reader.fill_buf().await {
-                    Ok(c) => c,
-                    Err(_) => {
-                        io_errored = true;
-                        break;
-                    }
-                };
                 buf.extend_from_slice(&chunk[..can_take]);
             }
             reader.consume(pos + 1);
@@ -158,13 +155,6 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
         // the bounded prefix needed to reconstruct an accepted line.
         let can_take = max_bytes.saturating_sub(buf.len()).min(chunk_len);
         if can_take > 0 {
-            let chunk = match reader.fill_buf().await {
-                Ok(c) => c,
-                Err(_) => {
-                    io_errored = true;
-                    break;
-                }
-            };
             buf.extend_from_slice(&chunk[..can_take]);
         }
         bytes_before_lf = bytes_before_lf.saturating_add(chunk_len);
@@ -706,7 +696,7 @@ pub async fn main() -> ! {
     let writer_handle = tokio::spawn(async move {
         while let Some(response) = rx.recv().await {
             if write_json_line(&response).is_err() {
-                writer_failed_task.store(true, Ordering::Relaxed);
+                writer_failed_task.store(true, Ordering::Release);
                 break;
             }
         }
@@ -716,7 +706,7 @@ pub async fn main() -> ! {
     let mut join_set = tokio::task::JoinSet::new();
 
     loop {
-        if writer_failed.load(Ordering::Relaxed) {
+        if writer_failed.load(Ordering::Acquire) {
             break;
         }
         let line = match read_bounded_line(&mut reader, MAX_REQUEST_BYTES).await {

@@ -341,6 +341,47 @@ fn test_eval_context_prng_isolation() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// 7b. with_prng_state(0) is remapped so the xorshift64 PRNG does not
+//     produce all zeros. Matches `prng_seed_with(0)` behavior.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_eval_context_prng_state_zero_remapped() {
+    let mut ctx_zero = EvalContext::new().with_prng_state(0);
+    let r = evaluate_with_context("random()", &mut ctx_zero);
+    assert!(r.is_ok(), "random() with seed 0 failed: {:?}", r);
+    let val: f64 = r.unwrap().0.parse().unwrap();
+    // xorshift64 seeded at 0 would return 0.0 forever; the guard maps 0
+    // to the default seed 123456789, producing a non-zero value.
+    assert_ne!(
+        val, 0.0,
+        "with_prng_state(0) poisoned xorshift64 (got {val})"
+    );
+    assert!((0.0..1.0).contains(&val), "random() out of range: {}", val);
+
+    // with_prng_state(0) must produce the same first random() value as
+    // starting from a fresh context whose state is the remap target
+    // (123456789). This verifies the guard maps 0 to 123456789.
+    let mut ctx_baseline = EvalContext::new().with_prng_state(123456789);
+    let v_baseline = evaluate_with_context("random()", &mut ctx_baseline)
+        .unwrap()
+        .0
+        .parse::<f64>()
+        .unwrap();
+
+    let mut ctx_zero_fresh = EvalContext::new().with_prng_state(0);
+    let v_builder = evaluate_with_context("random()", &mut ctx_zero_fresh)
+        .unwrap()
+        .0
+        .parse::<f64>()
+        .unwrap();
+
+    assert_eq!(
+        v_baseline, v_builder,
+        "with_prng_state(0) must equal with_prng_state(123456789) on first random()"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // 8. Memory register isolation: two EvalContexts with different memory
 //    registers are independent.
 // ─────────────────────────────────────────────────────────────────────────

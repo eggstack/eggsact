@@ -691,6 +691,26 @@ fn test_format_result_i64_boundary() {
     assert_eq!(r.1, "int", "i64::MIN should be formatted as int");
 }
 
+#[test]
+fn test_format_result_f64_precision_boundary() {
+    // Values up to 2^53 inclusive are exactly representable in f64 and
+    // should be formatted as int.
+    let r = evaluate("9007199254740992").unwrap(); // 2^53
+    assert_eq!(r.1, "int", "2^53 should be formatted as int");
+    assert_eq!(r.0, "9007199254740992");
+
+    // Values strictly above 2^53 lose f64 precision. The literal
+    // "9007199254740995" rounds to the next representable even f64
+    // (9007199254740996.0), which is strictly above 2^53; the boundary
+    // guard routes that case to the float formatter rather than masking
+    // the rounding as an exact int.
+    let r = evaluate("9007199254740995").unwrap();
+    assert_eq!(
+        r.1, "float",
+        "values above 2^53 must take the float path to avoid precision loss"
+    );
+}
+
 // ─── BUG-012: perm/comb precision tests ─────────────────────────────
 
 #[test]

@@ -113,7 +113,7 @@ Public serialized map fields use `BTreeMap` for stable lexicographic key orderin
 Every handler validates arguments in this order:
 
 1. **Extract required parameters** — using `_require_str`, `args.get().and_then(|v| v.as_str())`, or `require_array_arg`. Missing/wrong-type → `INVALID_ARGUMENTS` error with machine code.
-2. **Check text length** — `text.chars().count() > MAX_TEXT_LENGTH` → `INPUT_TOO_LARGE` error. This is a codepoint count, not byte count.
+2. **Check text length** — `_require_str` enforces via UTF-8 byte length (`s.len() > MAX_TEXT_LENGTH`) to match `mcp::budget::check_text_bytes`. Other call sites that pre-check `text.chars().count() > MAX_TEXT_LENGTH` are accepted as legacy codepoint-count guards; the budget tier remains the authoritative byte cap.
 3. **Validate enum parameters** — check against allowed values (e.g., `["posix", "windows"]`). Invalid → `INVALID_ARGUMENTS`.
 4. **Validate numeric bounds** — negative, zero-where-positive-expected, overflow → `INVALID_ARGUMENTS`.
 5. **Mode-specific argument contracts** — composite tools validate that the correct combination of arguments is present for each mode (e.g., `edit_preflight` validates `old`/`new` for literal mode, `patch` for patch mode, `start_line`/`end_line`/`new` for line_range mode).

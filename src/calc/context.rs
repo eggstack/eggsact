@@ -52,8 +52,13 @@ impl EvalContext {
     }
 
     /// Set the PRNG state for deterministic random sequences.
+    ///
+    /// A `state` of `0` is remapped to `123456789` to avoid poisoning the
+    /// xorshift64 PRNG (which would otherwise output all zeros). This matches
+    /// the guard applied by `prng_seed_with` in the evaluator, so the two
+    /// seeding paths behave consistently.
     pub fn with_prng_state(mut self, state: u64) -> Self {
-        self.prng_state = state;
+        self.prng_state = if state == 0 { 123456789 } else { state };
         self
     }
 
