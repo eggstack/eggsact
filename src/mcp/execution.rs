@@ -794,10 +794,11 @@ pub(crate) async fn execute_tool_bounded_with_hooks(
     metrics: std::sync::Arc<runtime::RuntimeMetrics>,
 ) -> ExecutionOutcome {
     let metrics_ptr: *const runtime::RuntimeMetrics = std::sync::Arc::into_raw(metrics);
-    // SAFETY: We converted from Arc, which guarantees the data is valid.
-    // We intentionally leak the memory (Arc's strong count becomes effectively
-    // immortal) so the reference is 'static for spawn_blocking. In tests this
-    // is acceptable.
+    // SAFETY: Arc::into_raw leaks the Arc and returns a stable pointer to the
+    // immortal allocation; the pointed-to RuntimeMetrics is never freed, so
+    // deriving a &'static reference is sound. This leak is intentional and
+    // test-only. A future refactor must not change `metrics_ptr` provenance to
+    // a stack local or non-leaked allocation without updating this reasoning.
     let metrics_static: &'static runtime::RuntimeMetrics = unsafe { &*metrics_ptr };
     execute_tool_bounded_inner(
         handler,

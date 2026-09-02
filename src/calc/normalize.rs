@@ -1187,8 +1187,12 @@ fn combine_consecutive_number_words(input: &str) -> String {
 }
 
 /// Try to parse a simple integer or float from a token.
+///
+/// `+` is stripped explicitly so `+1` normalizes the same as `1`; `-`
+/// is preserved so `parse::<f64>` handles the sign (asymmetric but
+/// intentional — `+` is filler, `-` is semantic).
 fn parse_simple_number(token: &str) -> Option<f64> {
-    let s = token.trim_start_matches('+');
+    let s = token.strip_prefix('+').unwrap_or(token);
     s.parse::<f64>().ok()
 }
 
@@ -1275,7 +1279,11 @@ fn combine_number_parts(values: &[f64]) -> Vec<String> {
 
 /// Format a number for output, showing integers without decimal point.
 pub(crate) fn format_integer_or_float(v: f64) -> String {
-    if v.fract() == 0.0 && v.abs() < 1e15 {
+    if v.fract() == 0.0
+        && v.abs() <= 9_007_199_254_740_992.0
+        && v >= i64::MIN as f64
+        && v < 9_223_372_036_854_775_808.0
+    {
         format!("{}", v as i64)
     } else {
         format!("{}", v)

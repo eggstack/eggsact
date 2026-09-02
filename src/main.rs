@@ -196,9 +196,11 @@ fn print_diagnostics(format: &str) {
 }
 
 fn main() {
-    // SAFETY: this runs before the Tokio runtime is created or any threads
-    // are spawned, so no concurrent environment access is possible.
-    unsafe { env::set_var("EGGCALC_NO_CONFIG", "1") };
+    // EGGCALC_NO_CONFIG is no longer set here: Rust no longer performs
+    // Python-style config loading, so the env var is vestigial. Callers that
+    // invoke the Python `eggcalc` sibling can set EGGCALC_NO_CONFIG=1
+    // externally if needed. Removing the mutation avoids the `set_var` UB
+    // window on Rust ≥1.89 when other threads may exist (LazyLock statics).
 
     match parse_args(env::args().skip(1)) {
         CliCommand::Help => print_usage(),

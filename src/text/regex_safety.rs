@@ -45,12 +45,9 @@ fn check_pattern_complexity(pattern: &str) -> Result<(), String> {
             continue;
         }
 
-        if c == '[' {
-            nesting_depth += 1;
-            max_nesting = max_nesting.max(nesting_depth);
+        if c == '[' && !in_char_class {
             in_char_class = true;
-        } else if c == ']' {
-            nesting_depth = nesting_depth.saturating_sub(1);
+        } else if c == ']' && in_char_class {
             in_char_class = false;
         } else if c == '(' && !in_char_class {
             nesting_depth += 1;

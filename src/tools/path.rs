@@ -85,7 +85,7 @@ pub fn path_analyze(args: &Value) -> ToolResponse {
             machine_codes::INPUT_TOO_LARGE,
             &format!(
                 "Path length {} exceeds MAX_TEXT_LENGTH {}",
-                path.chars().count(),
+                path.len(),
                 MAX_TEXT_LENGTH
             ),
             None,
@@ -578,7 +578,9 @@ pub fn path_batch_scope_check(args: &Value) -> ToolResponse {
         }
 
         let is_abs = if !target.is_empty() {
-            crate::text::path::path_normalize(target, platform, false, false).is_absolute
+            // Use same collapse_dot_segments=true as path_scope_check to avoid
+            // classification inconsistency (e.g. "a/../" would differ).
+            crate::text::path::path_normalize(target, platform, true, false).is_absolute
         } else {
             false
         };

@@ -54,20 +54,40 @@ fn detect_features(argv: &[String], raw: &str, unbalanced: bool) -> ShellFeature
     let has_redirection = joined.contains('<') || joined.contains('>');
     let has_command_substitution = COMMAND_SUB_PATTERN.is_match(raw);
     // Strip single-quoted sections before checking for variable expansion
-    // Single quotes prevent variable expansion in POSIX shells
-    let raw_without_single_quotes: String = raw
-        .chars()
-        .scan(false, |in_single, c| {
-            if c == '\'' {
-                *in_single = !*in_single;
+    // Single quotes prevent variable expansion in POSIX shells. Use proper
+    // quote-state tracking so the shell idiom `'a'"'"'b'` (single-quote
+    // escape via '"'"') does not misclassify $VAR inside that construct.
+    let mut raw_without_single_quotes = String::with_capacity(raw.len());
+    let mut qstate = QuoteState::None;
+    for c in raw.chars() {
+        match qstate {
+            QuoteState::None => {
+                if c == '\'' {
+                    qstate = QuoteState::Single;
+                    raw_without_single_quotes.push(' ');
+                } else if c == '"' {
+                    qstate = QuoteState::Double;
+                    raw_without_single_quotes.push(c);
+                } else {
+                    raw_without_single_quotes.push(c);
+                }
             }
-            if *in_single {
-                Some(' ') // replace single-quoted chars with space
-            } else {
-                Some(c)
+            QuoteState::Single => {
+                if c == '\'' {
+                    qstate = QuoteState::None;
+                    raw_without_single_quotes.push(' ');
+                } else {
+                    raw_without_single_quotes.push(' ');
+                }
             }
-        })
-        .collect();
+            QuoteState::Double => {
+                if c == '"' {
+                    qstate = QuoteState::None;
+                }
+                raw_without_single_quotes.push(c);
+            }
+        }
+    }
     let has_variable_expansion = VARIABLE_PATTERN.is_match(&raw_without_single_quotes);
     let has_glob_pattern = argv.iter().any(|t| t.chars().any(is_glob_char));
 

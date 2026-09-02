@@ -266,7 +266,6 @@ pub fn path_analyze(path: &str, style: &str) -> PathAnalyzeResult {
     let sep = if actual_style == "windows" { "\\" } else { "/" };
 
     let mut components: Vec<&str> = vec![];
-    let mut normalized_parts: Vec<&str> = vec![];
 
     for (i, comp) in raw_components.iter().enumerate() {
         if *comp == "." {
@@ -274,17 +273,16 @@ pub fn path_analyze(path: &str, style: &str) -> PathAnalyzeResult {
                 "Redundant current directory segment at position {}",
                 i
             ));
-            components.push(comp);
-            normalized_parts.push(comp);
         } else if *comp == ".." {
             warnings.push(format!("Parent traversal segment at position {}", i));
-            components.push(comp);
-            normalized_parts.push(comp);
-        } else {
-            components.push(comp);
-            normalized_parts.push(comp);
         }
+        components.push(comp);
     }
+    // path_analyze is lexical-only and does not collapse "."/".."; the
+    // normalized_lexical field is therefore identical to the raw components
+    // join. This is intentional (path_scope_check is the security boundary
+    // that resolves dot segments).
+    let normalized_parts = components.clone();
 
     let has_traversal = raw_components.contains(&"..");
     let absolute = if actual_style == "windows" {

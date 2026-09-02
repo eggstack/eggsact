@@ -535,38 +535,14 @@ pub(crate) fn is_invisible_char(c: char) -> bool {
 // invisible_display_name / bidi_display_name / unicode_name_char
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 pub(crate) fn invisible_display_name(c: char) -> &'static str {
-    match c {
-        '\u{200b}' => "ZWSP",
-        '\u{200c}' => "ZWNJ",
-        '\u{200d}' => "ZWJ",
-        '\u{200e}' => "LRM",
-        '\u{200f}' => "RLM",
-        '\u{feff}' => "BOM",
-        '\u{00a0}' => "NBSP",
-        '\u{2028}' => "LINE SEP",
-        '\u{2029}' => "PARA SEP",
-        '\u{2060}' => "WORD JOINER",
-        '\u{00ad}' => "SHY",
-        '\u{180e}' => "MVS",
-        '\u{034f}' => "CGJ",
-        _ => "CTRL",
-    }
+    crate::text::unicode_tools::invisible_display_name(c)
 }
 
+#[allow(dead_code)]
 pub(crate) fn bidi_display_name(c: char) -> &'static str {
-    match c {
-        '\u{202a}' => "LRE",
-        '\u{202b}' => "RLE",
-        '\u{202c}' => "PDF",
-        '\u{202d}' => "LRO",
-        '\u{202e}' => "RLO",
-        '\u{2066}' => "LRI",
-        '\u{2067}' => "RLI",
-        '\u{2068}' => "FSI",
-        '\u{2069}' => "PDI",
-        _ => "BIDI",
-    }
+    crate::text::unicode_tools::bidi_display_name(c)
 }
 
 pub(crate) fn unicode_name_char(c: char) -> String {
@@ -604,12 +580,9 @@ pub(crate) fn unicode_name_char(c: char) -> String {
 // is_combining_mark
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 pub(crate) fn is_combining_mark(c: char) -> bool {
-    let cp = c as u32;
-    matches!(cp,
-        0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF |
-        0x20D0..=0x20FF | 0xFE20..=0xFE2F
-    )
+    crate::text::unicode_tools::is_combining_mark(c)
 }
 
 // ---------------------------------------------------------------------------
@@ -617,52 +590,7 @@ pub(crate) fn is_combining_mark(c: char) -> bool {
 // ---------------------------------------------------------------------------
 
 pub(crate) fn build_safe_repr(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    for c in text.chars() {
-        match c {
-            ' ' => result.push('\u{2420}'),
-            '\t' => result.push('\u{2409}'),
-            '\n' => result.push('\u{240A}'),
-            '\r' => result.push('\u{240D}'),
-            _ if matches!(
-                c,
-                '\u{200b}'
-                    | '\u{200c}'
-                    | '\u{200d}'
-                    | '\u{200e}'
-                    | '\u{200f}'
-                    | '\u{feff}'
-                    | '\u{00a0}'
-                    | '\u{2028}'
-                    | '\u{2029}'
-                    | '\u{2060}'
-                    | '\u{00ad}'
-                    | '\u{180e}'
-                    | '\u{034f}'
-            ) =>
-            {
-                let display = invisible_display_name(c);
-                result.push('\u{27E6}');
-                result.push_str(display);
-                result.push('\u{27E7}');
-            }
-            _ if (0xfe00..=0xfe0f).contains(&(c as u32)) => {
-                result.push_str("\u{27E6}VS\u{27E7}");
-            }
-            _ if matches!(c as u32, 0x202a..=0x202e | 0x2066..=0x2069) => {
-                let name = bidi_display_name(c);
-                result.push('\u{27E6}');
-                result.push_str(name);
-                result.push('\u{27E7}');
-            }
-            _ if is_combining_mark(c) => {
-                result.push('\u{25CC}');
-                result.push(c);
-            }
-            _ => result.push(c),
-        }
-    }
-    result
+    crate::text::unicode_tools::build_safe_repr(text)
 }
 
 // ---------------------------------------------------------------------------
@@ -863,32 +791,42 @@ pub(crate) fn compare_json_values(
         match (a, b) {
             (serde_json::Value::Object(obj_a), serde_json::Value::Object(obj_b)) => {
                 if options.ignore_object_order {
-                    let keys_a_map: std::collections::HashMap<String, String> = obj_a
-                        .keys()
-                        .map(|k| {
-                            (
-                                if options.casefold_keys {
-                                    unicode_casefold(k)
-                                } else {
-                                    k.clone()
-                                },
-                                k.clone(),
-                            )
-                        })
-                        .collect();
-                    let keys_b_map: std::collections::HashMap<String, String> = obj_b
-                        .keys()
-                        .map(|k| {
-                            (
-                                if options.casefold_keys {
-                                    unicode_casefold(k)
-                                } else {
-                                    k.clone()
-                                },
-                                k.clone(),
-                            )
-                        })
-                        .collect();
+                    let mut keys_a_map: std::collections::HashMap<String, String> =
+                        std::collections::HashMap::new();
+                    let mut keys_b_map: std::collections::HashMap<String, String> =
+                        std::collections::HashMap::new();
+                    let mut casefold_collision = false;
+                    for k in obj_a.keys() {
+                        let cf = if options.casefold_keys {
+                            unicode_casefold(k)
+                        } else {
+                            k.clone()
+                        };
+                        if keys_a_map.insert(cf, k.clone()).is_some() {
+                            casefold_collision = true;
+                        }
+                    }
+                    for k in obj_b.keys() {
+                        let cf = if options.casefold_keys {
+                            unicode_casefold(k)
+                        } else {
+                            k.clone()
+                        };
+                        if keys_b_map.insert(cf, k.clone()).is_some() {
+                            casefold_collision = true;
+                        }
+                    }
+                    if casefold_collision && options.casefold_keys {
+                        state.not_equal = true;
+                        state.diffs.push(JsonDiff {
+                            path: path.to_string(),
+                            kind: "casefold_key_collision".to_string(),
+                            a_type: Some("object".to_string()),
+                            b_type: Some("object".to_string()),
+                            a_preview: Some(format!("{} keys", obj_a.len())),
+                            b_preview: Some(format!("{} keys", obj_b.len())),
+                        });
+                    }
                     let keys_a_set: std::collections::HashSet<&String> =
                         keys_a_map.keys().collect();
                     let keys_b_set: std::collections::HashSet<&String> =
@@ -1141,11 +1079,11 @@ pub(crate) fn detect_duplicates_in_json(text: &str, duplicates: &mut Vec<String>
     if trimmed.is_empty() || (!trimmed.starts_with('{') && !trimmed.starts_with('[')) {
         return;
     }
-    let mut depth = 0i32;
+    let mut depth: usize = 0;
     let mut in_string = false;
     let mut escape = false;
     let mut string_start: usize = 0;
-    let mut keys_at_depth: Vec<std::collections::HashSet<String>> = Vec::new();
+    let mut keys_at_depth: Vec<Option<std::collections::HashSet<String>>> = Vec::new();
 
     let bytes = trimmed.as_bytes();
     let mut i = 0;
@@ -1178,9 +1116,13 @@ pub(crate) fn detect_duplicates_in_json(text: &str, duplicates: &mut Vec<String>
                     let raw = String::from_utf8_lossy(&bytes[string_start..string_end]).to_string();
                     // Decode JSON escapes (e.g. \uXXXX) so "\u0061" and "a" are treated as duplicates.
                     let key = serde_json::from_str::<String>(&format!("\"{raw}\"")).unwrap_or(raw);
-                    let idx = (depth - 1) as usize;
-                    if idx < keys_at_depth.len() && !keys_at_depth[idx].insert(key.clone()) {
-                        duplicates.push(key);
+                    let idx = depth - 1;
+                    if idx < keys_at_depth.len() {
+                        if let Some(set) = keys_at_depth[idx].as_mut() {
+                            if !set.insert(key.clone()) {
+                                duplicates.push(key);
+                            }
+                        }
                     }
                 }
             }
@@ -1193,12 +1135,12 @@ pub(crate) fn detect_duplicates_in_json(text: &str, duplicates: &mut Vec<String>
                 string_start = i + 1;
             }
             b'{' => {
-                depth += 1;
-                keys_at_depth.push(std::collections::HashSet::new());
+                depth = depth.saturating_add(1);
+                keys_at_depth.push(Some(std::collections::HashSet::new()));
             }
             b'[' => {
-                depth += 1;
-                keys_at_depth.push(std::collections::HashSet::new());
+                depth = depth.saturating_add(1);
+                keys_at_depth.push(None);
             }
             b'}' | b']' if depth > 0 => {
                 depth -= 1;
@@ -1215,19 +1157,26 @@ pub(crate) fn detect_duplicates_in_json(text: &str, duplicates: &mut Vec<String>
 // ---------------------------------------------------------------------------
 
 pub(crate) fn sort_json_keys(v: &serde_json::Value) -> serde_json::Value {
-    match v {
-        serde_json::Value::Object(map) => {
-            let mut sorted: std::collections::BTreeMap<_, _> = std::collections::BTreeMap::new();
-            for (k, val) in map.iter() {
-                sorted.insert(k.clone(), sort_json_keys(val));
+    fn inner(v: &serde_json::Value, depth: usize) -> serde_json::Value {
+        if depth > MAX_SCHEMA_DEPTH {
+            return v.clone();
+        }
+        match v {
+            serde_json::Value::Object(map) => {
+                let mut sorted: std::collections::BTreeMap<_, _> =
+                    std::collections::BTreeMap::new();
+                for (k, val) in map.iter() {
+                    sorted.insert(k.clone(), inner(val, depth + 1));
+                }
+                serde_json::Value::Object(sorted.into_iter().collect())
             }
-            serde_json::Value::Object(sorted.into_iter().collect())
+            serde_json::Value::Array(arr) => {
+                serde_json::Value::Array(arr.iter().map(|e| inner(e, depth + 1)).collect())
+            }
+            _ => v.clone(),
         }
-        serde_json::Value::Array(arr) => {
-            serde_json::Value::Array(arr.iter().map(sort_json_keys).collect())
-        }
-        _ => v.clone(),
     }
+    inner(v, 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -1237,18 +1186,12 @@ pub(crate) fn sort_json_keys(v: &serde_json::Value) -> serde_json::Value {
 /// Mask a secret value for safe display. Never returns the full value for short strings.
 /// UTF-8 safe: operates on char boundaries, never splits multibyte sequences.
 pub fn mask_secret_preview(value: &str) -> String {
-    if value.chars().count() <= 4 {
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() <= 4 {
         return "***".to_string();
     }
-    let prefix: String = value.chars().take(2).collect();
-    let suffix: String = value
-        .chars()
-        .rev()
-        .take(2)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
+    let prefix: String = chars[..2].iter().collect();
+    let suffix: String = chars[chars.len() - 2..].iter().collect();
     format!("{}***{}", prefix, suffix)
 }
 

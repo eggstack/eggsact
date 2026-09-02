@@ -9,9 +9,15 @@ pub fn byte_offset_to_char_index(text: &str, byte_offset: usize) -> Result<usize
             text.len()
         ));
     }
+    // Floor to previous char boundary if offset is mid-codepoint, so slicing
+    // never panics and column reporting remains stable for multi-byte input.
+    let mut valid_offset = byte_offset;
+    while valid_offset > 0 && !text.is_char_boundary(valid_offset) {
+        valid_offset -= 1;
+    }
     Ok(text
         .char_indices()
-        .take_while(|(idx, _)| *idx < byte_offset)
+        .take_while(|(idx, _)| *idx < valid_offset)
         .count())
 }
 

@@ -407,7 +407,7 @@ fn median(args: &[f64]) -> Result<f64, EvaluationError> {
         ));
     }
     let mut sorted = args.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| a.total_cmp(b));
     let mid = sorted.len() / 2;
     if sorted.len().is_multiple_of(2) {
         Ok((sorted[mid - 1] + sorted[mid]) / 2.0)
@@ -1872,7 +1872,7 @@ fn evaluate_function(
         "bin" if args.len() == 1 => {
             let n = checked_i64(args[0], "bin requires integer argument")?;
             let s = if n < 0 {
-                format!("-0b{:b}", n.wrapping_neg())
+                format!("-0b{:b}", n.unsigned_abs())
             } else {
                 format!("0b{:b}", n)
             };
@@ -1884,7 +1884,7 @@ fn evaluate_function(
         "hex" if args.len() == 1 => {
             let n = checked_i64(args[0], "hex requires integer argument")?;
             let s = if n < 0 {
-                format!("-0x{:x}", n.wrapping_neg())
+                format!("-0x{:x}", n.unsigned_abs())
             } else {
                 format!("0x{:x}", n)
             };
@@ -1896,7 +1896,7 @@ fn evaluate_function(
         "oct" if args.len() == 1 => {
             let n = checked_i64(args[0], "oct requires integer argument")?;
             let s = if n < 0 {
-                format!("-0o{:o}", n.wrapping_neg())
+                format!("-0o{:o}", n.unsigned_abs())
             } else {
                 format!("0o{:o}", n)
             };
@@ -2121,7 +2121,7 @@ fn evaluate_function(
             let key = format!("v{}", var_id);
             let mut vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
             if !vars.contains_key(&key) && vars.len() >= MAX_USER_VARIABLES {
-                if let Some(oldest) = vars.keys().next().cloned() {
+                if let Some(oldest) = vars.keys().min().cloned() {
                     vars.remove(&oldest);
                 }
             }
@@ -2617,7 +2617,7 @@ fn evaluate_function_with(
         "bin" if args.len() == 1 => {
             let n = checked_i64(args[0], "bin requires integer argument")?;
             let s = if n < 0 {
-                format!("-0b{:b}", n.wrapping_neg())
+                format!("-0b{:b}", n.unsigned_abs())
             } else {
                 format!("0b{:b}", n)
             };
@@ -2629,7 +2629,7 @@ fn evaluate_function_with(
         "hex" if args.len() == 1 => {
             let n = checked_i64(args[0], "hex requires integer argument")?;
             let s = if n < 0 {
-                format!("-0x{:x}", n.wrapping_neg())
+                format!("-0x{:x}", n.unsigned_abs())
             } else {
                 format!("0x{:x}", n)
             };
@@ -2641,7 +2641,7 @@ fn evaluate_function_with(
         "oct" if args.len() == 1 => {
             let n = checked_i64(args[0], "oct requires integer argument")?;
             let s = if n < 0 {
-                format!("-0o{:o}", n.wrapping_neg())
+                format!("-0o{:o}", n.unsigned_abs())
             } else {
                 format!("0o{:o}", n)
             };
@@ -2865,7 +2865,7 @@ fn evaluate_function_with(
             if !ctx.user_variables.contains_key(&key)
                 && ctx.user_variables.len() >= MAX_USER_VARIABLES_CTX
             {
-                if let Some(oldest) = ctx.user_variables.keys().next().cloned() {
+                if let Some(oldest) = ctx.user_variables.keys().min().cloned() {
                     ctx.user_variables.remove(&oldest);
                 }
             }
@@ -3160,6 +3160,9 @@ fn prime_factors_string(n: i64) -> String {
 // ─── PRNG helper (xorshift64) ────────────────────────────────────────────────
 
 fn xorshift64(state: &mut u64) -> u64 {
+    if *state == 0 {
+        *state = 123456789;
+    }
     *state ^= *state << 13;
     *state ^= *state >> 7;
     *state ^= *state << 17;

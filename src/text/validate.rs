@@ -150,15 +150,12 @@ pub fn validate_brackets_with_pairs(
         if openers.contains(&c) {
             stack.push((c, index));
         } else if closers.contains(&c) {
-            if let Some((opener, opener_index)) = stack.pop() {
+            if let Some((opener, _opener_index)) = stack.pop() {
                 if pairs.get(&opener) != Some(&c) {
-                    let (line, column) = get_line_column(text, opener_index);
-                    unmatched_openers.push(BracketError {
-                        char: opener.to_string(),
-                        index: opener_index as i32,
-                        line,
-                        column,
-                    });
+                    // Mismatched pair: report only the closer as unmatched.
+                    // Pushing both opener and closer double-counts the error
+                    // (e.g. "([)]" would produce 2+2 instead of 0+2). The opener
+                    // is already popped and considered consumed.
                     let (line, column) = get_line_column(text, index);
                     unmatched_closers.push(BracketError {
                         char: c.to_string(),

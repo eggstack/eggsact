@@ -222,6 +222,9 @@ pub fn build_safe_repr(text: &str) -> String {
                 let display = invisible_display_name(c);
                 result.push_str(&format!("\u{27E6}{}\u{27E7}", display));
             }
+            _ if (c as u32) < 32 || c as u32 == 0x7f || c == '\\' => {
+                result.push_str(&format!("\u{27E6}U+{:04X}\u{27E7}", c as u32));
+            }
             _ => result.push(c),
         }
     }
@@ -327,13 +330,14 @@ pub fn reverse_confusables(ch: char) -> Result<Vec<String>, String> {
     let target_cp = format!("U+{:04X}", ch as u32);
     Ok(REVERSE_INDEX
         .get(&target_cp)
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|cp| {
-            let hex = cp.strip_prefix("U+")?;
-            let code = u32::from_str_radix(hex, 16).ok()?;
-            char::from_u32(code).map(|c| c.to_string())
+        .map(|v| {
+            v.iter()
+                .filter_map(|cp| {
+                    let hex = cp.strip_prefix("U+")?;
+                    let code = u32::from_str_radix(hex, 16).ok()?;
+                    char::from_u32(code).map(|c| c.to_string())
+                })
+                .collect()
         })
-        .collect())
+        .unwrap_or_default())
 }

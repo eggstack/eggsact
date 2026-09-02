@@ -234,16 +234,15 @@ impl ToolBudget {
 
     /// Returns the budget tier that best matches this budget instance.
     ///
-    /// Identity is checked against the canonical `CHEAP` / `MODERATE` /
-    /// `HEAVY` consts. If the budget has been customised beyond recognition
-    /// of any tier, `Moderate` is returned as a safe fallback.
+    /// Tier is inferred from the canonical discriminants (`max_output_bytes`
+    /// for Heavy vs others, then `max_elapsed_ms` for Cheap vs Moderate) so
+    /// that builder overrides like `CHEAP.with_max_elapsed_ms(5000)` still
+    /// report the original tier instead of falling back to Moderate.
     pub fn tier(&self) -> BudgetTier {
-        if *self == Self::CHEAP {
-            BudgetTier::Cheap
-        } else if *self == Self::MODERATE {
-            BudgetTier::Moderate
-        } else if *self == Self::HEAVY {
+        if self.max_output_bytes >= Self::HEAVY.max_output_bytes {
             BudgetTier::Heavy
+        } else if self.max_elapsed_ms <= Self::CHEAP.max_elapsed_ms {
+            BudgetTier::Cheap
         } else {
             BudgetTier::Moderate
         }
@@ -712,7 +711,16 @@ mod tests {
             max_input_bytes: 999,
             ..ToolBudget::CHEAP
         };
-        assert_eq!(custom.tier(), BudgetTier::Moderate);
+        // Tier is inferred from output/elapsed discriminants, so input-only
+        // customizations preserve the original tier (Cheap). A truly
+        // unrecognizable budget (e.g. weird output) falls back to Moderate.
+        assert_eq!(custom.tier(), BudgetTier::Cheap);
+        let weird = ToolBudget {
+            max_output_bytes: 999,
+            max_elapsed_ms: 999_999,
+            ..ToolBudget::CHEAP
+        };
+        assert_eq!(weird.tier(), BudgetTier::Moderate);
     }
 
     #[test]

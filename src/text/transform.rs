@@ -157,10 +157,15 @@ pub fn text_transform(text: &str, operations: &[String]) -> TextTransformResult 
                 ops_applied.push("visible_repr".to_string());
             }
             "trim_lines" => {
+                let had_trailing_newline =
+                    current_text.ends_with('\n') || current_text.ends_with('\r');
                 let lines: Vec<&str> = current_text.lines().collect();
                 let trimmed_lines: Vec<String> =
                     lines.iter().map(|l| l.trim().to_string()).collect();
-                let new_text = trimmed_lines.join("\n");
+                let mut new_text = trimmed_lines.join("\n");
+                if had_trailing_newline && !new_text.is_empty() && !new_text.ends_with('\n') {
+                    new_text.push('\n');
+                }
                 if new_text != current_text {
                     current_text = new_text;
                     ops_applied.push("trim_lines".to_string());
@@ -276,25 +281,7 @@ fn remove_chars(
 }
 
 fn visible_repr(text: &str) -> String {
-    let mut result = String::new();
-    for ch in text.chars() {
-        match ch {
-            ' ' => result.push('\u{2420}'),  // ␠ SPACE SYMBOL
-            '\t' => result.push('\u{2409}'), // ␉ SYMBOL FOR HORIZONTAL TABULATION
-            '\n' => result.push('\u{240A}'), // ␊ SYMBOL FOR LINE FEED
-            '\r' => result.push('\u{240D}'), // ␍ SYMBOL FOR CARRIAGE RETURN
-            '\u{200b}' => result.push_str("\u{27E6}ZWSP\u{27E7}"),
-            '\u{200c}' => result.push_str("\u{27E6}ZWNJ\u{27E7}"),
-            '\u{200d}' => result.push_str("\u{27E6}ZWJ\u{27E7}"),
-            '\u{2060}' => result.push_str("\u{27E6}WJ\u{27E7}"),
-            '\u{fe00}'..='\u{fe0f}' => result.push_str("\u{27E6}VS\u{27E7}"),
-            c if (c as u32) < 32 || c as u32 == 0x7f || c == '\\' => {
-                result.push_str(&format!("\u{27E6}U+{:04X}\u{27E7}", c as u32));
-            }
-            c => result.push(c),
-        }
-    }
-    result
+    crate::text::unicode_tools::build_safe_repr(text)
 }
 
 mod unescape_chars {
@@ -380,6 +367,9 @@ pub fn escape_text(text: &str, mode: &str) -> Result<EscapeTextResult, String> {
             format!("```\n{}\n```", text)
         }
         "html_text" => {
+            // Note: input is assumed to be raw text. Already-escaped entities
+            // (e.g. "&amp;") will be double-escaped to "&amp;amp;" — this is
+            // intentional and not idempotent. Callers must ensure input is raw.
             let mut result = String::new();
             for ch in text.chars() {
                 match ch {
