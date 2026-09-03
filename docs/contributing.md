@@ -97,6 +97,10 @@ eggsact/
       dependency.rs      # Dependency tool (1)
       diagnostics.rs     # Diagnostics tools (3)
       repo.rs            # Repo tools (5)
+      analysis.rs        # Analysis tools (4)
+      network.rs         # Network literal tools (2)
+      encoding.rs        # Codec and radix tools (2)
+      temporal.rs        # Datetime and cron tools (2)
     agent/               # In-process agent API (ToolRegistry, Profile, call_json)
     preflight/           # Typed preflight wrappers
     text/                # Text processing library (25 modules)
@@ -180,7 +184,7 @@ cargo test --test lib parity
 ```
 
 As of 2026-07-08, the Rust parity suite has known gaps documented in `docs/parity.md`
-(`Verification status` and `Known parity gaps` sections). The 80-tool Rust superset
+(`Verification status` and `Known parity gaps` sections). The 86-tool Rust superset
 passes for matching tools; the 37 remaining failures are categorized as accepted
 behavioral differences (shell tokenization, prompt input inspect, unicode policy check,
 tool output drift, tools/list ordering, and error handling drift). Closing these gaps

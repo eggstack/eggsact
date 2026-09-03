@@ -4,7 +4,7 @@
 [![Downloads](https://img.shields.io/crates/d/eggsact)](https://crates.io/crates/eggsact)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Deterministic MCP and in-process utility tools for coding agents. 80 tools across 20 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, and more. Includes a natural language math evaluator that parses expressions like "thirty plus five" or "30m + 100ft".
+Deterministic MCP and in-process utility tools for coding agents. 86 tools across 23 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, network, encoding, temporal, and more. Includes a natural language math evaluator that parses expressions like "thirty plus five" or "30m + 100ft".
 
 ## Installation
 
@@ -83,7 +83,7 @@ assert!(response.ok);
 |-------|------|
 | CLI usage | [docs/cli.md](docs/cli.md) |
 | Library API | [docs/library-api.md](docs/library-api.md) |
-| MCP tool reference (80 tools) | [docs/mcp-tools.md](docs/mcp-tools.md) |
+| MCP tool reference (86 tools) | [docs/mcp-tools.md](docs/mcp-tools.md) |
 | Math features, functions, constants, units | [docs/math-features.md](docs/math-features.md) |
 | Architecture overview | [architecture/overview.md](architecture/overview.md) |
 | Calculator core | [architecture/calculator.md](architecture/calculator.md) |
@@ -106,6 +106,7 @@ assert!(response.ok);
 - **`^` is XOR, not exponentiation.** Use `**` for power. Matches Python.
 - **`g` means gram** in unit expressions. Use `gravity` for standard gravity.
 - `serde_json` uses `preserve_order` — key order is intentional in serialized JSON.
+- Network, encoding, datetime, and cron utilities are deterministic and use no system/network state; temporal conversions accept fixed offsets only.
 
 ## Relationship to Python eggcalc
 

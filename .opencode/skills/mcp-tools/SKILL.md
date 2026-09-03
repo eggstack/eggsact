@@ -134,3 +134,13 @@ These are implemented in `src/tools/` (category modules) with ToolSpec declarati
 4. Add a `ToolSpec` entry in `src/mcp/specs/<category>.rs`
 5. Add tests in `tests/text/test_<module>.rs`
 6. Update `architecture/text-library.md` if significant
+
+### Deterministic utility categories
+
+The network, encoding, and temporal categories are `full`-profile-only
+contextual tools. Keep them exact-input/exact-output: do not add system clock,
+IANA timezone, locale, filesystem, network, environment, or random-state
+lookups. `datetime_convert` uses fixed offsets and decimal timestamp strings;
+`cron_inspect` is a bounded five-field parser with Vixie/POSIX DOM/DOW OR
+semantics. `codec_convert` must validate before canonicalizing, and
+`radix_convert` is signed-magnitude `u128` only.

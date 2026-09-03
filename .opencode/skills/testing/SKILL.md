@@ -178,7 +178,7 @@ Verify that:
 
 ## Property Tests
 
-`tests/property/` contains 55 property-based tests across 10 modules. These verify algebraic invariants (round-trip, idempotence, determinism, symmetry, span validity) using a deterministic xorshift64 PRNG for input generation — no external property-test framework required.
+`tests/property/` contains 59 property-based tests across 11 modules. These verify algebraic invariants (round-trip, idempotence, determinism, symmetry, span validity) using a deterministic xorshift64 PRNG for input generation — no external property-test framework required. The utility expansion adds deterministic network, codec/radix, datetime, and cron invariants in `test_utility_properties.rs`.
 
 ```bash
 cargo test --locked --test lib property              # all property tests
@@ -199,7 +199,7 @@ Properties verified per module:
 
 ## Fuzz Testing
 
-12 fuzz targets via `cargo-fuzz` + libFuzzer in `fuzz/`. Requires nightly Rust.
+13 fuzz targets via `cargo-fuzz` + libFuzzer in `fuzz/`. Requires nightly Rust.
 
 ```bash
 cargo install cargo-fuzz --locked

@@ -12,8 +12,8 @@ See also: [MCP Server](mcp-server.md), [Agent API](agent-api.md), [Compatibility
 | `src/mcp/registry/all_tools.rs` | `ALL_TOOLS_VEC` (LazyLock), `PROFILE_NAMES` (11 profiles) |
 | `src/mcp/registry/listing.rs` | `get_tool()`, `tools_for_profile()`, `tools_for_profile_audience()`, `mcp_tool_definitions()`, `ROUTE_CRITICAL_TOOLS`, `find_close_match()` |
 | `src/mcp/registry/mod.rs` | Re-exports, profile snapshot tests |
-| `src/mcp/specs/*.rs` | 20 `ToolSpec` declaration files (one per category) |
-| `src/mcp/schemas/*.rs` | 20 JSON-schema builder files (one per category) |
+| `src/mcp/specs/*.rs` | 23 `ToolSpec` declaration files (one per category) |
+| `src/mcp/schemas/*.rs` | 23 JSON-schema builder files (one per category) |
 
 ---
 
@@ -85,7 +85,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 
 ## ALL_TOOLS Aggregation
 
-`ALL_TOOLS_VEC` in `src/mcp/registry/all_tools.rs` is a `LazyLock<Vec<ToolSpec>>` that collects all 20 category slices at first access:
+`ALL_TOOLS_VEC` in `src/mcp/registry/all_tools.rs` is a `LazyLock<Vec<ToolSpec>>` that collects all 23 category slices at first access:
 
 ```
 specs/math.rs → MATH_TOOLS (4)
@@ -108,6 +108,9 @@ specs/dependency.rs → DEPENDENCY_TOOLS (1)
 specs/repo.rs → REPO_TOOLS (5)
 specs/diagnostics.rs → DIAGNOSTICS_TOOLS (3)
 specs/analysis.rs → ANALYSIS_TOOLS (4)
+specs/network.rs → NETWORK_TOOLS (2)
+specs/encoding.rs → ENCODING_TOOLS (2)
+specs/temporal.rs → TEMPORAL_TOOLS (2)
 ```
 
 A test (`tool_registration_tables_are_in_sync`) verifies that `ALL_TOOLS_VEC.len()` matches the sum of all category slice lengths. Adding a tool requires only one `ToolSpec` entry — no manual registration.
@@ -122,7 +125,7 @@ A test (`tool_registration_tables_are_in_sync`) verifies that `ALL_TOOLS_VEC.len
 
 | Profile | Purpose | Model | Harness | Debug |
 |---------|---------|-------|---------|-------|
-| `full` | All non-hidden tools | 71 | 80 | 80 |
+| `full` | All non-hidden tools | 77 | 86 | 86 |
 | `default` | Essential + common tools | 25 | 25 | 25 |
 | `codegg_core_min` | Minimal coder-agent set | 6 | 6 | 6 |
 | `codegg_core` | Standard coder-agent set | 19 | 19 | 19 |

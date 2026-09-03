@@ -69,10 +69,10 @@ eggsact --diagnostics --format json  # JSON output
 ```
 eggsact diagnostics (v1.2.3)
 
-Tools: 80 total
+Tools: 86 total
 
 Profiles:
-  full: 80 tools
+  full: 86 tools
   default: 25 tools
   codegg_core_min: 6 tools
   ...
@@ -111,9 +111,9 @@ Known env vars (names only, no values):
 ```json
 {
   "version": "1.2.3",
-  "tool_count": 80,
+  "tool_count": 86,
   "profiles": {
-    "full": 80,
+    "full": 86,
     "default": 25,
     "codegg_core_min": 6,
     "codegg_core": 19,

@@ -9,7 +9,7 @@ tools. Clients do not need to change any code to switch from Python to Rust for
 matching tools.
 
 The Python reference lives in `eggcalc/mcp/` (schemas.py, tools.py, server.py) and
-provides 67 tool definitions. The Rust implementation in `src/mcp/` ships 80 tools
+provides 67 tool definitions. The Rust implementation in `src/mcp/` ships 86 tools
 (see [Known parity gaps](#known-parity-gaps) below), a superset of the Python reference.
 
 The parity suite is intended to validate all Rust tools against the Python reference
@@ -247,7 +247,7 @@ updating all MCP test helpers to use `Harness` audience.
 | 54 | `parity/test_semantic_parity.rs` | `test_tools_list_tier_true_as_bool` | C5 | Rust has 4 extra tools vs Python | No | Defer: Rust superset |
 | 55 | `parity/test_semantic_parity.rs` | `test_tools_list_tier_false_as_bool` | C5 | Same | No | Defer |
 | 56 | `parity/test_semantic_parity.rs` | `test_tools_list_tier_int` | C5 | Same | No | Defer |
-| 57 | `parity/test_semantic_parity.rs` | `test_tools_list_full_schema_parity` | C5 | Tool count mismatch: Rust=80, Python=67 | No | Defer: Rust superset |
+| 57 | `parity/test_semantic_parity.rs` | `test_tools_list_full_schema_parity` | C5 | Tool count mismatch: Rust=86, Python=67 | No | Defer: Rust superset |
 | 58 | `parity/test_semantic_parity.rs` | `test_profiles_list_parity` | C5 | Per-profile tool sets differ (Rust extras) | No | Defer |
 | 59 | `parity/test_error_handling.rs` | `test_shell_split_basic` | C6 | Raw MCP response comparison differs; shell_split HarnessOnly in Rust subprocess | No | Defer: needs Harness audience in test |
 | 60 | `parity/test_bug_fixes.rs` | `test_bug006_prompt_inspect_vt_ff_detected` | C6 | prompt_input_inspect HarnessOnly, raw MCP call lacks audience | No | Defer: needs Harness audience in test |
@@ -316,7 +316,7 @@ calls a HarnessOnly tool without proper audience setup.
 
 ### Known tool-set gap: 80 vs 67 tools
 
-The Rust `full` profile ships 80 tools; the Python reference defines 67.
+The Rust `full` profile ships 86 tools; the Python reference defines 67.
 Thirteen extra Rust tools not in Python: `runtime_diagnostics`,
 `profile_inspect`, `tool_availability_explain`, `repo_tree_summarize`,
 `diff_risk_classify`, `path_batch_scope_check`, `code_block_map`,

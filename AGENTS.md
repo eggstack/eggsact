@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Deterministic MCP and in-process utility tools for coding agents. Single crate, no workspace. 80 tools across 20 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, and more.
+Deterministic MCP and in-process utility tools for coding agents. Single crate, no workspace. 86 tools across 23 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, network, encoding, temporal, and more.
 
 ## Commands
 
@@ -59,11 +59,12 @@ src/
     registry/       # tool registration (ToolSpec declarations, single source of truth)
       types.rs      # ToolDefinition, ToolSpec, enums
       all_tools.rs  # ALL_TOOLS aggregation from specs/
-    specs/          # ToolSpec declarations per tool category (20 files)
-    schemas/        # JSON-schema builders per tool category (20 files)
-  tools/            # MCP tool implementations (by category, 20 files)
+    specs/          # ToolSpec declarations per tool category (23 files)
+    schemas/        # JSON-schema builders per tool category (23 files)
+  tools/            # MCP tool implementations (by category, 23 files)
     helpers.rs      # shared constants, utilities, helper functions
   text/             # text processing library (25 modules + generated confusables data file)
+  temporal/         # fixed-offset datetime helpers and bounded cron parser/search
     regex_engine.rs # regex backend classifier
     confusables_generated.rs  # AUTO-GENERATED — never edit
   agent/            # in-process agent API (ToolRegistry, Profile, call_json)
@@ -71,7 +72,7 @@ src/
 tests/
   lib.rs            # declares test modules: calc, mcp, parity, text, property
   parity/           # Python/Rust parity tests (requires ../eggcalc)
-  property/         # property-based tests (10 modules, 55 tests)
+  property/         # property-based tests (11 modules, 59 tests)
 architecture/       # detailed design docs (15 files) — see index below
 plans/
   roadmap.md        # the single living plan; completed phase records were pruned (git history keeps them)
@@ -95,7 +96,7 @@ Detailed design documentation lives in `architecture/`. Use these as the deep-re
 | `architecture/agent-api.md` | ToolRegistry, in-process execution path |
 | `architecture/testing.md` | Test structure, parity, property tests, fuzzing |
 | `architecture/generated-assets.md` | What `generate-docs` writes, confusables generation, parity harness, diagnostics |
-| `architecture/tools.md` | The 20 tool categories and their handlers |
+| `architecture/tools.md` | The 23 tool categories and their handlers |
 | `architecture/cli-binaries.md` | CLI flags and binary behavior |
 | `architecture/coding-agent-integration.md` | How coding agents should integrate eggsact |
 | `architecture/compatibility.md` | CompatibilityMode (EggcalcPython vs StrictNative) semantics |
@@ -139,6 +140,8 @@ Hand-maintained user-facing docs in `docs/`:
 - **`ToolDefinition`** lives in `src/mcp/registry/types.rs` (not `server.rs`).
 - **`ToolAudience`** enum (`Model`, `Harness`, `Debug`) controls exposure. Use `available_tools_model_safe()` for model-facing integrations.
 - **`Profile::from_str_opt`** is strict — returns `None` for unknown names. Use `Profile::custom(name)` for custom profiles.
+- **Deterministic utility semantics**: `ip_inspect`, `cidr_inspect`, `codec_convert`, `radix_convert`, `datetime_convert`, and `cron_inspect` use explicit inputs only. Datetime/cron use fixed numeric offsets; they never read the clock, locale, timezone database, filesystem, network, or environment.
+- **Cron day matching**: `cron_inspect` uses ordinary Vixie/POSIX semantics—when both day-of-month and day-of-week are restricted, either field may match; a wildcard on one makes the other control.
 - **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to `Model`), `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`; defaults to `full`).
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
 - **Test-thread bound:** `--test-threads=4` is used in CI and the release gate to prevent Tokio blocking-pool starvation when many MCP subprocess tests run in parallel. This is a test-runner containment measure, not a product budget. Unit tests (`--lib`) and doc tests do not need it.
@@ -166,7 +169,7 @@ Agent task skills in `.opencode/skills/` (symlinked from `.agents/skills/` for C
 
 ## Fuzzing
 
-12 fuzz targets via `cargo-fuzz` + libFuzzer in `fuzz/`. Requires nightly Rust.
+13 fuzz targets via `cargo-fuzz` + libFuzzer in `fuzz/`. Requires nightly Rust.
 
 ```bash
 cargo install cargo-fuzz --locked

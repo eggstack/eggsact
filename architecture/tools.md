@@ -1,12 +1,12 @@
 # Tool Implementations
 
-The `src/tools/` module contains the actual handler functions for all 80 MCP tools. Each category has its own file, plus a shared helpers module.
+The `src/tools/` module contains the actual handler functions for all 86 MCP tools. Each category has its own file, plus a shared helpers module.
 
 See also: [MCP Server](mcp-server.md), [Text Library](text-library.md), [Machine Codes](machine-codes.md), [Preflight](preflight.md)
 
 ## Module Overview
 
-20 source files implement 80 tools across 20 categories. Every handler follows the same signature:
+23 source files implement 86 tools across 23 categories. Every handler follows the same signature:
 
 ```rust
 pub fn tool_name(args: &Value) -> ToolResponse
@@ -42,6 +42,23 @@ Public serialized map fields use `BTreeMap` for stable lexicographic key orderin
 | `diagnostics.rs` | diagnostics | 3 | Runtime diagnostics, profile inspection, tool availability |
 | `repo.rs` | repo | 5 | Manifest inspection, config file inspection, tree summary, language detect |
 | `analysis.rs` | analysis | 4 | Import/export, code block map, symbol name diff, lockfile inspect |
+| `network.rs` | network | 2 | Deterministic IPv4/IPv6 classification and CIDR arithmetic |
+| `encoding.rs` | encoding | 2 | Strict UTF-8/hex/Base64/Base64URL and radix conversion |
+| `temporal.rs` | temporal | 2 | Fixed-offset RFC 3339/Unix conversion and bounded cron inspection |
+
+### Deterministic Network, Encoding and Temporal Utilities
+
+The six advanced utility tools are `full`-profile-only contextual tools. They
+perform exact computation from caller-provided text and do not access the
+system clock, timezone database, locale, filesystem, network, environment, or
+randomness.
+
+- `ip_inspect` canonicalizes IPv4/IPv6 addresses, returns lowercase bytes and decimal numeric forms, and reports explicit special-use tags.
+- `cidr_inspect` normalizes networks, reports masks/boundaries/counts, and optionally checks same-family containment. Counts are decimal strings; IPv6 `/0` is represented as exact `2^128` text.
+- `codec_convert` converts bytes among UTF-8, strict hex, standard Base64, and unpadded Base64URL with canonical output.
+- `radix_convert` converts signed-magnitude integers in bases 2–36 using checked `u128` arithmetic; it does not guess widths or interpret two’s complement.
+- `datetime_convert` converts RFC 3339 and Unix second/millisecond/nanosecond strings using caller-selected fixed offsets. Negative fractional instants use floor whole-unit values; nanoseconds remain authoritative.
+- `cron_inspect` parses bounded five-field Vixie/POSIX-style schedules and searches no more than one Gregorian 400-year cycle. It uses the offset carried by `after`, has no DST/IANA behavior, and applies DOM/DOW OR semantics when both are restricted.
 
 ## Shared Helpers (`helpers.rs`)
 

@@ -1,8 +1,8 @@
 # eggsact Architecture Overview
 
-**Single-crate Rust project. No workspace. 80 tools across 20 categories.**
+**Single-crate Rust project. No workspace. 86 tools across 23 categories.**
 
-eggsact is a deterministic MCP (Model Context Protocol) server and in-process utility library for AI coding agents. It provides 80 tools across 20 categories for math evaluation, text processing, JSON analysis, regex validation, path operations, Unicode safety, shell command preflight, config inspection, patch analysis, dependency management, source analysis, and more. It also re-implements the Python `eggcalc` calculator as one of its tool categories.
+eggsact is a deterministic MCP (Model Context Protocol) server and in-process utility library for AI coding agents. It provides 86 tools across 23 categories for math evaluation, text processing, JSON analysis, regex validation, path operations, Unicode safety, shell command preflight, config inspection, patch analysis, dependency management, source analysis, network literals, encodings, fixed-offset time, and more. It also re-implements the Python `eggcalc` calculator as one of its tool categories.
 
 This document is the **master index** for the architecture directory. Each major component has a dedicated deep-dive doc linked in the table below — read this overview for the bird's-eye picture, then follow the link for the full design.
 
@@ -49,11 +49,12 @@ This document is the **master index** for the architecture directory. Each major
 ┌─────────────────────────────────────────────────────────────────┐
 │                     tools/ — Tool Implementations                │
 │                                                                   │
-│  80 tools across 20 categories:                                   │
+│  86 tools across 23 categories:                                   │
 │  math(4) text(18) json(6) regex(3) validation(4) path(6)        │
 │  shell(4) list(3) markdown(2) patch(5) config(3) toml(1)        │
 │  identifier(3) unicode(2) version(2) cargo(1) dependency(1)     │
-│  repo(5) diagnostics(3) analysis(4)                              │
+│  repo(5) diagnostics(3) analysis(4) network(2) encoding(2)        │
+│  temporal(2)                                                       │
 │                                                                   │
 │  helpers.rs — shared constants, utilities                        │
 └─────────────────────────────┬───────────────────────────────────┘
@@ -90,7 +91,7 @@ Each major component has a dedicated architecture doc. The table below serves as
 | **Compatibility** | [compatibility.md](compatibility.md) | `EggcalcPython` vs `StrictNative` validation modes — Python-parity error messages vs strict JSON Schema enforcement, how compat mode propagates through MCP server and agent API | `src/mcp/compat.rs` |
 | **Agent API** | [agent-api.md](agent-api.md) | In-process `ToolRegistry` (synchronous dispatch), 11 named `Profile` variants + Custom, `ToolAudience` (Model/Harness/Debug), `ExecutionContext` with builder pattern, 4 dispatch levels (`call_json` → `call_json_with_execution_context`), tool listing methods, `prepare_tool_call()` shared core | `src/agent/mod.rs` |
 | **Preflight Wrappers** | [preflight.md](preflight.md) | 5 typed wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`), `PreflightError` taxonomy (ToolCall/ToolRejected/ContractViolation), typed verdict enums with `Other(String)` forward-compat, strict vs permissive `Finding` parsing, `RecommendedNextTool` | `src/preflight/mod.rs` |
-| **Tool Implementations** | [tools.md](tools.md) | Per-category tool handler details, composite tool orchestration pattern (edit/command/config preflight), route-critical tools, command policy engine, dependency ecosystem detection, repo analysis, source analysis | `src/tools/*.rs` (20 files) |
+| **Tool Implementations** | [tools.md](tools.md) | Per-category tool handler details, composite tool orchestration pattern (edit/command/config preflight), route-critical tools, command policy engine, dependency ecosystem detection, repo analysis, source analysis, network/encoding/temporal utilities | `src/tools/*.rs` (23 files) |
 | **Testing** | [testing.md](testing.md) | Test structure (70+ files across 5 suites), parity test framework (Python/Rust comparison), CI pipeline, how to add tests, fixture-backed route contract tests | `tests/` |
 | **CLI & Binaries** | [cli-binaries.md](cli-binaries.md) | `main.rs` CLI modes, `generate-docs` binary (README/profile/tool-cards generation), `--diagnostics` flag | `src/main.rs`, `src/bin/generate_docs.rs` |
 | **Generated Assets** | [generated-assets.md](generated-assets.md) | Doc generation pipeline, confusables data, diagnostics, verification, profile tool cards | `src/bin/generate_docs.rs`, `scripts/generate_confusables.py` |
@@ -215,11 +216,11 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 ];
 ```
 
-**Aggregation**: `ALL_TOOLS_VEC` in `src/mcp/registry/all_tools.rs` collects all 20 category slices. A test (`tool_registration_tables_are_in_sync`) catches drift.
+**Aggregation**: `ALL_TOOLS_VEC` in `src/mcp/registry/all_tools.rs` collects all 23 category slices. A test (`tool_registration_tables_are_in_sync`) catches drift.
 
 ---
 
-## Tool Categories (80 tools)
+## Tool Categories (86 tools)
 
 | Category | Count | Description | Deep Dive |
 |----------|-------|-------------|-----------|
@@ -243,6 +244,9 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 | **repo** | 5 | Manifest inspect, config file inspect, tree summarize, test suggest, language detect | [tools.md](tools.md) |
 | **diagnostics** | 3 | Runtime diagnostics, profile inspect, tool availability explain (harness-only) | [tools.md](tools.md) |
 | **analysis** | 4 | Import/export inspect, code block map, symbol name diff, lockfile inspect | [tools.md](tools.md) |
+| **network** | 2 | IPv4/IPv6 address classification and CIDR arithmetic | [tools.md](tools.md) |
+| **encoding** | 2 | Strict byte codecs and checked radix conversion | [tools.md](tools.md) |
+| **temporal** | 2 | Fixed-offset datetime conversion and bounded cron search | [tools.md](tools.md) |
 
 ---
 
@@ -252,7 +256,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 
 | Profile | Model | Harness | Debug | Purpose |
 |---------|-------|---------|-------|---------|
-| `full` | 71 | 80 | 80 | All non-hidden tools |
+| `full` | 77 | 86 | 86 | All non-hidden tools |
 | `default` | 25 | 25 | 25 | Essential + common tools |
 | `codegg_core_min` | 6 | 6 | 6 | Minimal coder-agent set |
 | `codegg_core` | 19 | 19 | 19 | Standard coder-agent set |
@@ -296,11 +300,12 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 | `src/mcp/registry/types.rs` | ~100 | ToolDefinition, ToolSpec, enums |
 | `src/mcp/registry/all_tools.rs` | ~60 | ALL_TOOLS aggregation, PROFILE_NAMES |
 | `src/mcp/registry/listing.rs` | ~530 | Filtering, audience, schema compaction, suggestions |
-| `src/mcp/specs/*.rs` | — | ToolSpec declarations (20 files, one per category) |
-| `src/mcp/schemas/*.rs` | — | JSON-schema builders (20 files, one per category) |
+| `src/mcp/specs/*.rs` | — | ToolSpec declarations (23 files, one per category) |
+| `src/mcp/schemas/*.rs` | — | JSON-schema builders (23 files, one per category) |
 | `src/tools/helpers.rs` | ~1710 | Shared constants, utilities |
-| `src/tools/*.rs` | — | Tool implementations (20 files; the toml handler lives in `config.rs`) |
+| `src/tools/*.rs` | — | Tool implementations (23 files; the toml handler lives in `config.rs`) |
 | `src/text/*.rs` | — | Text processing library (25 modules + generated `confusables_generated.rs` data file) |
+| `src/temporal/*.rs` | — | Fixed-offset datetime helpers and bounded cron parser/search |
 | `src/agent/mod.rs` | ~1810 | ToolRegistry, Profile, ExecutionContext |
 | `src/preflight/mod.rs` | ~3150 | Typed preflight wrappers |
 

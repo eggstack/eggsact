@@ -389,7 +389,7 @@ Every tool response includes a `machine_code` field (when non-OK) for programmat
 
 ### Available MCP Tools
 
-80 tools across 20 categories. See [mcp-tools.md](mcp-tools.md) for the complete reference with parameters, return types, and examples.
+86 tools across 23 categories. See [mcp-tools.md](mcp-tools.md) for the complete reference with parameters, return types, and examples.
 
 ### Programmatic Usage
 

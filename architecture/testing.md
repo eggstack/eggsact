@@ -19,7 +19,7 @@ tests/
     accepted_parity_failures.txt  # 37 accepted parity failures for regression detection
 fuzz/
   Cargo.toml                      # isolated fuzz workspace (libfuzzer-sys)
-  fuzz_targets/                   # 12 fuzz targets
+  fuzz_targets/                   # 13 fuzz targets
   corpus/                         # seed corpus per target
   artifacts/                      # crash artifacts (gitignored)
 ```
@@ -483,7 +483,7 @@ cargo test --locked --test lib mcp -- --skip parity
 
 ## Property Tests (`tests/property/`)
 
-10 test files containing 55 property-based tests that verify algebraic invariants across all major surfaces. Property tests run in ordinary CI via `cargo test --test lib property`.
+11 test files containing 59 property-based tests that verify algebraic invariants across all major surfaces. Property tests run in ordinary CI via `cargo test --test lib property`.
 
 | File | Tests | Properties Verified |
 |------|-------|-------------------|
@@ -515,7 +515,7 @@ cargo test --locked --test lib property -- calculator  # calculator properties o
 
 ## Fuzz Testing (`fuzz/`)
 
-12 fuzz targets via `cargo-fuzz` + libFuzzer, covering all parser-heavy and transformation-heavy surfaces. Fuzz targets require nightly Rust and are isolated from normal dependencies.
+13 fuzz targets via `cargo-fuzz` + libFuzzer, covering all parser-heavy and transformation-heavy surfaces. Fuzz targets require nightly Rust and are isolated from normal dependencies. The `cron_inspection` target exercises the bounded five-field parser with fixed reference-time input.
 
 | Target | What It Fuzzes |
 |--------|---------------|

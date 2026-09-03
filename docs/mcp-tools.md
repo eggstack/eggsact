@@ -12,7 +12,7 @@ See also: [Math Features](math-features.md), [Library API](library-api.md), [MCP
 | Server name | `eggsact` |
 | Server version | crate version from `Cargo.toml` |
 | Transport | stdio JSON-RPC 2.0 |
-| Total tools | 80, registered in `src/mcp/specs/` (single source of truth; per-profile counts in `architecture/mcp-server.md`) |
+| Total tools | 86, registered in `src/mcp/specs/` (single source of truth; per-profile counts in `architecture/mcp-server.md`) |
 
 The server communicates over stdin/stdout using newline-delimited JSON-RPC 2.0 messages. `tools/call` responses follow MCP shape: JSON-RPC `result.content[0].text` contains a JSON-encoded `ToolResponse` envelope with an `ok` boolean field.
 
@@ -101,7 +101,7 @@ Many tools return a `hints` array with suggestions when validation fails:
 
 ## Tool Categories
 
-Tools are grouped into 20 metadata categories covering math, text, JSON, validation, regex, lists, paths, identifiers, shell, markdown, configuration, patches, TOML, Unicode, versioning, Cargo metadata, dependency, repository, analysis, and diagnostics.
+Tools are grouped into 23 metadata categories covering math, text, JSON, validation, regex, lists, paths, identifiers, shell, markdown, configuration, patches, TOML, Unicode, versioning, Cargo metadata, dependency, repository, analysis, diagnostics, network, encoding, and temporal.
 
 ---
 
@@ -1119,6 +1119,111 @@ Check delimiter balance in text (parentheses, brackets, braces, angle brackets).
 
 ---
 
+## Network
+
+### ip_inspect
+
+Parse and canonicalize an IPv4 or IPv6 address without DNS or interface
+lookups. The result includes lowercase address bytes, an exact decimal numeric
+form, and sorted explicit special-use tags such as `private`, `link_local`,
+`documentation`, `multicast`, `shared`, `unique_local`, and `ipv4_mapped`.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `address` | string | yes | -- | Strict IPv4 or IPv6 address |
+
+**Return:** `{"address": <string>, "family": "ipv4"|"ipv6", "bytes_hex": <string>, "numeric": <decimal_string>, "special_use": [<string>], "ipv4_mapped": <object|null>}`
+
+### cidr_inspect
+
+Normalize a CIDR and calculate exact network boundaries, masks, arithmetic IPv4
+broadcast, and address count. `contains` is optional but must be the same
+address family; no "usable host" count is inferred.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `cidr` | string | yes | -- | IPv4 or IPv6 CIDR, including `/0` |
+| `contains` | string | no | null | Candidate address to test |
+
+**Return:** `{"family": <string>, "cidr": <canonical_cidr>, "prefix_length": <int>, "host_bits": <int>, "network_address": <string>, "netmask": <string>, "first_address": <string>, "last_address": <string>, "broadcast_address": <string|null>, "address_count": <decimal_string>, "contains": <boolean|null>, "contains_address": <string|null>}`
+
+```json
+{"jsonrpc":"2.0","method":"tools/call","id":20,"params":{"name":"cidr_inspect","arguments":{"cidr":"10.1.2.3/24","contains":"10.1.2.200"}}}
+```
+
+## Encoding
+
+### codec_convert
+
+Convert bytes among exactly `utf8`, `hex`, `base64`, and `base64url`. Input is
+validated before canonicalization: hex is lowercase and separator-free,
+standard Base64 is padded on output, and Base64URL is unpadded on output.
+Whitespace, mixed alphabets, malformed padding, odd hex, and lossy UTF-8 are
+rejected.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `value` | string | yes | -- | Text in the selected source format |
+| `from` | string | yes | -- | `utf8`, `hex`, `base64`, or `base64url` |
+| `to` | string | yes | -- | Target format |
+
+**Return:** `{"value": <canonical_string>, "from": <string>, "to": <string>, "byte_length": <int>}`
+
+### radix_convert
+
+Convert signed-magnitude integers between bases 2 through 36 using checked
+`u128` arithmetic. Prefixes, separators, decimals, exponents, whitespace, and
+two's-complement interpretations are not accepted. Negative zero becomes `0`.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `value` | string | yes | -- | Optional leading sign plus ASCII radix digits |
+| `from_base` | integer | yes | -- | Source base, 2 through 36 |
+| `to_base` | integer | yes | -- | Target base, 2 through 36 |
+| `uppercase` | boolean | no | `false` | Use uppercase output digits |
+
+**Return:** `{"value": <canonical_string>, "from_base": <int>, "to_base": <int>, "uppercase": <boolean>, "negative": <boolean>, "magnitude_decimal": <decimal_string>}`
+
+## Temporal
+
+### datetime_convert
+
+Convert RFC 3339 or signed Unix second/millisecond/nanosecond strings. Unix
+values are always strings to avoid JSON integer precision loss. Offsets are
+fixed numeric offsets only; when absent, RFC 3339 preserves its input offset
+and Unix inputs use UTC. Negative fractional instants use floor whole-unit
+values while nanoseconds remain authoritative.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `value` | string | yes | -- | RFC 3339 or decimal Unix value |
+| `format` | string | yes | -- | `rfc3339`, `unix_seconds`, `unix_milliseconds`, or `unix_nanoseconds` |
+| `output_offset` | string | no | input offset/`Z` | Exactly `Z` or `+HH:MM`/`-HH:MM` |
+
+**Return:** `{"rfc3339": <string>, "utc_rfc3339": <string>, "unix_seconds": <decimal_string>, "unix_milliseconds": <decimal_string>, "unix_nanoseconds": <decimal_string>, "offset_seconds": <int>, "selected_offset": <string>, "components": <object>}`
+
+### cron_inspect
+
+Parse a bounded five-field Vixie/POSIX-style schedule (`minute hour day-of-
+month month day-of-week`) and return strictly later runs. Names are English
+`JAN`–`DEC` and `SUN`–`SAT`, case-insensitive; seconds/year fields, Quartz
+syntax, nicknames, locale names, and timezone prefixes are rejected. The
+schedule uses the fixed offset carried by mandatory `after`, never the host
+timezone. When both DOM and DOW are restricted, a date matches when either
+field matches; a wildcard on one makes the other control.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `expression` | string | yes | -- | Five-field cron expression |
+| `after` | string | yes | -- | RFC 3339 reference instant |
+| `count` | integer | no | `5` | Number of runs, bounded to 1–32 |
+
+**Return:** `{"expression": <string>, "normalized_expression": <string>, "parsed_values": <object>, "offset": <string>, "offset_seconds": <int>, "satisfiable": <boolean>, "next_runs": [<rfc3339_string>], "count": <int>}`
+
+```json
+{"jsonrpc":"2.0","method":"tools/call","id":21,"params":{"name":"cron_inspect","arguments":{"expression":"0 9 * * MON-FRI","after":"2026-09-03T11:00:00-04:00","count":2}}}
+```
+
 ## Security
 
 ### text_security_inspect
@@ -1335,3 +1440,9 @@ Explain why a tool is or is not available for a given profile and audience, with
 | 78 | `code_block_map` | Analysis | `text`, `source_type` |
 | 79 | `symbol_name_diff` | Analysis | `old_text`, `new_text` |
 | 80 | `lockfile_inspect` | Analysis | `before_text`, `after_text` |
+| 81 | `ip_inspect` | Network | `address` |
+| 82 | `cidr_inspect` | Network | `cidr` |
+| 83 | `codec_convert` | Encoding | `value`, `from`, `to` |
+| 84 | `radix_convert` | Encoding | `value`, `from_base`, `to_base` |
+| 85 | `datetime_convert` | Temporal | `value`, `format` |
+| 86 | `cron_inspect` | Temporal | `expression`, `after` |

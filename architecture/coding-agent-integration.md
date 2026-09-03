@@ -4,7 +4,7 @@ How to integrate eggsact into coding-agent harnesses, codegg-style workflows, an
 
 ## Overview
 
-Eggsact provides 80 tools across 20 categories (math, text, JSON, regex, path, shell, config, patch, dependency, analysis, and more). It integrates with coding agents through two transport mechanisms:
+Eggsact provides 86 tools across 23 categories (math, text, JSON, regex, path, shell, config, patch, dependency, analysis, network, encoding, temporal, and more). It integrates with coding agents through two transport mechanisms:
 
 - **MCP stdio** — a JSON-RPC 2.0 server over stdin/stdout, compatible with any MCP client
 - **In-process API** — a synchronous Rust `ToolRegistry` that avoids subprocess and serialization overhead
@@ -158,7 +158,7 @@ Counts are what `tools/list` returns per audience (measured on v1.2.3):
 
 | Profile | Model | Harness | Debug | Use Case |
 |---------|-------|---------|-------|----------|
-| `full` | 71 | 80 | 80 | All non-hidden tools |
+| `full` | 77 | 86 | 86 | All non-hidden tools |
 | `default` | 25 | 25 | 25 | Default tool set |
 | `codegg_core_min` | 6 | 6 | 6 | Minimal model-visible tools for constrained sessions |
 | `codegg_core` | 19 | 19 | 19 | Normal coding sessions with text, math, path, JSON, analysis |
