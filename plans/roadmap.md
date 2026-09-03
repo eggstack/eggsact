@@ -31,7 +31,7 @@ substrate.
 | Concurrent MCP stdio with out-of-order responses by id, cooperative cancellation | Done |
 | Sync execution pool, budgets, truncation envelopes | Done |
 | Generated docs (`architecture/mcp-server.md` profile block, `generated/tool-cards.md`) | Done |
-| Golden fixtures, 55 property tests, 12 fuzz targets, MSRV/cargo-deny gates | Done |
+| Golden fixtures, 59 property tests, 13 fuzz targets, MSRV/cargo-deny gates | Done |
 
 ## Current release state
 
@@ -40,7 +40,24 @@ manual per `docs/release.md`; CI verifies merge correctness only.
 
 ---
 
-# Active planned line: deterministic utility expansion
+# Completed line: deterministic utility expansion
+
+Status: **complete**. Implemented in `879570e`, documented/generated in
+`59e9150`, and test-harness retry hardening landed in `915c684`.
+
+Delivered six `full`-profile-only, `Contextual` tools: `ip_inspect`,
+`cidr_inspect`, `datetime_convert`, `cron_inspect`, `codec_convert`, and
+`radix_convert`. The final catalog is 86 tools across 23 categories; the
+original 80-tool registration order remains an exact prefix, and all other
+named profiles remain unchanged.
+
+Closure evidence: the release gate passed locally, including formatting,
+generated-doc checks, clippy, the non-parity suite, doc tests, cargo-deny,
+package verification, and publish dry run. The release binary grew from
+8,051,496 to 8,229,476 bytes (+177,980; +2.21%), below the roadmap threshold.
+The only new runtime dependencies are `base64` (std only, no SIMD feature)
+and `time` (std/parsing/formatting only, no host timezone features). The
+MCP 2026-07-28 protocol track below remains separately gated and unadvertised.
 
 ## Goal
 
