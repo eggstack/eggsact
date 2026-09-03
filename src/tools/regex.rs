@@ -322,12 +322,17 @@ pub fn regex_safety_check_tool(args: &Value) -> ToolResponse {
     let findings_list = result.findings.clone();
     let pattern_length = pattern.chars().count();
 
+    let finding_severity = match risk.as_str() {
+        "high" => "error",
+        "medium" => "warn",
+        _ => "info",
+    };
     let envelope_findings: Vec<serde_json::Value> = findings_list
         .iter()
         .map(|f| {
             serde_json::json!({
                 "code": f.kind.to_uppercase(),
-                "severity": "warn",
+                "severity": finding_severity,
                 "message": f.message.clone(),
                 "details": {"pattern_length": pattern_length}
             })
