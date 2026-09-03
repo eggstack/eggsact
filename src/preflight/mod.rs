@@ -1423,6 +1423,13 @@ impl PatchApplyCheck {
         Self::parse_response(response)
     }
 
+    /// Run against a caller-provided registry.
+    ///
+    /// NOTE: `patch_apply_check` is a `HarnessOnly` tool, so the registry
+    /// must use an audience that can execute it (`Harness` or `Debug`).
+    /// A `Model`-audience registry fails with `ToolNotAllowedForAudience`;
+    /// use [`PatchApplyCheck::run`] (which builds a `Harness` registry) or
+    /// `ToolRegistry::with_profile_and_audience(profile, ToolAudience::Harness)`.
     pub fn run_with_registry(
         registry: &ToolRegistry,
         input: &PatchApplyCheckInput,

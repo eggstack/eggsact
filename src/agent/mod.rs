@@ -158,6 +158,16 @@ pub enum ToolAudience {
 }
 
 impl ToolAudience {
+    /// Lowercase name matching the `EGGCALC_MCP_AUDIENCE` convention
+    /// (`model`, `harness`, `debug`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ToolAudience::Model => "model",
+            ToolAudience::Harness => "harness",
+            ToolAudience::Debug => "debug",
+        }
+    }
+
     /// Convert to the MCP registry's `ToolListAudience`.
     pub fn as_registry_audience(self) -> ToolListAudience {
         match self {
@@ -181,6 +191,12 @@ impl ToolAudience {
             ToolAudience::Harness => exposure != ToolExposure::Hidden,
             ToolAudience::Debug => exposure != ToolExposure::Hidden,
         }
+    }
+}
+
+impl fmt::Display for ToolAudience {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }
 

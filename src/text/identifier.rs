@@ -970,7 +970,7 @@ pub fn identifier_table_inspect(
         let mut cf_map: std::collections::HashMap<String, Vec<String>> =
             std::collections::HashMap::new();
         for name in &names {
-            let cf_key = name.to_lowercase();
+            let cf_key = caseless::default_case_fold_str(name);
             cf_map.entry(cf_key).or_default().push(name.clone());
         }
         for (_, group) in cf_map.iter().filter(|(_, v)| v.len() > 1) {

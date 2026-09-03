@@ -1206,6 +1206,7 @@ pub(crate) fn escape_ascii(s: &str) -> String {
             result.push(c);
         } else {
             for utf16_unit in c.encode_utf16(&mut [0u16; 2]) {
+                // Lowercase hex is canonical here (matches Python json.dumps).
                 result.push_str(&format!("\\u{:04x}", utf16_unit));
             }
         }

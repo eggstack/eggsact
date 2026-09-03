@@ -80,6 +80,12 @@ All tool errors use snake_case error types:
 |------|---------|
 | -32601 | Method not found (unknown JSON-RPC method) |
 
+**Note:** requests with `"id": null` are rejected with `-32600` (`'id' must not be null`).
+This is a deliberate deviation from JSON-RPC 2.0 (which permits a null id):
+concurrent response tracking and error correlation are ambiguous with null,
+and notifications already use an absent id. Send requests without an `id`
+for notifications, or with a non-null id for calls.
+
 ### Validation Error Hints
 
 Many tools return a `hints` array with suggestions when validation fails:

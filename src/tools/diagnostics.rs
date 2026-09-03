@@ -22,7 +22,7 @@ pub fn runtime_diagnostics(_args: &Value) -> ToolResponse {
         }
     }
 
-    let active_audience = format!("{:?}", runtime::get_active_audience());
+    let active_audience = runtime::get_active_audience().to_string();
     let schema_detail = runtime::get_schema_detail();
 
     let model_visible_tool_count =
@@ -209,7 +209,7 @@ pub fn tool_availability_explain(args: &Value) -> ToolResponse {
         .get("profile")
         .and_then(|v| v.as_str())
         .unwrap_or(&active_profile);
-    let active_audience = format!("{:?}", runtime::get_active_audience());
+    let active_audience = runtime::get_active_audience().to_string();
     let audience_str = args
         .get("audience")
         .and_then(|v| v.as_str())

@@ -139,7 +139,7 @@ fn print_diagnostics(format: &str) {
             "budget_tiers": tiers_obj,
             "runtime": {
                 "active_profile": runtime::get_active_profile(),
-                "active_audience": format!("{:?}", runtime::get_active_audience()),
+                "active_audience": runtime::get_active_audience().to_string(),
                 "schema_detail": runtime::get_schema_detail(),
                 "limits": {
                     "max_in_flight_requests": runtime::MAX_IN_FLIGHT_REQUESTS,
@@ -173,7 +173,7 @@ fn print_diagnostics(format: &str) {
         println!();
         println!("Runtime:");
         println!("  Active profile: {}", runtime::get_active_profile());
-        println!("  Active audience: {:?}", runtime::get_active_audience());
+        println!("  Active audience: {}", runtime::get_active_audience());
         println!("  Schema detail: {}", runtime::get_schema_detail());
         println!(
             "  Limits: {} in-flight, {} workers, {} bytes request, {} bytes output",

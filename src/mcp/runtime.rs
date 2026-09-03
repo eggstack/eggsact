@@ -366,6 +366,11 @@ static ACTIVE_PROFILE: LazyLock<RwLock<String>> = LazyLock::new(|| {
     RwLock::new(if registry::PROFILE_NAMES.contains(&profile.as_str()) {
         profile
     } else {
+        eprintln!(
+            "Warning: Invalid EGGCALC_MCP_PROFILE: {:?}. Available profiles: {}. Defaulting to full.",
+            profile,
+            registry::PROFILE_NAMES.join(", ")
+        );
         "full".to_string()
     })
 });

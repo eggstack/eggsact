@@ -90,7 +90,7 @@ Compatibility mode (default by surface):
 
 Runtime:
   Active profile: full
-  Active audience: Model
+  Active audience: model
   Schema detail: full
   Limits: 32 in-flight, 16 workers, 1000000 bytes request, 1000000 bytes output
 
@@ -143,7 +143,7 @@ Known env vars (names only, no values):
   },
   "runtime": {
     "active_profile": "full",
-    "active_audience": "Model",
+    "active_audience": "model",
     "schema_detail": "full",
     "limits": {
       "max_in_flight_requests": 32,

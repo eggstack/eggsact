@@ -171,7 +171,9 @@ pub fn line_range_extract(
     include_line_numbers: bool,
     include_fingerprint: bool,
 ) -> Result<LineRangeExtractResult, String> {
-    let text_length = text.chars().count();
+    // Byte-based to match the MCP budget tier (`max_text_bytes`) and the
+    // `_require_str` gate, which reject by byte length.
+    let text_length = text.len();
     if text_length > MAX_TEXT_LENGTH {
         return Err(format!(
             "Input length {} exceeds MAX_TEXT_LENGTH {}",
@@ -301,14 +303,16 @@ pub fn line_range_compare(
     line_base: usize,
     comparison_mode: &str,
 ) -> Result<LineRangeCompareResult, String> {
-    let left_length = left_text.chars().count();
+    // Byte-based to match the MCP budget tier (`max_text_bytes`) and the
+    // `_require_str` gate, which reject by byte length.
+    let left_length = left_text.len();
     if left_length > MAX_TEXT_LENGTH {
         return Err(format!(
             "left_text length {} exceeds MAX_TEXT_LENGTH {}",
             left_length, MAX_TEXT_LENGTH
         ));
     }
-    let right_length = right_text.chars().count();
+    let right_length = right_text.len();
     if right_length > MAX_TEXT_LENGTH {
         return Err(format!(
             "right_text length {} exceeds MAX_TEXT_LENGTH {}",

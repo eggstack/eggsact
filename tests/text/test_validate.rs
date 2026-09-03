@@ -36,6 +36,23 @@ fn test_validate_brackets_unbalanced() {
 }
 
 #[test]
+fn test_validate_brackets_mismatched_reports_opener_and_closer() {
+    // "(hello [world)": ")" pops "[" (mismatch) — both must be reported,
+    // matching Python eggcalc (unmatched_openers ["[", "("]).
+    let result = validate_brackets("(hello [world)").unwrap();
+    assert!(!result.balanced);
+    assert_eq!(result.unmatched_openers.len(), 2);
+    assert_eq!(result.unmatched_closers.len(), 1);
+    let openers: Vec<&str> = result
+        .unmatched_openers
+        .iter()
+        .map(|e| e.char.as_str())
+        .collect();
+    assert!(openers.contains(&"["));
+    assert!(openers.contains(&"("));
+}
+
+#[test]
 fn test_validate_json_valid() {
     let result = validate_json("{}").unwrap();
     assert!(result.valid);

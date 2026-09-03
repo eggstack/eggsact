@@ -167,6 +167,30 @@ fn test_identifier_table_inspect_collisions() {
 }
 
 #[test]
+fn test_identifier_table_inspect_casefold_unicode() {
+    // "ß" folds to "ss" under Unicode casefold (but not to_lowercase).
+    let entries = vec![
+        TableIdentifierEntry {
+            name: "ß".to_string(),
+            kind: "variable".to_string(),
+            file: String::new(),
+            line: 1,
+        },
+        TableIdentifierEntry {
+            name: "ss".to_string(),
+            kind: "variable".to_string(),
+            file: String::new(),
+            line: 2,
+        },
+    ];
+    let result = identifier_table_inspect(&entries, "python", Some(vec!["casefold"]));
+    assert!(
+        result.collisions.iter().any(|c| c.kind == "casefold"),
+        "Expected casefold collision between 'ß' and 'ss'"
+    );
+}
+
+#[test]
 fn test_identifier_table_inspect_reserved() {
     let entries = vec![TableIdentifierEntry {
         name: "def".to_string(),

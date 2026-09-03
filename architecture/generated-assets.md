@@ -234,7 +234,7 @@ The `runtime_diagnostics` tool returns a JSON object:
 ```json
 {
   "active_profile": "full",
-  "active_audience": "Model",
+  "active_audience": "model",
   "tool_count": 80,
   "route_critical_tools": ["edit_preflight", "command_preflight", "config_preflight", "patch_apply_check", "text_security_inspect"],
   "profile_tool_count": 80,
@@ -244,7 +244,7 @@ The `runtime_diagnostics` tool returns a JSON object:
   "budget_tier_summary": { "cheap": 42, "moderate": 33, "heavy": 5 },
   "runtime": {
     "active_profile": "full",
-    "active_audience": "Harness",
+    "active_audience": "harness",
     "schema_detail": "full",
     "limits": {
       "max_in_flight_requests": 32,

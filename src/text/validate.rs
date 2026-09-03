@@ -150,12 +150,17 @@ pub fn validate_brackets_with_pairs(
         if openers.contains(&c) {
             stack.push((c, index));
         } else if closers.contains(&c) {
-            if let Some((opener, _opener_index)) = stack.pop() {
+            if let Some((opener, opener_index)) = stack.pop() {
                 if pairs.get(&opener) != Some(&c) {
-                    // Mismatched pair: report only the closer as unmatched.
-                    // Pushing both opener and closer double-counts the error
-                    // (e.g. "([)]" would produce 2+2 instead of 0+2). The opener
-                    // is already popped and considered consumed.
+                    // Mismatched pair: report both the opener and the closer
+                    // as unmatched (matches Python eggcalc behavior).
+                    let (opener_line, opener_column) = get_line_column(text, opener_index);
+                    unmatched_openers.push(BracketError {
+                        char: opener.to_string(),
+                        index: opener_index as i32,
+                        line: opener_line,
+                        column: opener_column,
+                    });
                     let (line, column) = get_line_column(text, index);
                     unmatched_closers.push(BracketError {
                         char: c.to_string(),
@@ -2993,6 +2998,7 @@ fn escape_ascii(s: &str) -> String {
             result.push(c);
         } else {
             for utf16 in c.encode_utf16(&mut [0u16; 2]) {
+                // Lowercase hex is canonical here (matches Python json.dumps).
                 result.push_str(&format!("\\u{:04x}", utf16));
             }
         }
