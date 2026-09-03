@@ -4,12 +4,21 @@ pub(crate) fn retry_mcp_request<F>(mut request_once: F) -> String
 where
     F: FnMut() -> String,
 {
-    let first = request_once();
-    if response_needs_retry(&first) {
-        eprintln!("MCP subprocess response was transient; retrying once");
-        return request_once();
+    const MAX_ATTEMPTS: usize = 3;
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        let response = request_once();
+        if !response_needs_retry(&response) || attempt == MAX_ATTEMPTS {
+            return response;
+        }
+        eprintln!(
+            "MCP subprocess response was transient; retrying ({}/{})",
+            attempt,
+            MAX_ATTEMPTS - 1
+        );
     }
-    first
+
+    unreachable!("the retry loop always returns an MCP response")
 }
 
 fn response_needs_retry(response_str: &str) -> bool {
