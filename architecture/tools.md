@@ -54,11 +54,11 @@ system clock, timezone database, locale, filesystem, network, environment, or
 randomness.
 
 - `ip_inspect` canonicalizes IPv4/IPv6 addresses, returns lowercase bytes and decimal numeric forms, and reports explicit special-use tags.
-- `cidr_inspect` normalizes networks, reports masks/boundaries/counts, and optionally checks same-family containment. Counts are decimal strings; IPv6 `/0` is represented as exact `2^128` text.
+- `cidr_inspect` normalizes networks, reports masks/boundaries/counts, and optionally checks same-family containment. Counts are decimal strings derived from prefix length only; IPv6 `/0` is represented as exact `2^128` text.
 - `codec_convert` converts bytes among UTF-8, strict hex, standard Base64, and unpadded Base64URL with canonical output.
 - `radix_convert` converts signed-magnitude integers in bases 2–36 using checked `u128` arithmetic; it does not guess widths or interpret two’s complement.
 - `datetime_convert` converts RFC 3339 and Unix second/millisecond/nanosecond strings using caller-selected fixed offsets. Negative fractional instants use floor whole-unit values; nanoseconds remain authoritative.
-- `cron_inspect` parses bounded five-field Vixie/POSIX-style schedules and searches no more than one Gregorian 400-year cycle. It uses the offset carried by `after`, has no DST/IANA behavior, and applies DOM/DOW OR semantics when both are restricted.
+- `cron_inspect` parses bounded five-field Vixie/POSIX-style schedules and searches no more than one Gregorian 400-year cycle. It uses the offset carried by `after`, has no DST/IANA behavior, and applies DOM/DOW OR semantics when both are syntactically restricted. Only a bare `*` is an unrestricted field; `*/1` and explicit full ranges/lists remain restricted.
 
 ## Shared Helpers (`helpers.rs`)
 

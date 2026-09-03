@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Six deterministic, full-profile contextual utilities: `ip_inspect`,
+  `cidr_inspect`, `codec_convert`, `radix_convert`, `datetime_convert`, and
+  `cron_inspect`. The encoding tools add `base64`; temporal support adds
+  `time` with fixed-offset behavior and no system clock or timezone database.
+
+### Fixed
+- IPv6 CIDR address counts now depend only on prefix length, including exact
+  values for `/0` and `/128`.
+- IPv4-mapped IPv6 metadata is now limited to the `::ffff:0:0/96` prefix.
+- Cron DOM/DOW matching now preserves syntactic unrestricted fields. Literal
+  `*` is unrestricted; `*/1` and explicit full ranges/lists remain restricted.
+
 ## [1.2.3] - 2026-08-24
 
 ### Fixed

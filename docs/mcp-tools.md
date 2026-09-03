@@ -1137,8 +1137,9 @@ form, and sorted explicit special-use tags such as `private`, `link_local`,
 ### cidr_inspect
 
 Normalize a CIDR and calculate exact network boundaries, masks, arithmetic IPv4
-broadcast, and address count. `contains` is optional but must be the same
-address family; no "usable host" count is inferred.
+broadcast, and address count. Counts are decimal strings derived only from the
+prefix length, including exact IPv6 `/0` and `/128` values. `contains` is
+optional but must be the same address family; no "usable host" count is inferred.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
@@ -1209,8 +1210,9 @@ month month day-of-week`) and return strictly later runs. Names are English
 `JAN`–`DEC` and `SUN`–`SAT`, case-insensitive; seconds/year fields, Quartz
 syntax, nicknames, locale names, and timezone prefixes are rejected. The
 schedule uses the fixed offset carried by mandatory `after`, never the host
-timezone. When both DOM and DOW are restricted, a date matches when either
-field matches; a wildcard on one makes the other control.
+timezone. When both DOM and DOW are syntactically restricted, a date matches
+when either field matches; a bare `*` on one makes the other control. `*/1`
+and explicit full ranges/lists remain syntactically restricted.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|

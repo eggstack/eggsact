@@ -7,20 +7,12 @@ pub struct CronField {
     pub values: Vec<u32>,
     pub min: u32,
     pub max: u32,
+    pub unrestricted: bool,
 }
 
 impl CronField {
     fn allows(&self, value: u32) -> bool {
-        self.values.binary_search(&value).is_ok()
-    }
-
-    fn is_all(&self) -> bool {
-        if self.min == 0 && self.max == 7 {
-            return self.values == (0..=6).collect::<Vec<_>>();
-        }
-        self.values.len() == (self.max - self.min + 1) as usize
-            && self.values.first() == Some(&self.min)
-            && self.values.last() == Some(&self.max)
+        value >= self.min && value <= self.max && self.values.binary_search(&value).is_ok()
     }
 
     fn normalized(&self) -> String {
@@ -125,7 +117,12 @@ fn parse_field(
     if values.is_empty() {
         return Err("cron field must allow at least one value".to_string());
     }
-    Ok(CronField { values, min, max })
+    Ok(CronField {
+        values,
+        min,
+        max,
+        unrestricted: input == "*",
+    })
 }
 
 const MONTHS: [(&str, u32); 12] = [
@@ -204,8 +201,8 @@ fn day_matches(schedule: &CronSchedule, date: Date) -> bool {
     // Vixie/POSIX semantics: when DOM and DOW are both restricted, either
     // field may match; if one is wildcard, the restricted field controls.
     match (
-        schedule.day_of_month.is_all(),
-        schedule.day_of_week.is_all(),
+        schedule.day_of_month.unrestricted,
+        schedule.day_of_week.unrestricted,
     ) {
         (true, true) => true,
         (true, false) => dow,
@@ -282,4 +279,54 @@ pub fn satisfiable(schedule: &CronSchedule, after: OffsetDateTime) -> bool {
         date = next;
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::{Date, Month};
+
+    fn date(year: i32, month: Month, day: u8) -> Date {
+        Date::from_calendar_date(year, month, day).unwrap()
+    }
+
+    #[test]
+    fn dom_and_dow_use_syntactic_wildcards() {
+        let monday = date(2026, Month::June, 1);
+        let tuesday = date(2026, Month::June, 2);
+
+        let dom_wildcard = parse("0 0 * * MON").unwrap();
+        assert!(dom_wildcard.day_of_month.unrestricted);
+        assert!(day_matches(&dom_wildcard, monday));
+        assert!(!day_matches(&dom_wildcard, tuesday));
+        assert!(day_matches(&dom_wildcard, date(2026, Month::June, 8)));
+
+        let dow_wildcard = parse("0 0 1 * *").unwrap();
+        assert!(dow_wildcard.day_of_week.unrestricted);
+        assert!(day_matches(&dow_wildcard, monday));
+        assert!(!day_matches(&dow_wildcard, tuesday));
+
+        let both_restricted = parse("0 0 1 * MON").unwrap();
+        assert!(!both_restricted.day_of_month.unrestricted);
+        assert!(!both_restricted.day_of_week.unrestricted);
+        assert!(day_matches(&both_restricted, monday));
+        assert!(!day_matches(&both_restricted, tuesday));
+
+        let full_dom_range = parse("0 0 1-31 * MON").unwrap();
+        assert!(!full_dom_range.day_of_month.unrestricted);
+        assert!(day_matches(&full_dom_range, tuesday));
+
+        let full_dow_range = parse("0 0 1 * 0-7").unwrap();
+        assert!(!full_dow_range.day_of_week.unrestricted);
+        assert!(day_matches(&full_dow_range, tuesday));
+    }
+
+    #[test]
+    fn only_bare_star_is_unrestricted() {
+        let schedule = parse("0 0 */1 * MON").unwrap();
+        assert!(!schedule.day_of_month.unrestricted);
+        assert!(!schedule.day_of_week.unrestricted);
+        assert!(day_matches(&schedule, date(2026, Month::June, 2)));
+        assert!(day_matches(&schedule, date(2026, Month::June, 8)));
+    }
 }

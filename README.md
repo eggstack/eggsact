@@ -106,7 +106,7 @@ assert!(response.ok);
 - **`^` is XOR, not exponentiation.** Use `**` for power. Matches Python.
 - **`g` means gram** in unit expressions. Use `gravity` for standard gravity.
 - `serde_json` uses `preserve_order` — key order is intentional in serialized JSON.
-- Network, encoding, datetime, and cron utilities are deterministic and use no system/network state; temporal conversions accept fixed offsets only.
+- Network, encoding, datetime, and cron utilities are deterministic and use no system/network state; temporal conversions accept fixed offsets only. IPv6 CIDR counts are exact decimal powers of two, mapped-IPv6 metadata is limited to `::ffff:0:0/96`, and cron DOM/DOW wildcard status follows syntax (`*` is unrestricted; `*/1` is restricted).
 
 ## Relationship to Python eggcalc
 

@@ -1,6 +1,8 @@
 use eggsact::mcp::response::ToolResponse;
 use eggsact::tools::{cidr_inspect, codec_convert, cron_inspect, datetime_convert, radix_convert};
 use serde_json::Value;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 fn output(response: ToolResponse) -> Value {
     assert!(response.ok, "unexpected tool failure: {:?}", response.error);
@@ -23,6 +25,28 @@ fn cidr_normalization_is_idempotent() {
         assert_eq!(first["cidr"], second["cidr"]);
         assert_eq!(first["network_address"], second["network_address"]);
         assert_eq!(first["last_address"], second["last_address"]);
+    }
+}
+
+#[test]
+fn ipv6_address_count_depends_only_on_prefix_length() {
+    for prefix in 0..=128u8 {
+        let expected = if prefix == 0 {
+            "340282366920938463463374607431768211456".to_string()
+        } else {
+            (1u128 << u32::from(128 - prefix)).to_string()
+        };
+        let first = output(cidr_inspect(
+            &serde_json::json!({"cidr":format!("2001:db8::1/{prefix}")}),
+        ));
+        let second = output(cidr_inspect(
+            &serde_json::json!({"cidr":format!("ffff:ffff:ffff:ffff::1/{prefix}")}),
+        ));
+        assert_eq!(first["address_count"], expected, "prefix={prefix}");
+        assert_eq!(
+            second["address_count"], first["address_count"],
+            "prefix={prefix}"
+        );
     }
 }
 
@@ -95,4 +119,37 @@ fn cron_results_are_ordered_and_strictly_after_the_reference() {
         assert!(pair[0].as_str().unwrap() < pair[1].as_str().unwrap());
     }
     assert!(runs[0].as_str().unwrap() > "2026-09-03T11:00:00-04:00");
+}
+
+#[test]
+fn cron_results_satisfy_independent_dom_dow_rules() {
+    type DayRule = fn(u8, u8) -> bool;
+    let cases: [(&str, DayRule); 6] = [
+        ("0 0 * * MON", |_day: u8, dow: u8| dow == 1),
+        ("0 0 1 * *", |day: u8, _dow: u8| day == 1),
+        ("0 0 1 * MON", |day: u8, dow: u8| day == 1 || dow == 1),
+        ("0 0 1-31 * MON", |day: u8, dow: u8| {
+            (1..=31).contains(&day) || dow == 1
+        }),
+        ("0 0 1 * 0-7", |day: u8, dow: u8| {
+            day == 1 || (0..=6).contains(&dow)
+        }),
+        ("0 0 */1 * MON", |day: u8, dow: u8| {
+            (1..=31).contains(&day) || dow == 1
+        }),
+    ];
+    for (expression, matches) in cases {
+        let value = output(cron_inspect(&serde_json::json!({
+            "expression": expression,
+            "after": "2026-09-03T00:00:00Z",
+            "count": 16,
+        })));
+        for timestamp in value["next_runs"].as_array().unwrap() {
+            let instant = OffsetDateTime::parse(timestamp.as_str().unwrap(), &Rfc3339).unwrap();
+            assert!(
+                matches(instant.day(), instant.weekday().number_days_from_sunday()),
+                "expression={expression}, timestamp={timestamp}"
+            );
+        }
+    }
 }

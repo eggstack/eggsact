@@ -6,6 +6,14 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 const IPV6_ADDRESS_COUNT: &str = "340282366920938463463374607431768211456";
 
+fn ipv6_address_count(prefix: u8) -> String {
+    match prefix {
+        0 => IPV6_ADDRESS_COUNT.to_string(),
+        1..=128 => (1u128 << u32::from(128 - prefix)).to_string(),
+        _ => unreachable!("IPv6 prefix length must be at most 128"),
+    }
+}
+
 fn invalid(message: impl Into<String>, tool: &'static str) -> ToolResponse {
     ToolResponse::error_with_code(
         "invalid_arguments",
@@ -52,6 +60,11 @@ fn ip_bytes_hex(ip: IpAddr) -> String {
         IpAddr::V6(value) => value.octets().to_vec(),
     };
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn ipv4_mapped(address: Ipv6Addr) -> Option<Ipv4Addr> {
+    let value = u128::from(address);
+    (value >> 32 == 0xffff).then(|| Ipv4Addr::from(value as u32))
 }
 
 fn special_use_tags(ip: IpAddr) -> Vec<&'static str> {
@@ -110,7 +123,7 @@ fn special_use_tags(ip: IpAddr) -> Vec<&'static str> {
             {
                 tags.push("documentation");
             }
-            if address.to_ipv4().is_some() {
+            if ipv4_mapped(address).is_some() {
                 tags.push("ipv4_mapped");
             }
             tags
@@ -130,7 +143,7 @@ pub fn ip_inspect(args: &Value) -> ToolResponse {
         Err(_) => return invalid(format!("Invalid IP address: {address}"), "ip_inspect"),
     };
     let mapped = match ip {
-        IpAddr::V6(value) => value.to_ipv4().map(|mapped| {
+        IpAddr::V6(value) => ipv4_mapped(value).map(|mapped| {
             serde_json::json!({
                 "address": mapped.to_string(),
                 "numeric": u32::from(mapped).to_string(),
@@ -306,11 +319,7 @@ pub fn cidr_inspect(args: &Value) -> ToolResponse {
                     Ipv6Addr::from(network).to_string(),
                     Ipv6Addr::from(last).to_string(),
                     None,
-                    if parsed.prefix == 0 {
-                        IPV6_ADDRESS_COUNT.to_string()
-                    } else {
-                        (u128::MAX - network + 1).to_string()
-                    },
+                    ipv6_address_count(parsed.prefix),
                     contains,
                 )
             }
@@ -362,6 +371,46 @@ mod tests {
     }
 
     #[test]
+    fn classifies_only_true_ipv4_mapped_ipv6_addresses() {
+        let mapped = result(serde_json::json!({"address":"::ffff:192.0.2.1"}));
+        assert_eq!(mapped["ipv4_mapped"]["address"], "192.0.2.1");
+        assert_eq!(mapped["special_use"], serde_json::json!(["ipv4_mapped"]));
+
+        let canonical_mapped = result(serde_json::json!({"address":"::ffff:c000:0201"}));
+        assert_eq!(canonical_mapped["ipv4_mapped"]["address"], "192.0.2.1");
+
+        for address in ["::1", "::192.0.2.1", "::", "2001:db8::1"] {
+            let value = result(serde_json::json!({"address":address}));
+            assert!(value["ipv4_mapped"].is_null(), "address={address}");
+            assert!(
+                !value["special_use"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|tag| tag == "ipv4_mapped"),
+                "address={address}"
+            );
+        }
+    }
+
+    #[test]
+    fn special_use_tags_are_lexicographically_stable() {
+        for address in [
+            "10.0.0.1",
+            "192.0.2.1",
+            "::1",
+            "::ffff:192.0.2.1",
+            "ff02::1",
+        ] {
+            let value = result(serde_json::json!({"address":address}));
+            let tags = value["special_use"].as_array().unwrap();
+            let mut sorted = tags.clone();
+            sorted.sort_by_key(|tag| tag.to_string());
+            assert_eq!(*tags, sorted, "address={address}");
+        }
+    }
+
+    #[test]
     fn canonicalizes_and_contains_ipv4_cidr() {
         let response =
             cidr_inspect(&serde_json::json!({"cidr":"10.1.2.3/24","contains":"10.1.2.200"}));
@@ -377,6 +426,23 @@ mod tests {
         let value = response.result.unwrap();
         assert_eq!(value["address_count"], IPV6_ADDRESS_COUNT);
         assert_eq!(value["cidr"], "::/0");
+    }
+
+    #[test]
+    fn calculates_ipv6_address_count_from_prefix_only() {
+        for (cidr, expected) in [
+            ("::/0", IPV6_ADDRESS_COUNT),
+            ("2001:db8::/1", "170141183460469231731687303715884105728"),
+            ("2001:db8::/64", "18446744073709551616"),
+            ("2001:db8::/127", "2"),
+            ("2001:db8::/128", "1"),
+            ("ffff:ffff:ffff:ffff::/64", "18446744073709551616"),
+        ] {
+            let value = cidr_inspect(&serde_json::json!({"cidr":cidr}))
+                .result
+                .unwrap();
+            assert_eq!(value["address_count"], expected, "cidr={cidr}");
+        }
     }
 
     #[test]

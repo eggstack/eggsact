@@ -142,5 +142,7 @@ contextual tools. Keep them exact-input/exact-output: do not add system clock,
 IANA timezone, locale, filesystem, network, environment, or random-state
 lookups. `datetime_convert` uses fixed offsets and decimal timestamp strings;
 `cron_inspect` is a bounded five-field parser with Vixie/POSIX DOM/DOW OR
-semantics. `codec_convert` must validate before canonicalizing, and
+semantics based on syntactic unrestricted fields: only a bare `*` is
+unrestricted; `*/1` and explicit full ranges/lists remain restricted.
+`codec_convert` must validate before canonicalizing, and
 `radix_convert` is signed-magnitude `u128` only.

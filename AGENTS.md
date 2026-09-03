@@ -64,9 +64,9 @@ src/
   tools/            # MCP tool implementations (by category, 23 files)
     helpers.rs      # shared constants, utilities, helper functions
   text/             # text processing library (25 modules + generated confusables data file)
-  temporal/         # fixed-offset datetime helpers and bounded cron parser/search
     regex_engine.rs # regex backend classifier
     confusables_generated.rs  # AUTO-GENERATED — never edit
+  temporal/         # fixed-offset datetime helpers and bounded cron parser/search
   agent/            # in-process agent API (ToolRegistry, Profile, call_json)
   preflight/        # typed preflight wrappers (EditPreflight, CommandPreflight, etc.)
 tests/
