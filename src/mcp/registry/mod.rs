@@ -54,7 +54,24 @@ mod tests {
 
     #[test]
     fn tool_count_matches_documented_registry_size() {
-        assert_eq!(tool_count(), 80);
+        assert_eq!(tool_count(), 86);
+    }
+
+    #[test]
+    fn utility_categories_append_to_the_legacy_registration_prefix() {
+        let names = tool_names();
+        assert_eq!(
+            &names[80..],
+            &[
+                "ip_inspect",
+                "cidr_inspect",
+                "codec_convert",
+                "radix_convert",
+                "datetime_convert",
+                "cron_inspect"
+            ]
+        );
+        assert_eq!(names.len(), 86);
     }
 
     // -- Hidden tools excluded from ordinary listing --

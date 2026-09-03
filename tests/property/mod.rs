@@ -8,3 +8,4 @@ pub mod test_regex_properties;
 pub mod test_serialization_determinism;
 pub mod test_shell_properties;
 pub mod test_unicode_properties;
+pub mod test_utility_properties;

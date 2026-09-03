@@ -83,3 +83,9 @@ name = "glob_matching"
 path = "fuzz_targets/glob_matching.rs"
 test = false
 bench = false
+
+[[bin]]
+name = "cron_inspection"
+path = "fuzz_targets/cron_inspection.rs"
+test = false
+bench = false

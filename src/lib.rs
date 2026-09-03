@@ -1,6 +1,6 @@
 //! eggsact - Deterministic MCP and In-Process Utility Tools for Coding Agents
 //!
-//! A high-performance Rust crate providing 80 deterministic tools across 20 categories
+//! A high-performance Rust crate providing 86 deterministic tools across 23 categories
 //! for AI coding agents: math evaluation, text processing, JSON analysis, regex validation,
 //! path operations, Unicode safety, shell command preflight, config inspection, and more.
 //! Includes a full MCP (Model Context Protocol) server and an in-process agent API.
@@ -70,6 +70,7 @@ pub mod agent;
 pub mod calc;
 pub mod mcp;
 pub mod preflight;
+pub(crate) mod temporal;
 pub mod text;
 pub mod tools;
 
