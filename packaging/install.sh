@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # Download and install a verified Eggsact release binary.
-set -euo pipefail
-
-if [[ -z "${BASH_VERSION:-}" ]]; then
+if [ -z "${BASH_VERSION:-}" ] || [ "${BASH##*/}" = "sh" ]; then
   echo "This installer requires Bash; run it with: bash install.sh" >&2
   exit 2
 fi
+set -euo pipefail
 
 readonly REPOSITORY="eggstack/eggsact"
 readonly BASE_URL="https://github.com/${REPOSITORY}/releases"

@@ -1,55 +1,57 @@
 # Installation and Updates
 
-## Fast path
+## Current installation path
 
-On Linux and macOS, the installer downloads the host binary from the latest
-GitHub Release, verifies its SHA-256 sidecar, runs the candidate, and only then
-installs it:
+The latest published release is available through crates.io. Until the first
+binary-bearing GitHub Release is published, install from Cargo:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -fsSL \
-  https://github.com/eggstack/eggsact/releases/latest/download/install.sh | bash
+cargo install eggsact
 ```
 
-For a deterministic fleet install, pin a published version:
+The binary installers below are release-ready but should be used only after a
+published binary release has been verified. A maintainer must update this page
+with that release tag before documenting a live `latest` or exact-tag URL.
+
+For the eventual Unix fast path:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
-  https://github.com/eggstack/eggsact/releases/download/v1.2.3/install.sh \
-  | bash -s -- --version 1.2.3
+  https://github.com/eggstack/eggsact/releases/download/vX.Y.Z/install.sh \
+  | bash -s -- --version X.Y.Z
 ```
 
 The script intentionally requires Bash. Operators who prefer to inspect first
 can download `install.sh`, review it, and run `bash install.sh --version X.Y.Z`.
 It does not invoke `sudo` or edit shell startup files.
 
-Windows PowerShell:
+The eventual Windows PowerShell fast path is:
 
 ```powershell
-irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | iex
+irm https://github.com/eggstack/eggsact/releases/download/vX.Y.Z/install.ps1 | iex
 ```
 
 The inspect-first form is:
 
 ```powershell
-Invoke-WebRequest https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/eggstack/eggsact/releases/download/vX.Y.Z/install.ps1 -OutFile install.ps1
 Get-Content .\install.ps1
 . .\install.ps1
 ```
 
-Use `-Version X.Y.Z` for a pinned install. The PowerShell installer accepts
-only Windows x86-64 in the binary matrix and uses Cargo fallback for a genuine
-missing asset.
+Use `-Version X.Y.Z` for a pinned install. The PowerShell installer maps
+Windows x86-64 to the prebuilt asset and uses the same Cargo fallback for
+Windows ARM64 and other unsupported architectures.
 
 ## Published binary matrix
 
 | Host | Asset | Status |
 |---|---|---|
-| Linux x86-64 / amd64 | `eggsact-x86_64-unknown-linux-gnu` | published target; glibc 2.17 build floor |
-| Linux AArch64 / arm64 | `eggsact-aarch64-unknown-linux-gnu` | published target; intended for 64-bit Raspberry Pi and Le Potato-class Linux |
-| macOS Intel | `eggsact-x86_64-apple-darwin` | published target; unsigned/not notarized |
-| macOS Apple Silicon | `eggsact-aarch64-apple-darwin` | published target; unsigned/not notarized |
-| Windows x86-64 | `eggsact-x86_64-pc-windows-msvc.exe` | published target; no code-signing claim |
+| Linux x86-64 / amd64 | `eggsact-x86_64-unknown-linux-gnu` | first binary release target; glibc 2.17 build floor |
+| Linux AArch64 / arm64 | `eggsact-aarch64-unknown-linux-gnu` | first binary release target; native ARM smoke required |
+| macOS Intel | `eggsact-x86_64-apple-darwin` | first binary release target; unsigned/not notarized |
+| macOS Apple Silicon | `eggsact-aarch64-apple-darwin` | first binary release target; unsigned/not notarized |
+| Windows x86-64 | `eggsact-x86_64-pc-windows-msvc.exe` | first binary release target; no code-signing claim |
 | Linux ARMv7 | `armv7-unknown-linux-gnueabihf` | recognized, Cargo fallback only until qualification |
 
 Raw executables use stable, versionless asset names. Each published executable
@@ -83,9 +85,13 @@ matching GitHub Release asset and checksum. It validates the checksum and exact
 asset 404s use a staged exact-version `cargo install`; all other failures stop.
 
 Permission errors print an elevated retry command. Eggsact never kills or
-enumerates other processes. Existing MCP stdio sessions may continue running
-the old image; reconnect or restart that client-owned session to use the new
-version. There is no background updater or `restart` command.
+enumerates other processes. Unix replacement completes before `updated` is
+printed. Windows reports `update staged` because the running image must exit;
+the detached helper retries the move and removes its success marker, or leaves
+an adjacent status file containing the failure. Read that path, close active
+MCP clients, and retry from an Administrator PowerShell if needed. Existing
+MCP stdio sessions may continue running the old image until their client
+reconnects. There is no background updater or `restart` command.
 
 ## MCP client setup
 

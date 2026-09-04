@@ -34,6 +34,12 @@ source tags.
    bash -n packaging/install.sh
    ```
 
+Before the first binary-bearing release, the Cargo install path remains the
+only current installation promise. Do not point users at the GitHub
+`latest/download` installer URLs until a tagged binary workflow has produced
+and the maintainer has published those assets. The existing v1.2.3 release is
+source-only and must not be retrofitted.
+
 ## Release verification
 
 Run the local release check from a clean worktree:
@@ -94,6 +100,12 @@ authority chain:
    five qualified targets, checks the staged MCP handshake, and creates or
    updates a draft GitHub Release.
 6. Review and publish the draft manually.
+
+The five-target workflow uses pinned Zig 0.14.1 (SHA-256 checked for the
+runner's x86-64 or AArch64 archive) and cargo-zigbuild 0.23.3. Linux x86-64
+uses the glibc 2.17 target suffix; Linux AArch64 builds and executes on the
+`ubuntu-24.04-arm` runner. macOS and Windows use native runners. ARMv7 is
+installer-recognized Cargo fallback only.
 
 The workflow requires an existing tag and never creates, moves, or publishes a
 tag. It also never calls `cargo publish` or publishes the GitHub draft. ARMv7

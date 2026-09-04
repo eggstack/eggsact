@@ -381,39 +381,57 @@ fn prepare_candidate(
     Ok(binary)
 }
 
+#[cfg(windows)]
+fn replace_current(candidate: &Path, current: &Path) -> Result<ReplacementOutcome, String> {
+    let pid = std::process::id();
+    let adjacent = current.with_extension(format!("eggsact-update-{pid}.exe"));
+    fs::copy(candidate, &adjacent).map_err(|error| permission_error(current, error))?;
+    let status = current.with_extension(format!("eggsact-update-{pid}.status"));
+    let script = windows_replacement_script(pid, &adjacent, current, &status);
+    Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("cannot schedule Windows executable replacement: {error}"))?;
+    Ok(ReplacementOutcome::Staged {
+        status_path: status,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // The staged variant is constructed only on Windows.
+enum ReplacementOutcome {
+    Complete,
+    Staged { status_path: PathBuf },
+}
+
 #[cfg(unix)]
-fn replace_current(candidate: &Path, current: &Path) -> Result<(), String> {
+fn replace_current(candidate: &Path, current: &Path) -> Result<ReplacementOutcome, String> {
     let adjacent = current.with_extension(format!("eggsact-update-{}", std::process::id()));
     fs::copy(candidate, &adjacent).map_err(|error| permission_error(current, error))?;
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&adjacent, fs::Permissions::from_mode(0o755))
             .map_err(|error| format!("cannot make staged update executable: {error}"))?;
     }
-    fs::rename(&adjacent, current).map_err(|error| permission_error(current, error))
+    fs::rename(&adjacent, current).map_err(|error| permission_error(current, error))?;
+    Ok(ReplacementOutcome::Complete)
 }
 
-#[cfg(windows)]
-fn replace_current(candidate: &Path, current: &Path) -> Result<(), String> {
-    let adjacent = current.with_extension("eggsact-update.exe");
-    fs::copy(candidate, &adjacent).map_err(|error| permission_error(current, error))?;
-    let source = powershell_quote(&adjacent);
-    let target = powershell_quote(current);
-    let pid = std::process::id();
-    let script = format!(
-        "$p={pid}; while (Get-Process -Id $p -ErrorAction SilentlyContinue) {{ Start-Sleep -Milliseconds 100 }}; Move-Item -LiteralPath '{source}' -Destination '{target}' -Force"
-    );
-    Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .spawn()
-        .map_err(|error| format!("cannot schedule Windows executable replacement: {error}"))?;
-    Ok(())
-}
-
-#[cfg(windows)]
+#[allow(dead_code)] // Used by the Windows-only replacement path.
 fn powershell_quote(path: &Path) -> String {
     path.to_string_lossy().replace('\'', "''")
+}
+
+#[allow(dead_code)] // Used by the Windows-only replacement path and cross-platform tests.
+fn windows_replacement_script(pid: u32, source: &Path, target: &Path, status: &Path) -> String {
+    let source = powershell_quote(source);
+    let target = powershell_quote(target);
+    let status = powershell_quote(status);
+    format!(
+        "$p={pid}; $source='{source}'; $target='{target}'; $status='{status}'; $status_tmp=\"$status.tmp\"; function Write-UpdateStatus([string]$value) {{ Set-Content -LiteralPath $status_tmp -Value $value -NoNewline; Move-Item -LiteralPath $status_tmp -Destination $status -Force }}; try {{ while (Get-Process -Id $p -ErrorAction SilentlyContinue) {{ Start-Sleep -Milliseconds 100 }}; $last_error='replacement did not complete'; for ($attempt=0; $attempt -lt 50; $attempt++) {{ try {{ Move-Item -LiteralPath $source -Destination $target -Force -ErrorAction Stop; Remove-Item -LiteralPath $status -Force -ErrorAction SilentlyContinue; exit 0 }} catch {{ $last_error=$_.Exception.Message; Start-Sleep -Milliseconds 100 }} }}; Write-UpdateStatus(\"failed: $last_error\"); exit 1 }} catch {{ try {{ Write-UpdateStatus(\"failed: $($_.Exception.Message)\") }} catch {{ }}; exit 1 }}"
+    )
 }
 
 fn permission_error(path: &Path, error: io::Error) -> String {
@@ -463,16 +481,24 @@ pub fn run() -> Result<(), String> {
         if reported != latest {
             return Err(format!("candidate reported {reported}, expected {latest}"));
         }
-        replace_current(&candidate, &current)?;
-        Ok(())
+        let replacement = replace_current(&candidate, &current)?;
+        let _ = fs::remove_dir_all(&staging);
+        Ok(replacement)
     })();
     if result.is_err() {
         let _ = fs::remove_dir_all(&staging);
     }
-    result.map(|_| {
-        println!("updated eggsact from {current_version} to {latest}");
-        println!("new MCP launches use the new version; existing stdio sessions may continue using the prior image until their client reconnects.");
-    })
+    match result? {
+        ReplacementOutcome::Complete => {
+            println!("updated eggsact from {current_version} to {latest}");
+            println!("new MCP launches use the new version; existing stdio sessions may continue using the prior image until their client reconnects.");
+        }
+        ReplacementOutcome::Staged { status_path } => {
+            println!("update staged from {current_version} to {latest}; replacement will complete after this process exits.");
+            println!("If replacement fails, read {} and close active MCP clients before retrying from an Administrator PowerShell.", status_path.display());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -529,5 +555,20 @@ mod tests {
         assert_eq!(classify_http_status(200), DownloadStatus::Success);
         assert!(parse_checksum("not-a-checksum").is_err());
         assert!(parse_checksum(&format!("{}  file", "a".repeat(64))).is_ok());
+    }
+
+    #[test]
+    fn windows_replacement_script_waits_and_records_failure_without_killing() {
+        let script = windows_replacement_script(
+            42,
+            Path::new(r"C:\Program Files\Eggsact\candidate.exe"),
+            Path::new(r"C:\Program Files\Eggsact\eggsact.exe"),
+            Path::new(r"C:\Program Files\Eggsact\eggsact.status"),
+        );
+        assert!(script.contains("Get-Process -Id $p"));
+        assert!(script.contains("Move-Item -LiteralPath $source"));
+        assert!(script.contains("Write-UpdateStatus(\"failed:"));
+        assert!(!script.contains("Stop-Process"));
+        assert!(!script.contains("taskkill"));
     }
 }

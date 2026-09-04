@@ -8,29 +8,17 @@ Deterministic MCP and in-process utility tools for coding agents. 86 tools acros
 
 ## Installation
 
-Fastest path on Linux and macOS (verified release binary, with Cargo fallback
-only for an unsupported host or missing asset):
-
-```bash
-curl --proto '=https' --tlsv1.2 -fsSL \
-  https://github.com/eggstack/eggsact/releases/latest/download/install.sh | bash
-```
-
-Windows PowerShell:
-
-```powershell
-irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | iex
-```
-
-Pinned installs use `--version X.Y.Z` for `install.sh` and `-Version X.Y.Z`
-for `install.ps1`. See [Installation](docs/installation.md) for the supported
-binary matrix, validation behavior, and inspect-first forms.
-
-Cargo remains available when a source install is preferred:
+The latest published release is currently distributed through crates.io. The
+binary installers are prepared for the first binary-bearing release, but their
+`latest` URLs are not live yet. Install from Cargo:
 
 ```bash
 cargo install eggsact
 ```
+
+After the first binary-bearing release is published, the documented fast path
+will be the verified release installer. See [Installation](docs/installation.md)
+for the target matrix and validation contract.
 
 Or from source:
 

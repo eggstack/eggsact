@@ -14,6 +14,8 @@ targets = {
 workflow = (ROOT / ".github/workflows/release-binaries.yml").read_text()
 installer = (ROOT / "packaging/install.sh").read_text()
 powershell = (ROOT / "packaging/install.ps1").read_text()
+readme = (ROOT / "README.md").read_text()
+installation = (ROOT / "docs/installation.md").read_text()
 errors = []
 for target, asset in targets.items():
     if target not in workflow:
@@ -34,6 +36,30 @@ if "armv7-unknown-linux-gnueabihf" not in workflow and "armv7-unknown-linux-gnue
     errors.append("ARMv7 must be recognized by the Unix installer")
 if "contents: write" not in workflow:
     errors.append("release workflow must explicitly grant contents: write")
+if "apt-get install" in workflow or "apt install zig" in workflow:
+    errors.append("release workflow must not install Zig through apt")
+for fragment in [
+    "ubuntu-24.04-arm", "zig_version=0.14.1", "cargo_zigbuild_version=0.23.3",
+    "sha256sum --check --status", "smoke_arch: aarch64",
+    "must build and smoke on",
+]:
+    if fragment not in workflow:
+        errors.append(f"release workflow missing reproducible/native smoke guard: {fragment}")
+if "if: runner.os == 'Windows'" not in workflow:
+    errors.append("release workflow is missing the Windows architecture smoke guard")
+if "set -euo pipefail" in installer and installer.index("set -euo pipefail") < installer.index("BASH_VERSION"):
+    errors.append("Unix installer enables Bash-only options before its Bash guard")
+if '"${BASH##*/}" = "sh"' not in installer:
+    errors.append("Unix installer must reject Bash invoked through sh")
+for fragment in ["-split ';'", "GetEnvironmentVariable(\"Path\"", "if ($arch -eq \"X64\")", "if (-not $candidate)"]:
+    if fragment not in powershell:
+        errors.append(f"PowerShell installer missing contract fragment {fragment}")
+if "releases/latest/download/install.sh" in readme or "releases/latest/download/install.ps1" in readme:
+    errors.append("README must not advertise an unpublished latest binary installer")
+if "releases/latest/download/install.sh" in installation or "releases/latest/download/install.ps1" in installation:
+    errors.append("installation docs must not advertise an unpublished latest binary installer")
+if "v1.2.3/install.sh" in installation:
+    errors.append("installation docs must not use the pre-binary v1.2.3 installer example")
 if errors:
     print("release contract errors:", file=sys.stderr)
     print("\n".join(f"- {error}" for error in errors), file=sys.stderr)

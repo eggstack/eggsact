@@ -25,6 +25,12 @@ bash -n packaging/install.sh
 python3 scripts/smoke-mcp-binary.py target/release/eggsact
 ```
 
+Release contract tests are intentionally cheap and deterministic: run
+`python3 scripts/check-release-contract.py`, `bash -n packaging/install.sh`,
+and parse the PowerShell installer before spending runner time on the tagged
+binary workflow. The workflow itself must verify compatible runner
+architecture before `--version`, `--help`, or MCP smoke.
+
 ## Verification Order
 
 The canonical release gate (including the full test suite) is defined in `docs/release.md` — do not duplicate it here.

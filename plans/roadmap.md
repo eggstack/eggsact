@@ -33,16 +33,37 @@ corrective lines are closed. The original 80-tool registration order remains an
 exact prefix, with the six later utilities in the full profile only.
 
 The binary distribution/self-update/MCP bootstrap implementation landed in
-`75bf52f`, with closure documentation in `216a68f`, but post-implementation
-review found release-path defects that ordinary source CI could not exercise.
-That line is therefore **reopened for a narrow corrective pass**. Do not publish
-a new binary-bearing release until the acceptance gates below pass.
+`75bf52f`, with closure documentation in `216a68f`. The corrective
+implementation below is now on `main`, but the line remains open until the
+first real binary-bearing release supplies the cross-platform evidence that
+source CI cannot provide. Do not publish installer URLs or treat v1.2.3 as a
+binary release.
 
 ---
 
 # Active corrective line: binary release and updater deployment closure
 
-Status: **ready for implementation handoff**.
+Status: **implementation complete; release execution evidence pending**.
+
+Implementation completed in this pass:
+
+- Linux AArch64 builds and executable smokes run on `ubuntu-24.04-arm`; the
+  workflow checks compatible runner architecture before every staged smoke.
+- Release-only Zig 0.14.1 archives are downloaded by architecture and checked
+  against pinned SHA-256 values; cargo-zigbuild 0.23.3 is installed explicitly.
+- Unix and Windows installer contracts now distinguish 404 fallback from hard
+  failures, reject `sh install.sh` before Bash-only options, support Windows
+  unsupported-architecture Cargo fallback, and use semicolon-aware PATH checks.
+- Windows self-update reports `update staged` and leaves a bounded helper
+  failure status file rather than reporting deferred replacement as complete.
+- README and installation/release/verification/architecture guidance now keep
+  Cargo as the live path until a new binary-bearing tag is published; v1.2.3 is
+  not retrofitted.
+
+Local source and contract gates passed on the corrective commit. The remaining
+P4 evidence is maintainer-only: publish a new semver crate, push its annotated
+tag, run the tagged workflow, inspect the draft assets, and exercise installers
+and Windows replacement where runners/environments permit.
 
 ## Objective
 

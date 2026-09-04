@@ -23,6 +23,7 @@ cargo run --features dev-tools --bin generate-docs -- --check  # verify generate
 scripts/release-check.sh               # full local release gate (no publish, no tag); requires clean tree + cargo-deny
 python3 scripts/check-release-contract.py # target/asset matrix consistency
 bash -n packaging/install.sh            # installer syntax check
+shellcheck packaging/install.sh         # when available
 ```
 
 ## Verification order
@@ -158,9 +159,12 @@ Hand-maintained user-facing docs in `docs/`:
   to `full`) configure MCP startup.
 - **Deployment commands:** `eggsact update` verifies the crates.io stable
   version, exact GitHub asset, checksum, and candidate identity before
-  replacement. `eggsact integrate list|detect|<client>` renders read-only
-  client-owned stdio setup for Zed, Codex, Claude Code, Cursor, VS Code, or
-  OpenCode. It does not add a daemon or edit client configuration.
+  replacement. Unix replacement is completed before success is reported;
+  Windows reports `update staged` and leaves an adjacent failure status file if
+  its bounded post-exit helper cannot replace the image. `eggsact integrate
+  list|detect|<client>` renders read-only client-owned stdio setup for Zed,
+  Codex, Claude Code, Cursor, VS Code, or OpenCode. It does not add a daemon or
+  edit client configuration.
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
 - **Test-thread bound:** `--test-threads=4` is used in CI and the release gate to prevent Tokio blocking-pool starvation when many MCP subprocess tests run in parallel. This is a test-runner containment measure, not a product budget. Unit tests (`--lib`) and doc tests do not need it.
 

@@ -12,7 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -65,18 +65,23 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             linux_zig: true
+            smoke_arch: x86_64
           - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-latest
+            runner: ubuntu-24.04-arm
             linux_zig: true
+            smoke_arch: aarch64
           - target: x86_64-apple-darwin
             runner: macos-15-intel
             linux_zig: false
+            smoke_arch: x86_64
           - target: aarch64-apple-darwin
             runner: macos-14
             linux_zig: false
+            smoke_arch: aarch64
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
             linux_zig: false
+            smoke_arch: x86_64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
@@ -94,15 +99,55 @@ jobs:
       - name: Install Linux cross-build tooling
         if: matrix.linux_zig
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes zig
-          cargo install cargo-zigbuild --locked
+          zig_version=0.14.1
+          cargo_zigbuild_version=0.23.3
+          case "$(uname -m)" in
+            x86_64)
+              zig_archive="zig-x86_64-linux-${zig_version}.tar.xz"
+              zig_sha256="24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c"
+              ;;
+            aarch64)
+              zig_archive="zig-aarch64-linux-${zig_version}.tar.xz"
+              zig_sha256="f7a654acc967864f7a050ddacfaa778c7504a0eca8d2b678839c21eea47c992b"
+              ;;
+            *) echo "unsupported Linux runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          zig_url="https://ziglang.org/download/${zig_version}/${zig_archive}"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            --connect-timeout 10 --max-time 120 --output "$RUNNER_TEMP/$zig_archive" "$zig_url"
+          echo "$zig_sha256  $RUNNER_TEMP/$zig_archive" | sha256sum --check --status
+          tar -xJf "$RUNNER_TEMP/$zig_archive" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-${zig_version}" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/zig-${zig_version}/zig" version
+          cargo install cargo-zigbuild --version "$cargo_zigbuild_version" --locked
+          echo "Zig $zig_version ($zig_sha256)"
+          echo "cargo-zigbuild $cargo_zigbuild_version"
       - name: Build Linux GNU binary with glibc 2.17 floor
         if: matrix.linux_zig
         run: cargo zigbuild --locked --release --target "${{ matrix.target }}.2.17"
       - name: Build native binary
         if: ${{ !matrix.linux_zig }}
         run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: Verify build and smoke architecture
+        if: runner.os != 'Windows'
+        env:
+          EXPECTED_ARCH: ${{ matrix.smoke_arch }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          actual="$(uname -m)"
+          case "$EXPECTED_ARCH:$actual" in
+            x86_64:x86_64|aarch64:aarch64) ;;
+            *) echo "${RELEASE_TARGET} must build and smoke on ${EXPECTED_ARCH}, got ${actual}" >&2; exit 1 ;;
+          esac
+      - name: Verify Windows build and smoke architecture
+        if: runner.os == 'Windows'
+        env:
+          EXPECTED_ARCH: ${{ matrix.smoke_arch }}
+        shell: pwsh
+        run: |
+          $actual = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($env:EXPECTED_ARCH -eq 'x86_64' -and $actual -ne 'X64') { throw "Windows release smoke requires X64, got $actual" }
       - name: Verify, smoke, and checksum Unix artifact
         if: runner.os != 'Windows'
         env:
@@ -160,6 +205,8 @@ jobs:
     name: Assemble draft GitHub Release
     needs: [preflight, build, windows-installer-check]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

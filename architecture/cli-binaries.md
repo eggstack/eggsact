@@ -36,11 +36,15 @@ genuine asset HTTP 404, or an unsupported host, uses a staged exact-version
 checksum mismatches, and wrong candidate identities are hard failures.
 
 On Unix, the validated executable is copied beside the current binary and
-atomically renamed into place. On Windows, a PowerShell helper waits for the
-updater image to exit before replacing the executable; if an active MCP client
-still holds the image, the error tells the operator to close/reconnect it and
-retry. No privilege escalation is performed internally. A permission error
-prints the exact `sudo <path> update` retry on Unix.
+atomically renamed into place. On Windows, a detached PowerShell helper waits
+for the updater image to exit and retries the replacement for a bounded period.
+The CLI reports `update staged` rather than `updated`; the helper removes its
+success marker after replacement and leaves a status file containing an
+actionable failure if the move cannot complete. The message names that file
+and tells operators to close active MCP clients and retry from an Administrator
+PowerShell. The helper never enumerates or kills processes. No privilege
+escalation is performed internally. A permission error prints the exact
+`sudo <path> update` retry on Unix.
 
 After success, the command explains that new MCP launches use the new image but
 existing client-owned stdio sessions may continue using the old image until the
@@ -54,8 +58,8 @@ installers, and updater tests:
 
 | Host | Target / asset | Build and runtime qualification |
 |---|---|---|
-| Linux x86-64 | `x86_64-unknown-linux-gnu` | Zig cross-build, glibc 2.17 link floor; staged smoke |
-| Linux AArch64 | `aarch64-unknown-linux-gnu` | Zig cross-build, glibc 2.17 link floor; staged smoke |
+| Linux x86-64 | `x86_64-unknown-linux-gnu` | pinned Zig cross-build, glibc 2.17 link floor; staged smoke |
+| Linux AArch64 | `aarch64-unknown-linux-gnu` | native ARM runner build/smoke, pinned Zig, glibc 2.17 link floor |
 | macOS Intel | `x86_64-apple-darwin` | native runner; staged smoke |
 | macOS Apple Silicon | `aarch64-apple-darwin` | native runner; staged smoke |
 | Windows x86-64 | `x86_64-pc-windows-msvc` | native runner; staged smoke |
@@ -74,7 +78,10 @@ checkout, a clean tree, and matching crates.io metadata before any build. It
 never publishes crates, creates or moves tags, pushes source commits, or
 publishes a GitHub release. Assembly creates or updates only a draft release.
 
-Each staged binary is checked with `--version`, `--help`, and
+Linux release tooling uses an explicitly downloaded and SHA-256-pinned Zig
+release plus a pinned `cargo-zigbuild` version. The workflow checks the runner
+architecture before executable smoke, so cross-compilation alone cannot
+qualify an artifact. Each staged binary is checked with `--version`, `--help`, and
 `scripts/smoke-mcp-binary.py` before its sidecar is generated. The assembly job
 requires one binary and checksum for each mandatory target and attaches the two
 installer scripts. `scripts/check-release-contract.py` catches matrix drift.

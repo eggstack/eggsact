@@ -39,6 +39,13 @@ cargo build --locked --release
 python3 scripts/smoke-mcp-binary.py target/release/eggsact
 ```
 
+The release workflow is the authoritative binary proof. It builds and smokes
+Linux AArch64 on `ubuntu-24.04-arm`, verifies the runner architecture before
+executing any staged binary, downloads Zig 0.14.1 using an architecture-
+specific pinned SHA-256, and installs cargo-zigbuild 0.23.3 only in release
+tooling. Do not advertise `releases/latest/download/install.*` until a
+binary-bearing release has actually been published; v1.2.3 is source-only.
+
 See `docs/release.md` for the canonical release checklist and `docs/verification.md` for the verification doctrine.
 
 ## Pre-Release Checklist
