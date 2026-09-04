@@ -34,8 +34,9 @@ exact prefix, with the six later utilities in the full profile only.
 
 ## Completed line: binary distribution, self-update, and MCP bootstrap
 
-Implementation is complete in the current source line. The closure commit SHA
-is recorded after the implementation commit is created.
+Implementation is complete in the current source line. The implementation
+commit is `75bf52f`. No first GitHub release/tag has been produced yet; that is
+the next maintainer release action after crates.io publication.
 
 - Added `release-binaries.yml`, a tag-only workflow with pinned Actions. It
   requires an existing `vX.Y.Z` tag, exact tagged commit, clean checkout, and
@@ -62,6 +63,14 @@ is recorded after the implementation commit is created.
   references, AGENTS.md, and release/testing skills. Packaging excludes the
   installer directory. The existing 86-tool/profile/schema contracts are
   unchanged.
+- No new normal dependency was added: update reuses the existing `sha2` and
+  `serde_json` dependencies. The stripped release binary is 8,320,948 bytes,
+  versus the 8,229,484-byte pre-line reference (+91,464 bytes, +1.11%).
+- Local evidence: staged release binary `--version`/`--help` and MCP smoke
+  passed with 77 model-visible tools; the full non-parity suite passed 3,642
+  tests; fmt, Clippy, doctests, generated-doc check, cargo-deny, package, and
+  publish dry-run passed. No AArch64 SBC hardware result is available at this
+  closure, and ARMv7 remains unpublished pending qualification.
 
 The first raw-binary release must still supply truthful ARMv7 qualification and
 real AArch64 SBC evidence before those claims are made. macOS and Windows
