@@ -7,7 +7,7 @@ pub struct CronField {
     pub values: Vec<u32>,
     pub min: u32,
     pub max: u32,
-    pub unrestricted: bool,
+    pub star_syntax: bool,
 }
 
 impl CronField {
@@ -121,7 +121,7 @@ fn parse_field(
         values,
         min,
         max,
-        unrestricted: input == "*",
+        star_syntax: input.starts_with('*'),
     })
 }
 
@@ -198,16 +198,13 @@ fn day_matches(schedule: &CronSchedule, date: Date) -> bool {
     let dow = schedule
         .day_of_week
         .allows(u32::from(date.weekday().number_days_from_sunday()));
-    // Vixie/POSIX semantics: when DOM and DOW are both restricted, either
-    // field may match; if one is wildcard, the restricted field controls.
-    match (
-        schedule.day_of_month.unrestricted,
-        schedule.day_of_week.unrestricted,
-    ) {
-        (true, true) => true,
-        (true, false) => dow,
-        (false, true) => dom,
-        (false, false) => dom || dow,
+    // Vixie/Cronie semantics: if either DOM or DOW starts with `*`
+    // (including `*/n` steps), both parsed predicates must match.
+    // Otherwise either field may match.
+    if schedule.day_of_month.star_syntax || schedule.day_of_week.star_syntax {
+        dom && dow
+    } else {
+        dom || dow
     }
 }
 
@@ -291,42 +288,121 @@ mod tests {
     }
 
     #[test]
-    fn dom_and_dow_use_syntactic_wildcards() {
-        let monday = date(2026, Month::June, 1);
-        let tuesday = date(2026, Month::June, 2);
+    fn dom_and_dow_use_star_syntax_flags() {
+        let monday_jun1 = date(2026, Month::June, 1);
+        let tuesday_jun2 = date(2026, Month::June, 2);
+        let monday_jun8 = date(2026, Month::June, 8);
+        let wed_jul1 = date(2026, Month::July, 1);
 
-        let dom_wildcard = parse("0 0 * * MON").unwrap();
-        assert!(dom_wildcard.day_of_month.unrestricted);
-        assert!(day_matches(&dom_wildcard, monday));
-        assert!(!day_matches(&dom_wildcard, tuesday));
-        assert!(day_matches(&dom_wildcard, date(2026, Month::June, 8)));
+        // 1. `0 0 * * MON` -> Mondays only (DOM star => AND).
+        let dom_star = parse("0 0 * * MON").unwrap();
+        assert!(dom_star.day_of_month.star_syntax);
+        assert!(!dom_star.day_of_week.star_syntax);
+        assert!(day_matches(&dom_star, monday_jun1));
+        assert!(!day_matches(&dom_star, tuesday_jun2));
+        assert!(day_matches(&dom_star, monday_jun8));
 
-        let dow_wildcard = parse("0 0 1 * *").unwrap();
-        assert!(dow_wildcard.day_of_week.unrestricted);
-        assert!(day_matches(&dow_wildcard, monday));
-        assert!(!day_matches(&dow_wildcard, tuesday));
+        // 2. `0 0 1 * *` -> first of month only (DOW star => AND).
+        let dow_star = parse("0 0 1 * *").unwrap();
+        assert!(!dow_star.day_of_month.star_syntax);
+        assert!(dow_star.day_of_week.star_syntax);
+        assert!(day_matches(&dow_star, monday_jun1));
+        assert!(!day_matches(&dow_star, tuesday_jun2));
+        assert!(!day_matches(&dow_star, monday_jun8));
+        assert!(day_matches(&dow_star, wed_jul1));
 
+        // 3. `0 0 1 * MON` -> first of month OR Monday (neither star => OR).
         let both_restricted = parse("0 0 1 * MON").unwrap();
-        assert!(!both_restricted.day_of_month.unrestricted);
-        assert!(!both_restricted.day_of_week.unrestricted);
-        assert!(day_matches(&both_restricted, monday));
-        assert!(!day_matches(&both_restricted, tuesday));
+        assert!(!both_restricted.day_of_month.star_syntax);
+        assert!(!both_restricted.day_of_week.star_syntax);
+        assert!(day_matches(&both_restricted, monday_jun1));
+        assert!(day_matches(&both_restricted, monday_jun8));
+        assert!(day_matches(&both_restricted, wed_jul1));
+        assert!(!day_matches(&both_restricted, tuesday_jun2));
 
+        // 4. `0 0 1-31 * MON` -> every valid day (explicit full range is not
+        // star syntax, so OR with a full DOM set matches everything).
         let full_dom_range = parse("0 0 1-31 * MON").unwrap();
-        assert!(!full_dom_range.day_of_month.unrestricted);
-        assert!(day_matches(&full_dom_range, tuesday));
+        assert!(!full_dom_range.day_of_month.star_syntax);
+        assert!(!full_dom_range.day_of_week.star_syntax);
+        assert!(day_matches(&full_dom_range, monday_jun1));
+        assert!(day_matches(&full_dom_range, tuesday_jun2));
+        assert!(day_matches(&full_dom_range, monday_jun8));
 
         let full_dow_range = parse("0 0 1 * 0-7").unwrap();
-        assert!(!full_dow_range.day_of_week.unrestricted);
-        assert!(day_matches(&full_dow_range, tuesday));
+        assert!(!full_dow_range.day_of_week.star_syntax);
+        assert!(day_matches(&full_dow_range, tuesday_jun2));
+        assert!(day_matches(&full_dow_range, monday_jun8));
     }
 
     #[test]
-    fn only_bare_star_is_unrestricted() {
-        let schedule = parse("0 0 */1 * MON").unwrap();
-        assert!(!schedule.day_of_month.unrestricted);
-        assert!(!schedule.day_of_week.unrestricted);
-        assert!(day_matches(&schedule, date(2026, Month::June, 2)));
-        assert!(day_matches(&schedule, date(2026, Month::June, 8)));
+    fn star_step_fields_carry_star_syntax_and_use_and() {
+        let monday_jun1 = date(2026, Month::June, 1);
+        let tuesday_jun2 = date(2026, Month::June, 2);
+        let wed_jun3 = date(2026, Month::June, 3);
+        let monday_jun8 = date(2026, Month::June, 8);
+        let monday_jun15 = date(2026, Month::June, 15);
+        let wed_jul1 = date(2026, Month::July, 1);
+        let sun_feb1 = date(2026, Month::February, 1);
+        let sat_aug1 = date(2026, Month::August, 1);
+        let tue_sep1 = date(2026, Month::September, 1);
+
+        // 5. `0 0 */1 * MON` -> Mondays only. `*/1` covers every DOM value
+        // but still carries Vixie star syntax, so AND applies.
+        let dom_star_step_all = parse("0 0 */1 * MON").unwrap();
+        assert!(dom_star_step_all.day_of_month.star_syntax);
+        assert!(!dom_star_step_all.day_of_week.star_syntax);
+        assert!(day_matches(&dom_star_step_all, monday_jun1));
+        assert!(day_matches(&dom_star_step_all, monday_jun8));
+        assert!(!day_matches(&dom_star_step_all, tuesday_jun2));
+        assert!(!day_matches(&dom_star_step_all, wed_jun3));
+
+        // 6. `0 0 */2 * MON` -> only Mondays whose day-of-month is odd.
+        // `*/2` from 1 matches 1,3,5,...,31.
+        let dom_star_step = parse("0 0 */2 * MON").unwrap();
+        assert!(dom_star_step.day_of_month.star_syntax);
+        assert!(day_matches(&dom_star_step, monday_jun1));
+        assert!(day_matches(&dom_star_step, monday_jun15));
+        assert!(!day_matches(&dom_star_step, monday_jun8));
+        assert!(!day_matches(&dom_star_step, wed_jun3));
+        assert!(!day_matches(&dom_star_step, tuesday_jun2));
+
+        // 7. `0 0 1 * */1` -> first of month only. DOW `*/1` covers every
+        // weekday value but still selects AND semantics.
+        let dow_star_step_all = parse("0 0 1 * */1").unwrap();
+        assert!(!dow_star_step_all.day_of_month.star_syntax);
+        assert!(dow_star_step_all.day_of_week.star_syntax);
+        assert!(day_matches(&dow_star_step_all, monday_jun1));
+        assert!(day_matches(&dow_star_step_all, wed_jul1));
+        assert!(!day_matches(&dow_star_step_all, monday_jun8));
+        assert!(!day_matches(&dow_star_step_all, tuesday_jun2));
+
+        // 8. DOW star-step narrower than `*/1`: `0 0 1 * */2` matches day 1
+        // AND Sun/Tue/Thu/Sat. `*/2` from 0 matches 0,2,4,6.
+        let dow_star_step = parse("0 0 1 * */2").unwrap();
+        assert!(dow_star_step.day_of_week.star_syntax);
+        assert!(day_matches(&dow_star_step, sun_feb1));
+        assert!(day_matches(&dow_star_step, sat_aug1));
+        assert!(day_matches(&dow_star_step, tue_sep1));
+        // DOM matches but DOW does not.
+        assert!(!day_matches(&dow_star_step, monday_jun1));
+        assert!(!day_matches(&dow_star_step, wed_jul1));
+        // DOW matches but DOM does not.
+        assert!(!day_matches(&dow_star_step, tuesday_jun2));
+
+        // DOM star with DOW star-step also uses AND: `0 0 * * */2`.
+        let both_star_step = parse("0 0 * * */2").unwrap();
+        assert!(both_star_step.day_of_month.star_syntax);
+        assert!(both_star_step.day_of_week.star_syntax);
+        assert!(day_matches(&both_star_step, tuesday_jun2));
+        assert!(day_matches(&both_star_step, sun_feb1));
+        assert!(!day_matches(&both_star_step, monday_jun1));
+
+        // Sunday 0/7 normalization still holds under AND semantics.
+        for dow in ["0", "7", "SUN"] {
+            let sunday = parse(&format!("0 0 * * {dow}")).unwrap();
+            assert!(day_matches(&sunday, sun_feb1));
+            assert!(!day_matches(&sunday, monday_jun1));
+        }
     }
 }

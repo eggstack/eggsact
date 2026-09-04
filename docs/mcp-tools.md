@@ -1205,14 +1205,17 @@ values while nanoseconds remain authoritative.
 
 ### cron_inspect
 
-Parse a bounded five-field Vixie/POSIX-style schedule (`minute hour day-of-
+Parse a bounded five-field Vixie/Cronie-style schedule (`minute hour day-of-
 month month day-of-week`) and return strictly later runs. Names are English
 `JAN`–`DEC` and `SUN`–`SAT`, case-insensitive; seconds/year fields, Quartz
 syntax, nicknames, locale names, and timezone prefixes are rejected. The
 schedule uses the fixed offset carried by mandatory `after`, never the host
-timezone. When both DOM and DOW are syntactically restricted, a date matches
-when either field matches; a bare `*` on one makes the other control. `*/1`
-and explicit full ranges/lists remain syntactically restricted.
+timezone. When neither DOM nor DOW starts with `*`, a date matches when
+either parsed field matches; when either field starts with `*`, including
+supported `*/n` step forms, both parsed predicates must match. Bare `*`
+behaves as the familiar wildcard because its value set already contains
+every value; explicit full ranges/lists are not equivalent to star syntax.
+Step syntax follows the Vixie/Cronie extension.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|

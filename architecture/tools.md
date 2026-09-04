@@ -58,7 +58,7 @@ randomness.
 - `codec_convert` converts bytes among UTF-8, strict hex, standard Base64, and unpadded Base64URL with canonical output.
 - `radix_convert` converts signed-magnitude integers in bases 2–36 using checked `u128` arithmetic; it does not guess widths or interpret two’s complement.
 - `datetime_convert` converts RFC 3339 and Unix second/millisecond/nanosecond strings using caller-selected fixed offsets. Negative fractional instants use floor whole-unit values; nanoseconds remain authoritative.
-- `cron_inspect` parses bounded five-field Vixie/POSIX-style schedules and searches no more than one Gregorian 400-year cycle. It uses the offset carried by `after`, has no DST/IANA behavior, and applies DOM/DOW OR semantics when both are syntactically restricted. Only a bare `*` is an unrestricted field; `*/1` and explicit full ranges/lists remain restricted.
+- `cron_inspect` parses bounded five-field Vixie/Cronie-style schedules and searches no more than one Gregorian 400-year cycle. It uses the offset carried by `after`, has no DST/IANA behavior, and applies Vixie star-syntax DOM/DOW matching: when neither field starts with `*`, either parsed field may match; when either field starts with `*`, including supported `*/n` step forms, both parsed predicates must match. Bare `*` behaves as the familiar wildcard because its value set already contains every value; explicit full ranges/lists are not equivalent to star syntax. Step syntax is the Vixie/Cronie extension, not POSIX-defined.
 
 ## Shared Helpers (`helpers.rs`)
 

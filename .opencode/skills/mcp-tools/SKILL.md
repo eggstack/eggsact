@@ -141,8 +141,11 @@ The network, encoding, and temporal categories are `full`-profile-only
 contextual tools. Keep them exact-input/exact-output: do not add system clock,
 IANA timezone, locale, filesystem, network, environment, or random-state
 lookups. `datetime_convert` uses fixed offsets and decimal timestamp strings;
-`cron_inspect` is a bounded five-field parser with Vixie/POSIX DOM/DOW OR
-semantics based on syntactic unrestricted fields: only a bare `*` is
-unrestricted; `*/1` and explicit full ranges/lists remain restricted.
+`cron_inspect` is a bounded five-field parser with Vixie/Cronie star-syntax
+DOM/DOW matching: when neither field starts with `*`, either parsed field
+may match; when either field starts with `*`, including supported `*/n`
+step forms, both parsed predicates must match. Bare `*` behaves as the
+familiar wildcard because its value set already contains every value;
+explicit full ranges/lists are not equivalent to star syntax.
 `codec_convert` must validate before canonicalizing, and
 `radix_convert` is signed-magnitude `u128` only.

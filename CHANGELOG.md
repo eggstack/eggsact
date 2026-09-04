@@ -17,8 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - IPv6 CIDR address counts now depend only on prefix length, including exact
   values for `/0` and `/128`.
 - IPv4-mapped IPv6 metadata is now limited to the `::ffff:0:0/96` prefix.
-- Cron DOM/DOW matching now preserves syntactic unrestricted fields. Literal
-  `*` is unrestricted; `*/1` and explicit full ranges/lists remain restricted.
+- Cron DOM/DOW matching now follows Vixie/Cronie star-syntax semantics. When
+  neither field starts with `*`, either parsed field may match (OR); when
+  either field starts with `*`, including supported `*/n` step forms, both
+  parsed predicates must match (AND). Bare `*` behaves as the familiar
+  wildcard because its value set already contains every value; explicit full
+  ranges/lists are not equivalent to star syntax.
 
 ## [1.2.3] - 2026-08-24
 

@@ -123,8 +123,13 @@ fn cron_results_are_ordered_and_strictly_after_the_reference() {
 
 #[test]
 fn cron_results_satisfy_independent_dom_dow_rules() {
+    // Reference rule encoded from case metadata, not from `day_matches()`:
+    // when either DOM or DOW starts with `*` (including `*/n` steps) both
+    // parsed predicates must match (AND); otherwise either may match (OR).
+    // Bare `*` behaves as a wildcard only because its value set already
+    // contains every value. Explicit full ranges/lists are not star syntax.
     type DayRule = fn(u8, u8) -> bool;
-    let cases: [(&str, DayRule); 6] = [
+    let cases: [(&str, DayRule); 10] = [
         ("0 0 * * MON", |_day: u8, dow: u8| dow == 1),
         ("0 0 1 * *", |day: u8, _dow: u8| day == 1),
         ("0 0 1 * MON", |day: u8, dow: u8| day == 1 || dow == 1),
@@ -134,8 +139,18 @@ fn cron_results_satisfy_independent_dom_dow_rules() {
         ("0 0 1 * 0-7", |day: u8, dow: u8| {
             day == 1 || (0..=6).contains(&dow)
         }),
-        ("0 0 */1 * MON", |day: u8, dow: u8| {
-            (1..=31).contains(&day) || dow == 1
+        // `*/1` covers the full domain but still carries star syntax, so the
+        // star-flag/AND path applies. A value-coverage check alone would
+        // mistake these for unrestricted OR cases.
+        ("0 0 */1 * MON", |_day: u8, dow: u8| dow == 1),
+        ("0 0 1 * */1", |day: u8, _dow: u8| day == 1),
+        // Nontrivial star steps constrain via their parsed value sets.
+        ("0 0 */2 * MON", |day: u8, dow: u8| day % 2 == 1 && dow == 1),
+        ("0 0 1 * */2", |day: u8, dow: u8| {
+            day == 1 && [0, 2, 4, 6].contains(&dow)
+        }),
+        ("0 0 * * */2", |_day: u8, dow: u8| {
+            [0, 2, 4, 6].contains(&dow)
         }),
     ];
     for (expression, matches) in cases {
