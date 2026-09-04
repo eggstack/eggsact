@@ -16,6 +16,7 @@ exclude = [
     "plans/",
     "data/",
     "scripts/",
+    "packaging/",
     ".github/",
     ".opencode/",
     ".agents/",

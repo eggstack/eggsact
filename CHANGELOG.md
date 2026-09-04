@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cidr_inspect`, `codec_convert`, `radix_convert`, `datetime_convert`, and
   `cron_inspect`. The encoding tools add `base64`; temporal support adds
   `time` with fixed-offset behavior and no system clock or timezone database.
+- Verified binary distribution for five release targets, Bash/PowerShell
+  bootstrap installers with Cargo fallback, `eggsact update`, and read-only
+  MCP client integration renderers for Zed, Codex, Claude Code, Cursor, VS
+  Code, and OpenCode.
+
+### Changed
+- Release binaries are assembled by a tag-only, SHA-pinned workflow as a
+  draft GitHub Release after the matching version is published to crates.io.
+  ARMv7 is recognized for Cargo fallback but is not published before runtime
+  qualification.
 
 ### Fixed
 - IPv6 CIDR address counts now depend only on prefix length, including exact

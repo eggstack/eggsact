@@ -8,6 +8,26 @@ Deterministic MCP and in-process utility tools for coding agents. 86 tools acros
 
 ## Installation
 
+Fastest path on Linux and macOS (verified release binary, with Cargo fallback
+only for an unsupported host or missing asset):
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://github.com/eggstack/eggsact/releases/latest/download/install.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | iex
+```
+
+Pinned installs use `--version X.Y.Z` for `install.sh` and `-Version X.Y.Z`
+for `install.ps1`. See [Installation](docs/installation.md) for the supported
+binary matrix, validation behavior, and inspect-first forms.
+
+Cargo remains available when a source install is preferred:
+
 ```bash
 cargo install eggsact
 ```
@@ -39,6 +59,22 @@ eggsact "30m to ft"                   # 98.425...
 # MCP server mode (stdio JSON-RPC)
 eggsact --mcp
 ```
+
+### MCP client setup
+
+Render a read-only, absolute-path registration instruction for a client-owned
+stdio process:
+
+```bash
+eggsact integrate list
+eggsact integrate detect
+eggsact integrate codex    # zed, claude, cursor, vscode, or opencode
+```
+
+Update an installed binary with `eggsact update`. It verifies the crates.io
+stable version, GitHub asset checksum, and candidate `--version` before
+replacement. Existing MCP sessions continue until their owning client
+reconnects. Eggsact does not install a daemon or edit client configuration.
 
 ### Library
 
@@ -82,6 +118,7 @@ assert!(response.ok);
 | Topic | Link |
 |-------|------|
 | CLI usage | [docs/cli.md](docs/cli.md) |
+| Installation, updates, and client setup | [docs/installation.md](docs/installation.md) |
 | Library API | [docs/library-api.md](docs/library-api.md) |
 | MCP tool reference (86 tools) | [docs/mcp-tools.md](docs/mcp-tools.md) |
 | Math features, functions, constants, units | [docs/math-features.md](docs/math-features.md) |

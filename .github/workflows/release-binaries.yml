@@ -1,0 +1,204 @@
+name: Release binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing vX.Y.Z tag to assemble (never created or moved by this workflow)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
+        with:
+          toolchain: stable
+      - name: Verify tag, version, and release contract
+        id: release
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+          PUSH_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="${DISPATCH_TAG:-$PUSH_TAG}"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "expected an existing vX.Y.Z tag, got '$tag'" >&2; exit 1; }
+          version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          [[ "$tag" == "v$version" ]] || { echo "tag $tag does not match Cargo version $version" >&2; exit 1; }
+          tag_commit="$(git rev-list -n 1 "$tag^{commit}")"
+          [[ "$(git rev-parse HEAD)" == "$tag_commit" ]] || { echo "checkout is not exactly the tag target" >&2; exit 1; }
+          [[ -z "$(git status --porcelain)" ]] || { echo "checkout is dirty" >&2; exit 1; }
+          python3 scripts/check-release-contract.py
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            --connect-timeout 10 --max-time 30 https://crates.io/api/v1/crates/eggsact > crates.json
+          visible="$(python3 -c 'import json; print(json.load(open("crates.json"))["crate"]["max_stable_version"])')"
+          [[ "$visible" == "$version" ]] || { echo "crates.io exposes $visible, expected $version; wait for indexing" >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            linux_zig: true
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            linux_zig: true
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+            linux_zig: false
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            linux_zig: false
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            linux_zig: false
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.preflight.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          key: release-${{ matrix.target }}
+      - name: Install Linux cross-build tooling
+        if: matrix.linux_zig
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes zig
+          cargo install cargo-zigbuild --locked
+      - name: Build Linux GNU binary with glibc 2.17 floor
+        if: matrix.linux_zig
+        run: cargo zigbuild --locked --release --target "${{ matrix.target }}.2.17"
+      - name: Build native binary
+        if: ${{ !matrix.linux_zig }}
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: Verify, smoke, and checksum Unix artifact
+        if: runner.os != 'Windows'
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          binary="$(find target -type f -path '*/release/eggsact' -print -quit)"
+          [[ -n "$binary" ]] || { echo "release binary not found" >&2; exit 1; }
+          test "$("$binary" --version)" = "eggsact $RELEASE_VERSION"
+          "$binary" --help >/dev/null
+          python3 scripts/smoke-mcp-binary.py "$binary"
+          mkdir -p release-artifacts
+          asset="eggsact-${{ matrix.target }}"
+          cp "$binary" "release-artifacts/$asset"
+          sha256sum "release-artifacts/$asset" | sed "s#  .*#  $asset#" > "release-artifacts/$asset.sha256"
+      - name: Verify, smoke, and checksum Windows artifact
+        if: runner.os == 'Windows'
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        shell: pwsh
+        run: |
+          $binary = Get-ChildItem -Path target -Filter eggsact.exe -Recurse | Select-Object -First 1
+          if (-not $binary) { throw "release binary not found" }
+          if ((& $binary.FullName --version).Trim() -ne "eggsact $env:RELEASE_VERSION") { throw "wrong candidate version" }
+          & $binary.FullName --help | Out-Null
+          python scripts/smoke-mcp-binary.py $binary.FullName
+          New-Item -ItemType Directory -Force release-artifacts | Out-Null
+          $asset = "eggsact-${{ matrix.target }}.exe"
+          Copy-Item $binary.FullName "release-artifacts/$asset"
+          $hash = (Get-FileHash -Algorithm SHA256 "release-artifacts/$asset").Hash.ToLowerInvariant()
+          "$hash  $asset" | Set-Content "release-artifacts/$asset.sha256" -NoNewline
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: release-artifacts/
+          if-no-files-found: error
+
+  windows-installer-check:
+    name: Check PowerShell installer
+    needs: preflight
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+      - name: Parse installer without downloading
+        shell: pwsh
+        run: |
+          $script = Get-Content packaging/install.ps1 -Raw
+          [scriptblock]::Create($script) | Out-Null
+          if ($script -notmatch 'x86_64-pc-windows-msvc\.exe') { throw "Windows asset mapping missing" }
+
+  assemble:
+    name: Assemble draft GitHub Release
+    needs: [preflight, build, windows-installer-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: binary-*
+          path: release-artifacts
+          merge-multiple: true
+      - name: Validate assets and installer syntax
+        run: |
+          set -euo pipefail
+          python3 scripts/check-release-contract.py
+          bash -n packaging/install.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          required = [
+              "eggsact-x86_64-unknown-linux-gnu", "eggsact-aarch64-unknown-linux-gnu",
+              "eggsact-x86_64-apple-darwin", "eggsact-aarch64-apple-darwin",
+              "eggsact-x86_64-pc-windows-msvc.exe",
+          ]
+          root = Path("release-artifacts")
+          for asset in required:
+              binary = root / asset
+              checksum = root / f"{asset}.sha256"
+              assert binary.is_file() and checksum.is_file(), asset
+              assert len(checksum.read_text().split()[0]) == 64, checksum
+          PY
+      - name: Create or reuse draft release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)"
+            [[ "$is_draft" == "true" ]] || { echo "release $RELEASE_TAG is already published; refusing to replace public assets" >&2; exit 1; }
+          else
+            gh release create "$RELEASE_TAG" --draft --title "eggsact $RELEASE_TAG" --notes "Draft binary release; maintainer review and publication required."
+          fi
+          gh release upload "$RELEASE_TAG" release-artifacts/* packaging/install.sh packaging/install.ps1 --clobber

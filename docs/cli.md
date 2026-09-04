@@ -7,7 +7,7 @@
 ## Usage
 
 ```
-eggsact [--mcp | --diagnostics [--format json|text] | expression]
+eggsact [--mcp | --diagnostics [--format json|text] | update | integrate <client> | expression]
 ```
 
 - `--mcp` -- Start MCP server mode (reads JSON-RPC from stdin, writes to stdout)
@@ -15,10 +15,40 @@ eggsact [--mcp | --diagnostics [--format json|text] | expression]
 - `--format json|text` -- Output format for `--diagnostics` (default: text)
 - `-h`, `--help` -- Print usage information
 - `-V`, `--version` -- Print the installed eggsact version
+- `update` -- Download and verify the latest stable release, then replace the executable
+- `integrate <client>` -- Render read-only MCP setup for `zed`, `codex`, `claude`, `cursor`, `vscode`, or `opencode`; `list` and `detect` are also available
 - `expression` -- Math expression to evaluate (one or more arguments joined with spaces)
 - No arguments -- Print usage message
 
 ## Modes
+
+### Self-update
+
+```bash
+eggsact update
+```
+
+The updater uses crates.io `max_stable_version` as its authority, then fetches
+the exact GitHub Release binary and SHA-256 sidecar for the host. It executes
+the candidate and requires exact `eggsact X.Y.Z` output before replacement.
+Unsupported hosts and genuine binary HTTP 404s use a staged exact-version Cargo
+fallback. Transport, checksum, and candidate-version failures are hard errors.
+
+It never invokes `sudo`, kills MCP clients, or restarts sessions. Permission
+errors print the elevated retry command. Existing client-owned stdio sessions
+may continue using the previous image until their client reconnects.
+
+### MCP client integration
+
+```bash
+eggsact integrate list
+eggsact integrate detect
+eggsact integrate zed
+```
+
+Integration output uses the resolved executable path and exactly `--mcp`. It is
+an instruction/snippet, not a configuration mutation. See
+`architecture/coding-agent-integration.md` for the current client formats.
 
 ### Expression Evaluation (default)
 

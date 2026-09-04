@@ -16,10 +16,13 @@ cargo test --locked --doc            # doc tests
 cargo fmt --all -- --check            # format check
 cargo clippy --locked --all-targets --all-features  # lint
 cargo package --locked                # crates.io packaging dry run
+cargo build --locked --release        # staged binary for local smoke
 cargo deny check advisories bans licenses sources  # supply-chain audit
 cargo run --features dev-tools --bin generate-docs        # regenerate docs from ToolSpec registry
 cargo run --features dev-tools --bin generate-docs -- --check  # verify generated docs are current (CI)
 scripts/release-check.sh               # full local release gate (no publish, no tag); requires clean tree + cargo-deny
+python3 scripts/check-release-contract.py # target/asset matrix consistency
+bash -n packaging/install.sh            # installer syntax check
 ```
 
 ## Verification order
@@ -46,12 +49,17 @@ MSRV, cargo-deny, parity, latest-compatible, and fuzz/sanitizer checks are sched
 Parity tests are excluded from CI because Python `eggcalc` is not available in the CI environment. Run parity locally with `cargo test --test lib parity`.
 
 GitHub CI verifies merge correctness but does **not** publish to crates.io. The maintainer publishes manually per `docs/release.md`.
+The tag-only `release-binaries.yml` workflow builds verified release binaries
+after crates.io visibility, then creates or updates only a draft GitHub Release;
+it never creates tags, publishes crates, or publishes the draft.
 
 ## Structure
 
 ```
 src/
   main.rs           # CLI entry, arg parsing, dispatch
+  update.rs         # crates.io/GitHub verified self-update (binary module)
+  integrate.rs      # read-only MCP client setup renderers (binary module)
   lib.rs            # library root, re-exports run()/evaluate()
   calc/             # calculator: evaluator, normalize, units, context (4 modules)
   mcp/              # MCP server protocol, runtime, registry, validation
@@ -77,6 +85,7 @@ architecture/       # detailed design docs (15 files) — see index below
 plans/
   roadmap.md        # the single living plan; completed phase records were pruned (git history keeps them)
 docs/releases/      # archived v1.2.0 evidence ledgers (historical only)
+packaging/          # release bootstrap installers (excluded from crates.io)
 ```
 
 ## Architecture docs index
@@ -142,7 +151,16 @@ Hand-maintained user-facing docs in `docs/`:
 - **`Profile::from_str_opt`** is strict — returns `None` for unknown names. Use `Profile::custom(name)` for custom profiles.
 - **Deterministic utility semantics**: `ip_inspect`, `cidr_inspect`, `codec_convert`, `radix_convert`, `datetime_convert`, and `cron_inspect` use explicit inputs only. Datetime/cron use fixed numeric offsets; they never read the clock, locale, timezone database, filesystem, network, or environment.
 - **Cron day matching**: `cron_inspect` uses Vixie/Cronie star syntax — when neither DOM nor DOW starts with `*`, either parsed field may match; when either starts with `*` (including `*/n` steps), both must match. Bare `*` is a wildcard via full value coverage; explicit full ranges/lists are not star syntax.
-- **Env vars:** `EGGCALC_NO_CONFIG=1` (set in main.rs), `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to `Model`), `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`; defaults to `full`).
+- **Env vars:** `EGGCALC_NO_CONFIG=1` is a compatibility name for callers that
+  also invoke Python `eggcalc`; eggsact itself does not mutate the environment.
+  `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to
+  `Model`), and `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`; defaults
+  to `full`) configure MCP startup.
+- **Deployment commands:** `eggsact update` verifies the crates.io stable
+  version, exact GitHub asset, checksum, and candidate identity before
+  replacement. `eggsact integrate list|detect|<client>` renders read-only
+  client-owned stdio setup for Zed, Codex, Claude Code, Cursor, VS Code, or
+  OpenCode. It does not add a daemon or edit client configuration.
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
 - **Test-thread bound:** `--test-threads=4` is used in CI and the release gate to prevent Tokio blocking-pool starvation when many MCP subprocess tests run in parallel. This is a test-runner containment measure, not a product budget. Unit tests (`--lib`) and doc tests do not need it.
 

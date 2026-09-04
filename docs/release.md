@@ -1,6 +1,9 @@
 # Release Checklist
 
-This is the canonical release document for the eggsact crate. Crates.io publishing is a manual maintainer action -- GitHub CI verifies merge correctness but does not publish, create release tags, or determine release cadence.
+This is the canonical release document for the eggsact crate and its optional
+GitHub binary release. Crates.io publishing is a manual maintainer action --
+GitHub CI verifies merge correctness but does not publish crates or create
+source tags.
 
 ## Release policy
 
@@ -23,6 +26,12 @@ This is the canonical release document for the eggsact crate. Crates.io publishi
 6. Generated docs regenerated:
    ```bash
    cargo run --features dev-tools --bin generate-docs
+   ```
+
+7. Release target/asset contract checked:
+   ```bash
+   python3 scripts/check-release-contract.py
+   bash -n packaging/install.sh
    ```
 
 ## Release verification
@@ -72,6 +81,25 @@ cargo publish --locked
 
 crates.io releases are immutable. Tagging after publish avoids a tag pointing at a failed attempt.
 
+### Binary release ordering
+
+Binary assembly is separate from ordinary CI and follows the crates-first
+authority chain:
+
+1. Run `scripts/release-check.sh` on clean `main`.
+2. Publish the exact version with `cargo publish --locked`.
+3. Verify that `max_stable_version` on crates.io shows that version.
+4. Create and push the annotated `vX.Y.Z` tag.
+5. The tag-triggered `release-binaries.yml` workflow builds and verifies the
+   five qualified targets, checks the staged MCP handshake, and creates or
+   updates a draft GitHub Release.
+6. Review and publish the draft manually.
+
+The workflow requires an existing tag and never creates, moves, or publishes a
+tag. It also never calls `cargo publish` or publishes the GitHub draft. ARMv7
+is recognized by the installers but is omitted until a separate executable or
+QEMU qualification gate is added.
+
 ### Immutable version guidance
 
 - crates.io does not permit replacing an uploaded version.
@@ -86,7 +114,7 @@ crates.io releases are immutable. Tagging after publish avoids a tag pointing at
 
 ## Package contents
 
-`cargo package --locked` excludes: `plans/`, `data/`, `scripts/`, `.github/`, `.opencode/`, `.agents/`, `deny.toml`, `AGENTS.md`.
+`cargo package --locked` excludes: `plans/`, `data/`, `scripts/`, `packaging/`, `.github/`, `.opencode/`, `.agents/`, `deny.toml`, `AGENTS.md`.
 
 Verify with:
 

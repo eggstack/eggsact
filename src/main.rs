@@ -2,12 +2,17 @@ use std::env;
 
 use eggsact::mcp::runtime;
 
+mod integrate;
+mod update;
+
 #[derive(Debug, PartialEq, Eq)]
 enum CliCommand {
     Help,
     Version,
     Mcp,
     Diagnostics { format: String },
+    Update,
+    Integrate { client: Option<String> },
     Error(String),
     Evaluate(String),
 }
@@ -20,6 +25,11 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> CliCommand {
         [flag] if flag == "-h" || flag == "--help" => CliCommand::Help,
         [flag] if flag == "-V" || flag == "--version" => CliCommand::Version,
         [flag] if flag == "--mcp" => CliCommand::Mcp,
+        [command] if command == "update" => CliCommand::Update,
+        [command, client] if command == "integrate" => CliCommand::Integrate {
+            client: Some(client.clone()),
+        },
+        [command] if command == "integrate" => CliCommand::Integrate { client: None },
         _ => {
             if !args.iter().any(|arg| arg == "--diagnostics") {
                 if args.iter().any(|arg| arg == "--format") {
@@ -69,12 +79,14 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> CliCommand {
 }
 
 fn print_usage() {
-    println!("Usage: eggsact [--mcp | --diagnostics [--format json|text] | expression]");
+    println!("Usage: eggsact [--mcp | --diagnostics [--format json|text] | update | integrate <client> | expression]");
     println!("  --mcp              Start MCP server mode");
     println!("  --diagnostics      Print diagnostic information");
     println!("  --format json|text Output format for --diagnostics (default: text)");
     println!("  -h, --help         Print this help message");
     println!("  -V, --version      Print version information");
+    println!("  update             Update from the latest stable crates.io release");
+    println!("  integrate <name>   Render MCP setup for a client (or list/detect)");
     println!("  expression         Evaluate math expression");
 }
 
@@ -226,6 +238,18 @@ fn main() {
             rt.block_on(eggsact::mcp::server::main());
         }
         CliCommand::Diagnostics { format } => print_diagnostics(&format),
+        CliCommand::Update => {
+            if let Err(error) = update::run() {
+                eprintln!("Error: {error}");
+                std::process::exit(1);
+            }
+        }
+        CliCommand::Integrate { client } => {
+            if let Err(error) = integrate::run(client.as_deref()) {
+                eprintln!("Error: {error}");
+                std::process::exit(2);
+            }
+        }
         CliCommand::Error(error) => {
             eprintln!("Error: {error}");
             print_usage();
@@ -269,6 +293,21 @@ mod tests {
     #[test]
     fn parse_mcp_flag() {
         assert_eq!(parse_args(args(&["--mcp"])), CliCommand::Mcp);
+    }
+
+    #[test]
+    fn parse_reserved_commands() {
+        assert_eq!(parse_args(args(&["update"])), CliCommand::Update);
+        assert_eq!(
+            parse_args(args(&["integrate"])),
+            CliCommand::Integrate { client: None }
+        );
+        assert_eq!(
+            parse_args(args(&["integrate", "zed"])),
+            CliCommand::Integrate {
+                client: Some("zed".to_string())
+            }
+        );
     }
 
     #[test]

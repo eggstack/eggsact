@@ -24,6 +24,21 @@ description: Use when preparing or performing a release of eggsact, running the 
 7. Verify crate is live on crates.io
 8. Create and push annotated tag: `git tag -a vX.Y.Z -m "eggsact vX.Y.Z" && git push origin vX.Y.Z`
 
+For the binary distribution line, the tag-triggered
+`.github/workflows/release-binaries.yml` then validates crates.io visibility,
+builds the qualified matrix, runs staged `--version`/`--help` and MCP smokes,
+and creates or updates only a draft GitHub Release. It never publishes crates,
+creates tags, or publishes the draft. Run these local checks before pushing a
+release tag:
+
+```bash
+python3 scripts/check-release-contract.py
+bash -n packaging/install.sh
+shellcheck packaging/install.sh  # when available
+cargo build --locked --release
+python3 scripts/smoke-mcp-binary.py target/release/eggsact
+```
+
 See `docs/release.md` for the canonical release checklist and `docs/verification.md` for the verification doctrine.
 
 ## Pre-Release Checklist
@@ -33,6 +48,7 @@ See `docs/release.md` for the canonical release checklist and `docs/verification
 - [ ] Confusables data regenerated: `python3 scripts/generate_confusables.py`
 - [ ] Generated docs current: `cargo run --features dev-tools --bin generate-docs -- --check`
 - [ ] `scripts/release-check.sh` passes from clean worktree
+- [ ] Target/asset contract and Unix installer syntax checks pass
 
 ## Publishing to crates.io
 

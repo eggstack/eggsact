@@ -16,6 +16,15 @@ cargo test --locked --doc                         # doc tests
 cargo package --locked --verbose                  # package verification
 ```
 
+Release-binary smoke helpers (the release workflow repeats these on each
+staged target):
+
+```bash
+python3 scripts/check-release-contract.py
+bash -n packaging/install.sh
+python3 scripts/smoke-mcp-binary.py target/release/eggsact
+```
+
 ## Verification Order
 
 The canonical release gate (including the full test suite) is defined in `docs/release.md` — do not duplicate it here.

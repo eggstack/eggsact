@@ -72,6 +72,23 @@ scripts/release-check.sh
 
 This script runs the full verification gate locally and performs a `cargo publish --dry-run`. It never publishes, tags, or writes evidence files.
 
+For a binary release, run the additional local checks before pushing the tag:
+
+```bash
+python3 scripts/check-release-contract.py
+bash -n packaging/install.sh
+shellcheck packaging/install.sh  # when available
+cargo build --locked --release
+./target/release/eggsact --version
+python3 scripts/smoke-mcp-binary.py ./target/release/eggsact
+```
+
+The tag-only `release-binaries.yml` workflow repeats candidate `--version`,
+`--help`, and MCP stdio smoke checks on every staged target, then creates only a
+draft GitHub Release. It does not rerun the ordinary correctness matrix. The
+workflow's Linux cross-builds target a documented glibc 2.17 floor; AArch64
+hardware evidence and ARMv7 qualification remain separate claims.
+
 ## Failure Ownership
 
 | Failure | Blocks merge? | Blocks release? | Expected response |
