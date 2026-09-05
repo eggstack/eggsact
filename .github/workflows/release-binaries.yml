@@ -166,7 +166,11 @@ jobs:
           mkdir -p release-artifacts
           asset="eggsact-${{ matrix.target }}"
           cp "$binary" "release-artifacts/$asset"
-          sha256sum "release-artifacts/$asset" | sed "s#  .*#  $asset#" > "release-artifacts/$asset.sha256"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "release-artifacts/$asset"
+          else
+            shasum -a 256 "release-artifacts/$asset"
+          fi | sed "s#  .*#  $asset#" > "release-artifacts/$asset.sha256"
       - name: Verify, smoke, and checksum Windows artifact
         if: runner.os == 'Windows'
         env:

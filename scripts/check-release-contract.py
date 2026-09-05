@@ -40,7 +40,7 @@ if "apt-get install" in workflow or "apt install zig" in workflow:
     errors.append("release workflow must not install Zig through apt")
 for fragment in [
     "ubuntu-24.04-arm", "zig_version=0.14.1", "cargo_zigbuild_version=0.23.3",
-    "sha256sum --check --status", "smoke_arch: aarch64",
+    "sha256sum --check --status", "shasum -a 256", "smoke_arch: aarch64",
     "must build and smoke on", "aarch64:arm64",
     "--user-agent 'eggsact-release-preflight/1'",
 ]:
