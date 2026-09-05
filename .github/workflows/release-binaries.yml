@@ -49,7 +49,9 @@ jobs:
           [[ -z "$(git status --porcelain)" ]] || { echo "checkout is dirty" >&2; exit 1; }
           python3 scripts/check-release-contract.py
           curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-            --connect-timeout 10 --max-time 30 https://crates.io/api/v1/crates/eggsact > crates.json
+            --connect-timeout 10 --max-time 30 \
+            --user-agent 'eggsact-release-preflight/1' \
+            https://crates.io/api/v1/crates/eggsact > crates.json
           visible="$(python3 -c 'import json; print(json.load(open("crates.json"))["crate"]["max_stable_version"])')"
           [[ "$visible" == "$version" ]] || { echo "crates.io exposes $visible, expected $version; wait for indexing" >&2; exit 1; }
           echo "tag=$tag" >> "$GITHUB_OUTPUT"

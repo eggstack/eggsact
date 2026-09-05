@@ -41,7 +41,7 @@ if "apt-get install" in workflow or "apt install zig" in workflow:
 for fragment in [
     "ubuntu-24.04-arm", "zig_version=0.14.1", "cargo_zigbuild_version=0.23.3",
     "sha256sum --check --status", "smoke_arch: aarch64",
-    "must build and smoke on",
+    "must build and smoke on", "--user-agent 'eggsact-release-preflight/1'",
 ]:
     if fragment not in workflow:
         errors.append(f"release workflow missing reproducible/native smoke guard: {fragment}")
