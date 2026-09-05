@@ -8,17 +8,31 @@ Deterministic MCP and in-process utility tools for coding agents. 86 tools acros
 
 ## Installation
 
-The latest published release is currently distributed through crates.io. The
-binary installers are prepared for the first binary-bearing release, but their
-`latest` URLs are not live yet. Install from Cargo:
+The latest release is v1.2.4. The verified binary installer is the recommended
+path for supported hosts:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://github.com/eggstack/eggsact/releases/latest/download/install.sh \
+  | bash -s -- --version 1.2.4
+```
+
+On Windows, run the published PowerShell installer:
+
+```powershell
+irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | iex
+```
+
+Pin the Windows installer with `-Version 1.2.4`. Both installers verify the
+downloaded binary's checksum and reported version. Cargo remains available as
+the fallback for unsupported hosts and source builds:
 
 ```bash
 cargo install eggsact
 ```
 
-After the first binary-bearing release is published, the documented fast path
-will be the verified release installer. See [Installation](docs/installation.md)
-for the target matrix and validation contract.
+See [Installation](docs/installation.md) for the target matrix, fallback, and
+validation contract.
 
 Or from source:
 

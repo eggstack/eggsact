@@ -90,8 +90,9 @@ workflow downloads Zig 0.14.1 with a pinned SHA-256 and installs
 cargo-zigbuild 0.23.3 only in release jobs. Linux x86-64 targets the
 documented glibc 2.17 floor; AArch64 uses the native `ubuntu-24.04-arm` runner
 for both build and executable smoke. ARMv7 qualification remains a separate
-claim. Until the first binary-bearing release is published, Cargo is the only
-current installer path.
+claim. The v1.2.4 release is the first published binary-bearing release; its
+exact-tag and `releases/latest/download` Unix installer paths were verified
+after publication. ARMv7 remains Cargo fallback only.
 
 ## Failure Ownership
 

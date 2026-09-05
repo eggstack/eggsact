@@ -65,10 +65,11 @@ installers, and updater tests:
 | Windows x86-64 | `x86_64-pc-windows-msvc` | native runner; staged smoke |
 | Linux ARMv7 | `armv7-unknown-linux-gnueabihf` | installer-recognized Cargo fallback; not published until qualified |
 
-The glibc floor is an intentional initial build target, not a claim of
-hardware testing. A real SBC result should be recorded before describing the
-AArch64 path as hardware-qualified. ARMv7 requires its own executable/QEMU or
-native result and is not silently included in a release.
+The v1.2.4 release qualified the five published targets, including native
+AArch64 build and executable smoke on `ubuntu-24.04-arm`. The glibc 2.17 floor
+is an intentional compatibility target, not a claim of broad hardware
+coverage. ARMv7 requires its own executable/QEMU or native result and remains
+installer-recognized Cargo fallback only.
 
 ## Release workflow
 
@@ -77,6 +78,8 @@ with `contents: write`. It requires an existing `vX.Y.Z` tag, an exact tagged
 checkout, a clean tree, and matching crates.io metadata before any build. It
 never publishes crates, creates or moves tags, pushes source commits, or
 publishes a GitHub release. Assembly creates or updates only a draft release.
+The first successful five-target run was workflow `33944943782` for tag
+`v1.2.4`; the draft was inspected and published after all jobs passed.
 
 Linux release tooling uses an explicitly downloaded and SHA-256-pinned Zig
 release plus a pinned `cargo-zigbuild` version. The workflow checks the runner

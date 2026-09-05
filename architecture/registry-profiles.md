@@ -121,7 +121,7 @@ A test (`tool_registration_tables_are_in_sync`) verifies that `ALL_TOOLS_VEC.len
 
 ### Named Profiles
 
-11 named profiles control which tools are exposed to which consumers. Counts are what `tools/list` returns per audience (measured on v1.2.3):
+11 named profiles control which tools are exposed to which consumers. Counts are what `tools/list` returns per audience (measured on v1.2.4):
 
 | Profile | Purpose | Model | Harness | Debug |
 |---------|---------|-------|---------|-------|

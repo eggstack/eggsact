@@ -34,11 +34,10 @@ source tags.
    bash -n packaging/install.sh
    ```
 
-Before the first binary-bearing release, the Cargo install path remains the
-only current installation promise. Do not point users at the GitHub
-`latest/download` installer URLs until a tagged binary workflow has produced
-and the maintainer has published those assets. The existing v1.2.3 release is
-source-only and must not be retrofitted.
+The v1.2.4 GitHub Release is the first published binary-bearing release. Its
+five qualified target assets, checksums, and installers are live; v1.2.3
+remains the earlier source-only release and was not retrofitted. Keep the
+post-release checks below current for future releases.
 
 ## Release verification
 
@@ -99,7 +98,8 @@ authority chain:
 5. The tag-triggered `release-binaries.yml` workflow builds and verifies the
    five qualified targets, checks the staged MCP handshake, and creates or
    updates a draft GitHub Release.
-6. Review and publish the draft manually.
+6. Review and publish the draft manually, then verify both the exact-tag and
+   `releases/latest/download` installer URLs.
 
 The five-target workflow uses pinned Zig 0.14.1 (SHA-256 checked for the
 runner's x86-64 or AArch64 archive) and cargo-zigbuild 0.23.3. Linux x86-64

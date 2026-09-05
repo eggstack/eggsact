@@ -52,7 +52,9 @@ Parity tests are excluded from CI because Python `eggcalc` is not available in t
 GitHub CI verifies merge correctness but does **not** publish to crates.io. The maintainer publishes manually per `docs/release.md`.
 The tag-only `release-binaries.yml` workflow builds verified release binaries
 after crates.io visibility, then creates or updates only a draft GitHub Release;
-it never creates tags, publishes crates, or publishes the draft.
+it never creates tags, publishes crates, or publishes the draft. The first
+binary-bearing release is v1.2.4, published after successful workflow
+33944943782 with five target binaries, checksums, and both installers.
 
 ## Structure
 

@@ -43,8 +43,9 @@ The release workflow is the authoritative binary proof. It builds and smokes
 Linux AArch64 on `ubuntu-24.04-arm`, verifies the runner architecture before
 executing any staged binary, downloads Zig 0.14.1 using an architecture-
 specific pinned SHA-256, and installs cargo-zigbuild 0.23.3 only in release
-tooling. Do not advertise `releases/latest/download/install.*` until a
-binary-bearing release has actually been published; v1.2.3 is source-only.
+tooling. The first binary-bearing release, v1.2.4, is published and its
+`releases/latest/download/install.*` URLs may be advertised; v1.2.3 remains
+source-only.
 The verified Zig archive is extracted into a fixed temporary directory with
 its wrapper directory stripped, and `scripts/check-release-contract.py` guards
 that the same path is used for `GITHUB_PATH` and `zig version`.

@@ -252,7 +252,7 @@ pub const MATH_TOOLS: &[ToolSpec] = &[
 
 ## Profile System
 
-11 named profiles control which tools are exposed. Counts below are what `tools/list` returns per audience (measured against v1.2.3; see [registry-profiles.md](registry-profiles.md) for the full reference).
+11 named profiles control which tools are exposed. Counts below are what `tools/list` returns per audience (measured against v1.2.4; see [registry-profiles.md](registry-profiles.md) for the full reference).
 
 | Profile | Model | Harness | Debug | Purpose |
 |---------|-------|---------|-------|---------|

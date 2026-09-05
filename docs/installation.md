@@ -2,44 +2,45 @@
 
 ## Current installation path
 
-The latest published release is available through crates.io. Until the first
-binary-bearing GitHub Release is published, install from Cargo:
+The latest binary-bearing release is v1.2.4. For supported hosts, use the
+verified Unix installer:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://github.com/eggstack/eggsact/releases/latest/download/install.sh \
+  | bash -s -- --version 1.2.4
+```
+
+The exact-tag form is also available at
+`https://github.com/eggstack/eggsact/releases/download/v1.2.4/install.sh`.
+The script requires Bash, verifies the SHA-256 sidecar, and checks the
+candidate's reported version before installation.
+
+Cargo remains the fallback for unsupported hosts and source installs:
 
 ```bash
 cargo install eggsact
 ```
 
-The binary installers below are release-ready but should be used only after a
-published binary release has been verified. A maintainer must update this page
-with that release tag before documenting a live `latest` or exact-tag URL.
+Operators who prefer to inspect first can download `install.sh`, review it, and
+run `bash install.sh --version 1.2.4`. It does not invoke `sudo` or edit shell
+startup files.
 
-For the eventual Unix fast path:
-
-```bash
-curl --proto '=https' --tlsv1.2 -fsSL \
-  https://github.com/eggstack/eggsact/releases/download/vX.Y.Z/install.sh \
-  | bash -s -- --version X.Y.Z
-```
-
-The script intentionally requires Bash. Operators who prefer to inspect first
-can download `install.sh`, review it, and run `bash install.sh --version X.Y.Z`.
-It does not invoke `sudo` or edit shell startup files.
-
-The eventual Windows PowerShell fast path is:
+The Windows PowerShell fast path is:
 
 ```powershell
-irm https://github.com/eggstack/eggsact/releases/download/vX.Y.Z/install.ps1 | iex
+irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | iex
 ```
 
 The inspect-first form is:
 
 ```powershell
-Invoke-WebRequest https://github.com/eggstack/eggsact/releases/download/vX.Y.Z/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/eggstack/eggsact/releases/download/v1.2.4/install.ps1 -OutFile install.ps1
 Get-Content .\install.ps1
 . .\install.ps1
 ```
 
-Use `-Version X.Y.Z` for a pinned install. The PowerShell installer maps
+Use `-Version 1.2.4` for a pinned install. The PowerShell installer maps
 Windows x86-64 to the prebuilt asset and uses the same Cargo fallback for
 Windows ARM64 and other unsupported architectures.
 
@@ -47,11 +48,11 @@ Windows ARM64 and other unsupported architectures.
 
 | Host | Asset | Status |
 |---|---|---|
-| Linux x86-64 / amd64 | `eggsact-x86_64-unknown-linux-gnu` | first binary release target; glibc 2.17 build floor |
-| Linux AArch64 / arm64 | `eggsact-aarch64-unknown-linux-gnu` | first binary release target; native ARM smoke required |
-| macOS Intel | `eggsact-x86_64-apple-darwin` | first binary release target; unsigned/not notarized |
-| macOS Apple Silicon | `eggsact-aarch64-apple-darwin` | first binary release target; unsigned/not notarized |
-| Windows x86-64 | `eggsact-x86_64-pc-windows-msvc.exe` | first binary release target; no code-signing claim |
+| Linux x86-64 / amd64 | `eggsact-x86_64-unknown-linux-gnu` | published in v1.2.4; glibc 2.17 build floor |
+| Linux AArch64 / arm64 | `eggsact-aarch64-unknown-linux-gnu` | published in v1.2.4; native ARM smoke passed |
+| macOS Intel | `eggsact-x86_64-apple-darwin` | published in v1.2.4; unsigned/not notarized |
+| macOS Apple Silicon | `eggsact-aarch64-apple-darwin` | published in v1.2.4; unsigned/not notarized |
+| Windows x86-64 | `eggsact-x86_64-pc-windows-msvc.exe` | published in v1.2.4; no code-signing claim |
 | Linux ARMv7 | `armv7-unknown-linux-gnueabihf` | recognized, Cargo fallback only until qualification |
 
 Raw executables use stable, versionless asset names. Each published executable

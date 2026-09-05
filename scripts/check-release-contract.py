@@ -66,10 +66,10 @@ if '"${BASH##*/}" = "sh"' not in installer:
 for fragment in ["-split ';'", "GetEnvironmentVariable(\"Path\"", "if ($arch -eq \"X64\")", "if (-not $candidate)"]:
     if fragment not in powershell:
         errors.append(f"PowerShell installer missing contract fragment {fragment}")
-if "releases/latest/download/install.sh" in readme or "releases/latest/download/install.ps1" in readme:
-    errors.append("README must not advertise an unpublished latest binary installer")
-if "releases/latest/download/install.sh" in installation or "releases/latest/download/install.ps1" in installation:
-    errors.append("installation docs must not advertise an unpublished latest binary installer")
+for document, name in [(readme, "README"), (installation, "installation docs")]:
+    for installer_name in ["install.sh", "install.ps1"]:
+        if f"releases/latest/download/{installer_name}" not in document:
+            errors.append(f"{name} must advertise the published latest {installer_name} URL")
 if "v1.2.3/install.sh" in installation:
     errors.append("installation docs must not use the pre-binary v1.2.3 installer example")
 if errors:
