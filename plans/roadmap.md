@@ -33,427 +33,256 @@ corrective lines are closed. The original 80-tool registration order remains an
 exact prefix, with the six later utilities in the full profile only.
 
 The binary distribution/self-update/MCP bootstrap implementation landed in
-`75bf52f`, with closure documentation in `216a68f`. The corrective
-implementation below is now on `main`, but the line remains open until the
-first real binary-bearing release supplies the cross-platform evidence that
-source CI cannot provide. Do not publish installer URLs or treat v1.2.3 as a
-binary release.
+`75bf52f`. The first corrective deployment pass landed in `427a93e` and fixed
+the previously identified AArch64 runner, installer, documentation, and Windows
+self-update issues. Ordinary CI for `427a93e` passed.
+
+The binary-release line remains open because the release workflow has not yet
+successfully executed and one release-only Zig bootstrap defect remains. Do not
+publish installer URLs or treat v1.2.3 as a binary-bearing release.
 
 ---
 
-# Active corrective line: binary release and updater deployment closure
+# Active corrective line: Zig bootstrap and first binary release qualification
 
-Status: **implementation complete; release execution evidence pending**.
-
-Implementation completed in this pass:
-
-- Linux AArch64 builds and executable smokes run on `ubuntu-24.04-arm`; the
-  workflow checks compatible runner architecture before every staged smoke.
-- Release-only Zig 0.14.1 archives are downloaded by architecture and checked
-  against pinned SHA-256 values; cargo-zigbuild 0.23.3 is installed explicitly.
-- Unix and Windows installer contracts now distinguish 404 fallback from hard
-  failures, reject `sh install.sh` before Bash-only options, support Windows
-  unsupported-architecture Cargo fallback, and use semicolon-aware PATH checks.
-- Windows self-update reports `update staged` and leaves a bounded helper
-  failure status file rather than reporting deferred replacement as complete.
-- README and installation/release/verification/architecture guidance now keep
-  Cargo as the live path until a new binary-bearing tag is published; v1.2.3 is
-  not retrofitted.
-
-Local source and contract gates passed on the corrective commit. The remaining
-P4 evidence is maintainer-only: publish a new semver crate, push its annotated
-tag, run the tagged workflow, inspect the draft assets, and exercise installers
-and Windows replacement where runners/environments permit.
+Status: **ready for implementation handoff**.
 
 ## Objective
 
-Correct the real release/deployment path without expanding Eggsact's scope.
-Preserve the existing implementation shape — one binary, client-owned stdio MCP,
-manual crates.io publication, a tag-triggered draft GitHub Release, binary-first
-installers, and a narrow self-update command — while fixing the defects that
-would prevent or misreport a real cross-platform release.
+Fix the final known release-only bootstrap defect with the smallest possible
+change, add a cheap deterministic guard against recurrence, then qualify the
+actual five-target binary release path before closing this line.
 
-This is a corrective pass, not a redesign. Prefer small changes to the existing
-workflow/scripts/updater over new abstractions, dependencies, or packaging
-systems.
+This is not a release-system redesign. Preserve the existing workflow,
+installer, updater, client-owned stdio lifecycle, manual crates.io publication,
+and draft-only GitHub Release assembly.
 
-## Confirmed defects to close
+## Completed corrective baseline
 
-### C1 — Linux AArch64 release smoke is not executable on the configured runner
+Commit `427a93e` is the implementation baseline for this pass. It already:
 
-`.github/workflows/release-binaries.yml` currently builds
-`aarch64-unknown-linux-gnu.2.17` on `ubuntu-latest` and then directly executes
-the staged binary for `--version`, `--help`, and the MCP stdio smoke. The
-x86-64 hosted runner cannot execute the AArch64 artifact without emulation.
+- moves Linux AArch64 build/smoke to `ubuntu-24.04-arm` and verifies runner
+  architecture before executing staged binaries;
+- pins Zig 0.14.1 archives and architecture-specific SHA-256 values;
+- pins cargo-zigbuild 0.23.3 in release-only tooling;
+- keeps release assembly as the only job with `contents: write`;
+- fixes the Unix Bash guard ordering;
+- gives unsupported Windows architectures Cargo fallback;
+- fixes Windows semicolon-separated PATH detection;
+- makes Windows self-update report `update staged` with bounded deferred
+  replacement failure reporting rather than premature final success;
+- keeps Cargo/source installation as the live documented path until a real
+  binary-bearing release exists.
 
-Required correction:
+Do not reopen those areas unless a concrete regression is found.
 
-- keep the glibc-floor build reproducible;
-- execute the final AArch64 release bytes on a native ARM64 GitHub-hosted
-  runner when available, preferably `ubuntu-24.04-arm`;
-- if the build must remain cross-produced on x86-64, transfer the exact staged
-  bytes to the ARM runner before smoke/checksum publication, or use explicitly
-  configured QEMU/binfmt with an equally truthful executable smoke;
-- do not mark AArch64 qualified based only on cross-compilation;
-- do not weaken the staged `--version`, `--help`, initialize/initialized/
-  `tools/list`, and stdin-EOF shutdown smoke.
+## C8 — Zig archive extraction path is wrong
 
-The preferred minimal design is to let the native ARM64 runner perform both the
-AArch64 `cargo zigbuild` and executable smoke if the runner/toolchain supports
-that cleanly. Avoid a multi-stage evidence framework unless a split build/smoke
-is actually required.
-
-### C2 — release workflow assumes `apt install zig`
-
-The Linux build jobs currently install Zig through the Ubuntu runner package
-manager. That package is not a stable/reliable contract for the hosted Ubuntu
-version and can make the release workflow fail before compilation.
-
-Required correction:
-
-- install a pinned Zig release explicitly in the release job, following the
-  proven Gregg approach or an equivalently small reviewed mechanism;
-- verify the downloaded Zig artifact by a pinned SHA-256 (or use a pinned
-  action only if it is clearly smaller and satisfies Eggsact's action-pinning
-  policy);
-- put Zig/cargo-zigbuild only in release tooling, never runtime Cargo deps;
-- keep the intended Linux GNU glibc floor at 2.17 unless actual compiler output
-  proves a different minimum is required;
-- record the exact Zig and cargo-zigbuild versions used by the release workflow
-  so a future runner image change cannot silently change the release toolchain.
-
-Do not introduce `cargo-dist`, containers, Nix, or another generalized release
-framework to solve this bounded tooling problem.
-
-### C3 — documentation advertises installer assets before any such release exists
-
-`README.md` and `docs/installation.md` currently present
-`releases/latest/download/install.sh` as the primary installation path and use
-v1.2.3 as a pinned installer example, but the published v1.2.3 GitHub Release
-contains no installer/binary assets.
-
-Required correction:
-
-- do not mutate or retrofit the already-published v1.2.3 release with current
-  main artifacts;
-- the first binary-bearing release must use a new semver version/tag after the
-  source line is ready;
-- until that release exists, documentation must not present the binary
-  installer as an already-working current path;
-- either gate the README fast-path wording until the first successful binary
-  release lands, or phrase it explicitly as available starting with the next
-  binary-bearing release;
-- remove the invalid `v1.2.3/install.sh` pinned example and use a placeholder
-  `vX.Y.Z` or the actual first binary release version only after it exists;
-- after the first successful release, verify both `latest/download/install.sh`
-  and the exact-tag installer URL before declaring the path live.
-
-The release version bump/publication itself remains a maintainer release action,
-not something CI performs automatically.
-
-### C4 — Windows updater reports success before deferred replacement is proven
-
-The current Windows updater copies a candidate beside the running executable,
-spawns detached PowerShell to wait for the updater process to exit, and returns
-success immediately. The actual `Move-Item -Force` can subsequently fail, while
-the user has already been told the update succeeded.
-
-Required correction:
-
-- use a replacement mechanism whose success semantics are truthful;
-- prefer the proven Gregg/self-replacement approach if it can be reused with a
-  small dependency/binary-size cost;
-- otherwise design a bounded Windows replacement helper protocol that cannot
-  print final success until the replacement contract is guaranteed, and that
-  leaves an actionable failure marker/message if post-exit replacement fails;
-- never kill arbitrary Eggsact/MCP processes;
-- permission/lock failures must tell the user to close/reconnect the relevant
-  client and retry from an Administrator PowerShell when needed;
-- preserve Unix atomic-adjacent rename behavior unless a concrete bug is found;
-- keep candidate checksum and exact `--version` validation before replacement.
-
-If a new replacement crate is added, measure the locked dependency and stripped
-binary delta and record it in closure evidence. Do not add a network client or
-updater framework as collateral.
-
-### C5 — Unix Bash guard runs too late
-
-`packaging/install.sh` currently executes `set -euo pipefail` before checking
-`BASH_VERSION`. A user invoking it through `sh` can fail on unsupported
-`pipefail` syntax before seeing the intended instruction.
-
-Required correction:
-
-- make the interpreter guard execute before any Bash-only option or syntax;
-- `curl ... | bash` remains the documented path;
-- accidental `sh install.sh` should fail with one concise message explaining
-  that Bash is required;
-- keep the rest of the script Bash-specific rather than attempting an
-  unnecessary POSIX-shell rewrite.
-
-### C6 — Windows installer does not follow unsupported-target Cargo fallback
-
-`packaging/install.ps1` currently rejects non-X64 Windows before checking Cargo,
-while the documented contract says unsupported targets may use Cargo fallback.
-
-Required correction:
-
-- map Windows x86-64 to the prebuilt MSVC asset;
-- on Windows ARM64/other unsupported architectures, skip binary download and
-  enter the same staged Cargo fallback path when Cargo is available;
-- if Cargo is unavailable, report the detected architecture and that no
-  prebuilt asset exists;
-- preserve hard failure for checksum, version, TLS/network, or other failures
-  after a matching binary path has been selected.
-
-Do not add a Windows ARM64 release artifact in this corrective pass unless it is
-independently qualified and the plan is amended first.
-
-### C7 — Windows PATH detection uses the wrong delimiter model
-
-The PowerShell installer checks PATH membership using colon-delimited matching,
-but Windows PATH is semicolon-separated.
-
-Required correction:
-
-- compare normalized path entries using `[Environment]::GetEnvironmentVariable`
-  plus `-split ';'` (or another explicit Windows-native path-list operation);
-- handle trailing separators/case-insensitivity reasonably;
-- continue to print advice only; do not persistently edit PATH in this line.
-
-## P0 — fix and locally validate the release workflow contract
-
-Modify `.github/workflows/release-binaries.yml` and any tiny release helper
-needed to implement C1/C2.
-
-Required matrix after correction:
+`.github/workflows/release-binaries.yml` downloads one of:
 
 ```text
-x86_64-unknown-linux-gnu     build + execute smoke
-AArch64-unknown-linux-gnu    build + native/QEMU execute smoke
-x86_64-apple-darwin          native build + execute smoke
-aarch64-apple-darwin         native build + execute smoke
-x86_64-pc-windows-msvc       native build + execute smoke
+zig-x86_64-linux-0.14.1.tar.xz
+zig-aarch64-linux-0.14.1.tar.xz
 ```
 
-ARMv7 remains recognized/source-only until its separate qualification gate
-passes. Do not make this corrective line contingent on ARMv7.
+The archive extracts with an architecture-qualified top-level directory, but
+the workflow currently adds `$RUNNER_TEMP/zig-0.14.1` to `GITHUB_PATH` and
+executes `$RUNNER_TEMP/zig-0.14.1/zig`. That path does not match the extracted
+archive layout, so both Linux release jobs can fail before `cargo zigbuild`.
 
-Preserve:
+### Required correction
 
-- exact tag/Cargo version equality;
-- exact tag commit checkout;
-- crates.io stable-version visibility before binary assembly;
-- pinned third-party Actions;
-- release-only `contents: write`;
-- draft-only release creation/update;
-- refusal to replace assets on an already-published release;
-- stable raw executable asset names and SHA-256 sidecars;
-- exact staged-binary MCP smoke before publication.
-
-Add a workflow-level sanity check ensuring every build job that calls an
-executable smoke is running on a compatible architecture or explicitly has an
-emulation layer configured. A comment alone is not sufficient evidence.
-
-## P1 — correct installer contracts
-
-Fix C5-C7 in `packaging/install.sh` and `packaging/install.ps1` without changing
-the public command surface.
-
-Add/retain cheap deterministic checks for:
-
-- Bash-required invocation failure before Bash-only syntax;
-- Linux/macOS target mapping;
-- ARMv7 -> Cargo fallback selection;
-- Windows X64 -> binary path;
-- Windows ARM64 -> Cargo fallback selection;
-- binary 404 -> Cargo fallback;
-- binary transport/5xx -> hard failure;
-- checksum mismatch -> hard failure;
-- candidate-version mismatch -> hard failure;
-- pinned exact version propagation;
-- Windows PATH membership detection using semicolon-separated entries.
-
-Avoid introducing a shell-testing framework. Small helper seams/scripts and
-runner smoke commands are sufficient.
-
-## P2 — correct Windows self-update completion semantics
-
-Refactor only the Windows replacement portion of `src/update.rs` (and dependency
-files if justified).
-
-Required behavior:
-
-1. obtain crates.io latest stable version;
-2. fetch or Cargo-build the exact candidate;
-3. verify checksum where applicable;
-4. verify exact candidate `eggsact X.Y.Z`;
-5. establish a replacement path that is safe for the running Windows image;
-6. report success only under a truthful replacement contract;
-7. leave no silent deferred failure state;
-8. never restart/kill client-owned MCP processes.
-
-Add focused tests for replacement command construction/state reporting where
-possible without requiring destructive replacement of the test runner binary.
-Use an integration/manual Windows smoke for the actual self-update behavior.
-
-If Windows cannot support a fully synchronous in-process success confirmation,
-the CLI may report a distinct state such as `update staged; replacement will
-complete after exit` rather than `updated` — but only if the deferred helper has
-a reliable failure-report/recovery mechanism and docs describe it accurately.
-Prefer a proven self-replacement primitive instead of inventing a complex
-protocol.
-
-## P3 — make docs truthful before and after the first binary release
-
-Update `README.md`, `docs/installation.md`, `docs/release.md`,
-`docs/verification.md`, `AGENTS.md`, and `plans/roadmap.md` as needed.
-
-Before the first successful binary-bearing release:
-
-- Cargo/source installation remains the guaranteed live path;
-- binary installer text is clearly marked as landing with the next release or
-  otherwise not presented as a currently working `latest` URL;
-- no v1.2.3 installer example remains.
-
-After the first successful binary-bearing release:
-
-- switch README to the binary-first copy/paste path;
-- use a real published version in pinned examples;
-- document the actually validated matrix and glibc floor;
-- record whether AArch64 was native-smoked and on which runner/host;
-- leave ARMv7 documented as source-only unless it independently qualifies;
-- keep macOS/Windows unsigned/notarized status truthful.
-
-Do not make the documentation depend on an unpublished future tag while calling
-the path available today.
-
-## P4 — release-path execution gate
-
-This corrective line cannot close based only on ordinary `ci.yml`, YAML review,
-or local x86-64 testing.
-
-Before closure, obtain evidence from the actual release workflow. Preferred
-path:
-
-1. prepare the next real semver release using the existing manual release gate;
-2. manually publish the crate to crates.io;
-3. verify crates.io exposes the exact stable version;
-4. create/push the annotated `vX.Y.Z` tag;
-5. let `release-binaries.yml` execute the full matrix;
-6. require all target build/smoke jobs and installer checks to pass;
-7. inspect the draft release asset set before publication;
-8. install at least one Linux/macOS artifact through `install.sh` and one
-   Windows artifact through `install.ps1` where runner/environment access
-   permits;
-9. verify `releases/latest/download/install.sh` only after the draft is
-   intentionally published;
-10. record the workflow run ID and release tag in this roadmap.
-
-If using a disposable/manual-dispatch tag/ref for pre-release validation is
-possible without corrupting public release history, that may be used first, but
-the first real binary-bearing release remains the authoritative closure proof.
-
-## Verification
-
-Run the normal source gates after implementation:
+Prefer one deterministic extraction directory independent of archive naming:
 
 ```bash
-cargo fmt --all -- --check
-cargo run --locked --features dev-tools --bin generate-docs -- --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-features -- --skip parity --test-threads=4
-cargo test --locked --doc
-cargo deny check advisories bans licenses sources
-cargo package --locked --list
-cargo publish --locked --dry-run
+zig_dir="$RUNNER_TEMP/zig"
+mkdir -p "$zig_dir"
+tar -xJf "$RUNNER_TEMP/$zig_archive" -C "$zig_dir" --strip-components=1
+echo "$zig_dir" >> "$GITHUB_PATH"
+"$zig_dir/zig" version
 ```
 
-Release/deployment-specific checks:
+An equivalent implementation may derive the actual architecture-qualified
+extracted directory from `zig_archive`, but a fixed directory with
+`--strip-components=1` is simpler and already proven in sibling repo release
+logic.
 
-```text
+Preserve all current security/reproducibility properties:
+
+- Zig version remains explicit;
+- x86-64 and AArch64 archive hashes remain pinned;
+- hash verification happens before extraction;
+- cargo-zigbuild version remains explicit;
+- Zig/cargo-zigbuild stay release-only and do not enter runtime dependencies;
+- Linux GNU targets retain the intended `.2.17` glibc floor;
+- the exact staged executable still must pass `--version`, `--help`, and MCP
+  initialize/initialized/tools-list/EOF smoke before checksum/upload.
+
+Do not solve this with `apt install zig`, `cargo-dist`, containers, Nix, or a
+new release framework.
+
+## P0 — add a cheap Zig-bootstrap contract check
+
+The defect survived ordinary CI because the tag-only release workflow is not
+executed on normal pushes. Add a small deterministic check that validates the
+release script's extraction contract without downloading/building Zig on every
+push.
+
+Acceptable minimal approaches include:
+
+- extend `scripts/check-release-contract.py` to require a fixed `zig_dir`,
+  `--strip-components=1`, and use of that same path for `GITHUB_PATH`/`zig
+  version`; or
+- move the tiny archive-install shell fragment into a reusable release helper
+  with a local syntax/contract test, only if doing so is actually simpler.
+
+Prefer extending the existing contract checker. Do not introduce a shell test
+framework or turn ordinary CI into a release build.
+
+The check should fail if the workflow again extracts one directory but invokes
+Zig from another.
+
+## P1 — verify the corrected source line
+
+After C8 is fixed, run the normal source gates appropriate to the changed files,
+including at minimum:
+
+```bash
 python3 scripts/check-release-contract.py
 bash -n packaging/install.sh
-shellcheck packaging/install.sh                  when available
-PowerShell parser + installer mapping smoke
-staged x86-64 Linux --version/--help/MCP smoke
-staged AArch64 Linux --version/--help/MCP smoke on native ARM64 or explicit QEMU
-macOS Intel/ARM64 staged binary smokes
-Windows staged binary smoke
-installer 404 -> Cargo fallback tests
-installer 5xx/checksum/version -> hard-failure tests
-Windows unsupported-arch -> Cargo fallback test
-Windows PATH detection test
-Windows self-update/replacement smoke
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features -- --skip parity --test-threads=4
 ```
 
-Ordinary CI should remain small. Put expensive cross-platform executable proof
-in the release/manual tier rather than expanding every push/PR run.
+Also inspect the release workflow to confirm:
+
+- Linux x86-64 uses the x86-64 Zig archive and hash;
+- Linux AArch64 uses the AArch64 Zig archive and hash;
+- the extracted `zig` executable path exists by construction;
+- `cargo zigbuild --target <target>.2.17` remains unchanged;
+- architecture checks happen before staged executable smoke;
+- only the assembly job has write permission;
+- mandatory assets/checksums are unchanged.
+
+Ordinary source CI passing is necessary but still not sufficient for closure.
+
+## P2 — first real binary-release execution gate
+
+Once C8 is merged, stop doing source-only corrective passes unless the release
+run exposes another concrete defect. Qualify the actual deployment path.
+
+Required sequence:
+
+1. prepare the next real semver release using the existing manual release gate;
+2. publish the crate manually to crates.io;
+3. wait until crates.io exposes that exact version as `max_stable_version`;
+4. create and push the annotated `vX.Y.Z` tag pointing at the release commit;
+5. allow `.github/workflows/release-binaries.yml` to execute;
+6. require successful jobs for:
+   - Linux x86-64 GNU;
+   - Linux AArch64 GNU on native ARM64;
+   - macOS Intel;
+   - macOS Apple Silicon;
+   - Windows x86-64;
+   - PowerShell installer parsing;
+   - draft release assembly;
+7. require each staged executable to pass `--version`, `--help`, and the real
+   MCP stdio smoke before its SHA-256 sidecar is generated;
+8. inspect the draft release and verify the exact mandatory asset set;
+9. test at least one Unix installer path against the release and Windows where
+   environment access permits;
+10. intentionally publish the draft only after inspection;
+11. verify the exact-tag installer URL and then
+    `releases/latest/download/install.sh` after publication;
+12. update README/docs from Cargo-first to binary-first only after those URLs
+    are live.
+
+Do not retrofit v1.2.3. The first binary-bearing GitHub Release must use a new
+version/tag.
+
+## Mandatory release assets
+
+The first qualified binary release must contain:
+
+```text
+eggsact-x86_64-unknown-linux-gnu
+eggsact-x86_64-unknown-linux-gnu.sha256
+eggsact-aarch64-unknown-linux-gnu
+eggsact-aarch64-unknown-linux-gnu.sha256
+eggsact-x86_64-apple-darwin
+eggsact-x86_64-apple-darwin.sha256
+eggsact-aarch64-apple-darwin
+eggsact-aarch64-apple-darwin.sha256
+eggsact-x86_64-pc-windows-msvc.exe
+eggsact-x86_64-pc-windows-msvc.exe.sha256
+install.sh
+install.ps1
+```
+
+ARMv7 remains recognized by the Unix installer but Cargo fallback/source-only
+until it receives separate executable qualification. Do not make ARMv7 a
+blocker for this closure.
 
 ## Acceptance criteria
 
+### Zig bootstrap
+
+- [ ] The downloaded Zig archive is verified before extraction.
+- [ ] Extraction produces a deterministic directory used consistently for
+      `GITHUB_PATH` and direct `zig version` execution.
+- [ ] No workflow path assumes a nonexistent `zig-0.14.1` directory.
+- [ ] Zig 0.14.1 and cargo-zigbuild 0.23.3 remain explicit release-tooling
+      versions.
+- [ ] The release contract checker catches extraction/invocation path drift.
+
 ### Release workflow
 
-- [ ] No Linux job relies on `apt install zig`.
-- [ ] Zig/cargo-zigbuild versions are intentional and reproducible.
-- [ ] Linux x86-64 retains a verified documented glibc floor.
-- [ ] Linux AArch64 final release bytes execute successfully on native ARM64 or
-      explicitly configured emulation before checksum/upload.
-- [ ] Every published target passes `--version`, `--help`, and the real MCP
-      initialize/tools-list/EOF smoke using the staged release binary.
-- [ ] Release workflow remains crates-first, tag-driven, draft-only, and
-      idempotent for drafts.
-- [ ] ARMv7 is not published without its separate execution qualification.
+- [ ] Linux x86-64 staged release binary executes successfully.
+- [ ] Linux AArch64 staged release binary executes successfully on
+      `ubuntu-24.04-arm` or an explicitly documented replacement ARM64 runner.
+- [ ] Both Linux artifacts retain the verified glibc 2.17 build floor.
+- [ ] macOS Intel/Apple Silicon and Windows x86-64 staged binaries execute
+      successfully.
+- [ ] Every mandatory binary passes `--version`, `--help`, and MCP smoke before
+      checksum/upload.
+- [ ] Assembly creates/updates only a draft and refuses to overwrite a published
+      release.
+- [ ] The mandatory asset set is complete.
 
-### Installers
+### Installation/update/documentation
 
-- [ ] `sh install.sh` fails with the intended Bash-required guidance rather
-      than a `pipefail` parser/option error.
-- [ ] `curl ... | bash` works.
-- [ ] Binary 404 is the only matching-target network condition that selects
-      Cargo fallback.
-- [ ] Windows unsupported architectures use Cargo fallback when available.
-- [ ] Windows PATH detection understands semicolon-separated PATH entries.
-- [ ] Checksum/version/transport failures remain hard errors.
+- [ ] Existing Unix/Windows installer corrections remain intact.
+- [ ] Windows staged self-update semantics remain truthful and actionable.
+- [ ] No current documentation claims v1.2.3 contains binary assets.
+- [ ] Binary-first README instructions are enabled only after the first real
+      binary-bearing release is published and installer URLs are verified.
+- [ ] No daemon/service/restart behavior is introduced for stdio MCP.
 
-### Self-update
+### Closure evidence
 
-- [ ] Windows no longer prints final `updated` success before replacement can
-      truthfully be considered successful/staged under the documented contract.
-- [ ] Replacement failure is visible/actionable and never silently deferred.
-- [ ] Unix update behavior remains atomic-adjacent and validated.
-- [ ] No MCP process enumeration, killing, daemonization, or `restart` command
-      is introduced.
-- [ ] Any new normal dependency has a documented justification and measured
-      stripped-binary delta.
-
-### Documentation and closure
-
-- [ ] No current docs claim the v1.2.3 release contains installer/binary assets.
-- [ ] No current docs advertise a `latest/download/install.*` path as live
-      before such an asset is actually published.
-- [ ] The first binary-bearing release uses a new version/tag.
-- [ ] The actual release workflow has completed successfully at least once.
-- [ ] The draft asset set contains every mandatory binary, checksum, and both
-      installer scripts.
-- [ ] At least one end-to-end installer path has been exercised against the
-      published release; Windows is exercised where available.
-- [ ] Closure records the workflow run ID, release tag, target matrix, Zig
-      version, glibc floor, AArch64 execution environment, installer smokes,
-      Windows update result, and final binary-size/dependency delta.
+- [ ] Actual release workflow completed successfully at least once.
+- [ ] Closure records the release tag and workflow run ID.
+- [ ] Closure records exact runner/target matrix, Zig/cargo-zigbuild versions,
+      glibc floor, and AArch64 execution environment.
+- [ ] Closure records Unix installer smoke and Windows installer/update results
+      where available.
+- [ ] Dependency/binary-size delta remains bounded; no release-only tool becomes
+      a runtime dependency.
 
 ## Scope control
 
-Do not use this corrective pass to add:
+Do not use this pass to add:
 
 - systemd, launchd, Windows SCM, cron, PID files, or `restart`;
 - Streamable HTTP or another MCP transport;
-- apt/deb/rpm, Homebrew, winget, Chocolatey, MSI, containers;
-- code signing/notarization infrastructure;
+- apt/deb/rpm, Homebrew, winget, Chocolatey, MSI, or container distribution;
+- code-signing/notarization infrastructure;
 - automatic crates.io publishing or tag creation;
 - `cargo-dist`, `release-plz`, or a generalized packaging framework;
+- Windows ARM64 binaries without a separate qualification decision;
 - editor-specific extensions;
-- unrelated MCP protocol modernization;
+- unrelated MCP protocol changes;
 - new deterministic tools or profile/schema changes.
 
 The correct end state remains a small stdio MCP/utility binary with a reliable,
@@ -461,28 +290,27 @@ verified release path — not a deployment platform.
 
 ## Closure record
 
-When this corrective line passes, replace its execution detail with a concise
-completed record containing:
+When this line passes, prune the active implementation detail and record:
 
-1. corrective implementation SHA(s);
+1. C8 corrective implementation SHA;
 2. first successful binary-bearing release tag;
 3. release workflow run ID;
 4. exact five-target published matrix;
 5. Zig and cargo-zigbuild versions;
 6. Linux glibc floor;
-7. AArch64 native/emulated execution evidence;
+7. AArch64 native execution evidence;
 8. ARMv7 status;
 9. Unix/Windows installer smoke results;
 10. Windows self-update/replacement result;
-11. dependency and stripped-binary delta from the `75bf52f` baseline;
-12. ordinary CI/release-gate results.
+11. dependency/stripped-binary delta from the binary-distribution baseline;
+12. ordinary CI and release-gate results.
 
-Do not mark the line complete again until the release workflow itself has run
-successfully and produced a verified asset set.
+Do not mark the binary-distribution line complete until the actual release
+workflow has successfully produced and validated the asset set.
 
 ---
 
-## Future opportunities after corrective closure
+## Future opportunities after binary-release closure
 
 1. Evaluate MCP Bundle/official MCP Registry distribution after a raw-binary
    release proves the deployment path; keep it non-blocking.
