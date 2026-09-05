@@ -141,7 +141,7 @@ jobs:
           set -euo pipefail
           actual="$(uname -m)"
           case "$EXPECTED_ARCH:$actual" in
-            x86_64:x86_64|aarch64:aarch64) ;;
+            x86_64:x86_64|aarch64:aarch64|aarch64:arm64) ;;
             *) echo "${RELEASE_TARGET} must build and smoke on ${EXPECTED_ARCH}, got ${actual}" >&2; exit 1 ;;
           esac
       - name: Verify Windows build and smoke architecture
