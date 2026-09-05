@@ -45,6 +45,9 @@ executing any staged binary, downloads Zig 0.14.1 using an architecture-
 specific pinned SHA-256, and installs cargo-zigbuild 0.23.3 only in release
 tooling. Do not advertise `releases/latest/download/install.*` until a
 binary-bearing release has actually been published; v1.2.3 is source-only.
+The verified Zig archive is extracted into a fixed temporary directory with
+its wrapper directory stripped, and `scripts/check-release-contract.py` guards
+that the same path is used for `GITHUB_PATH` and `zig version`.
 
 See `docs/release.md` for the canonical release checklist and `docs/verification.md` for the verification doctrine.
 

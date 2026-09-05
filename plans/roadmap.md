@@ -45,7 +45,7 @@ publish installer URLs or treat v1.2.3 as a binary-bearing release.
 
 # Active corrective line: Zig bootstrap and first binary release qualification
 
-Status: **ready for implementation handoff**.
+Status: **source correction implemented; binary-release qualification pending**.
 
 ## Objective
 
@@ -76,7 +76,7 @@ Commit `427a93e` is the implementation baseline for this pass. It already:
 
 Do not reopen those areas unless a concrete regression is found.
 
-## C8 — Zig archive extraction path is wrong
+## C8 — Zig archive extraction path is wrong — implemented
 
 `.github/workflows/release-binaries.yml` downloads one of:
 
@@ -85,10 +85,13 @@ zig-x86_64-linux-0.14.1.tar.xz
 zig-aarch64-linux-0.14.1.tar.xz
 ```
 
-The archive extracts with an architecture-qualified top-level directory, but
-the workflow currently adds `$RUNNER_TEMP/zig-0.14.1` to `GITHUB_PATH` and
-executes `$RUNNER_TEMP/zig-0.14.1/zig`. That path does not match the extracted
-archive layout, so both Linux release jobs can fail before `cargo zigbuild`.
+The archive extracts with an architecture-qualified top-level directory. The
+workflow previously added `$RUNNER_TEMP/zig-0.14.1` to `GITHUB_PATH` and
+executed `$RUNNER_TEMP/zig-0.14.1/zig`, which did not match the extracted
+archive layout and could fail both Linux release jobs before `cargo zigbuild`.
+The workflow now extracts into a fixed `$RUNNER_TEMP/zig` directory with
+`--strip-components=1` and uses that same directory for both PATH setup and
+the direct version check.
 
 ### Required correction
 
@@ -228,13 +231,13 @@ blocker for this closure.
 
 ### Zig bootstrap
 
-- [ ] The downloaded Zig archive is verified before extraction.
-- [ ] Extraction produces a deterministic directory used consistently for
+- [x] The downloaded Zig archive is verified before extraction.
+- [x] Extraction produces a deterministic directory used consistently for
       `GITHUB_PATH` and direct `zig version` execution.
-- [ ] No workflow path assumes a nonexistent `zig-0.14.1` directory.
-- [ ] Zig 0.14.1 and cargo-zigbuild 0.23.3 remain explicit release-tooling
+- [x] No workflow path assumes a nonexistent `zig-0.14.1` directory.
+- [x] Zig 0.14.1 and cargo-zigbuild 0.23.3 remain explicit release-tooling
       versions.
-- [ ] The release contract checker catches extraction/invocation path drift.
+- [x] The release contract checker catches extraction/invocation path drift.
 
 ### Release workflow
 

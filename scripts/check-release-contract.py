@@ -45,6 +45,17 @@ for fragment in [
 ]:
     if fragment not in workflow:
         errors.append(f"release workflow missing reproducible/native smoke guard: {fragment}")
+for fragment in [
+    'zig_dir="$RUNNER_TEMP/zig"',
+    'mkdir -p "$zig_dir"',
+    'tar -xJf "$RUNNER_TEMP/$zig_archive" -C "$zig_dir" --strip-components=1',
+    'echo "$zig_dir" >> "$GITHUB_PATH"',
+    '"$zig_dir/zig" version',
+]:
+    if fragment not in workflow:
+        errors.append(f"release workflow missing deterministic Zig extraction contract: {fragment}")
+if '"$RUNNER_TEMP/zig-${zig_version}"' in workflow:
+    errors.append("release workflow must not assume Zig's archive directory name")
 if "if: runner.os == 'Windows'" not in workflow:
     errors.append("release workflow is missing the Windows architecture smoke guard")
 if "set -euo pipefail" in installer and installer.index("set -euo pipefail") < installer.index("BASH_VERSION"):

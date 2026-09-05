@@ -105,7 +105,10 @@ The five-target workflow uses pinned Zig 0.14.1 (SHA-256 checked for the
 runner's x86-64 or AArch64 archive) and cargo-zigbuild 0.23.3. Linux x86-64
 uses the glibc 2.17 target suffix; Linux AArch64 builds and executes on the
 `ubuntu-24.04-arm` runner. macOS and Windows use native runners. ARMv7 is
-installer-recognized Cargo fallback only.
+installer-recognized Cargo fallback only. Each verified Zig archive is
+extracted into a fixed temporary directory with the archive's top-level
+directory stripped; the workflow uses that same path for `GITHUB_PATH` and
+`zig version`, and the release contract checker guards this invariant.
 
 The workflow requires an existing tag and never creates, moves, or publishes a
 tag. It also never calls `cargo publish` or publishes the GitHub draft. ARMv7

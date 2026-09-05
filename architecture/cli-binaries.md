@@ -84,7 +84,11 @@ architecture before executable smoke, so cross-compilation alone cannot
 qualify an artifact. Each staged binary is checked with `--version`, `--help`, and
 `scripts/smoke-mcp-binary.py` before its sidecar is generated. The assembly job
 requires one binary and checksum for each mandatory target and attaches the two
-installer scripts. `scripts/check-release-contract.py` catches matrix drift.
+installer scripts. Zig archives are extracted into a fixed temporary directory
+with their architecture-qualified wrapper directory stripped; the same path
+is used for `GITHUB_PATH` and the direct version check.
+`scripts/check-release-contract.py` catches matrix and Zig bootstrap contract
+drift.
 
 The workflow does not build ARMv7 until its qualification gate is added.
 
