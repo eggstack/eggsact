@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-09-05
+
 ### Added
 - Six deterministic, full-profile contextual utilities: `ip_inspect`,
   `cidr_inspect`, `codec_convert`, `radix_convert`, `datetime_convert`, and
@@ -24,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   qualification.
 
 ### Fixed
+- Zig release bootstrap now extracts into a deterministic temporary directory
+  and uses that same path for PATH setup and version verification.
 - IPv6 CIDR address counts now depend only on prefix length, including exact
   values for `/0` and `/128`.
 - IPv4-mapped IPv6 metadata is now limited to the `::ffff:0:0/96` prefix.
