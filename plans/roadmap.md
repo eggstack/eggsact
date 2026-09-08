@@ -39,6 +39,69 @@ qualified target binaries, SHA-256 sidecars, `install.sh`, and `install.ps1`
 were produced by successful workflow
 [`33944943782`](https://github.com/eggstack/eggsact/actions/runs/33944943782).
 
+## Active consolidation line
+
+The next implementation line is a bounded maintenance/consolidation pass based
+on the September 2026 architecture review. The repository does **not** need a
+broad utility expansion. The goal is to reduce duplicate sources of truth,
+restore typed internal composition, tighten the Rust API boundary, and deepen
+only the highest-value harness integrations while preserving the existing MCP
+surface and lightweight single-crate design.
+
+Execute the plans in this order:
+
+1. [`consolidation-01-typed-composition.md`](consolidation-01-typed-composition.md)
+   - make typed deterministic operations the canonical internal composition
+     path;
+   - eliminate tool-handler-to-tool-handler JSON composition where full
+     dispatch policy is not required;
+   - split responsibility-dense modules only along real architectural seams;
+   - preserve tool names, response contracts, profiles, audiences, machine
+     codes, compatibility behavior, and CLI behavior.
+2. [`consolidation-02-shared-analysis.md`](consolidation-02-shared-analysis.md)
+   - introduce canonical repository facts and patch-analysis representations;
+   - remove duplicated ecosystem/path detection across repo tools;
+   - parse and classify each unified diff once, then apply separate summary,
+     contract, and review policies;
+   - add cross-tool differential tests so shared facts cannot drift.
+3. [`consolidation-03-api-config-build-surface.md`](consolidation-03-api-config-build-surface.md)
+   - document and stage a cleaner supported Rust API hierarchy without a
+     breaking 1.x visibility change;
+   - add typed dependency-preflight integration and only other typed workflow
+     facades justified by concrete consumers;
+   - correct YAML inspection so heuristic analysis is not represented as
+     parser-backed validation;
+   - measure coarse feature-gating value and implement it only if the benefit
+     exceeds conditional-compilation/CI complexity;
+   - retire stale docs and maintain the existing `json_query` deprecation path.
+
+### Consolidation acceptance criteria
+
+This line is complete when all of the following hold:
+
+- internal composites operate on typed/core results rather than parsing sibling
+  `ToolResponse` JSON unless a deliberate registry-policy hop is required;
+- repository ecosystem/path facts have one canonical classifier;
+- patch parsing and neutral patch facts have one canonical implementation used
+  by `patch_summary`, `patch_contract_check`, and `diff_risk_classify`;
+- shared-fact differential tests protect against cross-tool semantic drift;
+- the recommended Rust library API favors `calc`, typed `text`, `ToolRegistry`,
+  and typed workflow APIs rather than raw `tools::*` handlers;
+- YAML/config guarantees accurately describe heuristic versus parser-backed
+  behavior, without adding a YAML dependency absent a concrete workflow;
+- feature gating is either implemented as a small measured set of coarse
+  features or explicitly rejected with evidence; per-tool feature matrices are
+  not introduced;
+- architecture documentation matches the resulting module tree;
+- the full verification order in `AGENTS.md` passes, including generated-doc
+  checks and relevant packaging/API compile checks;
+- no gratuitous new MCP tools, workspace split, parser framework, daemon, or
+  general-purpose agent/sandbox functionality is introduced.
+
+Once all three plans ship and verification evidence is recorded, prune their
+execution detail from `plans/` and reduce this section to concise shipped-state
+evidence per the repository planning convention.
+
 ## Binary distribution closure
 
 The C8 Zig bootstrap correction is implemented in `6658702`. The release
@@ -82,11 +145,13 @@ installer, checksum, smoke, and draft-assembly jobs in `33944943782`.
 
 1. Evaluate MCP Bundle/official MCP Registry distribution after the raw-binary
    release proves the deployment path; keep it non-blocking.
-2. Deepen actual coding-agent use of the existing typed preflight wrappers.
-3. Measure high-frequency tool latency only if profiling shows a real need.
-4. Revisit schema-detail defaults as model context economics change.
-5. Consider YAML only when a concrete workflow justifies its dependency and
-   semantic surface.
+2. Measure high-frequency tool latency only if profiling shows a real need.
+3. Revisit schema-detail defaults as model context economics change.
+4. Consider first-class YAML only when a concrete workflow justifies its
+   dependency and semantic surface.
+5. Consider an explicit stateful `ToolRegistry` calculator session only if a
+   real consumer needs persistent PRNG/memory/variable state; do not change
+   isolated `ExecutionContext` semantics by default.
 
 ## Standing non-goals
 
