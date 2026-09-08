@@ -32,8 +32,12 @@ Typed deterministic core (`text/`, `calc/`)
 - Reusable composite logic lives in `services/`:
   - `FingerprintFacts` / `fingerprint_facts()` over `text_fingerprint` (raw/raw);
   - `NewlineFacts` / `newline_facts()` for the `edit_preflight` composite style derivation;
-  - `SecurityInspection` / `inspect_text_security()` implementing the full `text_security_inspect` pipeline over typed cores with a lightweight `should_stop` cancellation view.
+  - `SecurityInspection` / `inspect_text_security()` implementing the full `text_security_inspect` pipeline over typed cores with a lightweight `should_stop` cancellation view;
+  - `RepoFacts` / `repo_facts()` — canonical repository facts (buckets, ecosystems/project types, manifest groupings, language evidence, entrypoints, high-leverage paths) shared by the four repo-analysis tools;
+  - `PatchAnalysis` / `analyze_patch()` — single-parse neutral diff facts (effective paths, bucket roles, add/delete counts, renames, binary flag, line ranges) shared by `patch_summary`, `patch_contract_check`, and `diff_risk_classify`.
 - `tools/*` adapters parse/validate their own input, call typed cores/services, derive findings/verdict/machine codes from typed results, and construct the existing response shape once at the boundary. They never call sibling tool handlers to obtain an internal result.
+- Repo tools are projections over `RepoFacts`: `repo_manifest_inspect` formats manifest/ecosystem facts, `repo_tree_summarize` formats buckets/entrypoints/high-leverage facts, `repo_language_detect` formats language/ecosystem facts, and `test_command_suggest` applies its command-template policy to the shared ecosystems. Suggested commands stay in the adapter, not in the fact model.
+- Patch tools are projections/policies over `PatchAnalysis`: `patch_summary` is the neutral presentation, `patch_contract_check` applies contract policy (scope, categories, large deletions), and `diff_risk_classify` applies review-routing policy. Path roles come from the canonical repository classifier, so bucket facts cannot drift; security-sensitive is a shared fact with intentional policy splits (contract vs risk verdicts).
 
 `preflight/` wrappers remain registry-based intentionally: they exercise full dispatch policy (lookup, profile/audience, schema validation) via `ToolRegistry::call_json`, so their `ToolCall`/`ToolRejected`/`ContractViolation` taxonomy stays meaningful for downstream harnesses.
 
@@ -57,7 +61,7 @@ Public serialized map fields use `BTreeMap` for stable lexicographic key orderin
 
 | File | Category | Tool Count | Notes |
 |------|----------|-----------|-------|
-| `helpers.rs` | shared | — | Constants, utilities, path classification |
+| `helpers.rs` | shared | — | Constants, utilities; path-classification shims over `services::repo` |
 | `math.rs` | math | 4 | Calculator-backed eval, unit conversion, constants |
 | `text.rs` | text | 18 | Unicode-aware text processing, security inspection |
 | `json.rs` | json | 6 | JSON extract, compare, canonicalize, shape, structured comparison |
@@ -147,9 +151,9 @@ randomness.
 | `sort_json_keys(v)` | Recursively sort object keys using `BTreeMap`. |
 | `mask_secret_preview(value)` | UTF-8-safe masking: short values → `"***"`, longer → `"ab***yz"` (2 char prefix/suffix). Never returns the full value. |
 | `escape_ascii(s)` | Escape non-ASCII characters as `\uXXXX` for `ensure_ascii` mode in json_canonicalize. |
-| `classify_path(path)` | Classify a repo-relative path into a bucket: `manifests`, `lockfiles`, `ci`, `configs`, `tests`, `generated`, `vendor`, `assets`, `scripts`, `docs`, `source`. Returns `(bucket, is_hidden, is_dotfile)`. |
-| `classify_paths(paths)` | Batch classify paths into buckets. Returns `(buckets, entrypoint_candidates, high_leverage_paths, tool_hints, findings)`. |
-| `classify_diff_path(path)` | Wrapper around `classify_path` for diff risk classification. |
+| `classify_path(path)` | Compatibility shim over `services::repo::classify_path`. Canonical bucket classifier lives in `services/repo.rs`; new code must call it directly. |
+| `classify_paths(paths)` | Compatibility shim over `services::repo::repo_facts`. Returns `(buckets, entrypoint_candidates, high_leverage_paths, tool_hints, findings)`. |
+| `classify_diff_path(path)` | Compatibility shim over `services::repo::path_bucket`. |
 
 ### Input Validation Helpers
 
@@ -456,10 +460,10 @@ Route-critical tools **must** always emit `machine_code` and `verdict` in their 
 | Tool | Description | Notable Details |
 |------|-------------|-----------------|
 | `patch_apply_check` | Check if a unified diff applies cleanly | Reports hunks_total/applied/failed, affected_line_ranges, newline_style_before/after, result_fingerprint. |
-| `patch_summary` | Summarize a unified diff | Reports files_changed, additions, deletions, renames_detected, binary_patch_detected. |
+| `patch_summary` | Summarize a unified diff (neutral `PatchAnalysis` presentation) | Reports files_changed, additions, deletions, renames_detected, binary_patch_detected. Single parse shared with contract/risk tools. |
 | `edit_preflight` | Pre-check edit operations (composite) | See [Composite Tools](#composite-tools) section above. |
-| `diff_risk_classify` | Classify diff risk level | Uses `classify_diff_path` to bucket files. |
-| `patch_contract_check` | Classify diff by contract-relevant categories | Detects scope_escape, lockfile_change, manifest_change, ci_change, config_change, generated_change, vendor_change, source_change. Checks for large deletions (>200 lines). |
+| `diff_risk_classify` | Classify diff risk level (review-routing policy over `PatchAnalysis`) | Buckets/security facts from the canonical repository classifier; neutral counts projected from the shared analysis, not a second parse. |
+| `patch_contract_check` | Classify diff by contract-relevant categories (contract policy over `PatchAnalysis`) | Detects scope_escape, lockfile_change, manifest_change, ci_change, config_change, generated_change, vendor_change, source_change. Checks for large deletions (>200 lines). Shares bucket/security facts with risk; policy verdicts intentionally differ. |
 
 ### Config (3 tools)
 
@@ -521,11 +525,11 @@ Route-critical tools **must** always emit `machine_code` and `verdict` in their 
 
 | Tool | Description | Notable Details |
 |------|-------------|-----------------|
-| `repo_manifest_inspect` | Inspect repository manifest | Detects Rust/Python/Node/Go/mixed project types. Classifies manifests, configs, lockfiles. Generates tool_hints per ecosystem. |
+| `repo_manifest_inspect` | Inspect repository manifest (projection over `RepoFacts`) | Canonical Rust/Python/Node/Go/mixed project types (source hints included). Classifies manifests, configs, lockfiles. Generates tool_hints per ecosystem. |
 | `config_file_inspect` | Inspect config files with secret masking (composite) | Detects format (json, toml, yaml, dotenv, ini, cargo_toml, package_json, pyproject). Scans for: secret-like keys (masked via `mask_secret_preview`), insecure URLs (http:// non-localhost), debug flags, command hooks, TLS disabled, wildcard hosts. Policy overrides: allow_debug_flags, allow_insecure_urls, allow_command_hooks. |
-| `repo_tree_summarize` | Summarize repository file tree | Uses `classify_paths` to bucket all paths. Reports project_types, entrypoint_candidates, high_leverage_paths, tool_hints. Flags missing lockfiles, high generated/vendor percentages. |
-| `test_command_suggest` | Suggest verification commands from repo paths | Generates commands per ecosystem (cargo check/test/fmt/clippy, pytest/ruff, npm test/lint, go build/test/vet) with confidence scores. |
-| `repo_language_detect` | Detect languages/ecosystems from repo tree | Extension-based detection for 26 language categories. Reports file_count, extensions, confidence per language. Detects ecosystems from manifest files. |
+| `repo_tree_summarize` | Summarize repository file tree (projection over `RepoFacts`) | Canonical buckets/entrypoints/high-leverage paths/tool_hints from `services::repo`. Reports shared project_types (lockfiles/source hints included — `Cargo.lock` alone is `rust` everywhere). Flags missing lockfiles, high generated/vendor percentages. |
+| `test_command_suggest` | Suggest verification commands from repo paths (policy over shared ecosystems) | Generates commands per ecosystem (cargo check/test/fmt/clippy, pytest/ruff, npm test/lint, go build/test/vet) with confidence scores. Templates stay in the adapter, not in `RepoFacts`. |
+| `repo_language_detect` | Detect languages/ecosystems from repo tree (projection over `RepoFacts`) | Extension-based detection for 26 language categories. Reports file_count, extensions, confidence per language. Ecosystems are the canonical project types without `unknown`/`mixed` (source hints included). |
 
 ### Analysis (4 tools)
 

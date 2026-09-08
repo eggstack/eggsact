@@ -75,10 +75,12 @@ src/
   tools/            # MCP tool implementations (by category, 23 files)
     helpers.rs      # shared constants, utilities, helper functions
   services/         # typed deterministic composite services (no ToolResponse/JSON)
-    mod.rs          # fingerprint/newline/security re-exports, layering contract
+    mod.rs          # fingerprint/newline/security/repo/patch re-exports, layering contract
     fingerprint.rs  # FingerprintFacts over text_fingerprint (raw/raw)
     newline.rs      # NewlineFacts composite style derivation
     security.rs     # SecurityInspection pipeline over text::* cores
+    repo.rs         # RepoFacts canonical ecosystem/path/language facts
+    patch_analysis.rs # PatchAnalysis single-parse neutral diff facts
   text/             # text processing library (25 modules + generated confusables data file)
     regex_engine.rs # regex backend classifier
     confusables_generated.rs  # AUTO-GENERATED — never edit
@@ -151,7 +153,7 @@ Hand-maintained user-facing docs in `docs/`:
 - **Regex backend auto-selection**: `regex_finditer` and `validate_regex` use `compile_regex()` in `src/text/regex_engine.rs` to pick between Rust `regex` (fast, linear-time) and `fancy-regex` (lookaround/backreferences). Outputs report `engine_used` and `unsupported_features`. This is NOT PCRE2.
 - **Context-aware vs legacy APIs**: `call_json_with_execution_context()` clones `eval_ctx` — mutations do **not** persist back. Use `evaluate_with_context()`/`run_with_context()` for calculator state. **`call_json_with_execution_context_mut` is `#[deprecated(since = "1.0.0")]`**. Use `with_current_eval_context()` for closure-scoped thread-local access. Re-entrant mutable access panics via an exclusive-access guard.
 - **Response truncation is automatic**: `truncate_response()` caps findings/output when a tool exceeds its budget. Check `limits_applied` in the response envelope. See `architecture/budget-concurrency.md`.
-- **Typed composition layering:** deterministic cores live in `text/` (and `calc/` for math); reusable composite logic lives in `services/` (`FingerprintFacts`, `NewlineFacts`, `SecurityInspection`); `tools/*` are JSON adapters that parse/validate their own input, call typed cores/services, and build the existing response shape once at the boundary. Do not call one tool handler from another to obtain an internal result — call the typed core/service instead. The three remaining same-module JSON reuses (`json_compare`/`json_shape_tool` in `structured_data_compare`, `toml_shape_tool` in `config_preflight`) are intentional and commented; `TYPE_MISMATCH` from `json_shape` is dead code preserved for parity (BUG-006). See `architecture/tools.md`.
+- **Typed composition layering:** deterministic cores live in `text/` (and `calc/` for math); reusable composite logic lives in `services/` (`FingerprintFacts`, `NewlineFacts`, `SecurityInspection`, `RepoFacts`, `PatchAnalysis`); `tools/*` are JSON adapters that parse/validate their own input, call typed cores/services, and build the existing response shape once at the boundary. Do not call one tool handler from another to obtain an internal result — call the typed core/service instead. Repo tools project `RepoFacts`; patch tools project/apply policy over `PatchAnalysis` (single parse, canonical repo buckets). The three remaining same-module JSON reuses (`json_compare`/`json_shape_tool` in `structured_data_compare`, `toml_shape_tool` in `config_preflight`) are intentional and commented; `TYPE_MISMATCH` from `json_shape` is dead code preserved for parity (BUG-006). See `architecture/tools.md`.
 - **MCP response ordering is concurrent**: Responses may arrive out of request order. **Correlate by JSON-RPC `id`**, not arrival position. See `architecture/mcp-server.md`.
 - **Sync execution pool for budget-aware APIs**: `call_json_with_budget`, `call_json_with_context`, and `call_json_with_execution_context` route through `SyncExecutionPool` (8 workers, 32-slot queue). Queue saturation returns `RESOURCE_EXHAUSTED`. `call_json` remains direct (no pool). The MCP server path uses Tokio `spawn_blocking`. See `architecture/budget-concurrency.md`.
 - **MCP lifecycle required**: The server requires `initialize` → `notifications/initialized` before `tools/list`, `tools/call`, `profiles/list`. Methods before initialization return `-32600` with `NOT_INITIALIZED` data code. Ping is always allowed. See `architecture/mcp-server.md`.

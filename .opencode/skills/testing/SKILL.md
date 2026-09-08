@@ -50,7 +50,7 @@ tests/
     test_units.rs            # unit conversion tests
     test_bug_regression.rs   # regression tests for bugs
   mcp/
-    mod.rs                   # re-exports 28 modules
+    mod.rs                   # re-exports 29 modules
     test_protocol.rs         # JSON-RPC protocol tests
     test_mcp_tools.rs        # tool behavior tests
     test_edge_cases.rs       # edge case coverage (218 tests)
@@ -74,6 +74,7 @@ tests/
     test_deterministic_real_use.rs
     test_comprehensive_parity.rs
     test_repo_diff_path_tools.rs
+    test_shared_analysis.rs  # shared-fact differential tests (RepoFacts/PatchAnalysis drift guards)
     test_preflight_wrappers.rs
     test_runtime_helpers.rs
     test_analysis_tools.rs

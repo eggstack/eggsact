@@ -25,5 +25,6 @@ pub mod test_response_structure;
 pub mod test_route_contracts;
 pub mod test_runtime_helpers;
 pub mod test_schema_boundaries;
+pub mod test_shared_analysis;
 pub mod test_tool_coverage;
 pub mod test_tool_gaps;

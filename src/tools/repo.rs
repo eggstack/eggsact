@@ -1,170 +1,21 @@
+//! Repo-analysis adapters over the canonical [`crate::services::repo`] facts.
+//!
+//! Each public tool is a projection/policy over shared [`RepoFacts`]:
+//! `repo_manifest_inspect` formats manifest/ecosystem facts,
+//! `repo_tree_summarize` formats buckets/entrypoints/high-leverage facts,
+//! `repo_language_detect` formats language/ecosystem facts, and
+//! `test_command_suggest` applies its command-template policy to the shared
+//! ecosystems. None re-detects ecosystems, manifests, buckets, or languages.
+
 use crate::mcp::machine_codes;
 use crate::mcp::schemas::{disposition, finding, severity, verdict, ToolResponse};
+use crate::services::repo as repo_facts;
 use crate::tools::helpers::*;
 use serde_json::Value;
 
 // ---------------------------------------------------------------------------
 // repo_manifest_inspect
 // ---------------------------------------------------------------------------
-
-/// Known manifest patterns by ecosystem.
-const RUST_MANIFESTS: &[&str] = &["Cargo.toml", "Cargo.lock", "build.rs"];
-const RUST_SOURCE_HINTS: &[&str] = &["src/main.rs", "src/lib.rs", "src/bin/"];
-const PYTHON_MANIFESTS: &[&str] = &[
-    "pyproject.toml",
-    "requirements.txt",
-    "setup.cfg",
-    "setup.py",
-    "Pipfile",
-    "poetry.lock",
-];
-const NODE_MANIFESTS: &[&str] = &[
-    "package.json",
-    "package-lock.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-    ".npmrc",
-];
-const GO_MANIFESTS: &[&str] = &["go.mod", "go.sum"];
-
-/// Detect project type from paths.
-fn detect_project_types(paths: &[String]) -> Vec<String> {
-    let mut has_rust = false;
-    let mut has_python = false;
-    let mut has_node = false;
-    let mut has_go = false;
-
-    for p in paths {
-        let lower = p.to_lowercase();
-        let basename = p.rsplit('/').next().unwrap_or(p);
-
-        if RUST_MANIFESTS.contains(&basename) || RUST_SOURCE_HINTS.iter().any(|h| lower.contains(h))
-        {
-            has_rust = true;
-        }
-        if PYTHON_MANIFESTS.contains(&basename) {
-            has_python = true;
-        }
-        if NODE_MANIFESTS.contains(&basename) {
-            has_node = true;
-        }
-        if GO_MANIFESTS.contains(&basename) {
-            has_go = true;
-        }
-    }
-
-    let count = [has_rust, has_python, has_node, has_go]
-        .iter()
-        .filter(|&&b| b)
-        .count();
-
-    if count == 0 {
-        vec!["unknown".to_string()]
-    } else if count > 1 {
-        let mut types = Vec::new();
-        if has_rust {
-            types.push("rust");
-        }
-        if has_python {
-            types.push("python");
-        }
-        if has_node {
-            types.push("node");
-        }
-        if has_go {
-            types.push("go");
-        }
-        types.push("mixed");
-        types.into_iter().map(String::from).collect()
-    } else if has_rust {
-        vec!["rust".to_string()]
-    } else if has_python {
-        vec!["python".to_string()]
-    } else if has_node {
-        vec!["node".to_string()]
-    } else {
-        vec!["go".to_string()]
-    }
-}
-
-/// Classified paths by category.
-type ClassifiedPaths = (
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
-);
-
-/// Collect manifest, config, and lockfile paths from a path list.
-fn classify_manifests(paths: &[String]) -> ClassifiedPaths {
-    let mut rust_manifests = Vec::new();
-    let mut python_manifests = Vec::new();
-    let mut node_manifests = Vec::new();
-    let mut go_manifests = Vec::new();
-    let mut other_manifests = Vec::new();
-    let mut config_paths = Vec::new();
-    let mut lockfile_paths = Vec::new();
-
-    let config_patterns = [
-        ".env",
-        ".gitignore",
-        ".editorconfig",
-        "tsconfig.json",
-        ".eslintrc",
-        "rustfmt.toml",
-        ".rustfmt.toml",
-        "clippy.toml",
-        ".clippy.toml",
-        "Makefile",
-        "Dockerfile",
-        ".dockerignore",
-    ];
-    let lockfile_patterns = [
-        "Cargo.lock",
-        "package-lock.json",
-        "yarn.lock",
-        "pnpm-lock.yaml",
-        "poetry.lock",
-        "Pipfile.lock",
-        "go.sum",
-    ];
-
-    for p in paths {
-        let basename = p.rsplit('/').next().unwrap_or(p);
-
-        if RUST_MANIFESTS.contains(&basename) {
-            rust_manifests.push(p.clone());
-        } else if PYTHON_MANIFESTS.contains(&basename) {
-            python_manifests.push(p.clone());
-        } else if NODE_MANIFESTS.contains(&basename) {
-            node_manifests.push(p.clone());
-        } else if GO_MANIFESTS.contains(&basename) {
-            go_manifests.push(p.clone());
-        } else if lockfile_patterns.contains(&basename) {
-            lockfile_paths.push(p.clone());
-        } else if config_patterns.iter().any(|m| basename.contains(m)) {
-            config_paths.push(p.clone());
-        } else if basename.contains("config")
-            || basename.contains("rc")
-            || basename.starts_with('.')
-        {
-            other_manifests.push(p.clone());
-        }
-    }
-
-    (
-        rust_manifests,
-        python_manifests,
-        node_manifests,
-        go_manifests,
-        other_manifests,
-        config_paths,
-        lockfile_paths,
-    )
-}
 
 /// Generate tool hints based on detected project types.
 fn generate_tool_hints(project_types: &[String]) -> Value {
@@ -274,19 +125,34 @@ pub fn repo_manifest_inspect(args: &Value) -> ToolResponse {
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    let project_types = detect_project_types(&path_strings);
-    let is_unknown = project_types.iter().any(|t| t == "unknown");
-    let is_mixed = project_types.iter().any(|t| t == "mixed");
-
-    let (
-        rust_manifests,
-        python_manifests,
-        node_manifests,
-        go_manifests,
-        other_manifests,
-        config_paths,
-        lockfile_paths,
-    ) = classify_manifests(&path_strings);
+    // Projection over canonical RepoFacts (shared ecosystem/manifest facts).
+    let facts = repo_facts::repo_facts(&path_strings);
+    let project_types = facts.project_types.clone();
+    let is_unknown = facts.is_unknown;
+    let is_mixed = facts.is_mixed;
+    let rust_manifests = facts
+        .manifests_by_ecosystem
+        .get("rust")
+        .cloned()
+        .unwrap_or_default();
+    let python_manifests = facts
+        .manifests_by_ecosystem
+        .get("python")
+        .cloned()
+        .unwrap_or_default();
+    let node_manifests = facts
+        .manifests_by_ecosystem
+        .get("node")
+        .cloned()
+        .unwrap_or_default();
+    let go_manifests = facts
+        .manifests_by_ecosystem
+        .get("go")
+        .cloned()
+        .unwrap_or_default();
+    let other_manifests = facts.other_manifests.clone();
+    let config_paths = facts.config_paths.clone();
+    let lockfile_paths = facts.lockfile_paths.clone();
 
     let tool_hints = generate_tool_hints(&project_types);
 
@@ -1032,8 +898,54 @@ pub fn repo_tree_summarize(args: &Value) -> ToolResponse {
             .unwrap_err();
     }
 
-    let (buckets, entrypoint_candidates, high_leverage_paths, tool_hints, raw_findings) =
-        classify_paths(&path_strs);
+    // Projection over canonical RepoFacts. Buckets/entrypoints/high-leverage
+    // come from the shared classifier; project types come from the shared
+    // ecosystem table (canonical). This replaces the former independent
+    // manifest-ends_with derivation, which missed lockfiles/source hints
+    // (e.g. `Cargo.lock` alone was `unknown` here but `rust` in
+    // `repo_manifest_inspect`). Canonical behavior is now `rust` everywhere.
+    let facts = repo_facts::repo_facts(&path_strs);
+    let buckets = facts.buckets.clone();
+    let entrypoint_candidates = facts.entrypoint_candidates.clone();
+    let high_leverage_paths = facts.high_leverage_paths.clone();
+    let tool_hints = facts.tool_hints.clone();
+    let project_types = facts.project_types.clone();
+    let manifest_paths = buckets.get("manifests").cloned().unwrap_or_default();
+
+    // Reconstruct the legacy `classify_paths` raw findings from the same
+    // canonical buckets so tree-specific LOW findings stay stable.
+    let mut raw_findings: Vec<String> = Vec::new();
+    {
+        let has_manifest = buckets.contains_key("manifests");
+        let has_lockfile = buckets.contains_key("lockfiles");
+        let has_ci = buckets.contains_key("ci");
+        let total_raw = path_strs.len();
+        let gen_count = buckets.get("generated").map_or(0, |v| v.len());
+        let vend_count = buckets.get("vendor").map_or(0, |v| v.len());
+        if has_manifest && !has_lockfile {
+            raw_findings.push("Manifest found without lockfile".to_string());
+        }
+        if has_ci {
+            raw_findings
+                .push("CI configuration present — may affect build/test workflow".to_string());
+        }
+        if total_raw > 0 {
+            let gen_pct = (gen_count as f64 / total_raw as f64) * 100.0;
+            if gen_pct > 50.0 {
+                raw_findings.push(format!(
+                    "Unusually many generated paths ({}/{} = {:.0}%)",
+                    gen_count, total_raw, gen_pct
+                ));
+            }
+            let vend_pct = (vend_count as f64 / total_raw as f64) * 100.0;
+            if vend_pct > 50.0 {
+                raw_findings.push(format!(
+                    "Unusually many vendor/dependency paths ({}/{} = {:.0}%)",
+                    vend_count, total_raw, vend_pct
+                ));
+            }
+        }
+    }
 
     let mut directory_count = 0usize;
     let mut file_count = 0usize;
@@ -1050,39 +962,6 @@ pub fn repo_tree_summarize(args: &Value) -> ToolResponse {
         return budget_ctx
             .check_should_stop("repo_tree_summarize")
             .unwrap_err();
-    }
-
-    let mut project_types = Vec::new();
-    let manifest_paths = buckets.get("manifests").cloned().unwrap_or_default();
-    let has_rust = manifest_paths.iter().any(|p| p.ends_with("Cargo.toml"));
-    let has_python = manifest_paths.iter().any(|p| {
-        p.ends_with("pyproject.toml")
-            || p.ends_with("setup.py")
-            || p.ends_with("setup.cfg")
-            || p.ends_with("requirements.txt")
-    });
-    let has_node = manifest_paths
-        .iter()
-        .any(|p| p.ends_with("package.json") || p.ends_with("tsconfig.json"));
-    let has_go = manifest_paths.iter().any(|p| p.ends_with("go.mod"));
-
-    if has_rust {
-        project_types.push("rust".to_string());
-    }
-    if has_python {
-        project_types.push("python".to_string());
-    }
-    if has_node {
-        project_types.push("node".to_string());
-    }
-    if has_go {
-        project_types.push("go".to_string());
-    }
-    if project_types.len() > 1 {
-        project_types.push("mixed".to_string());
-    }
-    if project_types.is_empty() {
-        project_types.push("unknown".to_string());
     }
 
     let mut findings = Vec::new();
@@ -1327,7 +1206,8 @@ pub fn test_command_suggest(args: &Value) -> ToolResponse {
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    let project_types = detect_project_types(&path_strings);
+    // Policy over canonical ecosystems: command templates stay in the adapter.
+    let project_types = repo_facts::detect_project_types(&path_strings);
 
     if budget_ctx.should_stop() {
         return budget_ctx
@@ -1390,118 +1270,6 @@ pub fn test_command_suggest(args: &Value) -> ToolResponse {
 // repo_language_detect
 // ---------------------------------------------------------------------------
 
-struct LanguageGuess {
-    name: &'static str,
-    extensions: &'static [&'static str],
-}
-
-const LANGUAGE_TABLE: &[LanguageGuess] = &[
-    LanguageGuess {
-        name: "rust",
-        extensions: &[".rs"],
-    },
-    LanguageGuess {
-        name: "python",
-        extensions: &[".py", ".pyi", ".pyx"],
-    },
-    LanguageGuess {
-        name: "javascript",
-        extensions: &[".js", ".jsx", ".mjs", ".cjs"],
-    },
-    LanguageGuess {
-        name: "typescript",
-        extensions: &[".ts", ".tsx", ".mts", ".cts"],
-    },
-    LanguageGuess {
-        name: "go",
-        extensions: &[".go"],
-    },
-    LanguageGuess {
-        name: "c",
-        extensions: &[".c", ".h"],
-    },
-    LanguageGuess {
-        name: "cpp",
-        extensions: &[".cpp", ".cxx", ".cc", ".hpp", ".hxx"],
-    },
-    LanguageGuess {
-        name: "java",
-        extensions: &[".java"],
-    },
-    LanguageGuess {
-        name: "ruby",
-        extensions: &[".rb", ".erb"],
-    },
-    LanguageGuess {
-        name: "php",
-        extensions: &[".php"],
-    },
-    LanguageGuess {
-        name: "swift",
-        extensions: &[".swift"],
-    },
-    LanguageGuess {
-        name: "kotlin",
-        extensions: &[".kt", ".kts"],
-    },
-    LanguageGuess {
-        name: "scala",
-        extensions: &[".scala", ".sc"],
-    },
-    LanguageGuess {
-        name: "haskell",
-        extensions: &[".hs"],
-    },
-    LanguageGuess {
-        name: "lua",
-        extensions: &[".lua"],
-    },
-    LanguageGuess {
-        name: "shell",
-        extensions: &[".sh", ".bash", ".zsh"],
-    },
-    LanguageGuess {
-        name: "sql",
-        extensions: &[".sql"],
-    },
-    LanguageGuess {
-        name: "markdown",
-        extensions: &[".md", ".mdx"],
-    },
-    LanguageGuess {
-        name: "yaml",
-        extensions: &[".yaml", ".yml"],
-    },
-    LanguageGuess {
-        name: "json",
-        extensions: &[".json"],
-    },
-    LanguageGuess {
-        name: "toml",
-        extensions: &[".toml"],
-    },
-    LanguageGuess {
-        name: "html",
-        extensions: &[".html", ".htm"],
-    },
-    LanguageGuess {
-        name: "css",
-        extensions: &[".css", ".scss", ".less"],
-    },
-    LanguageGuess {
-        name: "xml",
-        extensions: &[".xml"],
-    },
-    LanguageGuess {
-        name: "dockerfile",
-        extensions: &[],
-    },
-    LanguageGuess {
-        name: "makefile",
-        extensions: &[],
-    },
-];
-
 pub fn repo_language_detect(args: &Value) -> ToolResponse {
     let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::CHEAP);
 
@@ -1542,65 +1310,11 @@ pub fn repo_language_detect(args: &Value) -> ToolResponse {
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    let mut lang_counts: std::collections::BTreeMap<String, (usize, Vec<String>)> =
-        std::collections::BTreeMap::new();
-
-    for p in &path_strings {
-        let basename = p.rsplit('/').next().unwrap_or(p);
-        let lower = basename.to_lowercase();
-
-        let lang = if lower == "dockerfile" || lower.starts_with("dockerfile.") {
-            Some("dockerfile".to_string())
-        } else if lower == "makefile" || lower == "gnumakefile" {
-            Some("makefile".to_string())
-        } else {
-            let ext = match basename.rfind('.') {
-                Some(idx) => &basename[idx..],
-                None => "",
-            };
-            LANGUAGE_TABLE
-                .iter()
-                .find(|l| l.extensions.contains(&ext))
-                .map(|l| l.name.to_string())
-        };
-
-        if let Some(name) = lang {
-            let entry = lang_counts
-                .entry(name.clone())
-                .or_insert_with(|| (0, Vec::new()));
-            entry.0 += 1;
-            let ext_str = if name == "dockerfile" {
-                "Dockerfile".to_string()
-            } else if name == "makefile" {
-                "Makefile".to_string()
-            } else {
-                basename
-                    .rfind('.')
-                    .map(|idx| basename[idx..].to_string())
-                    .unwrap_or_default()
-            };
-            if !ext_str.is_empty() && !entry.1.contains(&ext_str) {
-                entry.1.push(ext_str);
-            }
-        }
-    }
-
-    let mut ecosystems = Vec::new();
-    for p in &path_strings {
-        let basename = p.rsplit('/').next().unwrap_or(p);
-        if RUST_MANIFESTS.contains(&basename) && !ecosystems.contains(&"rust".to_string()) {
-            ecosystems.push("rust".to_string());
-        }
-        if PYTHON_MANIFESTS.contains(&basename) && !ecosystems.contains(&"python".to_string()) {
-            ecosystems.push("python".to_string());
-        }
-        if NODE_MANIFESTS.contains(&basename) && !ecosystems.contains(&"node".to_string()) {
-            ecosystems.push("node".to_string());
-        }
-        if GO_MANIFESTS.contains(&basename) && !ecosystems.contains(&"go".to_string()) {
-            ecosystems.push("go".to_string());
-        }
-    }
+    // Projection over canonical RepoFacts: shared language evidence and
+    // shared ecosystems (which include Rust source hints, so `src/main.rs`
+    // alone reports `rust` here just as it does in manifest/tree tools).
+    let facts = repo_facts::repo_facts(&path_strings);
+    let ecosystems = facts.ecosystems.clone();
 
     if budget_ctx.should_stop() {
         return budget_ctx
@@ -1608,14 +1322,15 @@ pub fn repo_language_detect(args: &Value) -> ToolResponse {
             .unwrap_err();
     }
 
-    let mut languages: Vec<Value> = lang_counts
+    let mut languages: Vec<Value> = facts
+        .languages
         .iter()
-        .map(|(name, (count, exts))| {
+        .map(|l| {
             serde_json::json!({
-                "name": name,
-                "file_count": count,
-                "extensions": exts,
-                "confidence": if *count > 5 { 0.9 } else if *count > 1 { 0.7 } else { 0.5 },
+                "name": l.name,
+                "file_count": l.file_count,
+                "extensions": l.extensions,
+                "confidence": l.confidence,
             })
         })
         .collect();

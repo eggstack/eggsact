@@ -21,10 +21,14 @@
 
 pub mod fingerprint;
 pub mod newline;
+pub mod patch_analysis;
+pub mod repo;
 pub mod security;
 
 pub use fingerprint::{fingerprint_facts, FingerprintFacts};
 pub use newline::{newline_facts, NewlineFacts};
+pub use patch_analysis::{analyze_patch, PatchAnalysis, PatchFileFacts};
+pub use repo::{repo_facts, RepoFacts};
 pub use security::{
     inspect_text_security, SecurityFinding, SecurityInspection, SecurityInspectionCancelled,
 };

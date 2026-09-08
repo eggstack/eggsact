@@ -59,7 +59,7 @@ so ordinary CI does not need network access.
 
 ## Reusable Library Pattern
 
-Business logic goes in `src/text/` or `src/calc/`. Shared composite logic used by more than one tool handler goes in `src/services/` (`FingerprintFacts`, `NewlineFacts`, `SecurityInspection` — no `ToolResponse`, registry, or schema deps). MCP tool wrappers in `src/tools/*.rs`
+Business logic goes in `src/text/` or `src/calc/`. Shared composite logic used by more than one tool handler goes in `src/services/` (`FingerprintFacts`, `NewlineFacts`, `SecurityInspection`, `RepoFacts`, `PatchAnalysis` — no `ToolResponse`, registry, or schema deps). Repo/path classification lives in `services::repo` (canonical); `tools::helpers` path shims delegate there. MCP tool wrappers in `src/tools/*.rs`
 should be thin — they parse input, call the library/service function, and return `ToolResponse`.
 This keeps logic testable without JSON-RPC overhead. Never call one `crate::tools::*` handler from another to obtain an internal result — call the typed core/service instead.
 

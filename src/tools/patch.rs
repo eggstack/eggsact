@@ -1,5 +1,15 @@
+//! Patch-family adapters over the canonical [`crate::services::patch_analysis`].
+//!
+//! Each public tool projects a different answer from one [`PatchAnalysis`]:
+//! `patch_summary` is the neutral presentation, `patch_contract_check`
+//! applies contract policy, and `diff_risk_classify` applies review-routing
+//! policy. None reparses the diff after migration and none calls a sibling
+//! adapter for an internal result. Path roles come from the canonical
+//! repository classifier, so bucket facts cannot drift between tools.
+
 use crate::mcp::machine_codes;
 use crate::mcp::schemas::{disposition, finding, severity, verdict, ToolResponse};
+use crate::services::patch_analysis as patch_facts;
 use crate::tools::helpers::*;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -210,14 +220,29 @@ pub fn patch_summary(args: &Value) -> ToolResponse {
         );
     }
 
-    let result = crate::text::patch_summary(patch_text);
+    // Neutral presentation of the canonical PatchAnalysis (single parse).
+    let analysis = patch_facts::analyze_patch(patch_text);
 
     if budget_ctx.should_stop() {
         return budget_ctx.check_should_stop("patch_summary").unwrap_err();
     }
 
+    // Reconstruct the legacy neutral findings so wire output stays stable:
+    // parse error, binary marker, or empty (the "no headers" case is
+    // subsumed by the parse-error path in the canonical analysis).
+    let finding_msgs: Vec<String> = if !analysis.ok {
+        vec![format!(
+            "Failed to parse patch: {}",
+            analysis.error.clone().unwrap_or_default()
+        )]
+    } else if analysis.binary_patch_detected {
+        vec!["Binary patch content detected".to_string()]
+    } else {
+        Vec::new()
+    };
+
     let mut findings: Vec<serde_json::Value> = Vec::new();
-    for msg in &result.findings {
+    for msg in &finding_msgs {
         findings.push(finding(
             "PATCH_SUMMARY_FINDING",
             severity::INFO,
@@ -227,6 +252,7 @@ pub fn patch_summary(args: &Value) -> ToolResponse {
         ));
     }
 
+    let result = analysis;
     let has_warnings = result.binary_patch_detected || !result.renames_detected.is_empty();
     let response_verdict = if has_warnings {
         verdict::REVIEW
@@ -1176,12 +1202,14 @@ pub fn patch_contract_check(args: &Value) -> ToolResponse {
         );
     }
 
-    let parse_result = crate::text::patch::parse_unified_diff(patch_text);
-    if !parse_result.ok {
+    // Contract policy over the canonical PatchAnalysis (single parse, shared
+    // bucket facts). No reparse here.
+    let analysis = patch_facts::analyze_patch(patch_text);
+    if !analysis.ok {
         let findings = vec![finding(
             machine_codes::PATCH_FAILED,
             severity::HIGH,
-            &parse_result
+            &analysis
                 .error
                 .unwrap_or_else(|| "Patch parse failed".to_string()),
             Some(disposition::BLOCKING),
@@ -1216,17 +1244,14 @@ pub fn patch_contract_check(args: &Value) -> ToolResponse {
     let mut scope_escape_detected = false;
     let mut large_deletions_detected = false;
 
-    // Classify each file for contract relevance
-    for file in &parse_result.files {
-        let path = if file.new_file.is_empty() || file.new_file == "/dev/null" {
-            &file.old_file
-        } else {
-            &file.new_file
-        };
+    // Classify each file for contract relevance. Bucket facts come from the
+    // shared analysis; only the contract verdict/policy mapping lives here.
+    for file in &analysis.files {
+        let path = file.effective_path.as_str();
 
         // Check scope escape
         if let Some(wr) = workspace_root {
-            if path != "/dev/null" {
+            if path != "/dev/null" && !path.is_empty() {
                 let scope = crate::text::path_scope_check(wr, path, "posix", true);
                 if !scope.inside_root {
                     scope_escape_detected = true;
@@ -1246,9 +1271,8 @@ pub fn patch_contract_check(args: &Value) -> ToolResponse {
             }
         }
 
-        // Classify by contract-relevant category
-        let category = classify_diff_path(path);
-        match category.as_str() {
+        // Classify by contract-relevant category (shared bucket fact).
+        match file.bucket.as_str() {
             "lockfiles" => {
                 categories.push("lockfile_change".to_string());
                 files_by_category
@@ -1316,27 +1340,18 @@ pub fn patch_contract_check(args: &Value) -> ToolResponse {
         }
     }
 
-    // Check for large deletions (>200 deleted lines in a single file)
-    for file in &parse_result.files {
-        let mut deletions = 0;
-        for hunk in &file.hunks {
-            for line in &hunk.lines {
-                if line.starts_with('-') && !line.starts_with("---") {
-                    deletions += 1;
-                }
-            }
-        }
-        if deletions > 200 {
+    // Check for large deletions (>200 deleted lines in a single file).
+    // Deletion counts are shared facts from the canonical analysis.
+    for file in &analysis.files {
+        if file.deletions > 200 {
             large_deletions_detected = true;
-            let path = if file.new_file.is_empty() || file.new_file == "/dev/null" {
-                &file.old_file
-            } else {
-                &file.new_file
-            };
             findings.push(finding(
                 machine_codes::PATCH_LARGE_DELETE,
                 severity::MEDIUM,
-                &format!("Large deletion ({} lines) in {}", deletions, path),
+                &format!(
+                    "Large deletion ({} lines) in {}",
+                    file.deletions, file.effective_path
+                ),
                 Some(disposition::CAUTION),
                 None,
             ));
@@ -1371,13 +1386,13 @@ pub fn patch_contract_check(args: &Value) -> ToolResponse {
 
     let summary_str = format!(
         "{} files, categories: [{}]",
-        parse_result.files.len(),
+        analysis.files_changed,
         categories.join(", ")
     );
 
     let result = serde_json::json!({
         "summary": summary_str,
-        "files_changed": parse_result.files.len(),
+        "files_changed": analysis.files_changed,
         "categories": categories,
         "files_by_category": files_by_category,
         "scope_escape_detected": scope_escape_detected,
@@ -1435,13 +1450,16 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
         );
     }
 
-    // Parse the patch
-    let parse_result = crate::text::patch::parse_unified_diff(patch_text);
-    if !parse_result.ok {
+    // Review-routing policy over the canonical PatchAnalysis (single parse,
+    // shared bucket/security facts). The neutral summary fields below are
+    // projected directly from the analysis — not via a sibling adapter call
+    // and not via a second parse.
+    let analysis = patch_facts::analyze_patch(patch_text);
+    if !analysis.ok {
         let findings = vec![finding(
             machine_codes::PATCH_FAILED,
             severity::HIGH,
-            &parse_result
+            &analysis
                 .error
                 .unwrap_or_else(|| "Patch parse failed".to_string()),
             Some(disposition::BLOCKING),
@@ -1463,9 +1481,6 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
             .with_verdict(verdict::BLOCK)
             .with_findings(findings);
     }
-
-    // Get patch summary
-    let summary_result = crate::text::patch::patch_summary(patch_text);
 
     // Read policy
     let policy = args.get("policy").cloned().unwrap_or(serde_json::json!({}));
@@ -1502,17 +1517,18 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
     let mut has_binary = false;
     let mut docs_only = true;
 
-    for file in &parse_result.files {
-        let path = if file.new_file.is_empty() || file.new_file == "/dev/null" {
-            &file.old_file
-        } else {
-            &file.new_file
-        };
+    // Bucket + security facts come from the shared analysis. Policy
+    // (which bucket maps to which risk category, when review_focus fires)
+    // stays here. Note the intentional policy split vs contract check: both
+    // share `is_manifest`/`is_lockfile`/`is_ci`/security facts, but contract
+    // emits `manifest_change`/`lockfile_change` while risk emits
+    // `dependency_change`/`lockfile_change`, and only risk blocks on
+    // security-sensitive paths.
+    for file in &analysis.files {
+        let path = file.effective_path.as_str();
         all_paths.push(path.to_string());
 
-        let category = classify_diff_path(path);
-
-        match category.as_str() {
+        match file.bucket.as_str() {
             "manifests" => {
                 has_dependency = true;
                 docs_only = false;
@@ -1622,21 +1638,9 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
             }
         }
 
-        // Security-sensitive path detection
-        let lower_path = path.to_lowercase();
-        if review_security
-            && (lower_path.contains("auth")
-                || lower_path.contains("token")
-                || lower_path.contains("secret")
-                || lower_path.contains("crypto")
-                || lower_path.contains("tls")
-                || lower_path.contains("ssl")
-                || lower_path.contains("permission")
-                || lower_path.contains("policy")
-                || lower_path.contains("sandbox")
-                || lower_path.contains("exec")
-                || lower_path.contains("shell"))
-        {
+        // Security-sensitive path: shared fact, policy-gated by
+        // `review_security_sensitive_paths`.
+        if review_security && file.is_security_sensitive {
             has_security = true;
             risk_categories.push("security_sensitive".to_string());
             files_by_category
@@ -1651,8 +1655,8 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
         }
     }
 
-    // Binary patch detection
-    if summary_result.binary_patch_detected {
+    // Binary patch detection (shared fact from the analysis).
+    if analysis.binary_patch_detected {
         has_binary = true;
         risk_categories.push("binary_change".to_string());
         findings.push(finding(
@@ -1669,13 +1673,13 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
         }));
     }
 
-    // Rename detection
-    if !summary_result.renames_detected.is_empty() {
+    // Rename detection (shared fact).
+    if !analysis.renames_detected.is_empty() {
         risk_categories.push("rename".to_string());
     }
 
-    // Large diff detection
-    let total_changes = summary_result.additions + summary_result.deletions;
+    // Large diff detection (shared neutral counts).
+    let total_changes = analysis.additions + analysis.deletions;
     if total_changes > 500 {
         risk_categories.push("large_diff".to_string());
         findings.push(finding(
@@ -1683,7 +1687,7 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
             severity::LOW,
             &format!(
                 "Large diff: {} additions + {} deletions",
-                summary_result.additions, summary_result.deletions
+                analysis.additions, analysis.deletions
             ),
             Some(disposition::INFORMATIONAL),
             None,
@@ -1772,24 +1776,24 @@ pub fn diff_risk_classify(args: &Value) -> ToolResponse {
         None
     };
 
-    // Build summary
+    // Build summary (neutral counts projected from the shared analysis).
     let summary_str = format!(
         "{} files, +{} -{}, risk categories: [{}]",
-        summary_result.files_changed,
-        summary_result.additions,
-        summary_result.deletions,
+        analysis.files_changed,
+        analysis.additions,
+        analysis.deletions,
         risk_categories.join(", ")
     );
 
     let result = serde_json::json!({
         "summary": summary_str,
         "patch_summary": {
-            "files_changed": summary_result.files_changed,
-            "hunks_total": summary_result.hunks_total,
-            "additions": summary_result.additions,
-            "deletions": summary_result.deletions,
-            "renames_detected": summary_result.renames_detected,
-            "binary_patch_detected": summary_result.binary_patch_detected,
+            "files_changed": analysis.files_changed,
+            "hunks_total": analysis.hunks_total,
+            "additions": analysis.additions,
+            "deletions": analysis.deletions,
+            "renames_detected": analysis.renames_detected,
+            "binary_patch_detected": analysis.binary_patch_detected,
         },
         "risk_categories": risk_categories,
         "files_by_category": files_by_category,

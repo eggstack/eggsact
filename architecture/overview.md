@@ -65,9 +65,11 @@ This document is the **master index** for the architecture directory. Each major
 ┌─────────────────────────────────────────────────────────────────┐
 │              services/ — Typed Composite Services                │
 │                                                                   │
-│  fingerprint.rs — FingerprintFacts over text_fingerprint          │
-│  newline.rs     — NewlineFacts composite style derivation         │
-│  security.rs   — SecurityInspection over text::* cores            │
+│  fingerprint.rs   — FingerprintFacts over text_fingerprint        │
+│  newline.rs       — NewlineFacts composite style derivation       │
+│  security.rs     — SecurityInspection over text::* cores          │
+│  repo.rs         — RepoFacts (canonical ecosystem/path facts)     │
+│  patch_analysis.rs — PatchAnalysis (single-parse neutral facts)   │
 │                                                                   │
 │  No ToolResponse, registry, profile/audience, or schema deps.     │
 │  Cancellation via lightweight should_stop view.                   │
@@ -103,7 +105,7 @@ Each major component has a dedicated architecture doc. The table below serves as
 | **Budget & Concurrency** | [budget-concurrency.md](budget-concurrency.md) | `ToolBudget` (3 tiers), `BudgetContext` with cooperative cancellation, `SyncExecutionPool` (8 workers, 32-slot queue), `HandlerPhase` state machine, runtime metrics, timeout lifecycle, thread-local bridges | `src/mcp/{budget,execution,sync_pool,runtime}.rs` |
 | **Machine Codes** | [machine-codes.md](machine-codes.md) | ~145 machine-readable response code constants (UPPER_SNAKE_CASE), severity/disposition/verdict constants, `finding()` helper functions for constructing structured findings, route-critical tool contract | `src/mcp/machine_codes.rs` |
 | **Text Library** | [text-library.md](text-library.md) | 25 text processing modules: primitives (grapheme-aware), diff/similarity (Levenshtein, LCS), validation (JSON/brackets/regex/TOML), transforms (case/normalize/escape), shell tokenizer, regex engine auto-selection (rust-regex vs fancy-regex), Unicode policy engine, confusables detection, prompt injection detection, composite tool orchestration | `src/text/*.rs` (25 files) |
-| **Typed Services** | [tools.md](tools.md) | Typed composite layer (`FingerprintFacts`, `NewlineFacts`, `SecurityInspection`) over `text/` cores; `tools/*` adapters call services, never sibling handlers | `src/services/{mod,fingerprint,newline,security}.rs` |
+| **Typed Services** | [tools.md](tools.md) | Typed composite layer (`FingerprintFacts`, `NewlineFacts`, `SecurityInspection`, `RepoFacts`, `PatchAnalysis`) over `text/` cores; `tools/*` adapters call services, never sibling handlers | `src/services/{mod,fingerprint,newline,security,repo,patch_analysis}.rs` |
 | **Compatibility** | [compatibility.md](compatibility.md) | `EggcalcPython` vs `StrictNative` validation modes — Python-parity error messages vs strict JSON Schema enforcement, how compat mode propagates through MCP server and agent API | `src/mcp/compat.rs` |
 | **Agent API** | [agent-api.md](agent-api.md) | In-process `ToolRegistry` (synchronous dispatch), 11 named `Profile` variants + Custom, `ToolAudience` (Model/Harness/Debug), `ExecutionContext` with builder pattern, 4 dispatch levels (`call_json` → `call_json_with_execution_context`), tool listing methods, `prepare_tool_call()` shared core | `src/agent/mod.rs` |
 | **Preflight Wrappers** | [preflight.md](preflight.md) | 5 typed wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`), `PreflightError` taxonomy (ToolCall/ToolRejected/ContractViolation), typed verdict enums with `Other(String)` forward-compat, strict vs permissive `Finding` parsing, `RecommendedNextTool` | `src/preflight/mod.rs` |
@@ -133,8 +135,8 @@ main.rs
 ### Dependency Rules
 
 - **`text/`** is the leaf layer — pure utility, no dependency on agent/mcp/tools
-- **`services/`** composes `text/` cores into typed composite results — no dependency on `ToolResponse`, registry, profiles/audiences, or schema validation; cancellation via lightweight `should_stop` view
-- **`tools/`** depends on `text/` and `services/` for core operations, `calc/` for math_eval, `mcp/response.rs` for `ToolResponse`. Handlers never call sibling handlers for internal results — they call typed cores/services and build the wire shape once at the boundary
+- **`services/`** composes `text/` cores into typed composite results — no dependency on `ToolResponse`, registry, profiles/audiences, or schema validation; cancellation via lightweight `should_stop` view. `repo.rs` owns ecosystem/path/language facts; `patch_analysis.rs` owns single-parse neutral diff facts over the canonical repo classifier
+- **`tools/`** depends on `text/` and `services/` for core operations, `calc/` for math_eval, `mcp/response.rs` for `ToolResponse`. Handlers never call sibling handlers for internal results — they call typed cores/services and build the wire shape once at the boundary. Repo tools project `RepoFacts`; patch tools project/apply policy over `PatchAnalysis`
 - **`mcp/`** depends on `tools/` (handler dispatch), `text/` (schema validation uses text utilities)
 - **`agent/`** depends on `mcp/registry/` (tool lookup), `mcp/budget.rs` (budget enforcement), `mcp/schema_validation.rs` (argument validation)
 - **`preflight/`** depends on `agent/` (ToolRegistry dispatch) — the highest layer
@@ -325,6 +327,8 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 | `src/services/fingerprint.rs` | — | `FingerprintFacts` over `text_fingerprint` (raw/raw) |
 | `src/services/newline.rs` | — | `NewlineFacts` composite style derivation |
 | `src/services/security.rs` | — | `SecurityInspection` pipeline over `text::*` cores |
+| `src/services/repo.rs` | — | `RepoFacts` canonical ecosystem/path/language facts |
+| `src/services/patch_analysis.rs` | — | `PatchAnalysis` single-parse neutral diff facts |
 | `src/text/*.rs` | — | Text processing library (25 modules + generated `confusables_generated.rs` data file) |
 | `src/temporal/*.rs` | — | Fixed-offset datetime helpers and bounded cron parser/search |
 | `src/agent/mod.rs` | ~1810 | ToolRegistry, Profile, ExecutionContext |
