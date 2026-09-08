@@ -55,6 +55,7 @@ pub enum PreflightError {
 | `ConfigPreflight` | `config_preflight` | `ConfigVerdict` | Pre-check for config file syntax/schema validity |
 | `PatchApplyCheck` | `patch_apply_check` | `EditVerdict` | Pre-check for unified diff patch application |
 | `TextSecurityInspect` | `text_security_inspect` | (string verdict) | Unicode security inspection for text content |
+| `DependencyPreflight` | `dependency_edit_preflight` | `EditVerdict` | Pre-check for dependency manifest edits (Rust/Python/Node) |
 
 All wrappers are zero-sized structs (`pub struct Foo;`) with `impl` blocks containing `run()`, `run_with_registry()`, and `parse_response()`.
 
@@ -535,6 +536,72 @@ pub struct TextSecurityInspectOutput {
 | `summary` | `String` | Human-readable summary |
 | `subresults` | `Option<Value>` | Sub-tool results when composition is used (e.g. fingerprint, confusables analysis) |
 
+## Dependency Preflight
+
+Typed wrapper for the `dependency_edit_preflight` tool. Pre-checks proposed
+dependency manifest edits across the Rust, Python, and Node ecosystems:
+additions, removals, version-constraint changes, source-type changes
+(registry/path/git/url), script/hook/build-backend changes, and
+patch/replace overrides.
+
+This is the one workflow-level typed facade added by the API-surface
+consolidation pass: `dependency_edit_preflight` is the highest-value composite
+without a typed caller contract, and its route-critical fields (ecosystem,
+added/removed/version/source changes, verdict, machine code) benefit from
+compile-time access. There is deliberately no separate typed dependency
+service: the ecosystem parsers live in the tool adapter, and a parallel model
+would risk drifting from the tool's verdict/machine-code behavior. The wrapper
+exercises full registry dispatch like the other preflights.
+
+### Input
+
+```rust
+pub struct DependencyPreflightInput {
+    pub file_path: String,
+    pub old_text: String,
+    pub new_text: String,
+    pub ecosystem: DependencyEcosystem, // Auto (default), Rust, Python, Node, Other
+    pub policy: DependencyPolicy,       // allow_path_deps=true, allow_git_deps=false, allow_patch_sections=false
+}
+```
+
+### Output
+
+```rust
+pub struct DependencyPreflightOutput {
+    pub file_path: String,
+    pub ecosystem: DependencyEcosystem,
+    pub verdict: EditVerdict, // allow/review/block (reuses EditVerdict)
+    pub machine_code: String,
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub version_changed: Vec<DependencyVersionChange>, // name, section?, old, new, change_type
+    pub source_changed: Vec<DependencySourceChange>,   // name, section?, old_source, new_source
+    pub hook_changes: Vec<Value>, // heterogeneous per ecosystem (scripts, build backends)
+    pub findings: Vec<Finding>,
+    pub recommended_next_tool: Option<RecommendedNextTool>,
+    pub raw: Value,
+}
+```
+
+An undetectable ecosystem surfaces as `ToolRejected` with
+`DEPENDENCY_UNKNOWN_ECOSYSTEM` (fail-closed, no silent default), matching the
+tool. `dependency_changes.{added,removed,version_changed,source_changed}` are
+route-critical: a missing or mistyped section is a `ContractViolation`.
+
+### Evaluated and declined: patch-review and repo-audit facades
+
+The consolidation pass evaluated one typed patch-review facade over
+`PatchAnalysis` and one typed repo-audit facade over `RepoFacts` and declined
+both. The shared fact models are internal composition representations; their
+projections (`patch_summary`, `patch_contract_check`, `diff_risk_classify`,
+`repo_manifest_inspect`, `repo_tree_summarize`, `repo_language_detect`,
+`test_command_suggest`) already answer those workflows through `ToolRegistry`,
+and no concrete harness consumer needs a second compile-time contract for the
+same projections. Adding facades would duplicate every projection tool as a
+wrapper — exactly what the workflow-level-types policy forbids. If a concrete
+consumer workflow appears, revisit with its route-critical fields in hand.
+
 ## Usage Examples
 
 ### Basic Config Validation
@@ -634,6 +701,27 @@ let input = TextSecurityInspectInput {
 let output = TextSecurityInspect::run(&input).unwrap();
 assert_eq!(output.verdict, "allow");
 assert!(!output.machine_code.is_empty());
+```
+
+### Dependency Preflight
+
+```rust
+use eggsact::preflight::{
+    DependencyPreflight, DependencyPreflightInput,
+    DependencyEcosystem, EditVerdict,
+};
+
+let input = DependencyPreflightInput {
+    file_path: "Cargo.toml".to_string(),
+    old_text: "[dependencies]\n".to_string(),
+    new_text: "[dependencies]\nserde = \"1\"\n".to_string(),
+    ecosystem: DependencyEcosystem::Auto,
+    ..Default::default()
+};
+let output = DependencyPreflight::run(&input).unwrap();
+assert_eq!(output.ecosystem, DependencyEcosystem::Rust);
+assert!(output.added.contains(&"serde".to_string()));
+assert_eq!(output.verdict, EditVerdict::Review);
 ```
 
 ### Using a Custom ToolRegistry

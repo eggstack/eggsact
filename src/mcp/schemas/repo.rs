@@ -148,7 +148,12 @@ pub fn config_file_inspect_output() -> Value {
             },
             "parse_ok": {
                 "type": "boolean",
-                "description": "Whether the config file parsed successfully"
+                "description": "Whether the config file parsed successfully. Parser-backed for JSON/TOML family formats; for YAML (and dotenv/INI/unknown) this only reports that heuristic scanning completed — YAML syntax is NOT validated (see analysis_mode)."
+            },
+            "analysis_mode": {
+                "type": "string",
+                "enum": ["parser", "heuristic"],
+                "description": "How parse_ok was produced: \"parser\" means a real parser verdict (JSON/TOML family); \"heuristic\" means a line-oriented scan with no syntax validation (YAML, dotenv, INI, unknown). YAML key extraction is a naive `key: value` line scan; malformed YAML still reports parse_ok true when non-empty."
             },
             "shape_summary": {
                 "type": "object",

@@ -3639,6 +3639,39 @@ fn test_config_file_inspect_yaml_heuristic() {
         inner.get("format"),
         Some(&Value::String("yaml".to_string()))
     );
+    // YAML has no parser dependency: the scan is heuristic-only, so the
+    // response must say so explicitly rather than implying syntax validation.
+    assert_eq!(
+        inner.get("analysis_mode"),
+        Some(&Value::String("heuristic".to_string()))
+    );
+}
+
+#[test]
+fn test_config_file_inspect_analysis_mode_parser_vs_heuristic() {
+    // JSON uses a real parser: analysis_mode must be "parser".
+    let json_result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "config.json", "text": r#"{"a": 1}"#}),
+    );
+    let json_inner = json_result.get("result").unwrap();
+    assert_eq!(
+        json_inner.get("analysis_mode"),
+        Some(&Value::String("parser".to_string()))
+    );
+    // Malformed YAML still reports parse_ok true (non-empty input) but stays
+    // heuristic — callers must not read parse_ok as YAML syntax validity.
+    let bad_yaml = "key: [unclosed\n\tbad indent: : :\n";
+    let yaml_result = call_tool(
+        "config_file_inspect",
+        serde_json::json!({"file_path": "config.yaml", "text": bad_yaml}),
+    );
+    let yaml_inner = yaml_result.get("result").unwrap();
+    assert_eq!(
+        yaml_inner.get("analysis_mode"),
+        Some(&Value::String("heuristic".to_string()))
+    );
+    assert_eq!(yaml_inner.get("parse_ok"), Some(&Value::Bool(true)));
 }
 
 #[test]

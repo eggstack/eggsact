@@ -927,7 +927,7 @@ Documentation-only module mapping Python `synthesis` functions to their Rust sou
 | Python function | Rust source |
 |---|---|
 | `measure_text` | `measure` module |
-| `text_equal` | inline in `mcp::tools` |
+| `text_equal` | `crate::tools::text` adapter (`text_equal`) |
 | `explain_diff` | `diff` module |
 | `inspect_text` | `primitives` + `confusables` |
 | `count_chars` | `measure::char_frequency` |
@@ -935,7 +935,7 @@ Documentation-only module mapping Python `synthesis` functions to their Rust sou
 | `text_window` | `position` module |
 | `line_range_extract` | `line_range` module |
 | `line_range_compare` | `line_range` module |
-| `list_compare` | inline in `mcp::tools` |
+| `list_compare` | `crate::tools::list` adapter (`list_compare`) |
 
 ## Key Functions Reference by Category
 

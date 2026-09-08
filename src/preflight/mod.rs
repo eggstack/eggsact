@@ -1643,6 +1643,310 @@ impl TextSecurityInspect {
 }
 
 // ---------------------------------------------------------------------------
+// Dependency Preflight
+// ---------------------------------------------------------------------------
+
+/// Dependency ecosystem for dependency preflight analysis.
+///
+/// Mirrors the `ecosystem` string enum accepted by the
+/// `dependency_edit_preflight` tool (`auto`, `rust`, `python`, `node`).
+/// Unknown values round-trip through `Other` for forward compatibility.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DependencyEcosystem {
+    /// Auto-detect from `file_path` and content (tool default).
+    #[default]
+    Auto,
+    Rust,
+    Python,
+    Node,
+    Other(String),
+}
+
+impl DependencyEcosystem {
+    pub fn as_str(&self) -> &str {
+        match self {
+            DependencyEcosystem::Auto => "auto",
+            DependencyEcosystem::Rust => "rust",
+            DependencyEcosystem::Python => "python",
+            DependencyEcosystem::Node => "node",
+            DependencyEcosystem::Other(s) => s,
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "auto" => DependencyEcosystem::Auto,
+            "rust" => DependencyEcosystem::Rust,
+            "python" => DependencyEcosystem::Python,
+            "node" => DependencyEcosystem::Node,
+            other => DependencyEcosystem::Other(other.to_string()),
+        }
+    }
+}
+
+impl fmt::Display for DependencyEcosystem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Policy overrides for dependency preflight.
+///
+/// Defaults match the tool schema: path dependencies are allowed without
+/// review, git dependencies and `[patch]`/override sections are not.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DependencyPolicy {
+    pub allow_path_deps: bool,
+    pub allow_git_deps: bool,
+    pub allow_patch_sections: bool,
+}
+
+impl Default for DependencyPolicy {
+    fn default() -> Self {
+        Self {
+            allow_path_deps: true,
+            allow_git_deps: false,
+            allow_patch_sections: false,
+        }
+    }
+}
+
+/// Input for dependency preflight analysis.
+#[derive(Clone, Debug, Default)]
+pub struct DependencyPreflightInput {
+    /// Path of the dependency file being edited
+    /// (e.g. `Cargo.toml`, `pyproject.toml`, `package.json`).
+    pub file_path: String,
+    /// Current file content (before edit).
+    pub old_text: String,
+    /// Proposed file content (after edit).
+    pub new_text: String,
+    /// Dependency ecosystem (`Auto` detects from `file_path`/content).
+    pub ecosystem: DependencyEcosystem,
+    /// Policy overrides for path/git/patch dependencies.
+    pub policy: DependencyPolicy,
+}
+
+/// A dependency version-constraint change.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DependencyVersionChange {
+    /// Dependency name.
+    pub name: String,
+    /// Manifest section, when reported (Rust/Node).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
+    /// Previous version constraint.
+    pub old: String,
+    /// New version constraint.
+    pub new: String,
+    /// Change classification (`widened`, `changed`, ...).
+    pub change_type: String,
+}
+
+/// A dependency source-type change (registry/path/git/url/...).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DependencySourceChange {
+    /// Dependency name.
+    pub name: String,
+    /// Manifest section, when reported (Rust/Node).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
+    /// Previous source type.
+    pub old_source: String,
+    /// New source type.
+    pub new_source: String,
+}
+
+/// Output from dependency preflight analysis.
+#[derive(Clone, Debug)]
+pub struct DependencyPreflightOutput {
+    /// The dependency file path.
+    pub file_path: String,
+    /// Detected or specified ecosystem.
+    pub ecosystem: DependencyEcosystem,
+    /// Typed verdict for programmatic routing (`allow`/`review`/`block`).
+    pub verdict: EditVerdict,
+    /// Machine-readable status code.
+    pub machine_code: String,
+    /// Newly added dependency names.
+    pub added: Vec<String>,
+    /// Removed dependency names.
+    pub removed: Vec<String>,
+    /// Dependencies with version-constraint changes.
+    pub version_changed: Vec<DependencyVersionChange>,
+    /// Dependencies with source-type changes.
+    pub source_changed: Vec<DependencySourceChange>,
+    /// Script/hook/build-backend changes (heterogeneous per ecosystem).
+    pub hook_changes: Vec<Value>,
+    /// Structured findings.
+    pub findings: Vec<Finding>,
+    /// Recommended next tool, when the tool emits one.
+    pub recommended_next_tool: Option<RecommendedNextTool>,
+    /// The raw tool response for diagnostics and forward compatibility.
+    pub raw: Value,
+}
+
+/// Typed wrapper for the `dependency_edit_preflight` tool.
+///
+/// Like the other preflight wrappers this exercises full registry dispatch
+/// (`ToolRegistry::call_json`) so `ToolCall`/`ToolRejected` remain
+/// meaningful end-to-end checks; route-critical fields are then parsed
+/// strictly (`ContractViolation` on missing/mistyped fields, never silent
+/// defaults). There is deliberately no separate typed service for dependency
+/// analysis: the ecosystem parsers live in the `dependency_edit_preflight`
+/// adapter and a second parallel model would risk drifting from the tool's
+/// verdict/machine-code behavior.
+pub struct DependencyPreflight;
+
+impl DependencyPreflight {
+    const TOOL: &'static str = "dependency_edit_preflight";
+
+    /// Run dependency preflight analysis.
+    pub fn run(
+        input: &DependencyPreflightInput,
+    ) -> Result<DependencyPreflightOutput, PreflightError> {
+        Self::run_with_registry(&DEFAULT_REGISTRY, input)
+    }
+
+    /// Run dependency preflight analysis using a caller-provided ToolRegistry.
+    pub fn run_with_registry(
+        registry: &ToolRegistry,
+        input: &DependencyPreflightInput,
+    ) -> Result<DependencyPreflightOutput, PreflightError> {
+        let args = serde_json::json!({
+            "file_path": input.file_path,
+            "old_text": input.old_text,
+            "new_text": input.new_text,
+            "ecosystem": input.ecosystem.as_str(),
+            "policy": {
+                "allow_path_deps": input.policy.allow_path_deps,
+                "allow_git_deps": input.policy.allow_git_deps,
+                "allow_patch_sections": input.policy.allow_patch_sections,
+            },
+        });
+
+        let response = registry.call_json(Self::TOOL, args)?;
+        Self::parse_response(response)
+    }
+
+    /// Parse a ToolResponse into a typed DependencyPreflightOutput.
+    pub fn parse_response(
+        response: crate::mcp::response::ToolResponse,
+    ) -> Result<DependencyPreflightOutput, PreflightError> {
+        if !response.ok {
+            return Err(PreflightError::ToolRejected {
+                machine_code: response.machine_code,
+                error_type: response.error_type,
+                message: response.error.unwrap_or_default(),
+            });
+        }
+
+        let result = require_result_object(&response, Self::TOOL)?;
+        let machine_code = require_machine_code(&response, Self::TOOL)?;
+        let file_path = require_str(result, Self::TOOL, "file_path")?.to_string();
+        let ecosystem = DependencyEcosystem::parse(require_str(result, Self::TOOL, "ecosystem")?);
+        let verdict = EditVerdict::parse(require_str(result, Self::TOOL, "verdict")?);
+
+        let changes = result
+            .get("dependency_changes")
+            .filter(|v| v.is_object())
+            .ok_or_else(|| PreflightError::ContractViolation {
+                tool: Self::TOOL,
+                field: "dependency_changes",
+                message: format!(
+                    "expected object, got {:?}",
+                    result.get("dependency_changes")
+                ),
+            })?;
+
+        let added = changes
+            .get("added")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .ok_or_else(|| PreflightError::ContractViolation {
+                tool: Self::TOOL,
+                field: "dependency_changes.added",
+                message: format!("expected array, got {:?}", changes.get("added")),
+            })?;
+        let removed = changes
+            .get("removed")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .ok_or_else(|| PreflightError::ContractViolation {
+                tool: Self::TOOL,
+                field: "dependency_changes.removed",
+                message: format!("expected array, got {:?}", changes.get("removed")),
+            })?;
+        let version_changed = changes
+            .get("version_changed")
+            .and_then(|v| serde_json::from_value::<Vec<DependencyVersionChange>>(v.clone()).ok())
+            .ok_or_else(|| PreflightError::ContractViolation {
+                tool: Self::TOOL,
+                field: "dependency_changes.version_changed",
+                message: format!(
+                    "expected version-change array, got {:?}",
+                    changes.get("version_changed")
+                ),
+            })?;
+        let source_changed = changes
+            .get("source_changed")
+            .and_then(|v| serde_json::from_value::<Vec<DependencySourceChange>>(v.clone()).ok())
+            .ok_or_else(|| PreflightError::ContractViolation {
+                tool: Self::TOOL,
+                field: "dependency_changes.source_changed",
+                message: format!(
+                    "expected source-change array, got {:?}",
+                    changes.get("source_changed")
+                ),
+            })?;
+
+        let hook_changes = result
+            .get("hook_changes")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.to_vec())
+            .unwrap_or_default();
+
+        let findings = response
+            .findings
+            .as_ref()
+            .map(|f| Finding::from_array_strict(f, Self::TOOL))
+            .transpose()?
+            .unwrap_or_default();
+
+        let recommended_next_tool = response
+            .recommended_next_tool
+            .as_ref()
+            .map(|v| parse_recommended_next_tool(v, Self::TOOL))
+            .transpose()?;
+
+        let raw = response.result.unwrap_or(Value::Null);
+
+        Ok(DependencyPreflightOutput {
+            file_path,
+            ecosystem,
+            verdict,
+            machine_code,
+            added,
+            removed,
+            version_changed,
+            source_changed,
+            hook_changes,
+            findings,
+            recommended_next_tool,
+            raw,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1678,6 +1982,84 @@ mod tests {
         let output = ConfigPreflight::run(&input).unwrap();
         assert!(!output.valid);
         assert_eq!(output.verdict, ConfigVerdict::Invalid);
+    }
+
+    #[test]
+    fn dependency_preflight_rust_addition() {
+        let input = DependencyPreflightInput {
+            file_path: "Cargo.toml".to_string(),
+            old_text: "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n\n[dependencies]\n"
+                .to_string(),
+            new_text:
+                "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n\n[dependencies]\nserde = \"1\"\n"
+                    .to_string(),
+            ecosystem: DependencyEcosystem::Rust,
+            ..Default::default()
+        };
+        let output = DependencyPreflight::run(&input).unwrap();
+        assert_eq!(output.ecosystem, DependencyEcosystem::Rust);
+        assert!(output.added.contains(&"serde".to_string()));
+        assert!(output.removed.is_empty());
+        assert_eq!(output.verdict, EditVerdict::Review);
+        assert!(!output.machine_code.is_empty());
+    }
+
+    #[test]
+    fn dependency_preflight_node_version_change() {
+        let input = DependencyPreflightInput {
+            file_path: "package.json".to_string(),
+            old_text: r#"{"dependencies": {"left-pad": "^1.0.0"}}"#.to_string(),
+            new_text: r#"{"dependencies": {"left-pad": "^1.3.0"}}"#.to_string(),
+            ecosystem: DependencyEcosystem::Auto,
+            ..Default::default()
+        };
+        let output = DependencyPreflight::run(&input).unwrap();
+        assert_eq!(output.ecosystem, DependencyEcosystem::Node);
+        assert_eq!(output.version_changed.len(), 1);
+        assert_eq!(output.version_changed[0].name, "left-pad");
+        assert_eq!(output.verdict, EditVerdict::Review);
+    }
+
+    #[test]
+    fn dependency_preflight_unknown_ecosystem_rejects() {
+        let input = DependencyPreflightInput {
+            file_path: "mystery.txt".to_string(),
+            old_text: "a".to_string(),
+            new_text: "b".to_string(),
+            ecosystem: DependencyEcosystem::Auto,
+            ..Default::default()
+        };
+        let err = DependencyPreflight::run(&input).unwrap_err();
+        match err {
+            PreflightError::ToolRejected { machine_code, .. } => {
+                assert_eq!(
+                    machine_code.as_deref(),
+                    Some(crate::mcp::machine_codes::DEPENDENCY_UNKNOWN_ECOSYSTEM)
+                );
+            }
+            other => panic!("expected ToolRejected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dependency_preflight_missing_changes_fails_closed() {
+        let response = ToolResponse::success(
+            serde_json::json!({
+                "file_path": "Cargo.toml",
+                "ecosystem": "rust",
+                "verdict": "allow",
+            }),
+            Some(DependencyPreflight::TOOL),
+        )
+        .with_machine_code(crate::mcp::machine_codes::DEPENDENCY_OK)
+        .with_verdict("allow");
+        let err = DependencyPreflight::parse_response(response).unwrap_err();
+        match err {
+            PreflightError::ContractViolation { field, .. } => {
+                assert_eq!(field, "dependency_changes");
+            }
+            other => panic!("expected ContractViolation, got {other:?}"),
+        }
     }
 
     #[test]

@@ -465,7 +465,7 @@ Check whether a text replacement would apply cleanly before an agent attempts to
 
 ### `config_file_inspect`
 
-Composite: inspect a single config file beyond syntax validity. Detects risky keys, secret-like values, insecure URLs, debug flags, command hooks, and TLS/hostname issues. Returns structured findings with severity and disposition.
+Composite: inspect a single config file beyond syntax validity. Detects risky keys, secret-like values, insecure URLs, debug flags, command hooks, and TLS/hostname issues. Returns structured findings with severity and disposition. YAML analysis is heuristic-only (no YAML parser dependency): the analysis_mode result field reports "heuristic" and parse_ok must not be read as YAML syntax validity.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
 - **Exposure**: contextual
@@ -765,7 +765,7 @@ Extract fenced code blocks from Markdown with exact line ranges, optional langua
 
 ### `config_file_inspect`
 
-Composite: inspect a single config file beyond syntax validity. Detects risky keys, secret-like values, insecure URLs, debug flags, command hooks, and TLS/hostname issues. Returns structured findings with severity and disposition.
+Composite: inspect a single config file beyond syntax validity. Detects risky keys, secret-like values, insecure URLs, debug flags, command hooks, and TLS/hostname issues. Returns structured findings with severity and disposition. YAML analysis is heuristic-only (no YAML parser dependency): the analysis_mode result field reports "heuristic" and parse_ok must not be read as YAML syntax validity.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
 - **Exposure**: contextual

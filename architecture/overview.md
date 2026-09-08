@@ -108,7 +108,7 @@ Each major component has a dedicated architecture doc. The table below serves as
 | **Typed Services** | [tools.md](tools.md) | Typed composite layer (`FingerprintFacts`, `NewlineFacts`, `SecurityInspection`, `RepoFacts`, `PatchAnalysis`) over `text/` cores; `tools/*` adapters call services, never sibling handlers | `src/services/{mod,fingerprint,newline,security,repo,patch_analysis}.rs` |
 | **Compatibility** | [compatibility.md](compatibility.md) | `EggcalcPython` vs `StrictNative` validation modes — Python-parity error messages vs strict JSON Schema enforcement, how compat mode propagates through MCP server and agent API | `src/mcp/compat.rs` |
 | **Agent API** | [agent-api.md](agent-api.md) | In-process `ToolRegistry` (synchronous dispatch), 11 named `Profile` variants + Custom, `ToolAudience` (Model/Harness/Debug), `ExecutionContext` with builder pattern, 4 dispatch levels (`call_json` → `call_json_with_execution_context`), tool listing methods, `prepare_tool_call()` shared core | `src/agent/mod.rs` |
-| **Preflight Wrappers** | [preflight.md](preflight.md) | 5 typed wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`), `PreflightError` taxonomy (ToolCall/ToolRejected/ContractViolation), typed verdict enums with `Other(String)` forward-compat, strict vs permissive `Finding` parsing, `RecommendedNextTool` | `src/preflight/mod.rs` |
+| **Preflight Wrappers** | [preflight.md](preflight.md) | 6 typed wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`, `DependencyPreflight`), `PreflightError` taxonomy (ToolCall/ToolRejected/ContractViolation), typed verdict enums with `Other(String)` forward-compat, strict vs permissive `Finding` parsing, `RecommendedNextTool` | `src/preflight/mod.rs` |
 | **Tool Implementations** | [tools.md](tools.md) | Per-category tool handler details, composite tool orchestration pattern (edit/command/config preflight), route-critical tools, command policy engine, dependency ecosystem detection, repo analysis, source analysis, network/encoding/temporal utilities | `src/tools/*.rs` (23 files) |
 | **Testing** | [testing.md](testing.md) | Test structure (70+ files across 5 suites), parity test framework (Python/Rust comparison), CI pipeline, how to add tests, fixture-backed route contract tests | `tests/` |
 | **CLI & Binaries** | [cli-binaries.md](cli-binaries.md) | `main.rs` CLI modes, `generate-docs` binary (README/profile/tool-cards generation), `--diagnostics` flag | `src/main.rs`, `src/bin/generate_docs.rs` |
@@ -140,6 +140,18 @@ main.rs
 - **`mcp/`** depends on `tools/` (handler dispatch), `text/` (schema validation uses text utilities)
 - **`agent/`** depends on `mcp/registry/` (tool lookup), `mcp/budget.rs` (budget enforcement), `mcp/schema_validation.rs` (argument validation)
 - **`preflight/`** depends on `agent/` (ToolRegistry dispatch) — the highest layer
+
+### Supported Rust API hierarchy
+
+For downstream Rust consumers, the recommended integration order is
+`calc`/root re-exports → typed `text` primitives → `agent::ToolRegistry` and
+execution contexts → typed `preflight` workflow APIs → the MCP server entry
+surface. Raw `tools::*` handlers are JSON adapter internals dispatched through
+the registry; they stay `pub` for 1.x compatibility but are not the
+recommended import surface, and neither are `services::*` internals or
+`mcp` transport sub-modules beyond `server`. See
+[../docs/library-api.md](../docs/library-api.md) for the full hierarchy and
+[compatibility.md](compatibility.md) for the visibility-staging policy.
 
 ---
 

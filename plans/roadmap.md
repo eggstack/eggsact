@@ -39,68 +39,47 @@ qualified target binaries, SHA-256 sidecars, `install.sh`, and `install.ps1`
 were produced by successful workflow
 [`33944943782`](https://github.com/eggstack/eggsact/actions/runs/33944943782).
 
-## Active consolidation line
+## Shipped consolidation line
 
-The next implementation line is a bounded maintenance/consolidation pass based
-on the September 2026 architecture review. The repository does **not** need a
-broad utility expansion. The goal is to reduce duplicate sources of truth,
-restore typed internal composition, tighten the Rust API boundary, and deepen
-only the highest-value harness integrations while preserving the existing MCP
-surface and lightweight single-crate design.
+The September 2026 maintenance/consolidation pass is complete. The repository
+remains a single-crate, 86-tool design with no broad utility expansion. The
+three consolidation plans have been pruned per the planning convention; git
+history retains their execution detail and evidence.
 
-Execute the plans in this order:
-
-1. [`consolidation-01-typed-composition.md`](consolidation-01-typed-composition.md)
-   - make typed deterministic operations the canonical internal composition
-     path;
-   - eliminate tool-handler-to-tool-handler JSON composition where full
-     dispatch policy is not required;
-   - split responsibility-dense modules only along real architectural seams;
-   - preserve tool names, response contracts, profiles, audiences, machine
-     codes, compatibility behavior, and CLI behavior.
-2. [`consolidation-02-shared-analysis.md`](consolidation-02-shared-analysis.md)
-   - introduce canonical repository facts and patch-analysis representations;
-   - remove duplicated ecosystem/path detection across repo tools;
-   - parse and classify each unified diff once, then apply separate summary,
-     contract, and review policies;
-   - add cross-tool differential tests so shared facts cannot drift.
-3. [`consolidation-03-api-config-build-surface.md`](consolidation-03-api-config-build-surface.md)
-   - document and stage a cleaner supported Rust API hierarchy without a
-     breaking 1.x visibility change;
-   - add typed dependency-preflight integration and only other typed workflow
-     facades justified by concrete consumers;
-   - correct YAML inspection so heuristic analysis is not represented as
-     parser-backed validation;
-   - measure coarse feature-gating value and implement it only if the benefit
-     exceeds conditional-compilation/CI complexity;
-   - retire stale docs and maintain the existing `json_query` deprecation path.
-
-### Consolidation acceptance criteria
-
-This line is complete when all of the following hold:
-
-- internal composites operate on typed/core results rather than parsing sibling
-  `ToolResponse` JSON unless a deliberate registry-policy hop is required;
-- repository ecosystem/path facts have one canonical classifier;
-- patch parsing and neutral patch facts have one canonical implementation used
-  by `patch_summary`, `patch_contract_check`, and `diff_risk_classify`;
-- shared-fact differential tests protect against cross-tool semantic drift;
-- the recommended Rust library API favors `calc`, typed `text`, `ToolRegistry`,
-  and typed workflow APIs rather than raw `tools::*` handlers;
-- YAML/config guarantees accurately describe heuristic versus parser-backed
-  behavior, without adding a YAML dependency absent a concrete workflow;
-- feature gating is either implemented as a small measured set of coarse
-  features or explicitly rejected with evidence; per-tool feature matrices are
-  not introduced;
-- architecture documentation matches the resulting module tree;
-- the full verification order in `AGENTS.md` passes, including generated-doc
-  checks and relevant packaging/API compile checks;
-- no gratuitous new MCP tools, workspace split, parser framework, daemon, or
-  general-purpose agent/sandbox functionality is introduced.
-
-Once all three plans ship and verification evidence is recorded, prune their
-execution detail from `plans/` and reduce this section to concise shipped-state
-evidence per the repository planning convention.
+- **Typed-first composition** (`consolidation-01`): `src/services/`
+  (fingerprint, newline, security, repo, patch analysis) over `text/`/`calc`
+  cores; `tools/*` adapters parse input, call typed cores/services, and build
+  the wire shape once at the boundary. No adapter-to-adapter JSON composition
+  except three intentional same-module reuses documented in
+  `architecture/tools.md`.
+- **Shared analysis** (`consolidation-02`): `RepoFacts` is the canonical
+  ecosystem/path/language classifier; `PatchAnalysis` parses each unified
+  diff once into neutral facts; differential tests guard against cross-tool
+  semantic drift.
+- **API/config/build surface** (`consolidation-03`):
+  - recommended Rust hierarchy (`calc`/root → typed `text` →
+    `ToolRegistry`/execution contexts → typed `preflight` → MCP server) is
+    documented in `docs/library-api.md` and `architecture/overview.md`; raw
+    `tools::*` handlers stay `pub` for 1.x compatibility but are documented
+    as adapter internals with no visibility reduction in 1.x;
+  - typed `DependencyPreflight` added (ecosystem, added/removed/version/
+    source changes, hook changes, findings, verdict, machine code);
+    patch-review and repo-audit facades were evaluated and declined (their
+    projections already answer those workflows through `ToolRegistry`);
+  - `config_file_inspect` reports an additive `analysis_mode`
+    (`"parser"` vs `"heuristic"`); YAML stays heuristic-only with no parser
+    dependency and `config_preflight` intentionally excludes YAML;
+  - coarse feature gating was measured and explicitly declined: 20 direct /
+    88 total dependency crates, 7.4 MiB stripped release binary, ~58s
+    warm-cache release build; tokio/serde_json/toml/regex/unicode span all
+    layers and the shipped binary stays full-featured, so cfg-gating would
+    add CI-matrix and conditional-compilation cost for no binary win;
+  - architecture drift corrected (stale `mcp::tools` wording, wrapper
+    counts); `sync_pool.rs` references verified current; no lightweight
+    path-reference check was added (the real drift was module-path
+    vocabulary, which a file-path checker would not catch);
+  - `json_query` stays deprecated-but-compatible in 1.x with no promotion in
+    default docs; calculator context isolation semantics are unchanged.
 
 ## Binary distribution closure
 

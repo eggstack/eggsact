@@ -15,7 +15,7 @@ The crate exposes six public modules:
 - `eggsact::text` -- text processing utilities (measurement, diff, validation, transforms)
 - `eggsact::mcp` -- MCP server for AI tool integration
 - `eggsact::agent` -- in-process `ToolRegistry`, profiles, execution contexts
-- `eggsact::preflight` -- typed preflight wrappers (edit/command/config checks)
+- `eggsact::preflight` -- typed preflight wrappers (edit/command/config/dependency checks)
 - `eggsact::tools` -- tool handler implementations by category
 
 Core functions are re-exported at the crate root:
@@ -23,6 +23,34 @@ Core functions are re-exported at the crate root:
 ```rust
 use eggsact::{run, evaluate, split_at_operators};
 ```
+
+### Supported API hierarchy
+
+For new Rust integrations, prefer this hierarchy (highest first):
+
+1. **`calc` and the root calculator re-exports** (`run`, `evaluate`,
+   `run_with_context`, `evaluate_with_context`, `EvalContext`) for calculator
+   consumers.
+2. **Typed `text` primitives** (`eggsact::text::*`) for direct utility use.
+3. **`agent::ToolRegistry` / execution-context API** for generic in-process
+   tool dispatch (`call_json`, `call_json_with_execution_context`).
+4. **Typed `preflight` workflow APIs** (`EditPreflight`, `CommandPreflight`,
+   `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`,
+   `DependencyPreflight`) for coding-agent harnesses.
+5. **The MCP server entry surface** (`eggsact::mcp::server::main()`) for stdio
+   integration.
+
+Raw `eggsact::tools::*` handlers are JSON adapter internals, not the
+recommended Rust integration surface. They remain `pub` for 1.x compatibility
+(they are the dispatch targets behind `ToolRegistry`/`ToolSpec`), but new code
+should call the typed layers above instead of importing handlers directly. The
+same applies to `eggsact::services::*` (typed composite internals shared by
+adapters) and `eggsact::mcp` sub-modules other than `server` (transport
+internals, mostly `#[doc(hidden)]`). No visibility reduction ships in a 1.x
+release; removal of accidental public surface is staged for a future breaking
+release per [compatibility-policy.md](compatibility-policy.md). MCP tool names,
+response contracts, profiles, audiences, and machine codes are unaffected by
+Rust-side adapter deprecation.
 
 ---
 
@@ -526,9 +554,48 @@ let output = EditPreflight::run(&input).unwrap();
 assert!(output.ok_to_apply);
 ```
 
-Available wrappers: `EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`.
+Available wrappers: `EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`, `DependencyPreflight`.
 
 All return `Result<Output, PreflightError>` where `PreflightError` distinguishes `ToolCall`, `ToolRejected`, and `ContractViolation` (missing mandatory fields are hard failures).
+
+### DependencyPreflight
+
+```rust
+use eggsact::preflight::{
+    DependencyPreflight, DependencyPreflightInput,
+    DependencyEcosystem, EditVerdict,
+};
+
+let input = DependencyPreflightInput {
+    file_path: "Cargo.toml".to_string(),
+    old_text: "[dependencies]\n".to_string(),
+    new_text: "[dependencies]\nserde = \"1\"\n".to_string(),
+    ecosystem: DependencyEcosystem::Auto, // or Rust / Python / Node
+    ..Default::default()
+};
+let output = DependencyPreflight::run(&input).unwrap();
+assert_eq!(output.ecosystem, DependencyEcosystem::Rust);
+assert!(output.added.contains(&"serde".to_string()));
+```
+
+`DependencyPreflightOutput` carries the detected `ecosystem`, typed
+`verdict` (`EditVerdict`: `allow`/`review`/`block`), `machine_code`,
+`added`/`removed` names, `version_changed` (`name`, `section`, `old`, `new`,
+`change_type`), `source_changed` (`name`, `section`, `old_source`,
+`new_source`), heterogeneous `hook_changes` (script/hook/build-backend
+changes, kept as `serde_json::Value`), strict `findings`, an optional
+`recommended_next_tool`, and the `raw` response. Policy defaults match the
+tool schema (`allow_path_deps: true`, `allow_git_deps: false`,
+`allow_patch_sections: false`). An undetectable ecosystem surfaces as
+`ToolRejected` with machine code `DEPENDENCY_UNKNOWN_ECOSYSTEM`, not a silent
+default.
+
+No typed patch-review or repo-audit facades are provided: `PatchAnalysis` and
+`RepoFacts` in `eggsact::services` are internal composition models whose
+projections (`patch_summary`, `patch_contract_check`, `diff_risk_classify`,
+repo tools) already answer those workflows through `ToolRegistry`. Per-tool
+typed wrappers are added only where a stable harness workflow needs
+compile-time contracts for route-critical fields.
 
 ---
 

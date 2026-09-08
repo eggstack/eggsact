@@ -22,7 +22,7 @@ pub const REPO_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "config_file_inspect",
-        description: "Composite: inspect a single config file beyond syntax validity. Detects risky keys, secret-like values, insecure URLs, debug flags, command hooks, and TLS/hostname issues. Returns structured findings with severity and disposition.",
+        description: "Composite: inspect a single config file beyond syntax validity. Detects risky keys, secret-like values, insecure URLs, debug flags, command hooks, and TLS/hostname issues. Returns structured findings with severity and disposition. YAML analysis is heuristic-only (no YAML parser dependency): the analysis_mode result field reports \"heuristic\" and parse_ok must not be read as YAML syntax validity.",
         handler: config_file_inspect,
         input_schema: config_file_inspect_input,
         output_schema: config_file_inspect_output,

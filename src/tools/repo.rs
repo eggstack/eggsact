@@ -615,7 +615,10 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
     };
 
     // Parse key-value pairs based on format — JSON and TOML use parser-backed
-    // recursive traversal; dotenv/INI retain line scanners; YAML is heuristic-only.
+    // recursive traversal; dotenv/INI retain line scanners; YAML is heuristic-only
+    // (no YAML parser dependency: `yaml_key_values` is a naive `key: value`
+    // line scan, so `parse_ok` for YAML only reports that the input was
+    // non-empty, not that it is valid YAML — see `analysis_mode` below).
     let kv_pairs: Vec<(String, String)> = match format {
         "json" | "package_json" => json_kv_pairs(text).unwrap_or_else(|| {
             // Fallback to line scanner if parse fails (parse_ok will catch it)
@@ -630,15 +633,23 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
         _ => dotenv_key_values(text),
     };
 
-    // Check for parse issues — JSON formats use serde_json parsing; the line
-    // scanner below remains a heuristic for key extraction and falls back
-    // to non-JSON formats. A real parse failure surfaces as a finding so
-    // callers can detect malformed input rather than silently misclassify.
+    // Check for parse issues — JSON formats use serde_json parsing; TOML
+    // formats use the `toml` parser. YAML has no parser (heuristic-only line
+    // scan), so `parse_ok` for YAML is true for any non-empty input and must
+    // NOT be read as syntax validation. The additive `analysis_mode` result
+    // field (`"parser"` vs `"heuristic"`) lets callers distinguish the two
+    // guarantees without breaking the existing boolean shape.
     let parse_ok = match format {
         "json" | "package_json" => serde_json::from_str::<serde_json::Value>(text.trim()).is_ok(),
         "toml" | "cargo_toml" | "pyproject" => text.parse::<toml::Value>().is_ok(),
         "yaml" => !text.trim().is_empty(),
         _ => true,
+    };
+    // `"parser"` means `parse_ok` reflects a real parser verdict;
+    // `"heuristic"` means the scan completed but syntax was not validated.
+    let analysis_mode = match format {
+        "json" | "package_json" | "toml" | "cargo_toml" | "pyproject" => "parser",
+        _ => "heuristic",
     };
     if !parse_ok {
         // Surface parse failures to the caller as a structured finding so
@@ -810,6 +821,7 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
         "file_path": file_path,
         "format": format,
         "parse_ok": parse_ok,
+        "analysis_mode": analysis_mode,
         "shape_summary": shape_summary,
         "risky_keys": findings.iter().filter(|f| {
             f.get("code").and_then(|c| c.as_str()).map(|c| c.starts_with("CONFIG_RISK_")).unwrap_or(false)

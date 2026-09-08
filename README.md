@@ -107,6 +107,26 @@ let response = registry.call_json_with_execution_context(
 assert!(response.ok);
 ```
 
+### Typed Preflight Wrappers
+
+```rust
+use eggsact::preflight::{DependencyPreflight, DependencyPreflightInput};
+
+let input = DependencyPreflightInput {
+    file_path: "Cargo.toml".to_string(),
+    old_text: "[dependencies]\n".to_string(),
+    new_text: "[dependencies]\nserde = \"1\"\n".to_string(),
+    ..Default::default()
+};
+let output = DependencyPreflight::run(&input).unwrap();
+assert!(!output.machine_code.is_empty());
+```
+
+For new Rust integrations prefer `calc`/root functions, then typed `text`
+primitives, then `ToolRegistry`, then typed `preflight` wrappers — raw
+`tools::*` handlers are adapter internals kept `pub` for 1.x compatibility.
+See [docs/library-api.md](docs/library-api.md) for the full hierarchy.
+
 ## Supported Platforms
 
 | Tier | Platform | Status |

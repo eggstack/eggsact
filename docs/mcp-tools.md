@@ -1298,6 +1298,12 @@ Validate a configuration file before writing: detect syntax errors, schema viola
 
 **Return:** `{"valid": <boolean>, "format": <string>, "verdict": <string>, "findings": [<object>]}`
 
+YAML is intentionally unsupported here: there is no YAML parser dependency.
+`config_file_inspect` accepts `.yaml`/`.yml` but performs a heuristic-only
+`key: value` line scan — its `analysis_mode` result field reports
+`"heuristic"` (vs `"parser"` for JSON/TOML family formats) and YAML `parse_ok`
+must not be read as syntax validity.
+
 ---
 
 ## Comparison

@@ -112,9 +112,11 @@ Do not mix `call_json_with_execution_context` with `evaluate_with_context`/`run_
 
 `src/preflight/mod.rs` provides typed Rust wrappers over the raw JSON tool interface for common codegg workflows. Each wrapper has typed `Input`/`Output` structs, a `run()` method, and a `parse_response()` method for testing contract parsing without a full registry call.
 
-Available wrappers: `EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`.
+Available wrappers: `EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`, `DependencyPreflight`.
 
 All wrappers return `Result<Output, PreflightError>`. `PreflightError` distinguishes `ToolCall` (registry rejected), `ToolRejected` (tool returned `ok: false`), and `ContractViolation` (missing mandatory field — hard failure, no silent defaults).
+
+Do not create a typed wrapper per tool: add typed APIs only for stable agent workflows where route-critical fields need compile-time contracts. Patch-review and repo-audit facades were evaluated and declined — `PatchAnalysis`/`RepoFacts` projections already answer those workflows through `ToolRegistry`. See `architecture/preflight.md`.
 
 Add `#[allow(deprecated)]` to test code that calls `ToolRegistry::available_tools()`.
 
