@@ -1165,36 +1165,22 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
     let mut subresults = serde_json::Map::new();
     let mut findings: Vec<serde_json::Value> = Vec::new();
 
-    let vj_a = crate::tools::validate_json(&serde_json::json!({"text": a}));
-    let vj_b = crate::tools::validate_json(&serde_json::json!({"text": b}));
-
-    let valid_a = vj_a
-        .result
-        .as_ref()
-        .and_then(|r| r.get("valid"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let valid_b = vj_b
-        .result
-        .as_ref()
-        .and_then(|r| r.get("valid"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
-    let error_a = vj_a
-        .result
-        .as_ref()
-        .and_then(|r| r.get("error"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("Invalid JSON in a")
-        .to_string();
-    let error_b = vj_b
-        .result
-        .as_ref()
-        .and_then(|r| r.get("error"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("Invalid JSON in b")
-        .to_string();
+    // Typed composition: call the deterministic core directly instead of
+    // the `validate_json` adapter (no JSON envelope round-trip).
+    let (valid_a, error_a) = match crate::text::validate_json(a) {
+        Ok(r) => (
+            r.valid,
+            r.error.unwrap_or_else(|| "Invalid JSON in a".to_string()),
+        ),
+        Err(e) => (false, e),
+    };
+    let (valid_b, error_b) = match crate::text::validate_json(b) {
+        Ok(r) => (
+            r.valid,
+            r.error.unwrap_or_else(|| "Invalid JSON in b".to_string()),
+        ),
+        Err(e) => (false, e),
+    };
 
     subresults.insert(
         "validate_a".to_string(),
@@ -1236,6 +1222,10 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
     }
 
     let equal = if valid_a && valid_b {
+        // Intentional same-module reuse: structured_data_compare composes the
+        // json_compare handler directly (no registry dispatch). Extracting a
+        // shared typed comparator is follow-up work; the JSON envelope here
+        // is intra-module, not cross-category adapter coupling.
         let jc_result = json_compare(&serde_json::json!({
             "a": a,
             "b": b,
@@ -1293,6 +1283,9 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
             .unwrap_err();
     }
 
+    // Intentional same-module reuse (see above). The TYPE_MISMATCH check is
+    // dead code in both Python and Rust (json_shape has no "type" field);
+    // preserved as-is for parity. See tests/mcp/test_tool_coverage.rs BUG-006.
     let shape_a = json_shape_tool(&serde_json::json!({"text": a}));
     let shape_b = json_shape_tool(&serde_json::json!({"text": b}));
     if let (Some(sa), Some(sb)) = (&shape_a.result, &shape_b.result) {

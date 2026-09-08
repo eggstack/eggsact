@@ -8,7 +8,7 @@ description: Use when adding a new MCP tool, modifying an existing tool, working
 1. **Implement the function** in `src/tools/<category>.rs`:
    - Take `&Value` (serde_json) as the input parameter
    - Validate arguments at the boundary
-   - Call reusable library code from `src/text/` or `src/calc/`
+   - Call reusable library code from `src/text/`, `src/calc/`, or `src/services/` — never call another `crate::tools::*` handler for an internal result
    - Return `ToolResponse` (from `src/mcp/response.rs`)
 
 2. **Add a `ToolSpec` entry** in `src/mcp/specs/<category>.rs` — this is the single source of truth for tool registration. It defines the handler, category, tier, tags, profiles, input schema, and output schema all in one place. Each category exports a `pub const <CATEGORY>_TOOLS: &[ToolSpec]` slice, which `all_tools.rs` aggregates into the combined `ALL_TOOLS`.
@@ -120,11 +120,13 @@ Add `#[allow(deprecated)]` to test code that calls `ToolRegistry::available_tool
 
 ## Composite Tools
 
-Tools marked `composite: true` orchestrate calls to other tools internally.
-Examples: `text_security_inspect`, `edit_preflight`, `command_preflight`, `config_preflight`, `structured_data_compare`.
+Tools marked `composite: true` orchestrate typed cores/services internally — they do not call sibling tool handlers.
+Examples: `text_security_inspect` (`services::inspect_text_security`), `edit_preflight` (replace/line-range/patch cores + `services::fingerprint_facts`/`newline_facts`/`inspect_text_security` + `text::path_scope_check`), `command_preflight` (`text::regex_safety_check` core), `config_preflight` (`text::validate_json`/`validate_schema_light`/`json_canonicalize`/`toml`/`dotenv`/`ini`/`cargo` cores), `structured_data_compare` (`text::validate_json` core).
 These are implemented in `src/tools/` (category modules) with ToolSpec declarations in `src/mcp/specs/`.
 
-`edit_preflight` optionally composes additional tools when the corresponding input fields are provided: `path_scope_check` (via `file_path` + `workspace_root` fields), `text_security_inspect` (via `unicode_policy` field), and `text_fingerprint` (via `newline_policy` field for newline style detection). Each sub-tool call is included in the `subresults` map when invoked.
+`edit_preflight` optionally composes additional typed checks when the corresponding input fields are provided: `text::path_scope_check` (via `file_path` + `workspace_root` fields), `services::inspect_text_security` (via `unicode_policy` field), and `services::fingerprint_facts`/`newline_facts` (via `newline_policy`/`expected_fingerprint` fields for newline style detection and SHA-256). Each sub-result is included in the `subresults` map when computed.
+
+Shared composite logic that more than one caller needs lives in `src/services/` (`FingerprintFacts`, `NewlineFacts`, `SecurityInspection`). Services never touch `ToolResponse`, the registry, profiles/audiences, or schema validation; cancellation uses a lightweight `should_stop` view. The three remaining same-module JSON reuses (`json_compare`/`json_shape_tool` in `structured_data_compare`, `toml_shape_tool` in `config_preflight`) are intentional, commented, and deferred to follow-up typed extraction.
 
 ## Adding a Text Processing Module
 

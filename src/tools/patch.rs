@@ -619,32 +619,41 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                     );
                 }
             };
-            let tr_args = serde_json::json!({
-                "text": original,
-                "old": old,
-                "new": new,
-                "mode": "exact",
-            });
-            let tr_result = crate::tools::text_replace_check_tool(&tr_args);
-            if let Some(ref r) = tr_result.result {
-                subresults.insert("text_replace_check".to_string(), r.clone());
-                let match_count = r.get("match_count").and_then(|v| v.as_u64()).unwrap_or(0);
-                if match_count == 0 {
-                    findings.push(finding(
-                        "NO_MATCH",
-                        severity::HIGH,
-                        "old text not found in original",
-                        Some(disposition::BLOCKING),
-                        None,
-                    ));
-                } else if match_count > 1 {
-                    findings.push(finding(
-                        "MULTIPLE_MATCHES",
-                        severity::MEDIUM,
-                        &format!("Found {} matches; use allow_multiple=true", match_count),
-                        Some(disposition::CAUTION),
-                        None,
-                    ));
+            // Typed composition: replace-check core directly (exact mode,
+            // the same inputs the adapter used). No JSON envelope round-trip.
+            match crate::text::replace::text_replace_check(
+                original, old, new, "exact", None, false, "preserve", false, 2000,
+            ) {
+                Ok(tr) => {
+                    subresults.insert(
+                        "text_replace_check".to_string(),
+                        serde_json::json!({
+                            "match_count": tr.match_count,
+                            "unique_match": tr.unique_match,
+                        }),
+                    );
+                    if tr.match_count == 0 {
+                        findings.push(finding(
+                            "NO_MATCH",
+                            severity::HIGH,
+                            "old text not found in original",
+                            Some(disposition::BLOCKING),
+                            None,
+                        ));
+                    } else if tr.match_count > 1 {
+                        findings.push(finding(
+                            "MULTIPLE_MATCHES",
+                            severity::MEDIUM,
+                            &format!("Found {} matches; use allow_multiple=true", tr.match_count),
+                            Some(disposition::CAUTION),
+                            None,
+                        ));
+                    }
+                }
+                Err(_) => {
+                    // The adapter would return ok:false with no result here;
+                    // edit_preflight surfaces nothing in that case (no
+                    // subresult, no finding). Preserve that behavior.
                 }
             }
         }
@@ -661,44 +670,55 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                     );
                 }
             };
-            let pa_args = serde_json::json!({
-                "original_text": original,
-                "patch_text": patch_text,
-                "strict": strict,
-                "return_result_fingerprint": true,
-                "return_result_text": false,
-            });
-            let pa_result = patch_apply_check(&pa_args);
-            match pa_result {
-                ToolResponse {
-                    error: Some(ref e), ..
-                } => {
+            // Typed composition: patch core directly (no same-file adapter
+            // JSON envelope). Length guards mirror patch_apply_check.
+            const MAX_ORIGINAL_LENGTH: usize = 200_000;
+            const MAX_PATCH_LENGTH: usize = 100_000;
+            let original_chars = original.chars().count();
+            let patch_chars = patch_text.chars().count();
+            if original_chars > MAX_ORIGINAL_LENGTH || original.len() > MAX_ORIGINAL_LENGTH {
+                findings.push(finding(
+                    "PATCH_ERROR",
+                    severity::HIGH,
+                    &format!("Original text length exceeds maximum of {MAX_ORIGINAL_LENGTH}"),
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
+            } else if patch_chars > MAX_PATCH_LENGTH || patch_text.len() > MAX_PATCH_LENGTH {
+                findings.push(finding(
+                    "PATCH_ERROR",
+                    severity::HIGH,
+                    &format!("Patch text length exceeds maximum of {MAX_PATCH_LENGTH}"),
+                    Some(disposition::BLOCKING),
+                    None,
+                ));
+            } else {
+                let pa = crate::text::patch_apply_check(original, patch_text, strict, true, false);
+                subresults.insert(
+                    "patch_apply_check".to_string(),
+                    serde_json::json!({
+                        "patch_parse_ok": pa.patch_parse_ok,
+                        "applies": pa.applies,
+                        "hunks_total": pa.hunks_total,
+                        "hunks_applied": pa.hunks_applied,
+                        "hunks_failed": pa.hunks_failed,
+                        "failed_hunks": pa.failed_hunks,
+                        "affected_line_ranges": pa.affected_line_ranges,
+                        "newline_style_before": pa.newline_style_before,
+                        "newline_style_after": pa.newline_style_after,
+                        "result_fingerprint": pa.result_fingerprint,
+                        "result_text": pa.result_text,
+                    }),
+                );
+                if !pa.applies {
                     findings.push(finding(
-                        "PATCH_ERROR",
+                        "PATCH_FAILED",
                         severity::HIGH,
-                        e,
+                        "Patch does not apply cleanly",
                         Some(disposition::BLOCKING),
                         None,
                     ));
                 }
-                ToolResponse {
-                    result: Some(ref r),
-                    ..
-                } => {
-                    subresults.insert("patch_apply_check".to_string(), r.clone());
-                    if let Some(applies) = r.get("applies").and_then(|v| v.as_bool()) {
-                        if !applies {
-                            findings.push(finding(
-                                "PATCH_FAILED",
-                                severity::HIGH,
-                                "Patch does not apply cleanly",
-                                Some(disposition::BLOCKING),
-                                None,
-                            ));
-                        }
-                    }
-                }
-                _ => {}
             }
         }
         "line_range" => {
@@ -726,16 +746,19 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                     );
                 }
             };
-            let lr_args = serde_json::json!({
-                "text": original,
-                "start_line": start_line,
-                "end_line": end_line,
-            });
-            let lr_result = crate::tools::text::line_range_extract_tool(&lr_args);
-            if let Some(ref r) = lr_result.result {
-                subresults.insert("line_range_extract".to_string(), r.clone());
-                if let Some(valid_range) = r.get("valid_range").and_then(|v| v.as_bool()) {
-                    if !valid_range {
+            // Typed composition: line_range core directly with the adapter's
+            // defaults (line_base=1, no numbers, fingerprint included).
+            match crate::text::line_range_extract(original, start_line, end_line, 1, false, true) {
+                Ok(lr) => {
+                    subresults.insert(
+                        "line_range_extract".to_string(),
+                        serde_json::json!({
+                            "valid_range": lr.valid_range,
+                            "fingerprint": lr.fingerprint,
+                            "newline_style": lr.newline_style,
+                        }),
+                    );
+                    if !lr.valid_range {
                         findings.push(finding(
                             "INVALID_RANGE",
                             severity::HIGH,
@@ -744,6 +767,10 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                             None,
                         ));
                     }
+                }
+                Err(_) => {
+                    // Adapter would return ok:false with no result; preserve
+                    // the no-finding behavior.
                 }
             }
         }
@@ -798,28 +825,17 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 .to_string();
             (fp_val.to_string(), "line_range_extract", nl)
         } else {
-            // literal mode: fingerprint original text
-            let fp_args = serde_json::json!({"text": original});
-            let fp_result = crate::tools::text::text_fingerprint_tool(&fp_args);
-            let fp_val = fp_result
-                .result
-                .as_ref()
-                .and_then(|r| r.get("sha256"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let nl = fp_result
-                .result
-                .as_ref()
-                .and_then(|r| r.get("newline_style"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
+            // literal mode: fingerprint original text via the typed service
+            // (no text_fingerprint adapter envelope).
+            let facts = crate::services::fingerprint_facts(original);
             subresults.insert(
                 "text_fingerprint".to_string(),
-                fp_result.result.unwrap_or(serde_json::Value::Null),
+                serde_json::json!({
+                    "sha256": facts.sha256,
+                    "newline_style": facts.newline_style,
+                }),
             );
-            (fp_val, "text_fingerprint", nl)
+            (facts.sha256, "text_fingerprint", facts.newline_style)
         };
         fingerprint_result = Some(serde_json::json!({
             "sha256": actual_fp,
@@ -839,20 +855,12 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
     // --- Path scope check (when file_path + workspace_root are provided) ---
     let mut path_scope_result: Option<Value> = None;
     if let (Some(fp), Some(wr)) = (file_path, workspace_root) {
-        let ps_args = serde_json::json!({
-            "root": wr,
-            "target": fp,
-        });
-        let ps_resp = crate::tools::path::path_scope_check(&ps_args);
-        if let Some(ref r) = ps_resp.result {
-            let inside_root = r
-                .get("inside_root")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            let normalized_target = r
-                .get("target_normalized")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+        // Typed composition: path core directly (posix, case-sensitive are
+        // the adapter defaults edit_preflight relied on).
+        let ps = crate::text::path_scope_check(wr, fp, "posix", true);
+        {
+            let inside_root = ps.inside_root;
+            let normalized_target = Some(ps.target_normalized.clone());
             let reason = if !inside_root {
                 Some("Target path is outside workspace root".to_string())
             } else {
@@ -860,13 +868,24 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
             };
             let ps_enhanced = serde_json::json!({
                 "inside_root": inside_root,
-                "escapes_via_dotdot": r.get("escapes_via_dotdot").and_then(|v| v.as_bool()).unwrap_or(false),
-                "relative_path": r.get("relative_path").and_then(|v| v.as_str()).unwrap_or(""),
+                "escapes_via_dotdot": ps.escapes_via_dotdot,
+                "relative_path": ps.relative_path,
                 "normalized_target": normalized_target,
                 "reason": reason,
             });
             path_scope_result = Some(ps_enhanced.clone());
-            subresults.insert("path_scope_check".to_string(), r.clone());
+            subresults.insert(
+                "path_scope_check".to_string(),
+                serde_json::json!({
+                    "inside_root": ps.inside_root,
+                    "root_normalized": ps.root_normalized,
+                    "target_normalized": ps.target_normalized,
+                    "relative_path": ps.relative_path,
+                    "escapes_via_dotdot": ps.escapes_via_dotdot,
+                    "absolute_target": ps.absolute_target,
+                    "findings": ps.findings,
+                }),
+            );
             if !inside_root {
                 findings.push(finding(
                     "PATH_SCOPE_ESCAPE",
@@ -886,80 +905,21 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
 
     let mut newline_check_result: Option<Value> = None;
     if newline_policy != "skip" {
-        // Detect newline style on original text using text_fingerprint
-        let fp_args_orig =
-            serde_json::json!({"text": original, "unicode": "raw", "newline": "raw"});
-        let fp_resp_orig = crate::tools::text::text_fingerprint_tool(&fp_args_orig);
-        let orig_style = fp_resp_orig
-            .result
-            .as_ref()
-            .and_then(|r| r.get("newline_style"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string();
-        // Detect newline style on replacement text when available
-        let repl_style = match replacement_mode {
-            "literal" => args.get("new").and_then(|v| v.as_str()).map(|new_text| {
-                let fp_args_new =
-                    serde_json::json!({"text": new_text, "unicode": "raw", "newline": "raw"});
-                let fp_resp_new = crate::tools::text::text_fingerprint_tool(&fp_args_new);
-                fp_resp_new
-                    .result
-                    .as_ref()
-                    .and_then(|r| r.get("newline_style"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string()
-            }),
-            "patch" => args
-                .get("patch")
-                .and_then(|v| v.as_str())
-                .map(|patch_text| {
-                    let fp_args_p =
-                        serde_json::json!({"text": patch_text, "unicode": "raw", "newline": "raw"});
-                    let fp_resp_p = crate::tools::text::text_fingerprint_tool(&fp_args_p);
-                    fp_resp_p
-                        .result
-                        .as_ref()
-                        .and_then(|r| r.get("newline_style"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                        .to_string()
-                }),
-            // line_range mode: inspect `new` (required replacement text) for
-            // newline consistency and unicode risk.
-            "line_range" => args.get("new").and_then(|v| v.as_str()).map(|new_text| {
-                let fp_args_new =
-                    serde_json::json!({"text": new_text, "unicode": "raw", "newline": "raw"});
-                let fp_resp_new = crate::tools::text::text_fingerprint_tool(&fp_args_new);
-                fp_resp_new
-                    .result
-                    .as_ref()
-                    .and_then(|r| r.get("newline_style"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string()
-            }),
+        // Typed composition: newline facts from the service (no
+        // text_fingerprint adapter envelopes).
+        let replacement_text: Option<&str> = match replacement_mode {
+            "literal" => args.get("new").and_then(|v| v.as_str()),
+            "patch" => args.get("patch").and_then(|v| v.as_str()),
+            // line_range mode: inspect `new` (required replacement text).
+            "line_range" => args.get("new").and_then(|v| v.as_str()),
             _ => None,
         };
-        // Determine composite style: mixed if original and replacement differ, or if original is mixed
-        let composite_style = if orig_style == "mixed" {
-            "mixed".to_string()
-        } else if let Some(ref rs) = repl_style {
-            if rs == "mixed" || (orig_style != "none" && *rs != "none" && orig_style != *rs) {
-                "mixed".to_string()
-            } else {
-                orig_style.clone()
-            }
-        } else {
-            orig_style.clone()
-        };
-        let mixed = composite_style == "mixed";
-        let recommended_normalization = match newline_policy {
-            "normalize_lf" => Some("lf".to_string()),
-            "normalize_crlf" => Some("crlf".to_string()),
-            _ => None,
-        };
+        let nf = crate::services::newline_facts(original, replacement_text, newline_policy);
+        let orig_style = nf.original_style.clone();
+        let repl_style = nf.replacement_style.clone();
+        let composite_style = nf.style.clone();
+        let mixed = nf.mixed;
+        let recommended_normalization = nf.recommended_normalization.clone();
         let nc = serde_json::json!({
             "style": composite_style,
             "original_style": orig_style,
@@ -1040,53 +1000,73 @@ pub fn edit_preflight(args: &Value) -> ToolResponse {
                 );
             }
         };
-        let us_args = serde_json::json!({
-            "text": inspect_text,
-            "policy": unicode_policy,
-            "detail": "full",
-        });
-        let us_resp = crate::tools::text::text_security_inspect(&us_args);
-        if let Some(ref r) = us_resp.result {
-            let us_verdict = r
-                .get("verdict")
-                .and_then(|v| v.as_str())
-                .unwrap_or("allow")
-                .to_string();
-            let us_machine_code = r
-                .get("machine_code")
-                .and_then(|v| v.as_str())
-                .unwrap_or("TEXT_SECURITY_OK")
-                .to_string();
-            let us_findings = r
-                .get("findings")
-                .and_then(|v| v.as_array())
-                .cloned()
-                .unwrap_or_default();
-            let finding_count = us_findings.len();
-            let uc = serde_json::json!({
-                "verdict": us_verdict,
-                "machine_code": us_machine_code,
-                "finding_count": finding_count,
-                "findings": us_findings,
-            });
-            unicode_check_result = Some(uc.clone());
-            subresults.insert("text_security_inspect".to_string(), r.clone());
-            if us_verdict == "block" {
-                findings.push(finding(
-                    "UNICODE_RISK",
-                    severity::HIGH,
-                    "Unicode security check blocked replacement text",
-                    Some(disposition::BLOCKING),
-                    None,
-                ));
-            } else if us_verdict == "review" {
-                findings.push(finding(
-                    "UNICODE_RISK",
-                    severity::MEDIUM,
-                    "Unicode security check flagged replacement text for review",
-                    Some(disposition::CAUTION),
-                    None,
-                ));
+        // Typed composition: security service directly (no
+        // text_security_inspect adapter envelope). Cancellation uses the same
+        // lightweight view the adapter checks use.
+        let should_stop = || budget_ctx.should_stop();
+        match crate::services::inspect_text_security(
+            inspect_text,
+            unicode_policy,
+            "none",
+            "full",
+            &should_stop,
+        ) {
+            Ok(inspection) => {
+                let us_verdict = inspection.verdict.clone();
+                let us_machine_code = inspection.machine_code.clone();
+                let us_findings: Vec<Value> = inspection
+                    .findings
+                    .iter()
+                    .map(|f| {
+                        let mut v = serde_json::json!({
+                            "code": f.code,
+                            "severity": f.severity,
+                            "message": f.message,
+                        });
+                        if let Some(d) = &f.disposition {
+                            v["disposition"] = serde_json::json!(d);
+                        }
+                        v
+                    })
+                    .collect();
+                let finding_count = us_findings.len();
+                let uc = serde_json::json!({
+                    "verdict": us_verdict,
+                    "machine_code": us_machine_code,
+                    "finding_count": finding_count,
+                    "findings": us_findings,
+                });
+                unicode_check_result = Some(uc.clone());
+                subresults.insert(
+                    "text_security_inspect".to_string(),
+                    serde_json::json!({
+                        "verdict": inspection.verdict,
+                        "machine_code": inspection.machine_code,
+                        "findings": us_findings,
+                        "normalized_changed": inspection.normalized_changed,
+                        "summary": inspection.summary,
+                    }),
+                );
+                if us_verdict == "block" {
+                    findings.push(finding(
+                        "UNICODE_RISK",
+                        severity::HIGH,
+                        "Unicode security check blocked replacement text",
+                        Some(disposition::BLOCKING),
+                        None,
+                    ));
+                } else if us_verdict == "review" {
+                    findings.push(finding(
+                        "UNICODE_RISK",
+                        severity::MEDIUM,
+                        "Unicode security check flagged replacement text for review",
+                        Some(disposition::CAUTION),
+                        None,
+                    ));
+                }
+            }
+            Err(_) => {
+                return budget_ctx.check_should_stop("edit_preflight").unwrap_err();
             }
         }
     }

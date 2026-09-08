@@ -70,6 +70,7 @@ pub mod agent;
 pub mod calc;
 pub mod mcp;
 pub mod preflight;
+pub mod services;
 pub(crate) mod temporal;
 pub mod text;
 pub mod tools;

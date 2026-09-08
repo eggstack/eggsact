@@ -1,5 +1,5 @@
 use crate::mcp::machine_codes;
-use crate::mcp::response::{disposition, finding, severity, verdict, ToolResponse};
+use crate::mcp::response::{finding, verdict, ToolResponse};
 use crate::text::inspect_prompt::{
     ANSI_ESCAPE_RE, HTML_COMMENT_RE, MARKDOWN_LINK_RE, TERMINAL_CONTROL_RE,
 };
@@ -2994,7 +2994,9 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         .get("normalize")
         .and_then(|v| v.as_str())
         .unwrap_or("none");
-    let compare_normalized = args
+    // `compare_normalized` only affects text_inspect's normalized analysis,
+    // which this pipeline does not consume; parsed for compat, ignored.
+    let _compare_normalized = args
         .get("compare_normalized")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
@@ -3049,329 +3051,57 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         );
     }
 
-    let mut subresults: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    let mut all_findings: Vec<serde_json::Value> = Vec::new();
-    let mut code_list: Vec<String> = Vec::new();
-
-    // Helper to safely call sub-tools and record errors (matching Python's try/except pattern)
-    let store_subresult = |subresults: &mut serde_json::Map<String, serde_json::Value>,
-                           key: &str,
-                           result: &Option<serde_json::Value>,
-                           err: &Option<String>| {
-        if let Some(ref r) = result {
-            subresults.insert(key.to_string(), r.clone());
-        } else if let Some(ref e) = err {
-            subresults.insert(key.to_string(), serde_json::json!({"error": e}));
-        }
-    };
-
-    // 1. Always call text_inspect (pass detail, normalize, compare_normalized)
-    let text_inspect_args = serde_json::json!({
-        "text": text,
-        "detail": detail,
-        "normalize": normalize,
-        "compare_normalized": compare_normalized,
-    });
-    let ti_result = text_inspect(&text_inspect_args);
-    store_subresult(
-        &mut subresults,
-        "text_inspect",
-        &ti_result.result,
-        &ti_result.error,
-    );
-    if let Some(ref r) = ti_result.result {
-        // Check warnings from text_inspect
-        if let Some(warnings) = r.get("warnings").and_then(|v| v.as_array()) {
-            for w in warnings {
-                if !w.is_null() {
-                    all_findings.push(finding(
-                        "TEXT_INSPECT_WARNING",
-                        severity::MEDIUM,
-                        w.as_str().unwrap_or("text inspection warning"),
-                        Some(disposition::CAUTION),
-                        None,
-                    ));
-                }
+    // Typed composition: delegate to the canonical service (no sibling
+    // adapter JSON envelopes). `compare_normalized` only affects
+    // text_inspect's normalized analysis, which this pipeline does not
+    // consume (it reads warnings/invisibles/confusables only), so it is
+    // intentionally not forwarded.
+    let should_stop = || budget_ctx.should_stop();
+    let inspection =
+        match crate::services::inspect_text_security(text, policy, normalize, detail, &should_stop)
+        {
+            Ok(inspection) => inspection,
+            Err(_) => {
+                return budget_ctx
+                    .check_should_stop("text_security_inspect")
+                    .unwrap_err();
             }
-        }
-        // Check invisibles (Python extracts inv from result["invisibles"])
-        if let Some(inv) = r.get("invisibles").and_then(|v| v.as_array()) {
-            if !inv.is_empty() {
-                if !code_list.contains(&machine_codes::UNICODE_RISK.to_string()) {
-                    code_list.push(machine_codes::UNICODE_RISK.to_string());
-                }
-                all_findings.push(finding(
-                    "HIDDEN_CHARS",
-                    severity::MEDIUM,
-                    &format!("Found {} invisible character(s)", inv.len()),
-                    Some(disposition::CAUTION),
-                    None,
-                ));
-            }
-        }
-        // Check confusables
-        if let Some(conf) = r.get("confusables").and_then(|v| v.as_array()) {
-            if !conf.is_empty() {
-                if !code_list.contains(&machine_codes::UNICODE_RISK.to_string()) {
-                    code_list.push(machine_codes::UNICODE_RISK.to_string());
-                }
-                all_findings.push(finding(
-                    "CONFUSABLES",
-                    severity::MEDIUM,
-                    &format!("Found {} confusable character(s)", conf.len()),
-                    Some(disposition::CAUTION),
-                    None,
-                ));
-            }
-        }
-    }
-
-    if budget_ctx.should_stop() {
-        return budget_ctx
-            .check_should_stop("text_security_inspect")
-            .unwrap_err();
-    }
-
-    // 2. Map policy to unicode_policy_check policy (matching Python behavior)
-    // Python: upolicy = "source_code" if policy == "source_code" else "human_text"
-    let uc_policy = if policy == "source_code" {
-        "source_code"
-    } else {
-        "human_text"
-    };
-    let uc_args = serde_json::json!({"text": text, "policy": uc_policy});
-    let uc_result = crate::tools::unicode_policy_check(&uc_args);
-    store_subresult(
-        &mut subresults,
-        "unicode_policy_check",
-        &uc_result.result,
-        &uc_result.error,
-    );
-    // Iterate individual findings (matching Python behavior)
-    if let Some(ref r) = uc_result.result {
-        if let Some(up_findings) = r.get("findings").and_then(|v| v.as_array()) {
-            for f in up_findings {
-                let raw_sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("info");
-                let sev = match raw_sev {
-                    "error" | "critical" => severity::HIGH,
-                    "warn" | "warning" => severity::MEDIUM,
-                    "danger" => severity::HIGH,
-                    "info" => severity::INFO,
-                    other => other,
-                };
-                let disp = match sev {
-                    severity::HIGH => Some(disposition::BLOCKING),
-                    severity::MEDIUM => Some(disposition::CAUTION),
-                    _ => Some(disposition::INFORMATIONAL),
-                };
-                let code = f
-                    .get("code")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("UNICODE_POLICY");
-                let msg = f.get("message").and_then(|v| v.as_str()).unwrap_or("");
-                all_findings.push(finding(code, sev, msg, disp, None));
-                if raw_sev == "error"
-                    && !code_list.contains(&machine_codes::UNICODE_RISK.to_string())
-                {
-                    code_list.push(machine_codes::UNICODE_RISK.to_string());
-                }
-            }
-        }
-    }
-
-    if budget_ctx.should_stop() {
-        return budget_ctx
-            .check_should_stop("text_security_inspect")
-            .unwrap_err();
-    }
-
-    // 3. If normalize != "none", use unicodedata.normalize directly (matching Python)
-    if normalize != "none" {
-        let normalized: String = match normalize {
-            "NFC" => text.nfc().collect(),
-            "NFD" => text.nfd().collect(),
-            "NFKC" => text.nfkc().collect(),
-            "NFKD" => text.nfkd().collect(),
-            _ => text.to_string(),
         };
-        let changed = normalized != text;
-        subresults.insert(
-            "canonicalize_text".to_string(),
-            serde_json::json!({
-                "changed": changed,
-                "form": normalize,
-            }),
-        );
-        if changed && !code_list.contains(&machine_codes::NORMALIZATION_DIFF.to_string()) {
-            code_list.push(machine_codes::NORMALIZATION_DIFF.to_string());
-        }
-    }
-    // 4. If policy is "prompt", "markdown", or "default", call prompt_input_inspect
-    if matches!(policy, "prompt" | "markdown" | "default") {
-        let pi_args = serde_json::json!({"text": text});
-        let pi_result = prompt_input_inspect_tool(&pi_args);
-        store_subresult(
-            &mut subresults,
-            "prompt_input_inspect",
-            &pi_result.result,
-            &pi_result.error,
-        );
-        // Iterate individual findings (matching Python behavior)
-        if let Some(ref r) = pi_result.result {
-            if let Some(pi_findings) = r.get("findings").and_then(|v| v.as_array()) {
-                for f in pi_findings {
-                    let code = f
-                        .get("code")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("PROMPT_RISK");
-                    let raw_sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("warn");
-                    let sev = match raw_sev {
-                        "error" | "critical" => severity::HIGH,
-                        "warn" | "warning" => severity::MEDIUM,
-                        "danger" => severity::HIGH,
-                        "info" => severity::INFO,
-                        other => other,
-                    };
-                    let disp = match sev {
-                        severity::HIGH => Some(disposition::BLOCKING),
-                        severity::MEDIUM => Some(disposition::CAUTION),
-                        _ => Some(disposition::INFORMATIONAL),
-                    };
-                    let msg = f.get("message").and_then(|v| v.as_str()).unwrap_or("");
-                    all_findings.push(finding(code, sev, msg, disp, None));
-                }
-                if pi_findings.iter().any(|f| {
-                    let sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("");
-                    sev == "warn" || sev == "error"
-                }) && !code_list.contains(&machine_codes::PROMPT_INJECTION_RISK.to_string())
-                {
-                    code_list.push(machine_codes::PROMPT_INJECTION_RISK.to_string());
-                }
-            }
-        }
-    }
 
-    if budget_ctx.should_stop() {
-        return budget_ctx
-            .check_should_stop("text_security_inspect")
-            .unwrap_err();
+    let mut subresults: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    for (k, v) in inspection.subresults {
+        subresults.insert(k, v);
     }
-
-    // 5. If policy is "identifier" or "default", call identifier_inspect
-    //    Filter words with is_identifier check (matching Python's .isidentifier())
-    if matches!(policy, "identifier" | "default") {
-        let words: Vec<String> = text
-            .split_whitespace()
-            .filter(|w| !w.is_empty())
-            .filter(|w| {
-                // Match Python's str.isidentifier() behavior:
-                // Must start with underscore or letter, rest must be alphanumeric/underscore
-                let chars: Vec<char> = w.chars().collect();
-                if chars.is_empty() {
-                    return false;
-                }
-                let first = chars[0];
-                if first != '_' && !first.is_alphabetic() {
-                    return false;
-                }
-                chars[1..].iter().all(|c| c.is_alphanumeric() || *c == '_')
-            })
-            .map(|w| w.to_string())
-            .collect();
-        if !words.is_empty() {
-            let id_args = serde_json::json!({"identifiers": words});
-            let id_result = crate::tools::identifier_inspect(&id_args);
-            store_subresult(
-                &mut subresults,
-                "identifier_inspect",
-                &id_result.result,
-                &id_result.error,
-            );
-            if let Some(id_findings) = id_result.findings.as_deref() {
-                if !id_findings.is_empty() {
-                    for f in id_findings {
-                        let code = f
-                            .get("code")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("IDENTIFIER_RISK");
-                        let raw_sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("warn");
-                        let sev = match raw_sev {
-                            "error" | "critical" => severity::HIGH,
-                            "warn" | "warning" => severity::MEDIUM,
-                            "danger" => severity::HIGH,
-                            "info" => severity::INFO,
-                            other => other,
-                        };
-                        let disp = match sev {
-                            severity::HIGH => Some(disposition::BLOCKING),
-                            severity::MEDIUM => Some(disposition::CAUTION),
-                            _ => Some(disposition::INFORMATIONAL),
-                        };
-                        let msg = f.get("message").and_then(|v| v.as_str()).unwrap_or("");
-                        all_findings.push(finding(code, sev, msg, disp, None));
-                    }
-                    if !code_list.contains(&machine_codes::IDENTIFIER_COLLISION_RISK.to_string()) {
-                        code_list.push(machine_codes::IDENTIFIER_COLLISION_RISK.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    if budget_ctx.should_stop() {
-        return budget_ctx
-            .check_should_stop("text_security_inspect")
-            .unwrap_err();
-    }
-
-    // 6. Determine verdict
-    let has_error = all_findings
+    let mut all_findings: Vec<serde_json::Value> = inspection
+        .findings
         .iter()
-        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::HIGH));
-    let has_warn = all_findings
-        .iter()
-        .any(|f| f.get("severity").and_then(|v| v.as_str()) == Some(severity::MEDIUM));
-    let response_verdict = if has_error {
-        verdict::BLOCK
-    } else if has_warn {
-        verdict::REVIEW
-    } else {
-        verdict::ALLOW
-    };
-
-    // Deduplicate machine codes
+        .map(|f| {
+            finding(
+                &f.code,
+                &f.severity,
+                &f.message,
+                f.disposition.as_deref(),
+                None,
+            )
+        })
+        .collect();
+    // Preserve original ordering: service already emits in pipeline order.
+    let mut code_list: Vec<String> = inspection.machine_codes.clone();
     let mut unique_machine_codes: Vec<String> = Vec::new();
     for mc in &code_list {
         if !unique_machine_codes.contains(mc) {
             unique_machine_codes.push(mc.clone());
         }
     }
-    let primary_machine_code = if unique_machine_codes.is_empty() {
-        machine_codes::TEXT_SECURITY_OK.to_string()
-    } else {
-        unique_machine_codes[0].clone()
-    };
+    let primary_machine_code = inspection.machine_code.clone();
+    let response_verdict = inspection.verdict.clone();
+    let summary = inspection.summary.clone();
+    let recommended_action = inspection.recommended_action.clone();
+    let normalized_changed = inspection.normalized_changed;
 
-    // Build summary
-    let n_findings = all_findings.len();
-    let summary = if response_verdict == verdict::ALLOW {
-        format!("No security issues found ({} findings).", n_findings)
-    } else if response_verdict == verdict::REVIEW {
-        format!(
-            "Review recommended: {} finding(s) require attention.",
-            n_findings
-        )
-    } else {
-        format!("Block: {} finding(s) indicate security risk.", n_findings)
-    };
-
-    let recommended_action = if response_verdict == verdict::ALLOW {
-        "allow".to_string()
-    } else if response_verdict == verdict::REVIEW {
-        "review content for hidden instructions".to_string()
-    } else {
-        "do not trust this text without manual inspection".to_string()
-    };
+    // Silence unused-mut for ports that keep the original names.
+    let _ = &mut code_list;
+    let _ = &mut all_findings;
 
     let next_tool = if response_verdict != verdict::ALLOW {
         Some(ToolResponse::next_tool(
@@ -3382,12 +3112,6 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
     } else {
         None
     };
-
-    let normalized_changed = subresults
-        .get("canonicalize_text")
-        .and_then(|v| v.get("changed"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
 
     let mut result = serde_json::json!({
         "verdict": response_verdict,
@@ -3408,7 +3132,7 @@ pub fn text_security_inspect(args: &Value) -> ToolResponse {
         .with_tool("text_security_inspect");
     resp = resp
         .with_machine_code(&primary_machine_code)
-        .with_verdict(response_verdict);
+        .with_verdict(&response_verdict);
     if !all_findings.is_empty() {
         resp = resp.with_findings(all_findings);
     }

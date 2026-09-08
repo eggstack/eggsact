@@ -10,7 +10,11 @@ See also: [Agent API](agent-api.md), [Tool Implementations](tools.md)
 |------|---------|
 | `src/preflight/mod.rs` | All preflight wrappers, input/output structs, verdict enums, finding parsing, `RecommendedNextTool`, contract parsing helpers |
 
-All code lives in a single file. There are no sub-modules.
+All code lives in a single file. There are no sub-modules. This is intentional: the wrappers are a coherent registry-dispatch facade (each calls `ToolRegistry::call_json` to exercise full dispatch policy), not mixed responsibilities. The consolidation pass deliberately did not split this file for line-count aesthetics; the natural seam went the other way — shared deterministic logic moved down into `src/services/` so both `tools/*` adapters and future typed callers use it.
+
+## Layering Note
+
+`preflight/` sits at the top of the stack by design: wrappers call `ToolRegistry::call_json` (full lookup, profile/audience, schema validation) and parse the `ToolResponse` into typed outputs. They do not call `text/` cores or `services/` directly, so `ToolCall`/`ToolRejected`/`ContractViolation` remain meaningful end-to-end checks. Internal `tools/*` composites are the layer that must be typed-first (cores/services, no sibling-handler JSON); `preflight/` verifies that typed-first layer through the same path external callers use.
 
 ## Error Taxonomy
 
@@ -203,12 +207,14 @@ pub struct EditPreflightInput {
 
 #### Sub-tool Composition
 
-| Sub-tool | Triggered when | Output field |
+`edit_preflight` the tool composes typed cores/services internally (see [tools.md](tools.md)); the `EditPreflight` wrapper surfaces those sub-results as typed option fields parsed from the wire response:
+
+| Sub-tool core/service | Triggered when | Output field |
 |----------|---------------|--------------|
-| `path_scope_check` | Both `file_path` and `workspace_root` are provided | `path_scope: Option<PathScopeResult>` |
-| `text_fingerprint` (newline detection) | `newline_policy != Skip` | `newline_check: Option<NewlineCheckResult>` |
-| `text_security_inspect` | `unicode_policy != Skip` | `unicode_check: Option<UnicodeCheckResult>` |
-| `text_fingerprint` (SHA-256) | `expected_fingerprint` is provided | `fingerprint: Option<FingerprintResult>` |
+| `text::path_scope_check` | Both `file_path` and `workspace_root` are provided | `path_scope: Option<PathScopeResult>` |
+| `services::newline_facts` (`text_fingerprint` raw/raw) | `newline_policy != Skip` | `newline_check: Option<NewlineCheckResult>` |
+| `services::inspect_text_security` | `unicode_policy != Skip` | `unicode_check: Option<UnicodeCheckResult>` |
+| `services::fingerprint_facts` | `expected_fingerprint` is provided | `fingerprint: Option<FingerprintResult>` |
 
 #### EditNewlinePolicy
 

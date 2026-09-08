@@ -243,15 +243,9 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
     let detected_format = if format == "auto" {
         let stripped = text.trim();
         if stripped.starts_with('{') || stripped.starts_with('[') {
-            // Could be JSON or TOML; try JSON first
-            let vj_result =
-                crate::tools::validation::validate_json(&serde_json::json!({"text": text}));
-            let is_json = vj_result
-                .result
-                .as_ref()
-                .and_then(|r| r.get("valid"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+            // Could be JSON or TOML; try JSON first via the typed core
+            // (no validate_json adapter envelope round-trip).
+            let is_json = matches!(crate::text::validate_json(text), Ok(r) if r.valid);
             if is_json {
                 "json"
             } else {
@@ -280,273 +274,285 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
 
     match detected_format {
         "json" => {
-            let vj_result =
-                crate::tools::validation::validate_json(&serde_json::json!({"text": text}));
-            if let Some(ref r) = vj_result.result {
-                subresults.insert("validate_json".to_string(), r.clone());
-                let valid = r.get("valid").and_then(|v| v.as_bool()).unwrap_or(false);
-                if !valid {
-                    config_verdict = verdict::INVALID;
-                    code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                    findings.push(finding(
-                        "JSON_PARSE_ERROR",
-                        severity::HIGH,
-                        r.get("error")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Invalid JSON"),
-                        Some(disposition::BLOCKING),
-                        None,
-                    ));
-                } else if let Some(sch) = schema {
-                    let vs_args = serde_json::json!({"text": text, "schema": sch});
-                    let vs_result = crate::tools::validation::validate_schema_light_tool(&vs_args);
-                    if let Some(ref vr) = vs_result.result {
-                        subresults.insert("validate_schema_light".to_string(), vr.clone());
-                        let vs_valid = vr.get("valid").and_then(|v| v.as_bool()).unwrap_or(true);
-                        if !vs_valid {
-                            code_list.push(machine_codes::CONFIG_SCHEMA_MISMATCH.to_string());
-                            config_verdict = verdict::VALID_WITH_WARNINGS;
-                            if let Some(violations) =
-                                vr.get("violations").and_then(|v| v.as_array())
-                            {
-                                for violation in violations {
-                                    let msg = violation
-                                        .get("message")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("Schema violation");
-                                    findings.push(finding(
-                                        "SCHEMA_ERROR",
-                                        if strict {
-                                            severity::HIGH
+            // Typed composition: deterministic cores directly, no adapter
+            // JSON envelopes.
+            match crate::text::validate_json(text) {
+                Ok(vj) => {
+                    let r = serde_json::json!({
+                        "valid": vj.valid,
+                        "error": vj.error,
+                        "line": vj.line,
+                        "column": vj.column,
+                        "position": vj.position,
+                        "type": vj.json_type,
+                        "top_level_keys": vj.top_level_keys,
+                    });
+                    subresults.insert("validate_json".to_string(), r.clone());
+                    let valid = r.get("valid").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if !valid {
+                        config_verdict = verdict::INVALID;
+                        code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
+                        findings.push(finding(
+                            "JSON_PARSE_ERROR",
+                            severity::HIGH,
+                            r.get("error")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Invalid JSON"),
+                            Some(disposition::BLOCKING),
+                            None,
+                        ));
+                    } else if let Some(sch) = schema {
+                        // Typed schema validation: parse once, validate against
+                        // the typed core (no validate_schema_light adapter).
+                        if let Ok(data) = serde_json::from_str::<Value>(text) {
+                            match crate::text::validate_schema_light(&data, sch) {
+                                Ok(vs) => {
+                                    let vr = serde_json::json!({
+                                        "valid": vs.valid,
+                                        "violations": vs.violations,
+                                        "truncated": vs.truncated,
+                                        "summary": vs.summary,
+                                    });
+                                    subresults
+                                        .insert("validate_schema_light".to_string(), vr.clone());
+                                    if !vs.valid {
+                                        code_list.push(
+                                            machine_codes::CONFIG_SCHEMA_MISMATCH.to_string(),
+                                        );
+                                        config_verdict = verdict::VALID_WITH_WARNINGS;
+                                        if !vs.violations.is_empty() {
+                                            for violation in &vs.violations {
+                                                let msg = violation.message.as_str();
+                                                findings.push(finding(
+                                                    "SCHEMA_ERROR",
+                                                    if strict {
+                                                        severity::HIGH
+                                                    } else {
+                                                        severity::MEDIUM
+                                                    },
+                                                    msg,
+                                                    Some(if strict {
+                                                        disposition::BLOCKING
+                                                    } else {
+                                                        disposition::CAUTION
+                                                    }),
+                                                    None,
+                                                ));
+                                            }
                                         } else {
-                                            severity::MEDIUM
-                                        },
-                                        msg,
-                                        Some(if strict {
-                                            disposition::BLOCKING
-                                        } else {
-                                            disposition::CAUTION
-                                        }),
-                                        None,
-                                    ));
+                                            findings.push(finding(
+                                                "SCHEMA_ERROR",
+                                                if strict {
+                                                    severity::HIGH
+                                                } else {
+                                                    severity::MEDIUM
+                                                },
+                                                "Schema validation failed",
+                                                Some(if strict {
+                                                    disposition::BLOCKING
+                                                } else {
+                                                    disposition::CAUTION
+                                                }),
+                                                None,
+                                            ));
+                                        }
+                                    }
                                 }
-                            } else {
-                                findings.push(finding(
-                                    "SCHEMA_ERROR",
-                                    if strict {
-                                        severity::HIGH
-                                    } else {
-                                        severity::MEDIUM
-                                    },
-                                    "Schema validation failed",
-                                    Some(if strict {
-                                        disposition::BLOCKING
-                                    } else {
-                                        disposition::CAUTION
-                                    }),
-                                    None,
-                                ));
+                                Err(e) => {
+                                    // Mirrors the adapter's invalid-schema path:
+                                    // no subresult, no verdict change.
+                                    let _ = e;
+                                }
                             }
                         }
                     }
-                }
-                // Optionally canonicalize
-                if config_verdict != verdict::INVALID {
-                    let jc_result =
-                        crate::tools::json::json_canonicalize(&serde_json::json!({"text": text}));
-                    if let Some(ref r) = jc_result.result {
-                        let canonical = r.get("canonical").and_then(|v| v.as_str());
-                        let changed = canonical.is_some_and(|c| c != text);
-                        subresults.insert(
-                            "json_canonicalize".to_string(),
-                            serde_json::json!({
-                                "changed": changed,
-                            }),
-                        );
+                    // Optionally canonicalize via the typed core with the
+                    // adapter's defaults (sort_keys=true, no indent).
+                    if config_verdict != verdict::INVALID {
+                        if let Ok(jc) =
+                            crate::text::json_canonicalize(text, true, None, false, true, false)
+                        {
+                            let changed = jc.canonical.as_deref().is_some_and(|c| c != text);
+                            subresults.insert(
+                                "json_canonicalize".to_string(),
+                                serde_json::json!({
+                                    "changed": changed,
+                                }),
+                            );
+                        }
                     }
                 }
-            } else if let Some(ref e) = vj_result.error {
-                code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                findings.push(finding(
-                    "CONFIG_ERROR",
-                    severity::HIGH,
-                    e,
-                    Some(disposition::BLOCKING),
-                    None,
-                ));
+                Err(e) => {
+                    code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
+                    findings.push(finding(
+                        "CONFIG_ERROR",
+                        severity::HIGH,
+                        &e,
+                        Some(disposition::BLOCKING),
+                        None,
+                    ));
+                }
             }
         }
         "toml" => {
-            let vt_result =
-                crate::tools::validation::validate_toml_tool(&serde_json::json!({"text": text}));
-            if let Some(ref r) = vt_result.result {
-                subresults.insert("validate_toml".to_string(), r.clone());
-                let valid = r
-                    .get("valid")
-                    .or_else(|| r.get("parse_ok"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                if !valid {
-                    config_verdict = verdict::INVALID;
+            // Typed composition: validate_toml core directly.
+            match crate::text::toml::validate_toml(text) {
+                Ok(vt) => {
+                    let r = serde_json::json!({
+                        "valid": vt.valid,
+                        "error": vt.error,
+                        "line": vt.line,
+                        "column": vt.column,
+                        "position": vt.position,
+                        "type": vt.toml_type,
+                        "top_level_keys": vt.top_level_keys,
+                        "tables": vt.tables,
+                    });
+                    subresults.insert("validate_toml".to_string(), r.clone());
+                    if !vt.valid {
+                        config_verdict = verdict::INVALID;
+                        code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
+                        findings.push(finding(
+                            "TOML_PARSE_ERROR",
+                            severity::HIGH,
+                            r.get("error")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Invalid TOML"),
+                            Some(disposition::BLOCKING),
+                            None,
+                        ));
+                    } else {
+                        // Intentional same-module reuse: toml_shape shares this
+                        // module's handler; typed extraction is follow-up.
+                        let ts_result = toml_shape_tool(&serde_json::json!({"text": text}));
+                        if let Some(ref r) = ts_result.result {
+                            subresults.insert("toml_shape".to_string(), r.clone());
+                        }
+                    }
+                }
+                Err(e) => {
                     code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                     findings.push(finding(
-                        "TOML_PARSE_ERROR",
+                        "CONFIG_ERROR",
                         severity::HIGH,
-                        r.get("error")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Invalid TOML"),
+                        &e,
                         Some(disposition::BLOCKING),
                         None,
                     ));
-                } else {
-                    let ts_result = toml_shape_tool(&serde_json::json!({"text": text}));
-                    if let Some(ref r) = ts_result.result {
-                        subresults.insert("toml_shape".to_string(), r.clone());
-                    }
                 }
-            } else if let Some(ref e) = vt_result.error {
-                code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                findings.push(finding(
-                    "CONFIG_ERROR",
-                    severity::HIGH,
-                    e,
-                    Some(disposition::BLOCKING),
-                    None,
-                ));
             }
         }
         "dotenv" => {
-            let dv_result = dotenv_validate(&serde_json::json!({"text": text}));
-            if let Some(ref r) = dv_result.result {
-                subresults.insert("dotenv_validate".to_string(), r.clone());
-                let parse_ok = r.get("parse_ok").and_then(|v| v.as_bool()).unwrap_or(false);
-                if !parse_ok {
-                    config_verdict = verdict::INVALID;
-                    code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                    if let Some(dv_findings) = r.get("findings").and_then(|v| v.as_array()) {
-                        for err in dv_findings {
-                            findings.push(finding(
-                                "DOTENV_ERROR",
-                                severity::HIGH,
-                                err.as_str().unwrap_or("Invalid dotenv format"),
-                                Some(disposition::BLOCKING),
-                                None,
-                            ));
-                        }
-                    } else {
+            // Typed composition: dotenv core directly with the adapter's
+            // defaults (allow_export=true, default key pattern, warn).
+            let dv = crate::text::dotenv_validate(text, true, "^[A-Za-z_][A-Za-z0-9_]*$", "warn");
+            let r = serde_json::json!({
+                "parse_ok": dv.parse_ok,
+                "entries": dv.entries,
+                "duplicates": dv.duplicates,
+                "invalid_lines": dv.invalid_lines,
+                "requires_quoting": dv.requires_quoting,
+                "contains_expansion_syntax": dv.contains_expansion_syntax,
+                "findings": dv.findings,
+            });
+            subresults.insert("dotenv_validate".to_string(), r.clone());
+            if !dv.parse_ok {
+                config_verdict = verdict::INVALID;
+                code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
+                if !dv.findings.is_empty() {
+                    for err in &dv.findings {
                         findings.push(finding(
                             "DOTENV_ERROR",
                             severity::HIGH,
-                            "Invalid dotenv format",
+                            err.as_str(),
                             Some(disposition::BLOCKING),
                             None,
                         ));
                     }
-                }
-            } else if let Some(ref e) = dv_result.error {
-                code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                findings.push(finding(
-                    "CONFIG_ERROR",
-                    severity::HIGH,
-                    e,
-                    Some(disposition::BLOCKING),
-                    None,
-                ));
-            }
-        }
-        "ini" => {
-            let iv_result = ini_validate(&serde_json::json!({"text": text}));
-            if let Some(ref r) = iv_result.result {
-                subresults.insert("ini_validate".to_string(), r.clone());
-                let parse_ok = r.get("parse_ok").and_then(|v| v.as_bool()).unwrap_or(false);
-                if !parse_ok {
-                    config_verdict = verdict::INVALID;
-                    code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                    if let Some(iv_findings) = r.get("findings").and_then(|v| v.as_array()) {
-                        for err in iv_findings {
-                            findings.push(finding(
-                                "INI_ERROR",
-                                severity::HIGH,
-                                err.as_str().unwrap_or("Invalid INI format"),
-                                Some(disposition::BLOCKING),
-                                None,
-                            ));
-                        }
-                    } else {
-                        findings.push(finding(
-                            "INI_ERROR",
-                            severity::HIGH,
-                            "Invalid INI format",
-                            Some(disposition::BLOCKING),
-                            None,
-                        ));
-                    }
-                }
-            } else if let Some(ref e) = iv_result.error {
-                code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
-                findings.push(finding(
-                    "CONFIG_ERROR",
-                    severity::HIGH,
-                    e,
-                    Some(disposition::BLOCKING),
-                    None,
-                ));
-            }
-        }
-        "cargo_toml" => {
-            let ct_result =
-                crate::tools::cargo::cargo_toml_inspect(&serde_json::json!({"text": text}));
-            if let Some(ref r) = ct_result.result {
-                subresults.insert("cargo_toml_inspect".to_string(), r.clone());
-                let parse_ok = r.get("parse_ok").and_then(|v| v.as_bool()).unwrap_or(false);
-                if !parse_ok {
-                    config_verdict = verdict::INVALID;
-                    code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
+                } else {
                     findings.push(finding(
-                        "CARGO_PARSE_ERROR",
+                        "DOTENV_ERROR",
                         severity::HIGH,
-                        "Cargo.toml parse failed",
+                        "Invalid dotenv format",
                         Some(disposition::BLOCKING),
                         None,
                     ));
-                } else {
-                    if let Some(ct_findings) = r.get("findings").and_then(|v| v.as_array()) {
-                        for f in ct_findings {
-                            let sev = match f
-                                .get("severity")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("info")
-                            {
-                                "error" => severity::HIGH,
-                                "warn" => severity::MEDIUM,
-                                _ => severity::INFO,
-                            };
-                            let disp = match sev {
-                                severity::HIGH => Some(disposition::BLOCKING),
-                                severity::MEDIUM => Some(disposition::CAUTION),
-                                _ => Some(disposition::INFORMATIONAL),
-                            };
-                            findings.push(finding(
-                                f.get("code")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("CARGO_NOTE"),
-                                sev,
-                                f.get("message").and_then(|v| v.as_str()).unwrap_or(""),
-                                disp,
-                                None,
-                            ));
-                        }
-                    }
                 }
-            } else if let Some(ref e) = ct_result.error {
+            }
+        }
+        "ini" => {
+            // Typed composition: ini core directly with the adapter default.
+            let iv = crate::text::ini_validate(text, "warn");
+            let r = serde_json::json!({
+                "parse_ok": iv.parse_ok,
+                "sections": iv.sections,
+                "keys_by_section": iv.keys_by_section,
+                "duplicates": iv.duplicates,
+                "invalid_lines": iv.invalid_lines,
+                "findings": iv.findings,
+            });
+            subresults.insert("ini_validate".to_string(), r.clone());
+            if !iv.parse_ok {
+                config_verdict = verdict::INVALID;
+                code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
+                if !iv.findings.is_empty() {
+                    for err in &iv.findings {
+                        findings.push(finding(
+                            "INI_ERROR",
+                            severity::HIGH,
+                            err.as_str(),
+                            Some(disposition::BLOCKING),
+                            None,
+                        ));
+                    }
+                } else {
+                    findings.push(finding(
+                        "INI_ERROR",
+                        severity::HIGH,
+                        "Invalid INI format",
+                        Some(disposition::BLOCKING),
+                        None,
+                    ));
+                }
+            }
+        }
+        "cargo_toml" => {
+            // Typed composition: cargo core directly with adapter defaults.
+            let ct = crate::text::cargo_toml_inspect(text, true, true);
+            let r = serde_json::json!({
+                "parse_ok": ct.parse_ok,
+                "package": ct.package,
+                "workspace": ct.workspace,
+                "dependencies": ct.dependencies,
+                "path_dependencies": ct.path_dependencies,
+                "suspicious_dependency_names": ct.suspicious_dependency_names,
+                "duplicate_or_confusable_dependency_names": ct.duplicate_or_confusable_dependency_names,
+                "findings": ct.findings,
+            });
+            subresults.insert("cargo_toml_inspect".to_string(), r.clone());
+            if !ct.parse_ok {
+                config_verdict = verdict::INVALID;
                 code_list.push(machine_codes::CONFIG_PARSE_FAILED.to_string());
                 findings.push(finding(
-                    "CONFIG_ERROR",
+                    "CARGO_PARSE_ERROR",
                     severity::HIGH,
-                    e,
+                    "Cargo.toml parse failed",
                     Some(disposition::BLOCKING),
                     None,
                 ));
+            } else {
+                // Preserve the adapter-result mapping exactly: cargo findings
+                // are strings, so severity/code/message lookups miss and each
+                // becomes an informational CARGO_NOTE with empty message.
+                for _f in &ct.findings {
+                    findings.push(finding(
+                        "CARGO_NOTE",
+                        severity::INFO,
+                        "",
+                        Some(disposition::INFORMATIONAL),
+                        None,
+                    ));
+                }
             }
         }
         _ => {

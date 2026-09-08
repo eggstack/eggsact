@@ -14,6 +14,41 @@ pub fn tool_name(args: &Value) -> ToolResponse
 
 Handlers cannot receive an `ExecutionContext` directly. State isolation is applied at the orchestration layer (`call_json_with_execution_context` clones `EvalContext` into a thread-local). High-risk handlers create a `BudgetContext` internally for cooperative budget checks by calling `crate::mcp::budget::for_handler(ToolBudget::HEAVY)` at the top of the function.
 
+### Typed Composition Layering
+
+Canonical flow is typed-core/service first, JSON adapter at the boundary:
+
+```text
+Typed deterministic core (`text/`, `calc/`)
+        |
+        +--> typed composite/service (`services/`)
+        |
+        +--> tools/* JSON adapter -> ToolResponse
+                              |
+                    MCP / ToolRegistry
+```
+
+- Deterministic cores live in `text/` (`validate_json`, `text_fingerprint`, `path_scope_check`, `regex_safety_check`, `unicode_policy_check`, `identifier_inspect`, `prompt_input_inspect`, `replace`, `line_range`, `patch`, `toml`, `cargo`, `dotenv`/`ini`, `json_canonicalize`, `validate_schema_light`, ...).
+- Reusable composite logic lives in `services/`:
+  - `FingerprintFacts` / `fingerprint_facts()` over `text_fingerprint` (raw/raw);
+  - `NewlineFacts` / `newline_facts()` for the `edit_preflight` composite style derivation;
+  - `SecurityInspection` / `inspect_text_security()` implementing the full `text_security_inspect` pipeline over typed cores with a lightweight `should_stop` cancellation view.
+- `tools/*` adapters parse/validate their own input, call typed cores/services, derive findings/verdict/machine codes from typed results, and construct the existing response shape once at the boundary. They never call sibling tool handlers to obtain an internal result.
+
+`preflight/` wrappers remain registry-based intentionally: they exercise full dispatch policy (lookup, profile/audience, schema validation) via `ToolRegistry::call_json`, so their `ToolCall`/`ToolRejected`/`ContractViolation` taxonomy stays meaningful for downstream harnesses.
+
+### Deliberate Remaining JSON Composition
+
+Three same-module handler-to-handler calls remain, each commented at the call site. None crosses category boundaries and none requires registry dispatch; they are intra-module reuses deferred to follow-up typed extraction:
+
+| Call site | Reuse | Why it remains |
+|-----------|-------|----------------|
+| `structured_data_compare` → `json_compare` | Same-file `json.rs` handler | Shares diff formatting/options handling; extracting a shared typed comparator is follow-up |
+| `structured_data_compare` → `json_shape_tool` | Same-file `json.rs` handler | `TYPE_MISMATCH` from `json_shape` is dead code preserved for parity (BUG-006); `json_shape` has no `"type"` field so the check never fires in Python or Rust |
+| `config_preflight` → `toml_shape_tool` | Same-module `config.rs` handler | Shares TOML shape diagnostics; typed extraction is follow-up |
+
+Every other former adapter-to-adapter call now goes through `text/` cores or `services/` (fingerprint/newline/security, JSON/TOML/schema/cargo/dotenv/ini validation, replace/line-range/patch checks, path scope, regex safety, unicode/identifier/prompt inspection).
+
 ### Deterministic Output
 
 Public serialized map fields use `BTreeMap` for stable lexicographic key ordering. Internal lookup maps remain `HashMap`. See [text-library.md](text-library.md#deterministic-output) for the full contract. TOML tools report tables (excluding scalars) and character-based (not byte-based) column positions — see [text-library.md TOML](text-library.md#toml-tomlrs).
@@ -195,20 +230,20 @@ Pre-checks an edit operation before applying it. Supports three replacement mode
 
 #### Mode Dispatch
 
-| Mode | Required Args | Conflicting Args | Sub-tool Called |
-|------|---------------|-------------------|-----------------|
-| `literal` | `old`, `new` | `patch`, `start_line`, `end_line` | `text_replace_check` (exact match mode) |
-| `patch` | `patch` | `old`, `new`, `start_line`, `end_line` | `patch_apply_check` |
-| `line_range` | `start_line`, `end_line`, `new` | `old`, `patch` | `line_range_extract` |
+| Mode | Required Args | Conflicting Args | Typed core called |
+|------|---------------|-------------------|-------------------|
+| `literal` | `old`, `new` | `patch`, `start_line`, `end_line` | `text::replace::text_replace_check` (exact mode) |
+| `patch` | `patch` | `old`, `new`, `start_line`, `end_line` | `text::patch_apply_check` |
+| `line_range` | `start_line`, `end_line`, `new` | `old`, `patch` | `text::line_range_extract` |
 
 #### Pipeline (all modes)
 
 1. **Input validation** — mode-specific argument contract (required/forbidden args), metadata bounds checking on `edit_metadata.*` fields (max 1,000 chars).
-2. **Mode-specific sub-tool call** — dispatches to `text_replace_check`, `patch_apply_check`, or `line_range_extract`. Collects `NO_MATCH`, `MULTIPLE_MATCHES`, `PATCH_FAILED`, `INVALID_RANGE` findings.
-3. **Fingerprint check** — if `expected_fingerprint` is provided, computes SHA-256 of the relevant text (original for literal, result_fingerprint from patch_apply_check for patch, fingerprint from line_range_extract for line_range). Emits `FINGERPRINT_MISMATCH` finding if mismatch.
-4. **Path scope check** — if `file_path` + `workspace_root` are provided, calls `path_scope_check`. Emits `PATH_SCOPE_ESCAPE` finding if target is outside workspace root.
-5. **Newline style detection** — if `newline_policy != "skip"`, detects newline style on original and replacement text using `text_fingerprint`. Emits `NEWLINE_INCONSISTENCY` finding if mixed styles.
-6. **Unicode security check** — if `unicode_policy != "skip"`, calls `text_security_inspect` on the replacement text. Emits `UNICODE_RISK` finding if verdict is `block` or `review`.
+2. **Mode-specific typed check** — calls the core above. Collects `NO_MATCH`, `MULTIPLE_MATCHES`, `PATCH_FAILED`, `INVALID_RANGE` findings.
+3. **Fingerprint check** — if `expected_fingerprint` is provided, uses the SHA-256/newline facts for the relevant text (original for literal via `services::fingerprint_facts`, `result_fingerprint`/`newline_style_after` from the patch core for patch, `fingerprint`/`newline_style` from the line-range core for line_range). Emits `FINGERPRINT_MISMATCH` finding if mismatch.
+4. **Path scope check** — if `file_path` + `workspace_root` are provided, calls `text::path_scope_check`. Emits `PATH_SCOPE_ESCAPE` finding if target is outside workspace root.
+5. **Newline style detection** — if `newline_policy != "skip"`, calls `services::newline_facts` on original + replacement text. Emits `NEWLINE_INCONSISTENCY` finding if mixed styles.
+6. **Unicode security check** — if `unicode_policy != "skip"`, calls `services::inspect_text_security` on the replacement text. Emits `UNICODE_RISK` finding if verdict is `block` or `review`.
 7. **Verdict derivation** — `derive_primary_machine_code()` selects the highest-priority code from findings (PATH_SCOPE_ESCAPE > LINE_RANGE_INVALID > PATCH_FAILED > AMBIGUOUS_REPLACEMENT > FINGERPRINT_MISMATCH > UNICODE_RISK > NEWLINE_INCONSISTENCY > EDIT_OK). `derive_verdict()` maps to allow/review/block.
 
 ### command_preflight
@@ -236,7 +271,7 @@ Pre-checks a shell command through a multi-stage pipeline:
    - Shell features (command substitution, redirection, pipe, background)
 6. **policy_config allow_* overrides** — `allow_network`, `allow_filesystem_write`, `allow_process_control`, `allow_env_mutation` can suppress behavioral findings.
 7. **Risky shell feature findings** — emits `RISKY_SHELL_FEATURE` for each enabled shell feature (pipe, redirect, etc.).
-8. **Regex safety check** — if the command looks like it contains regex (grep/sed/awk/regex), runs `regex_safety_check` on regex-like args. Emits `REGEX_RISK` findings.
+8. **Regex safety check** — if the command looks like it contains regex (grep/sed/awk/regex), runs the `text::regex_safety_check` core on regex-like args. Emits `REGEX_RISK` findings.
 9. **Verdict** — block if any critical/high finding; review if medium; allow otherwise.
 10. **Primary code selection** — `select_primary_code()` uses priority order: PARSE_ERROR > DESTRUCTIVE_COMMAND > PRIVILEGE_ESCALATION > NETWORK_ACCESS > FILESYSTEM_WRITE > PROCESS_CONTROL > COMMAND_SUBSTITUTION > REDIRECTION > PIPELINE > BACKGROUND_EXECUTION > UNAPPROVED_COMMAND > ENV_MUTATION > POLICY_REVIEW > RISK > REGEX_RISK.
 11. **Recommended next tool** — suggests `shell_split` for unbalanced quotes/parse errors, `text_security_inspect` for non-ASCII commands.
@@ -254,12 +289,12 @@ Pre-checks a configuration file using format-specific validation:
    - Contains `=` and not JSON → dotenv
    - Default → JSON
    - Explicit: `json`, `toml`, `dotenv`, `ini`, `cargo_toml`
-2. **Format-specific validation:**
-   - **JSON** → `validate_json` → if valid and schema provided → `validate_schema_light` → if valid → `json_canonicalize` (canonicalization check)
-   - **TOML** → `validate_toml` → if valid → `toml_shape` (structure analysis)
-   - **dotenv** → `dotenv_validate` (custom validator with key pattern, duplicate policy, export support)
-   - **INI** → `ini_validate` (section parsing, duplicate detection)
-   - **cargo_toml** → `cargo_toml_inspect` (Cargo-specific validation)
+2. **Format-specific validation (typed cores):**
+    - **JSON** → `text::validate_json` → if valid and schema provided → `text::validate_schema_light` → if valid → `text::json_canonicalize` (canonicalization check)
+    - **TOML** → `text::toml::validate_toml` → if valid → `toml_shape` (structure analysis; same-module reuse, see above)
+    - **dotenv** → `text::dotenv_validate` (custom validator with key pattern, duplicate policy, export support)
+    - **INI** → `text::ini_validate` (section parsing, duplicate detection)
+    - **cargo_toml** → `text::cargo_toml_inspect` (Cargo-specific validation)
 3. **Verdict** — `invalid` if parse fails; `valid_with_warnings` if schema violations; `valid` otherwise.
 4. **Machine code** — `CONFIG_PARSE_FAILED` > `CONFIG_SCHEMA_MISMATCH` > `CONFIG_HAS_WARNINGS` > `CONFIG_OK`.
 
@@ -267,15 +302,15 @@ Pre-checks a configuration file using format-specific validation:
 
 **File:** `text.rs` | **Budget:** `HEAVY` | **Route-critical:** yes
 
-Composite security inspection that aggregates multiple sub-tools:
+Composite security inspection implemented in `services/security.rs` over typed cores; the `text_security_inspect` adapter only validates input, delegates, and builds the wire shape:
 
 #### Pipeline
 
-1. **text_inspect** — always called. Checks invisible characters, confusables, bidi controls, mixed scripts, normalization differences. Emits `HIDDEN_CHARS`, `CONFUSABLES` findings.
-2. **unicode_policy_check** — maps `policy` param: `"source_code"` → `source_code` policy, everything else → `human_text` policy. Iterates individual findings from the sub-tool.
+1. **text_inspect essentials** — computes invisibles/confusables/mixed-scripts/warnings directly from `unicode_tools::find_invisibles`, `confusables::lookup`, and `unicode_tools::detect_mixed_scripts` with identical detail limits. Emits `TEXT_INSPECT_WARNING`, `HIDDEN_CHARS`, `CONFUSABLES` findings.
+2. **unicode_policy_check core** — maps `policy` param: `"source_code"` → `source_code` policy, everything else → `human_text` policy. Iterates individual findings from the typed result.
 3. **Normalization check** — if `normalize != "none"`, applies NFC/NFD/NFKC/NFKD and checks if text changed. Emits `NORMALIZATION_DIFF` machine code.
-4. **prompt_input_inspect** — called when policy is `"prompt"`, `"markdown"`, or `"default"`. Checks for hidden Unicode, bidi controls, HTML comments, markdown links, ANSI escapes, terminal controls, base64 blobs, instruction phrases, long minified lines. Emits `PROMPT_INJECTION_RISK`.
-5. **identifier_inspect** — called when policy is `"identifier"` or `"default"`. Extracts words matching Python's `str.isidentifier()` pattern, runs collision/confusable detection. Emits `IDENTIFIER_COLLISION_RISK`.
+4. **prompt_input_inspect core** — called when policy is `"prompt"`, `"markdown"`, or `"default"` via `inspect_prompt::prompt_input_inspect`. Emits `PROMPT_INJECTION_RISK`.
+5. **identifier_inspect core** — called when policy is `"identifier"` or `"default"`. Extracts words matching Python's `str.isidentifier()` pattern, runs `text::identifier_inspect`. Emits `IDENTIFIER_COLLISION_RISK`.
 6. **Verdict** — block if any HIGH severity finding; review if MEDIUM; allow otherwise.
 7. **Machine code priority** — `TEXT_SECURITY_OK` (no issues) or first of: `UNICODE_RISK`, `NORMALIZATION_DIFF`, `PROMPT_INJECTION_RISK`, `IDENTIFIER_COLLISION_RISK`.
 
@@ -287,9 +322,9 @@ Compares two structured data inputs (currently JSON only):
 
 #### Pipeline
 
-1. **Validate both inputs** — calls `validate_json` on `a` and `b`. Emits `INVALID_JSON_A`/`INVALID_JSON_B` findings if invalid.
-2. **JSON comparison** — calls `json_compare` with configurable options (ignore_object_order, ignore_array_order, max_diffs). Collects `VALUE_DIFF` findings.
-3. **Shape comparison** — calls `json_shape_tool` on both inputs. Emits `TYPE_MISMATCH` finding if top-level types differ.
+1. **Validate both inputs** — calls the `text::validate_json` core on `a` and `b`. Emits `INVALID_JSON_A`/`INVALID_JSON_B` findings if invalid.
+2. **JSON comparison** — calls `json_compare` with configurable options (ignore_object_order, ignore_array_order, max_diffs). Collects `VALUE_DIFF` findings. (Same-module reuse, see above.)
+3. **Shape comparison** — calls `json_shape_tool` on both inputs. Emits `TYPE_MISMATCH` finding if top-level types differ. (Dead code preserved for parity — BUG-006.)
 4. **Machine code** — `INVALID_INPUT` > `DATA_EQUAL` > `DATA_DIFF`.
 5. **Sub-results** — includes `validate_a`, `validate_b`, `json_compare`, `shape_a`, `shape_b`.
 

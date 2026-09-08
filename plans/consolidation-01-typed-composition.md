@@ -1,6 +1,6 @@
 # Typed Composition and Module-Boundary Consolidation
 
-Status: planned
+Status: complete
 Priority: P1
 Scope: internal architecture and maintainability; preserve public behavior
 
@@ -131,3 +131,22 @@ If public Rust module organization changes, also run downstream-style compile te
 This plan is complete when internal composite behavior is typed-first, adapter-to-adapter JSON composition has been eliminated except where full dispatch policy is genuinely required, the largest mixed-responsibility modules have been split only where natural seams exist, and all existing tool/MCP/public behavior remains compatible.
 
 Record any deliberate remaining JSON composition in `architecture/tools.md` or the relevant deep-dive. Update `architecture/overview.md`, `architecture/preflight.md`, and `architecture/agent-api.md` to match the final layering.
+
+## Implementation note (shipped)
+
+New `src/services/` layer (`fingerprint`, `newline`, `security`) over `text/` cores; `tools/*` adapters now call typed cores/services, never sibling handlers:
+
+1. `edit_preflight` literal `text_replace_check_tool` → `text::replace::text_replace_check` (existing typed leaf);
+2. `edit_preflight` patch `patch_apply_check` (same-file) → `text::patch_apply_check` core with adapter-equivalent length guards;
+3. `edit_preflight` line-range `line_range_extract_tool` → `text::line_range_extract` core;
+4. `edit_preflight` fingerprint/newline `text_fingerprint_tool` (5 sites) → `services::fingerprint_facts` / `services::newline_facts`;
+5. `edit_preflight` `path_scope_check` → `text::path_scope_check` core;
+6. `edit_preflight` `text_security_inspect` → `services::inspect_text_security` (new typed pipeline; cancellation via `should_stop` view);
+7. `text_security_inspect` adapter → delegates to `services::inspect_text_security`; internal `unicode_policy_check` / `identifier_inspect` / `prompt_input_inspect` adapter calls replaced by `text::unicode_policy_check` / `text::identifier_inspect` / `text::inspect_prompt::prompt_input_inspect` cores (text_inspect essentials computed directly from `unicode_tools`/`confusables` with identical limits/warnings);
+8. `config_preflight` `validate_json` / `validate_schema_light_tool` / `json_canonicalize` / `validate_toml_tool` / `cargo_toml_inspect` → `text::validate_json` / `text::validate_schema_light` / `text::json_canonicalize` / `text::toml::validate_toml` / `text::cargo_toml_inspect` cores; same-file `dotenv_validate` / `ini_validate` adapters → `text::dotenv_validate` / `text::ini_validate` cores;
+9. `structured_data_compare` `validate_json` (2 sites) → `text::validate_json` core;
+10. `command_preflight` `regex_safety_check_tool` → `text::regex_safety_check` core.
+
+No call site required full dispatch policy; all were category 1/2 (existing or new typed leaf/service). Remaining same-module JSON reuses are intentional and commented: `json_compare` / `json_shape_tool` in `structured_data_compare` (plus dead-code `TYPE_MISMATCH` parity BUG-006), `toml_shape_tool` in `config_preflight`.
+
+Module splits: new `services/` directory is the seam (fingerprint/newline/security). `preflight/mod.rs`, `agent/mod.rs`, `text/validate.rs`, `tools/text.rs`/`patch.rs` deliberately not split further (coherent single responsibilities; size-only splits deferred). Raw handlers keep defensive validation. All 86 tools, wire contracts, machine codes, profiles, and CLI behavior preserved (3642 tests pass, parity excluded).

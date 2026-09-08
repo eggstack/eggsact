@@ -1209,41 +1209,37 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
             })
             .collect();
         for pattern in &regex_args {
-            let rs_args = serde_json::json!({"pattern": pattern.as_str()});
-            let rs_result = crate::tools::regex_safety_check_tool(&rs_args);
-            if let Some(ref r) = rs_result.result {
-                let risk = r.get("risk").and_then(|v| v.as_str()).unwrap_or("none");
-                let mut has_rs_findings = false;
-                if let Some(findings_arr) = r.get("findings").and_then(|v| v.as_array()) {
-                    has_rs_findings = !findings_arr.is_empty();
-                    for f in findings_arr {
-                        let (sev, disp) = if risk != "none" {
-                            (severity::MEDIUM, disposition::CAUTION)
-                        } else {
-                            (severity::INFO, disposition::INFORMATIONAL)
-                        };
-                        let kind = f
-                            .get("kind")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("REGEX_RISK");
-                        findings.push(finding(
-                            &kind.to_uppercase(),
-                            sev,
-                            f.get("message").and_then(|v| v.as_str()).unwrap_or(""),
-                            Some(disp),
-                            None,
-                        ));
-                    }
-                }
-                if has_rs_findings
-                    && risk != "none"
-                    && !code_list.contains(&machine_codes::REGEX_RISK.to_string())
-                {
-                    code_list.push(machine_codes::REGEX_RISK.to_string());
-                }
+            // Typed composition: call the deterministic core directly instead
+            // of the regex_safety_check adapter (no JSON envelope round-trip).
+            let rs_typed = crate::text::regex_safety_check(pattern.as_str());
+            let risk = rs_typed.risk.as_str();
+            let has_rs_findings = !rs_typed.findings.is_empty();
+            for f in &rs_typed.findings {
+                let (sev, disp) = if risk != "none" {
+                    (severity::MEDIUM, disposition::CAUTION)
+                } else {
+                    (severity::INFO, disposition::INFORMATIONAL)
+                };
+                let kind = f.kind.as_str();
+                findings.push(finding(
+                    &kind.to_uppercase(),
+                    sev,
+                    f.message.as_str(),
+                    Some(disp),
+                    None,
+                ));
+            }
+            if has_rs_findings
+                && risk != "none"
+                && !code_list.contains(&machine_codes::REGEX_RISK.to_string())
+            {
+                code_list.push(machine_codes::REGEX_RISK.to_string());
+            }
+            {
+                let findings_count = rs_typed.findings.len();
                 let regex_summary = serde_json::json!({
                     "pattern": pattern.as_str(),
-                    "findings_count": r.get("findings").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+                    "findings_count": findings_count,
                     "risk": risk,
                 });
                 let regex_subresults = subresults
