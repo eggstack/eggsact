@@ -8,13 +8,25 @@ See also: [Math Features](math-features.md), [Library API](library-api.md), [MCP
 
 | Property | Value |
 |----------|-------|
-| Protocol version | `2025-11-25` (preferred), `2024-11-05` (legacy) |
+| Protocol versions | `2026-07-28` (preferred, modern stateless), `2025-11-25` (legacy), `2024-11-05` (legacy) |
 | Server name | `eggsact` |
 | Server version | crate version from `Cargo.toml` |
-| Transport | stdio JSON-RPC 2.0 |
+| Transport | stdio JSON-RPC 2.0 (no HTTP; header routing not implemented) |
 | Total tools | 86, registered in `src/mcp/specs/` (single source of truth; per-profile counts in `architecture/mcp-server.md`) |
 
 The server communicates over stdin/stdout using newline-delimited JSON-RPC 2.0 messages. `tools/call` responses follow MCP shape: JSON-RPC `result.content[0].text` contains a JSON-encoded `ToolResponse` envelope with an `ok` boolean field.
+
+Legacy clients (`2025-11-25`, `2024-11-05`) use `initialize` → `notifications/initialized` before `tools/list` / `tools/call`. Modern clients (`2026-07-28`) send stateless per-request `_meta` (`io.modelcontextprotocol/protocolVersion` + `clientCapabilities`, optional `clientInfo`) with no handshake; `server/discover` advertises versions, capabilities, instructions, cache hints, and `_meta` server identity from a fresh process. See `architecture/mcp-server.md` for the dual-era lifecycle.
+
+### Modern Structured Output (`2026-07-28`)
+
+Successful modern `tools/call` responses add schema-conforming `structuredContent` (= `ToolResponse.result`, which the tool `outputSchema` already describes) plus `resultType: complete` and `_meta.io.modelcontextprotocol/serverInfo`, while retaining the text JSON fallback:
+
+```json
+{"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","content":[{"type":"text","text":"{\"ok\": true, ...}"}],"structuredContent":{"value":"5","type":"int"},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"eggsact","version":"1.2.4"}}}}
+```
+
+Tool-level errors keep `isError: true` with no `structuredContent`. Modern `tools/list` adds `resultType`, `ttlMs: 3600000`, `cacheScope: public`, standard `annotations` (`readOnlyHint: true`, `openWorldHint: false`), and namespaced `_meta` (`io.github.eggstack/eggsact` with `tier`, `tags`, `category`, `llm_exposure`, `cost`); legacy shapes are unchanged. `ping` is legacy-only (removed in modern).
 
 ## Transport Protocol
 

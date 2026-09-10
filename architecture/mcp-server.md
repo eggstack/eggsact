@@ -98,58 +98,64 @@ Tool implementations live in `src/tools/` (category modules):
 
 - Transport: stdio (stdin/stdout)
 - Protocol: JSON-RPC 2.0
-- MCP versions: `2025-11-25` (preferred), `2024-11-05` (legacy)
-- Server identity: `eggsact`
+- MCP versions: `2026-07-28` (preferred, modern stateless), `2025-11-25` (legacy preferred), `2024-11-05` (legacy)
+- Server identity: `eggsact` (legacy `serverInfo`; modern `_meta.io.modelcontextprotocol/serverInfo` on every result)
+- Server instructions: concise cross-tool guidance in legacy `initialize` (`instructions`) and modern `server/discover` (`instructions`); preflight tools inspect rather than execute
 
 ### Supported Methods
 
-| Method | Description |
-|--------|-------------|
-| `initialize` | Returns server info and capabilities |
-| `notifications/initialized` | Client acknowledgment (no response) |
-| `notifications/cancelled` | Looks up the request ID in the active-requests map and sets its cancel flag |
-| `tools/list` | Returns registered tool definitions (filtered by profile) |
-| `tools/call` | Executes a tool by name |
-| `profiles/list` | Lists all profiles and their tool counts |
-| `ping` | Returns empty response (health check) |
+| Method | Eras | Description |
+|--------|------|-------------|
+| `initialize` | Legacy only | Returns server info, capabilities, and instructions |
+| `server/discover` | Modern (also answers without `_meta` as stdio probe) | Returns supported versions, capabilities, instructions, cache hints, and `_meta` identity; never touches legacy session state |
+| `notifications/initialized` | Legacy only (notification, no response) | Client acknowledgment; modern envelopes never mutate session state |
+| `notifications/cancelled` | Both | Looks up the request ID in the active-requests map and sets its cancel flag |
+| `tools/list` | Both | Returns registered tool definitions (filtered by profile); modern adds `resultType`, `ttlMs`, `cacheScope`, `_meta`, standard annotations |
+| `tools/call` | Both | Executes a tool by name; modern adds `resultType`, `structuredContent`, `_meta` |
+| `profiles/list` | Both (eggsact extension) | Lists all profiles and their tool counts; modern adds `resultType`, `_meta` |
+| `ping` | Legacy only | Returns empty response (health check); removed in `2026-07-28` (`-32601`) |
 
-### Connection Lifecycle
+### Connection Lifecycle (Dual-Era)
 
-The server enforces a per-connection initialization lifecycle. Clients must
-complete the handshake before calling tools:
+The same stdio binary serves both eras. Era is selected per request, not per process:
+
+- A request carrying modern per-request `_meta` (`io.modelcontextprotocol/protocolVersion` + `clientCapabilities`, optional `clientInfo`) is served statelessly per `2026-07-28` with no handshake and no `SessionState` access.
+- An `initialize` request selects legacy semantics for the stdio process; legacy clients must complete the handshake before calling tools:
 
 1. Client sends `initialize` with `protocolVersion`, `capabilities`, and `clientInfo`
-2. Server responds with negotiated `protocolVersion`, `capabilities`, and `serverInfo`
+2. Server responds with negotiated legacy `protocolVersion`, `capabilities`, `serverInfo`, and concise `instructions`
 3. Client sends `notifications/initialized` (no response)
-4. Server transitions to `Ready` state — all methods now available
+4. Server transitions to `Ready` state — all legacy methods now available
 
-#### Session States
+Modern `server/discover` works from a fresh process before (or without) `initialize` and leaves legacy state untouched, so subsequent modern requests need no `notifications/initialized`.
+
+#### Session States (Legacy Only)
 
 | State | Allowed Methods | Notes |
 |-------|----------------|-------|
-| `Uninitialized` | `initialize`, `ping` | Default state at connection start |
-| `AwaitingInitialized` | `notifications/initialized`, `ping` | After `initialize` response sent |
-| `Ready` | All methods | After `notifications/initialized` received |
+| `Uninitialized` | `initialize`, `server/discover`, `ping` | Default state at connection start; `server/discover` bypasses state |
+| `AwaitingInitialized` | `notifications/initialized`, `server/discover`, `ping` | After `initialize` response sent |
+| `Ready` | All legacy methods + `server/discover` | After `notifications/initialized` received |
 
-#### Version Negotiation
+Modern requests never consult or mutate `SessionState`.
 
-The server supports multiple MCP protocol revisions:
+#### Version Negotiation (Era-Aware)
 
-| Version | Status | Notes |
-|---------|--------|-------|
-| `2025-11-25` | Preferred | Current eggsact implementation |
-| `2024-11-05` | Legacy | Supported for backward compatibility |
+| Version | Era | Status | Notes |
+|---------|-----|--------|-------|
+| `2026-07-28` | Modern | Preferred | Stateless per-request `_meta`; `server/discover` advertises first |
+| `2025-11-25` | Legacy | Legacy preferred | `initialize` fallback target |
+| `2024-11-05` | Legacy | Supported | Backward compatibility |
 
-Negotiation rule: if the client's requested version is supported, return it.
-Otherwise return the preferred version (`2025-11-25`).
+- Legacy `initialize` negotiates only among `2025-11-25` / `2024-11-05`; unsupported (including modern) requests fall back to `2025-11-25`, never into modern state.
+- `server/discover` advertises all three revisions in deterministic preference order (`2026-07-28`, `2025-11-25`, `2024-11-05`).
+- A modern request naming an unsupported revision returns `-32022 UnsupportedProtocolVersion` with `{supported, requested}` instead of entering legacy state. Malformed modern envelopes (missing/incorrect `_meta`) return `-32602`.
 
-`NegotiatedProtocol` now retains `client_capabilities: ClientCapabilities` for
-the entire session lifetime. Client capabilities are stored but not yet used
-for capability-dependent behavior — they are retained for future use.
+`NegotiatedProtocol` retains `client_capabilities: ClientCapabilities` for the legacy session lifetime. Modern capabilities are request-scoped (`ModernRequestContext`) and never stored globally. Client identity (`clientInfo` / envelope `clientInfo`, `serverInfo`) is advisory for display/logging/debugging only.
 
 #### Server Capabilities
 
-The initialize response advertises:
+The legacy initialize response advertises (plus concise `instructions`):
 
 ```json
 {
@@ -166,13 +172,45 @@ The initialize response advertises:
 }
 ```
 
+The modern `server/discover` result advertises the same capabilities plus:
+
+```json
+{
+  "resultType": "complete",
+  "supportedVersions": ["2026-07-28", "2025-11-25", "2024-11-05"],
+  "capabilities": { "tools": { "listChanged": false }, "experimental": { "eggsact": { "...": true } } },
+  "instructions": "eggsact is a local deterministic utility server. ...",
+  "ttlMs": 3600000,
+  "cacheScope": "public",
+  "_meta": { "io.modelcontextprotocol/serverInfo": { "name": "eggsact", "version": "1.2.4" } }
+}
+```
+
+`listChanged` remains `false`; the catalog is static. The progressive-discovery line must use a stable presentation surface plus search/invoke routing, not per-connection list mutation.
+
+#### Modern Tool Catalog (Cacheable, Deterministic)
+
+- Modern `tools/list` returns `resultType: complete`, `tools` in registry order (deterministic, not alphabetized), `ttlMs: 3600000`, `cacheScope: public`, and `_meta` server identity. Legacy `tools/list` is unchanged (`{"tools": [...]}`).
+- Registry order is compatibility-sensitive; `test_modern_protocol::modern_list_deterministic_order_and_bytes` guards stable ordering and bytes.
+- Modern Tool shape uses standard fields (`name`, `description`, `inputSchema`, `outputSchema`, `annotations`) plus namespaced `_meta` (`io.github.eggstack/eggsact` with `tier`, `tags`, `category`, `llm_exposure`, `cost`, `deprecated` when true). Nonstandard top-level keys are legacy-only.
+- Annotations are uniform (`readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`) because every tool is a local deterministic computation. Hints, not enforcement.
+
+#### Modern Tool Results (`structuredContent`)
+
+- Successful modern `tools/call` returns `resultType: complete`, `content[0].text` (Python-style JSON fallback, unchanged), `structuredContent` (= `ToolResponse.result`, conforming to the tool's `outputSchema`), and `_meta` identity. `verdict`/`machine_code` stay inside `result` and the text envelope.
+- Tool-level errors return `resultType: complete`, `content`, `isError: true`, `_meta`, with no `structuredContent`. JSON-RPC errors (`-32601`, `-32602`, `-32022`, etc.) are unchanged apart from modern codes.
+- `ping` is absent in the modern era; `resultType` is required on all modern results (`complete`; eggsact emits no `input_required` — no MRTR workflow).
+
 #### Lifecycle Errors
 
 | Error | Code | Data Code | When |
 |-------|------|-----------|------|
-| Not initialized | -32600 | `NOT_INITIALIZED` | Method called before `initialize` |
+| Not initialized | -32600 | `NOT_INITIALIZED` | Legacy method called before `initialize` (modern bypasses) |
 | Already initialized | -32600 | `ALREADY_INITIALIZED` | Duplicate `initialize` request |
 | Initialized before initialize | — | — | `notifications/initialized` received before `initialize` — **silently ignored** (no response), per JSON-RPC notification semantics |
+| Invalid params (modern envelope) | -32602 | — | Missing/incorrect `protocolVersion` / `clientCapabilities` / malformed `clientInfo` |
+| Unsupported version | -32022 | — | Modern `_meta` names an unsupported revision; `data: {supported, requested}` |
+| Modern initialize / ping | -32601 | — | `initialize` is legacy-only; `ping` removed in `2026-07-28` |
 
 The `initialized_before_initialize` helper (`INITIALIZED_BEFORE_INITIALIZE` data code) has been removed. Wrong-state `notifications/initialized` notifications are silently discarded.
 
@@ -690,9 +728,11 @@ All machine code constants live in `src/mcp/machine_codes.rs`. See `architecture
 ### JSON-RPC Level Errors
 
 JSON-RPC level errors use standard codes (constructed in `src/mcp/protocol.rs`):
-- `-32601`: Method not found
-- `-32600`: Invalid request
-- `-32602`: Invalid params
+- `-32601`: Method not found (also modern `initialize` / removed `ping`)
+- `-32600`: Invalid request (legacy lifecycle violations)
+- `-32602`: Invalid params (tool validation; malformed modern `_meta`)
+- `-32022`: Unsupported protocol version (modern `_meta` names an unsupported revision; `data: {supported, requested}`)
+- `-32000`: Implementation-defined (capacity, handler panic; `RESOURCE_EXHAUSTED` uses `-32000` with data code)
 
 ## Error Types
 

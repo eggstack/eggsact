@@ -115,6 +115,22 @@ The `machine_code` and `verdict` fields on route-critical tools
 `patch_apply_check`, `text_security_inspect`) are particularly sensitive.
 Their values drive downstream action selection in codegg.
 
+### Protocol-Era Serialization (2026-07-28 Dual-Era)
+
+Protocol-era-specific standard serialization may differ while tool semantic
+contracts remain stable. This is **not** a breaking change:
+
+- Modern (`2026-07-28`) envelopes add `resultType`, `_meta` server identity,
+  `ttlMs`/`cacheScope` on cacheable lists, standard Tool `annotations`, namespaced
+  Tool `_meta`, and `structuredContent` (= `ToolResponse.result`) on successful calls.
+- Legacy (`2025-11-25`, `2024-11-05`) envelopes are byte/semantics-compatible and unchanged.
+- Tool names, input contracts, machine codes, route-critical verdicts, and profile
+  membership must remain equivalent across eras for the same tool and arguments
+  (verified by cross-era goldens in `tests/mcp/test_modern_protocol.rs`).
+
+Removing a modern envelope field that clients already rely on, or changing tool
+semantics under the guise of era work, **is** breaking and follows the rules above.
+
 ## Machine-Code Stability
 
 Machine codes are defined in `src/mcp/machine_codes.rs` and emitted in tool

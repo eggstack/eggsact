@@ -87,35 +87,233 @@ pub const MCP_SERVER_NAME: &str = "eggsact";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Protocol version table and negotiation (Workstream 2)
+// Dual-era: 2026-07-28 (modern, stateless) + 2025-11-25 / 2024-11-05 (legacy)
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/// Modern stateless protocol revision (no initialize handshake).
+pub const MODERN_PROTOCOL_VERSION: &str = "2026-07-28";
+
+/// Legacy initialize-capable revisions, in preference order.
+pub const LEGACY_SUPPORTED_VERSIONS: &[&str] = &["2025-11-25", "2024-11-05"];
+
+/// Preferred legacy revision for `initialize` negotiation fallback.
+pub const LEGACY_PREFERRED_VERSION: &str = LEGACY_SUPPORTED_VERSIONS[0];
 
 /// Ordered list of supported MCP protocol revisions. The first entry is the
 /// preferred (current) revision. Only revisions that eggsact actually implements
-/// are listed here.
-pub const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-11-25", "2024-11-05"];
+/// are listed here. Preference order is deterministic: modern first, then
+/// legacy in their own preference order. `server/discover` advertises this
+/// exact order.
+pub const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2026-07-28", "2025-11-25", "2024-11-05"];
 
-/// The preferred (current) protocol revision. Eggsact negotiates to this
-/// when the client's requested revision is not in `SUPPORTED_PROTOCOL_VERSIONS`.
+/// The preferred (current) protocol revision. Eggsact advertises this first
+/// in `server/discover`. Legacy `initialize` negotiation never falls back to
+/// this when it names a modern revision; see `negotiate_legacy_version`.
 pub const PREFERRED_PROTOCOL_VERSION: &str = SUPPORTED_PROTOCOL_VERSIONS[0];
 
 /// Legacy single-version constant for backward compatibility with tests and
-/// code that references `MCP_PROTOCOL_VERSION` directly. Prefer
-/// `PREFERRED_PROTOCOL_VERSION` in new code.
-pub const MCP_PROTOCOL_VERSION: &str = PREFERRED_PROTOCOL_VERSION;
+/// code that references `MCP_PROTOCOL_VERSION` directly. Pinned to the legacy
+/// preferred revision (not the modern preferred) so existing single-version
+/// consumers keep legacy semantics. Prefer `PREFERRED_PROTOCOL_VERSION` for
+/// modern advertisement or `LEGACY_PREFERRED_VERSION` for legacy negotiation
+/// in new code.
+pub const MCP_PROTOCOL_VERSION: &str = LEGACY_PREFERRED_VERSION;
 
-/// Check whether a protocol version string is in the supported list.
+/// Reserved request `_meta` keys (2026-07-28 per-request envelope).
+pub const META_PROTOCOL_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
+pub const META_CLIENT_INFO: &str = "io.modelcontextprotocol/clientInfo";
+pub const META_CLIENT_CAPABILITIES: &str = "io.modelcontextprotocol/clientCapabilities";
+/// Reserved result `_meta` key for server identity.
+pub const META_SERVER_INFO: &str = "io.modelcontextprotocol/serverInfo";
+/// Namespace for eggsact-only Tool metadata in modern responses.
+pub const EGGSACT_META_NAMESPACE: &str = "io.github.eggstack/eggsact";
+
+/// Conservative cache TTL for modern cacheable results (`tools/list`,
+/// `server/discover`). One hour; named so it can be tuned without touching
+/// serialization logic.
+pub const MODERN_CACHE_TTL_MS: u64 = 3_600_000;
+/// Cache scope for modern catalog results. The catalog is local,
+/// deterministic, process-configured, and authorization-free, so `public`
+/// is appropriate provided the response contains no user-specific material.
+pub const MODERN_CACHE_SCOPE: &str = "public";
+
+/// Short cross-tool server instructions for legacy initialize responses and
+/// modern discovery. Explains only behavior individual descriptions do not
+/// convey. Target: a few hundred bytes, not a manual.
+pub const SERVER_INSTRUCTIONS: &str = "eggsact is a local deterministic utility server. Preflight and inspection tools analyze inputs and report findings, verdicts, and machine codes; they do not execute changes. Tool results carry structuredContent conforming to outputSchema plus a text JSON fallback.";
+
+/// Protocol era for a single request. Legacy uses the connection `SessionState`
+/// handshake; modern (`2026-07-28`) is stateless per-request metadata and must
+/// never consult or mutate `SessionState` as an authorization gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProtocolEra {
+    Legacy,
+    Modern20260728,
+}
+
+/// Request-scoped modern protocol context. Passed through server dispatch;
+/// never stored in process-global state. Client identity is advisory only and
+/// must not drive security policy.
+#[derive(Debug, Clone)]
+pub struct ModernRequestContext {
+    /// Always `2026-07-28` when constructed via `parse_modern_request_meta`.
+    pub protocol_version: String,
+    /// Optional self-reported client name (advisory, not authorization).
+    pub client_name: Option<String>,
+    /// Optional self-reported client version (advisory).
+    pub client_version: Option<String>,
+    /// Raw client capabilities value for the duration of the request.
+    pub client_capabilities: Value,
+}
+
+impl ModernRequestContext {
+    pub fn era(&self) -> ProtocolEra {
+        ProtocolEra::Modern20260728
+    }
+}
+
+/// Check whether a protocol version string is in the supported list (any era).
 pub fn is_supported_protocol_version(version: &str) -> bool {
     SUPPORTED_PROTOCOL_VERSIONS.contains(&version)
 }
 
-/// Negotiate a protocol version: return the requested version if supported,
-/// otherwise return eggsact's preferred version.
-pub fn negotiate_protocol_version(requested: &str) -> String {
-    if is_supported_protocol_version(requested) {
+/// Check whether a version is legacy initialize-capable.
+pub fn is_legacy_supported_version(version: &str) -> bool {
+    LEGACY_SUPPORTED_VERSIONS.contains(&version)
+}
+
+/// Check whether a version is the modern stateless revision.
+pub fn is_modern_supported_version(version: &str) -> bool {
+    version == MODERN_PROTOCOL_VERSION
+}
+
+/// Negotiate a legacy protocol version: return the requested version if it is
+/// legacy-supported, otherwise return the legacy preferred version.
+///
+/// Legacy `initialize` negotiates only among initialize-capable versions; a
+/// modern revision requested via `initialize` falls back to legacy preferred
+/// rather than entering modern state.
+pub fn negotiate_legacy_version(requested: &str) -> String {
+    if is_legacy_supported_version(requested) {
         requested.to_string()
     } else {
-        PREFERRED_PROTOCOL_VERSION.to_string()
+        LEGACY_PREFERRED_VERSION.to_string()
     }
+}
+
+/// Negotiate a protocol version: return the requested version if supported,
+/// otherwise return eggsact's preferred version.
+///
+/// Preserved for backward compatibility; new legacy-handshake code should use
+/// `negotiate_legacy_version` so `initialize` never negotiates into the modern
+/// era. This function now delegates to legacy negotiation to keep `initialize`
+/// byte/semantics-compatible.
+pub fn negotiate_protocol_version(requested: &str) -> String {
+    negotiate_legacy_version(requested)
+}
+
+/// Parse the modern per-request `_meta` envelope from JSON-RPC `params`.
+///
+/// Returns:
+/// - `None` when no modern envelope is present (legacy path; caller enforces
+///   `SessionState` as before).
+/// - `Some(Ok(ctx))` for a valid modern request (caller bypasses
+///   `SessionState` and serves statelessly).
+/// - `Some(Err(error_value))` for a modern envelope that is malformed
+///   (`-32602`) or names an unsupported version (`-32022`). The caller must
+///   return the error verbatim and must not fall back to legacy state.
+pub fn parse_modern_request_meta(
+    params: Option<&Value>,
+) -> Option<Result<ModernRequestContext, Value>> {
+    let params_obj = params?.as_object()?;
+    let meta = params_obj.get("_meta")?;
+    let meta_obj = match meta.as_object() {
+        Some(o) => o,
+        None => {
+            return Some(Err(crate::mcp::protocol::invalid_params(
+                "Invalid params: '_meta' must be an object",
+                None,
+            )));
+        }
+    };
+    // Protocol version is required on every modern request.
+    let version_value = match meta_obj.get(META_PROTOCOL_VERSION) {
+        Some(v) => v,
+        None => {
+            return Some(Err(crate::mcp::protocol::invalid_params(
+                "Invalid params: '_meta.io.modelcontextprotocol/protocolVersion' is required for modern requests",
+                None,
+            )));
+        }
+    };
+    let version_str = match version_value.as_str() {
+        Some(s) => s,
+        None => {
+            return Some(Err(crate::mcp::protocol::invalid_params(
+                "Invalid params: '_meta.io.modelcontextprotocol/protocolVersion' must be a string",
+                None,
+            )));
+        }
+    };
+    if !is_modern_supported_version(version_str) {
+        return Some(Err(crate::mcp::protocol::unsupported_protocol_version(
+            version_str,
+            None,
+        )));
+    }
+    // Client capabilities are required per-request; servers must not infer
+    // them from prior requests.
+    let caps = match meta_obj.get(META_CLIENT_CAPABILITIES) {
+        Some(v) => v,
+        None => {
+            return Some(Err(crate::mcp::protocol::invalid_params(
+                "Invalid params: '_meta.io.modelcontextprotocol/clientCapabilities' is required for modern requests",
+                None,
+            )));
+        }
+    };
+    if !caps.is_object() {
+        return Some(Err(crate::mcp::protocol::invalid_params(
+            "Invalid params: '_meta.io.modelcontextprotocol/clientCapabilities' must be an object",
+            None,
+        )));
+    }
+    // Client info is SHOULD (optional). Present-but-malformed is rejected;
+    // absent is served anonymously.
+    let (client_name, client_version) = match meta_obj.get(META_CLIENT_INFO) {
+        None => (None, None),
+        Some(v) => {
+            let obj = match v.as_object() {
+                Some(o) => o,
+                None => {
+                    return Some(Err(crate::mcp::protocol::invalid_params(
+                        "Invalid params: '_meta.io.modelcontextprotocol/clientInfo' must be an object",
+                        None,
+                    )));
+                }
+            };
+            let name = match obj.get("name").and_then(|n| n.as_str()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    return Some(Err(crate::mcp::protocol::invalid_params(
+                        "Invalid params: '_meta.io.modelcontextprotocol/clientInfo.name' must be a non-empty string",
+                        None,
+                    )));
+                }
+            };
+            let version = obj
+                .get("version")
+                .and_then(|n| n.as_str())
+                .map(|s| s.to_string());
+            (Some(name), version)
+        }
+    };
+    Some(Ok(ModernRequestContext {
+        protocol_version: version_str.to_string(),
+        client_name,
+        client_version,
+        client_capabilities: caps.clone(),
+    }))
 }
 
 /// Negotiated protocol data stored per-connection.

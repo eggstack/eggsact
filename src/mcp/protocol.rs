@@ -57,6 +57,55 @@ pub fn method_not_found(message: impl Into<String>, id: Option<Value>) -> Value 
     json_rpc_error(-32601, message, id)
 }
 
+/// Invalid params (JSON-RPC -32602). Used for malformed modern `_meta`
+/// envelopes: missing required fields or wrong types.
+pub fn invalid_params(message: impl Into<String>, id: Option<Value>) -> Value {
+    json_rpc_error(-32602, message, id)
+}
+
+/// Unsupported protocol version (`-32022` per 2026-07-28).
+///
+/// Returned when a modern request explicitly names a revision the server does
+/// not implement. Lists all supported revisions so the client can retry with
+/// a mutually supported version instead of silently entering legacy state.
+pub fn unsupported_protocol_version(requested: &str, id: Option<Value>) -> Value {
+    json_rpc_error_with_data(
+        -32022,
+        "Unsupported protocol version",
+        Some(serde_json::json!({
+            "supported": crate::mcp::runtime::SUPPORTED_PROTOCOL_VERSIONS,
+            "requested": requested,
+        })),
+        id,
+    )
+}
+
+/// Attach (or replace) the JSON-RPC `id` on an already-built error value.
+///
+/// `parse_modern_request_meta` builds envelope errors without an id; the
+/// dispatcher patches the originating request id here so correlation is
+/// preserved without threading ids through the parser.
+pub fn with_request_id(mut error_value: Value, id: Option<Value>) -> Value {
+    if let Some(obj) = error_value.as_object_mut() {
+        obj.insert("id".to_string(), id.unwrap_or(Value::Null));
+    }
+    error_value
+}
+
+/// Build the reserved result `_meta` object carrying server identity.
+///
+/// Servers SHOULD include `io.modelcontextprotocol/serverInfo` on every
+/// modern result. Identity is advisory (display/logging/debugging) and must
+/// not drive behavior or security decisions.
+pub fn server_info_meta() -> Value {
+    serde_json::json!({
+        crate::mcp::runtime::META_SERVER_INFO: {
+            "name": crate::mcp::runtime::MCP_SERVER_NAME,
+            "version": env!("CARGO_PKG_VERSION"),
+        }
+    })
+}
+
 /// Lifecycle error: method called before initialization.
 pub fn not_initialized(method: &str, id: Option<Value>) -> Value {
     json_rpc_error_with_data(
@@ -224,6 +273,9 @@ pub struct InitializeResult {
     pub protocol_version: String,
     pub capabilities: ServerCapabilities,
     pub server_info: ServerInfo,
+    /// Concise cross-tool instructions (additive; few hundred bytes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -249,6 +301,59 @@ pub struct Capabilities {
 #[serde(rename_all = "camelCase")]
 pub struct ToolsCapability {
     pub list_changed: bool,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Modern 2026-07-28 discovery (server/discover)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// `server/discover` has no body parameters beyond the standard per-request
+/// `_meta` envelope. This empty marker exists so the wire contract is typed;
+/// dispatch reads `_meta` via `parse_modern_request_meta` instead.
+#[derive(Deserialize, Debug, Default)]
+pub struct DiscoverRequest {
+    #[serde(default)]
+    pub _meta: Option<Value>,
+}
+
+/// Modern discovery result per the final 2026-07-28 schema.
+///
+/// - `supportedVersions`: all revisions the server implements, in deterministic
+///   preference order (modern first).
+/// - `capabilities`: same tool capability shape as legacy initialize.
+/// - `instructions`: concise cross-tool guidance (few hundred bytes).
+/// - `ttlMs` / `cacheScope`: required cache hints for the modern result.
+/// - `_meta[io.modelcontextprotocol/serverInfo]`: modern server identity; the
+///   body carries no `serverInfo` member.
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoverResult {
+    pub result_type: String,
+    pub supported_versions: Vec<String>,
+    pub capabilities: ServerCapabilities,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    pub ttl_ms: u64,
+    pub cache_scope: String,
+    #[serde(rename = "_meta")]
+    pub meta: Value,
+}
+
+impl DiscoverResult {
+    pub fn current(capabilities: ServerCapabilities) -> Self {
+        Self {
+            result_type: "complete".to_string(),
+            supported_versions: crate::mcp::runtime::SUPPORTED_PROTOCOL_VERSIONS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            capabilities,
+            instructions: Some(crate::mcp::runtime::SERVER_INSTRUCTIONS.to_string()),
+            ttl_ms: crate::mcp::runtime::MODERN_CACHE_TTL_MS,
+            cache_scope: crate::mcp::runtime::MODERN_CACHE_SCOPE.to_string(),
+            meta: server_info_meta(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -317,6 +422,7 @@ mod tests {
                 name: "eggsact".to_string(),
                 version: "1.1.5".to_string(),
             },
+            instructions: Some("test instructions".to_string()),
         };
         let value = serde_json::to_value(&result).unwrap();
         assert_eq!(value["protocolVersion"], "2024-11-05");

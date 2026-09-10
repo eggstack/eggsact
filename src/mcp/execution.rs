@@ -869,6 +869,62 @@ pub(crate) fn build_tool_response(
     }
 }
 
+/// Modern (2026-07-28) variant of `build_tool_response`.
+///
+/// Same budget/truncation/size semantics, but successful results expose
+/// schema-conforming `structuredContent` plus `resultType` and reserved
+/// `_meta` identity via `wrap_tool_response_modern`.
+pub(crate) fn build_tool_response_modern(
+    outcome: ExecutionOutcome,
+    tool_name: &str,
+    budget: &ToolBudget,
+    id: Option<Value>,
+) -> serde_json::Value {
+    use crate::mcp::response::wrap_tool_response_modern;
+    match outcome.tool_response {
+        Ok(mut response) => {
+            if outcome.timed_out {
+                return wrap_tool_response_modern(&response);
+            }
+            truncate_response(&mut response, budget);
+
+            let output = python_json_dumps(&response);
+            if output.is_empty() {
+                wrap_tool_response_modern(&ToolResponse::error_with_code(
+                    "serialization_error",
+                    machine_codes::SERIALIZATION_ERROR,
+                    "Failed to serialize tool response",
+                    None,
+                    Some(tool_name),
+                ))
+            } else if output.len() > MAX_OUTPUT_BYTES {
+                wrap_tool_response_modern(&ToolResponse::error_with_code(
+                    "output_too_large",
+                    machine_codes::OUTPUT_TOO_LARGE,
+                    &format!(
+                        "Output exceeds {} bytes and was truncated",
+                        MAX_OUTPUT_BYTES
+                    ),
+                    Some(vec![
+                        "Try reducing input size or using a summary/detail option".to_string(),
+                    ]),
+                    Some(tool_name),
+                ))
+            } else {
+                wrap_tool_response_modern(&response)
+            }
+        }
+        Err(join_err) => crate::mcp::protocol::json_rpc_error(
+            -32000,
+            format!(
+                "Tool execution error: {}",
+                runtime::truncate_2000(&sanitize_error(&join_err.to_string()))
+            ),
+            id,
+        ),
+    }
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]

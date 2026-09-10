@@ -7,6 +7,19 @@
 
 The mode is a simple enum that threads through the validation pipeline, affecting only type name formatting in error messages. All other behavior (bool rejection, dispatch, serialization) is identical across modes.
 
+## Protocol-Era Wire Compatibility (2026-07-28 Dual-Era)
+
+`CompatibilityMode` is orthogonal to the MCP protocol era. Era controls the JSON-RPC envelope; mode controls validation message vocabulary. Both eras use `EggcalcPython` on the MCP boundary and `StrictNative` in-process.
+
+| Concern | Legacy (`2025-11-25`, `2024-11-05`) | Modern (`2026-07-28`) | Stable Across Eras |
+|---------|--------------------------------------|------------------------|--------------------|
+| Handshake | `initialize` → `notifications/initialized` + `SessionState` | Stateless per-request `_meta`; `server/discover` optional | Tool names, input contracts, machine codes, verdicts, profile membership |
+| Tool list | `{"tools": [...]}` with custom top-level `tier`/`tags`/`category`/`llm_exposure`/`cost` | `resultType`, `tools` (standard fields + `annotations` + namespaced `_meta`), `ttlMs`, `cacheScope`, `_meta` identity | Registry order, filtering, profile/audience semantics |
+| Tool call | `content[0].text` JSON envelope | Plus `structuredContent` (= `result`), `resultType`, `_meta` identity; `isError` retained | `ToolResponse` semantics (`ok`, `result`, `verdict`, `machine_code`, findings) |
+| Errors | `-32600` lifecycle, `-32601` unknown | Adds `-32602` malformed envelope, `-32022` unsupported version; `initialize`/`ping` era-mismatched as `-32601` | Tool-level error shapes and codes |
+
+Era-specific standard serialization may differ while tool semantic contracts remain stable. A representative legacy and modern call to `math_eval`, `validate_json`, or `edit_preflight` must agree on `result`, `verdict`, `machine_code`, and errors even though the wire envelope differs (`tests/mcp/test_modern_protocol.rs` cross-era goldens). Do not treat modern envelope additions (`resultType`, `_meta`, `ttlMs`, `cacheScope`, `annotations`, `structuredContent`) as breaking changes; do not change tool names, inputs, codes, or profile membership as part of protocol work.
+
 ## Mode Definitions
 
 | Mode | Type Names | Default? | Use Case |

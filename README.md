@@ -58,7 +58,7 @@ eggsact "2 ** 10"                     # 1024
 # Unit conversions
 eggsact "30m to ft"                   # 98.425...
 
-# MCP server mode (stdio JSON-RPC)
+# MCP server mode (stdio JSON-RPC, dual-era: 2026-07-28 stateless + 2025-11-25/2024-11-05 legacy)
 eggsact --mcp
 ```
 

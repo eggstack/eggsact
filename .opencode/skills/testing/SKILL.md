@@ -50,8 +50,9 @@ tests/
     test_units.rs            # unit conversion tests
     test_bug_regression.rs   # regression tests for bugs
   mcp/
-    mod.rs                   # re-exports 29 modules
-    test_protocol.rs         # JSON-RPC protocol tests
+    mod.rs                   # re-exports 30 modules
+    test_protocol.rs         # JSON-RPC protocol tests (legacy lifecycle)
+    test_modern_protocol.rs  # 2026-07-28 dual-era tests: discover, modern list/call, _meta validation, -32022, cache hints, deterministic order, structuredContent, cross-era goldens, annotation invariants
     test_mcp_tools.rs        # tool behavior tests
     test_edge_cases.rs       # edge case coverage (218 tests)
     test_response_structure.rs

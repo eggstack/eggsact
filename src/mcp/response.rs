@@ -78,6 +78,42 @@ pub fn wrap_tool_response(tool_response: &ToolResponse) -> serde_json::Value {
     }
 }
 
+/// Modern (2026-07-28) `tools/call` result shape.
+///
+/// Successful responses expose `structuredContent` that conforms to the tool's
+/// `outputSchema` (which describes `ToolResponse.result`), plus the legacy
+/// text JSON fallback for backward compatibility. Route-critical `verdict`
+/// stays inside `result`; outer envelope fields remain in the text fallback.
+/// Tool-level errors retain `isError:true` and omit `structuredContent`.
+/// Every modern result carries `resultType:"complete"` (eggsact has no MRTR
+/// workflow) and reserved `_meta` server identity.
+pub fn wrap_tool_response_modern(tool_response: &ToolResponse) -> serde_json::Value {
+    let text = python_json_dumps(tool_response);
+    let meta = crate::mcp::protocol::server_info_meta();
+    if tool_response.ok {
+        match &tool_response.result {
+            Some(result) => serde_json::json!({
+                "resultType": "complete",
+                "content": [{"type": "text", "text": text}],
+                "structuredContent": result,
+                "_meta": meta,
+            }),
+            None => serde_json::json!({
+                "resultType": "complete",
+                "content": [{"type": "text", "text": text}],
+                "_meta": meta,
+            }),
+        }
+    } else {
+        serde_json::json!({
+            "resultType": "complete",
+            "content": [{"type": "text", "text": text}],
+            "isError": true,
+            "_meta": meta,
+        })
+    }
+}
+
 static SANITIZE_REGEXES: LazyLock<Vec<(&'static str, regex::Regex, &'static str)>> =
     LazyLock::new(|| {
         vec![

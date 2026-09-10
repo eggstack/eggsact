@@ -17,6 +17,7 @@ pub mod test_hardening_and_gaps;
 pub mod test_lifecycle_and_gaps;
 pub mod test_machine_codes;
 pub mod test_mcp_tools;
+pub mod test_modern_protocol;
 pub mod test_preflight_wrappers;
 pub mod test_protocol;
 pub mod test_real_tool_use;

@@ -5,17 +5,18 @@ use crate::mcp::execution;
 use crate::mcp::machine_codes;
 use crate::mcp::protocol::{
     already_initialized, invalid_request, json_rpc_error, json_rpc_error_with_data,
-    method_not_found, not_initialized, EggsactExtensions, ExperimentalCapabilities,
-    InitializeParams, InitializeResult, JsonRpcRequest, JsonRpcResponse, ServerCapabilities,
-    ServerInfo, ToolsCapability,
+    method_not_found, not_initialized, server_info_meta, with_request_id, DiscoverResult,
+    EggsactExtensions, ExperimentalCapabilities, InitializeParams, InitializeResult,
+    JsonRpcRequest, JsonRpcResponse, ServerCapabilities, ServerInfo, ToolsCapability,
 };
 use crate::mcp::registry;
-use crate::mcp::response::{wrap_tool_response, ToolResponse};
+use crate::mcp::response::{wrap_tool_response, wrap_tool_response_modern, ToolResponse};
 use crate::mcp::runtime::{
     apply_cancellation, complete_request, get_active_audience, get_active_profile,
-    get_schema_detail, negotiate_protocol_version, new_active_requests, register_request,
-    MetricGuard, NegotiatedProtocol, RegisterRequestError, SessionState, MAX_REQUEST_BYTES,
-    MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS, MCP_SERVER_NAME, RUNTIME_METRICS,
+    get_schema_detail, negotiate_legacy_version, new_active_requests, parse_modern_request_meta,
+    register_request, MetricGuard, ModernRequestContext, NegotiatedProtocol, RegisterRequestError,
+    SessionState, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS, MCP_SERVER_NAME,
+    MODERN_CACHE_SCOPE, MODERN_CACHE_TTL_MS, RUNTIME_METRICS, SERVER_INSTRUCTIONS,
 };
 use serde_json::Value;
 use std::io::Write;
@@ -210,6 +211,416 @@ fn build_server_capabilities() -> ServerCapabilities {
     }
 }
 
+fn build_discover_value() -> Value {
+    serde_json::to_value(DiscoverResult::current(build_server_capabilities())).unwrap_or_else(
+        |_| {
+            serde_json::json!({
+                "resultType": "complete",
+                "supportedVersions": crate::mcp::runtime::SUPPORTED_PROTOCOL_VERSIONS,
+                "capabilities": {"tools": {"listChanged": false}},
+                "instructions": SERVER_INSTRUCTIONS,
+                "ttlMs": MODERN_CACHE_TTL_MS,
+                "cacheScope": MODERN_CACHE_SCOPE,
+                "_meta": server_info_meta(),
+            })
+        },
+    )
+}
+
+// ── Shared tools/list validation (era-agnostic) ──────────────────────────
+// Era branching happens at the envelope/serialization boundary; validation,
+// profile/audience resolution, and registry filtering are shared.
+
+struct ToolsListFilters {
+    schema_detail: Option<String>,
+    names: Option<Vec<String>>,
+    profile: Option<String>,
+    audience: Option<String>,
+    tier: Option<u8>,
+    tags: Option<Vec<String>>,
+}
+
+fn parse_tools_list_params(
+    params: Option<&Value>,
+    id: &Option<Value>,
+) -> Result<ToolsListFilters, Value> {
+    if let Some(p) = params {
+        if !p.is_object() {
+            return Err(invalid_request(
+                "Invalid params: expected object",
+                id.clone(),
+            ));
+        }
+    }
+    if let Some(p) = params {
+        if let Some(d) = p.get("schema_detail") {
+            if !d.is_string() || !matches!(d.as_str(), Some("compact" | "normal" | "full")) {
+                return Err(invalid_request(
+                    "Invalid 'schema_detail' parameter: expected compact, normal, or full",
+                    id.clone(),
+                ));
+            }
+        }
+        if let Some(t) = p.get("tier") {
+            if !t.is_i64() && !t.is_u64() && !t.is_boolean() {
+                return Err(invalid_request(
+                    "Invalid 'tier' parameter: expected integer",
+                    id.clone(),
+                ));
+            }
+        }
+        if let Some(t) = p.get("tags") {
+            match t.as_array() {
+                Some(tags) if tags.iter().all(|v| v.is_string()) => {}
+                Some(_) => {
+                    return Err(invalid_request(
+                        "Invalid 'tags' parameter: all items must be strings",
+                        id.clone(),
+                    ));
+                }
+                None => {
+                    return Err(invalid_request(
+                        "Invalid 'tags' parameter: expected array",
+                        id.clone(),
+                    ));
+                }
+            }
+        }
+        if let Some(n) = p.get("names") {
+            match n.as_array() {
+                Some(names) if names.iter().all(|v| v.is_string()) => {}
+                Some(_) => {
+                    return Err(invalid_request(
+                        "Invalid 'names' parameter: all items must be strings",
+                        id.clone(),
+                    ));
+                }
+                None => {
+                    return Err(invalid_request(
+                        "Invalid 'names' parameter: expected array",
+                        id.clone(),
+                    ));
+                }
+            }
+        }
+        if let Some(pr) = p.get("profile") {
+            if !pr.is_string() {
+                return Err(invalid_request(
+                    "Invalid 'profile' parameter: expected string",
+                    id.clone(),
+                ));
+            }
+        }
+        if let Some(a) = p.get("audience") {
+            if !a.is_string() || !matches!(a.as_str(), Some("model" | "harness" | "debug")) {
+                return Err(invalid_request(
+                    "Invalid 'audience' parameter: expected model, harness, or debug",
+                    id.clone(),
+                ));
+            }
+        }
+    }
+    let schema_detail = params
+        .and_then(|p| p.get("schema_detail"))
+        .and_then(|d| d.as_str())
+        .map(String::from);
+    let names = params
+        .and_then(|p| p.get("names"))
+        .and_then(|n| n.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<String>>()
+        });
+    let profile = params
+        .and_then(|p| p.get("profile"))
+        .and_then(|p| p.as_str())
+        .map(String::from);
+    let audience = params
+        .and_then(|p| p.get("audience"))
+        .and_then(|a| a.as_str())
+        .map(String::from);
+    let tier = params.and_then(|p| p.get("tier")).and_then(|t| match t {
+        Value::Number(n) => n.as_u64().map(|v| v as u8),
+        Value::Bool(b) => Some(if *b { 1 } else { 0 }),
+        _ => None,
+    });
+    let tags = params
+        .and_then(|p| p.get("tags"))
+        .and_then(|t| t.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<String>>()
+        });
+    Ok(ToolsListFilters {
+        schema_detail,
+        names,
+        profile,
+        audience,
+        tier,
+        tags,
+    })
+}
+
+fn handle_tools_list_shared(
+    params: Option<&Value>,
+    id: Option<Value>,
+    modern: bool,
+) -> Option<Value> {
+    let filters = match parse_tools_list_params(params, &id) {
+        Ok(f) => f,
+        Err(e) => return Some(e),
+    };
+    let default_detail = get_schema_detail();
+    let detail = filters.schema_detail.as_deref().unwrap_or(&default_detail);
+    let active_profile = get_active_profile();
+    let effective_profile = filters.profile.as_deref().unwrap_or(&active_profile);
+    let effective_audience_str =
+        filters
+            .audience
+            .as_deref()
+            .unwrap_or_else(|| match get_active_audience() {
+                ToolAudience::Model => "model",
+                ToolAudience::Harness => "harness",
+                ToolAudience::Debug => "debug",
+            });
+    // Leak effective strings so ToolListOptions can borrow them; the leak is
+    // bounded to one small allocation per tools/list call and keeps the shared
+    // validation path free of lifetime plumbing across eras.
+    // (Alternative would be to clone into owned options; this keeps registry
+    // call sites unchanged.)
+    if effective_profile != "full" && !registry::PROFILE_NAMES.contains(&effective_profile) {
+        let available = registry::PROFILE_NAMES.join(", ");
+        return Some(serde_json::json!({
+            "jsonrpc": "2.0",
+            "error": {
+                "code": -32602,
+                "message": format!("Unknown MCP profile: '{}'. Available profiles: {}", effective_profile, available)
+            },
+            "id": id
+        }));
+    }
+    let audience = Some(match effective_audience_str {
+        "harness" => registry::ToolListAudience::Harness,
+        "debug" => registry::ToolListAudience::Debug,
+        _ => registry::ToolListAudience::Model,
+    });
+    // Own the borrowed data for the registry call.
+    let effective_profile_owned: String = effective_profile.to_string();
+    let detail_owned: String = detail.to_string();
+    let options = registry::ToolListOptions {
+        profile: &effective_profile_owned,
+        names: filters.names.as_deref(),
+        tier: filters.tier,
+        tags: filters.tags.as_deref(),
+        schema_detail: &detail_owned,
+        audience,
+    };
+    if modern {
+        let tools = registry::list_modern_tool_values(options);
+        Some(serde_json::json!({
+            "resultType": "complete",
+            "tools": tools,
+            "ttlMs": MODERN_CACHE_TTL_MS,
+            "cacheScope": MODERN_CACHE_SCOPE,
+            "_meta": server_info_meta(),
+        }))
+    } else {
+        let tools = registry::list_tool_definitions(options);
+        Some(serde_json::json!({"tools": tools}))
+    }
+}
+
+fn handle_profiles_list_shared(
+    params: Option<&Value>,
+    id: Option<Value>,
+    modern: bool,
+) -> Option<Value> {
+    if let Some(p) = params {
+        if !p.is_object() {
+            return Some(invalid_request(
+                "Invalid params: expected object",
+                id.clone(),
+            ));
+        }
+    }
+    let active = get_active_profile();
+    let mut profiles_info = serde_json::Map::new();
+    for &name in registry::PROFILE_NAMES {
+        let tool_specs = registry::tools_for_profile(name);
+        let mut tool_names: Vec<Value> = tool_specs
+            .into_iter()
+            .map(|spec| Value::String(spec.name.to_string()))
+            .collect();
+        tool_names.sort_by(|a, b| a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or("")));
+        profiles_info.insert(
+            name.to_string(),
+            serde_json::json!({
+                "tools": tool_names,
+                "tool_count": tool_names.len(),
+            }),
+        );
+    }
+    if modern {
+        Some(serde_json::json!({
+            "resultType": "complete",
+            "active_profile": active,
+            "profiles": Value::Object(profiles_info),
+            "available_profiles": registry::PROFILE_NAMES,
+            "_meta": server_info_meta(),
+        }))
+    } else {
+        Some(serde_json::json!({
+            "active_profile": active,
+            "profiles": Value::Object(profiles_info),
+            "available_profiles": registry::PROFILE_NAMES,
+        }))
+    }
+}
+
+async fn handle_tools_call_shared(
+    params: Option<&Value>,
+    cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
+    tool_semaphore: &Arc<tokio::sync::Semaphore>,
+    id: Option<Value>,
+    modern: bool,
+) -> Option<Value> {
+    let params_obj = match params {
+        Some(p) => {
+            if !p.is_object() {
+                return Some(invalid_request(
+                    "Invalid params: expected object",
+                    id.clone(),
+                ));
+            }
+            p
+        }
+        None => {
+            return Some(invalid_request(
+                "Invalid params: expected object",
+                id.clone(),
+            ));
+        }
+    };
+    let name = match params_obj.get("name").and_then(|v| v.as_str()) {
+        Some(n) => n,
+        None => {
+            return Some(invalid_request(
+                "Invalid params: missing tool name",
+                id.clone(),
+            ));
+        }
+    };
+    let arguments_val = match params_obj.get("arguments") {
+        Some(v) if v.is_object() => v.clone(),
+        Some(_) => {
+            return Some(invalid_request(
+                "Invalid arguments: expected object",
+                id.clone(),
+            ));
+        }
+        None => Value::Object(serde_json::Map::new()),
+    };
+
+    if cancel_flag.load(Ordering::Acquire) {
+        let cancelled = ToolResponse::error_with_code(
+            "cancelled",
+            machine_codes::CANCELLED,
+            &format!("Tool '{}' request was cancelled by the client", name),
+            Some(vec![
+                "The request was cancelled before execution started".to_string()
+            ]),
+            Some(name),
+        );
+        if modern {
+            return Some(wrap_tool_response_modern(&cancelled));
+        } else {
+            return Some(wrap_tool_response(&cancelled));
+        }
+    }
+
+    let active_profile = get_active_profile();
+    let profile =
+        Profile::from_str_opt(&active_profile).unwrap_or_else(|| Profile::custom(&active_profile));
+    let tool_registry = ToolRegistry::with_profile_and_audience(profile, get_active_audience())
+        .with_compat_mode(CompatibilityMode::EggcalcPython);
+    let handler = match tool_registry.prepare_tool_call(name, &arguments_val) {
+        ToolCallOutcome::Ready { handler } => handler,
+        ToolCallOutcome::PreExecutionError(e) => {
+            return match e {
+                ToolCallError::UnknownTool(tool_name) => {
+                    let tool_names = registry::tool_names();
+                    let tool_name_refs: Vec<&str> = tool_names.to_vec();
+                    let msg = match registry::find_close_match(&tool_name, &tool_name_refs) {
+                        Some(m) => format!("Unknown tool: {}. Did you mean: {}?", tool_name, m),
+                        None => format!("Unknown tool: {}", tool_name),
+                    };
+                    Some(method_not_found(msg, id.clone()))
+                }
+                ToolCallError::ToolUnavailable { tool, profile } => Some(json_rpc_error(
+                    -32602,
+                    format!(
+                        "Tool '{}' is not available in profile '{}'. Check the tool's declared profiles, or switch to a profile that includes it.",
+                        tool, profile
+                    ),
+                    id.clone(),
+                )),
+                ToolCallError::ToolNotAllowedForAudience {
+                    tool,
+                    profile,
+                    audience,
+                    exposure,
+                } => Some(json_rpc_error(
+                    -32602,
+                    format!(
+                        "Tool '{}' (exposure: {}) cannot be executed by {} audience in profile '{}'. Use tools/list with appropriate audience, or use the in-process API with a different audience.",
+                        tool, exposure, audience, profile
+                    ),
+                    id.clone(),
+                )),
+                ToolCallError::InvalidArguments(msg) => Some(json_rpc_error(
+                    -32602,
+                    format!("Invalid arguments for tool '{}': {}", name, msg),
+                    id.clone(),
+                )),
+                ToolCallError::Internal(msg) => Some(json_rpc_error(-32603, msg, id.clone())),
+            };
+        }
+    };
+
+    let name_owned = name.to_string();
+    let args_clone = arguments_val.clone();
+    let sem = tool_semaphore.clone();
+    let tool_budget = registry::get_tool(name)
+        .map(|spec| budget_for_tool(name, spec.cost))
+        .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
+    let outcome = execution::execute_tool_bounded(
+        handler,
+        args_clone,
+        name_owned.clone(),
+        tool_budget,
+        cancel_flag.clone(),
+        sem,
+    )
+    .await;
+    if modern {
+        Some(execution::build_tool_response_modern(
+            outcome,
+            &name_owned,
+            &tool_budget,
+            id.clone(),
+        ))
+    } else {
+        Some(execution::build_tool_response(
+            outcome,
+            &name_owned,
+            &tool_budget,
+            id.clone(),
+        ))
+    }
+}
+
 async fn handle_request_async(
     request: &JsonRpcRequest,
     cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
@@ -221,9 +632,110 @@ async fn handle_request_async(
     // bridge: EvalContext::mcp_mode() is installed as a thread-local in
     // the tools/call handler before dispatching to the tool.
 
-    // ── Lifecycle enforcement ──────────────────────────────────────────
+    // ── Dual-era dispatch ──────────────────────────────────────────────
+    // Modern (2026-07-28) requests carry a reserved per-request `_meta`
+    // envelope and bypass legacy `SessionState`. Legacy requests (no envelope)
+    // enforce the initialize handshake as before. Modern requests never mutate
+    // legacy session state.
     let method = request.method.as_str();
 
+    // server/discover is always allowed without prior state and never mutates
+    // SessionState. With a modern envelope it validates the version; without
+    // an envelope it still answers (stdio backward-compat probe).
+    if method == "server/discover" {
+        match parse_modern_request_meta(request.params.as_ref()) {
+            None => {
+                return Some(build_discover_value());
+            }
+            Some(Ok(_ctx)) => {
+                return Some(build_discover_value());
+            }
+            Some(Err(e)) => {
+                return Some(with_request_id(e, request.id.clone()));
+            }
+        }
+    }
+
+    // For all other methods, a present `_meta` envelope selects the modern era.
+    // Malformed/unsupported envelopes return their protocol error verbatim and
+    // must not silently enter legacy state.
+    let modern_ctx: Option<ModernRequestContext> =
+        match parse_modern_request_meta(request.params.as_ref()) {
+            None => None,
+            Some(Ok(ctx)) => Some(ctx),
+            Some(Err(e)) => {
+                return Some(with_request_id(e, request.id.clone()));
+            }
+        };
+
+    if let Some(_mctx) = modern_ctx {
+        // ── Modern stateless dispatch (no SessionState) ──────────────
+        // Do not duplicate validation/execution: delegate to the shared
+        // handlers with modern=true so envelope/serialization is the only
+        // era branch.
+        match method {
+            "initialize" => {
+                // initialize is legacy-only; a modern envelope claiming it is
+                // an era mismatch.
+                return Some(method_not_found(
+                    "Method not found: initialize (legacy handshake is not part of the 2026-07-28 era; use server/discover)",
+                    request.id.clone(),
+                ));
+            }
+            "ping" => {
+                // ping was removed in 2026-07-28; modern clients must not rely
+                // on it. Legacy ping remains below.
+                return Some(method_not_found(
+                    "Method not found: ping (removed in protocol 2026-07-28)",
+                    request.id.clone(),
+                ));
+            }
+            "notifications/initialized" => {
+                return Some(invalid_request(
+                    "notifications/initialized must be sent as a notification (without 'id'), not as a request",
+                    request.id.clone(),
+                ));
+            }
+            "tools/list" => {
+                return handle_tools_list_shared(request.params.as_ref(), request.id.clone(), true);
+            }
+            "tools/call" => {
+                return handle_tools_call_shared(
+                    request.params.as_ref(),
+                    cancel_flag,
+                    tool_semaphore,
+                    request.id.clone(),
+                    true,
+                )
+                .await;
+            }
+            "profiles/list" => {
+                return handle_profiles_list_shared(
+                    request.params.as_ref(),
+                    request.id.clone(),
+                    true,
+                );
+            }
+            _ => {
+                let display_method = if request.method.len() > 100 {
+                    let truncated = &request.method.as_bytes()[..100];
+                    let mut end = truncated.len();
+                    while end > 0 && !request.method.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    format!("{}...", &request.method[..end])
+                } else {
+                    request.method.clone()
+                };
+                return Some(method_not_found(
+                    format!("Method not found: {}", display_method),
+                    request.id.clone(),
+                ));
+            }
+        }
+    }
+
+    // ── Legacy lifecycle enforcement (unchanged) ───────────────────────
     match method {
         "initialize" => {
             // Parse typed initialize parameters.
@@ -264,8 +776,8 @@ async fn handle_request_async(
                 ));
             }
 
-            // Negotiate protocol version
-            let negotiated_version = negotiate_protocol_version(&init_params.protocol_version);
+            // Negotiate protocol version (legacy era only; modern never uses initialize)
+            let negotiated_version = negotiate_legacy_version(&init_params.protocol_version);
 
             // Attempt lifecycle transition
             let negotiated = NegotiatedProtocol {
@@ -290,6 +802,7 @@ async fn handle_request_async(
                     name: MCP_SERVER_NAME.to_string(),
                     version: env!("CARGO_PKG_VERSION").to_string(),
                 },
+                instructions: Some(SERVER_INSTRUCTIONS.to_string()),
             };
 
             Some(serde_json::to_value(result).unwrap())
@@ -328,337 +841,22 @@ async fn handle_request_async(
 
             match method {
                 "tools/list" => {
-                    let params = request.params.as_ref();
-                    if let Some(p) = params {
-                        if !p.is_object() {
-                            return Some(invalid_request(
-                                "Invalid params: expected object",
-                                request.id.clone(),
-                            ));
-                        }
-                    }
-                    // Validate param types (matching Python messages exactly)
-                    if let Some(p) = params {
-                        if let Some(d) = p.get("schema_detail") {
-                            if !d.is_string()
-                                || !matches!(d.as_str(), Some("compact" | "normal" | "full"))
-                            {
-                                return Some(invalid_request(
-                            "Invalid 'schema_detail' parameter: expected compact, normal, or full",
-                            request.id.clone(),
-                        ));
-                            }
-                        }
-                        if let Some(t) = p.get("tier") {
-                            // Python treats bool as int (isinstance(True, int) == True)
-                            if !t.is_i64() && !t.is_u64() && !t.is_boolean() {
-                                return Some(invalid_request(
-                                    "Invalid 'tier' parameter: expected integer",
-                                    request.id.clone(),
-                                ));
-                            }
-                        }
-                        if let Some(t) = p.get("tags") {
-                            match t.as_array() {
-                                Some(tags) if tags.iter().all(|v| v.is_string()) => {}
-                                Some(_) => {
-                                    return Some(invalid_request(
-                                        "Invalid 'tags' parameter: all items must be strings",
-                                        request.id.clone(),
-                                    ));
-                                }
-                                None => {
-                                    return Some(invalid_request(
-                                        "Invalid 'tags' parameter: expected array",
-                                        request.id.clone(),
-                                    ));
-                                }
-                            }
-                        }
-                        if let Some(n) = p.get("names") {
-                            match n.as_array() {
-                                Some(names) if names.iter().all(|v| v.is_string()) => {}
-                                Some(_) => {
-                                    return Some(invalid_request(
-                                        "Invalid 'names' parameter: all items must be strings",
-                                        request.id.clone(),
-                                    ));
-                                }
-                                None => {
-                                    return Some(invalid_request(
-                                        "Invalid 'names' parameter: expected array",
-                                        request.id.clone(),
-                                    ));
-                                }
-                            }
-                        }
-                        if let Some(pr) = p.get("profile") {
-                            if !pr.is_string() {
-                                return Some(invalid_request(
-                                    "Invalid 'profile' parameter: expected string",
-                                    request.id.clone(),
-                                ));
-                            }
-                        }
-                        if let Some(a) = p.get("audience") {
-                            if !a.is_string()
-                                || !matches!(a.as_str(), Some("model" | "harness" | "debug"))
-                            {
-                                return Some(invalid_request(
-                            "Invalid 'audience' parameter: expected model, harness, or debug",
-                            request.id.clone(),
-                        ));
-                            }
-                        }
-                    }
-                    let schema_detail = get_schema_detail();
-                    let detail = params
-                        .and_then(|p| p.get("schema_detail"))
-                        .and_then(|d| d.as_str())
-                        .unwrap_or(&schema_detail);
-                    let names_filter = params
-                        .and_then(|p| p.get("names"))
-                        .and_then(|n| n.as_array());
-                    let profile_filter = params
-                        .and_then(|p| p.get("profile"))
-                        .and_then(|p| p.as_str());
-                    let audience_filter: Option<&str> = params
-                        .and_then(|p| p.get("audience"))
-                        .and_then(|a| a.as_str());
-                    let tier_filter = params.and_then(|p| p.get("tier")).and_then(|t| {
-                        // Python treats bool as int (isinstance(True, int) == True)
-                        match t {
-                            Value::Number(n) => n.as_u64(),
-                            Value::Bool(b) => Some(if *b { 1 } else { 0 }),
-                            _ => None,
-                        }
-                    });
-                    let tags_filter = params
-                        .and_then(|p| p.get("tags"))
-                        .and_then(|t| t.as_array());
-
-                    let active_profile = get_active_profile();
-                    let effective_profile = profile_filter.unwrap_or(&active_profile);
-                    // Default to the active audience when no explicit audience is provided,
-                    // so harness-only tools are excluded from Model listings and the listing
-                    // agrees with what tools/call will dispatch.
-                    let effective_audience_str =
-                        audience_filter.unwrap_or_else(|| match get_active_audience() {
-                            ToolAudience::Model => "model",
-                            ToolAudience::Harness => "harness",
-                            ToolAudience::Debug => "debug",
-                        });
-                    if effective_profile != "full"
-                        && !registry::PROFILE_NAMES.contains(&effective_profile)
-                    {
-                        let available = registry::PROFILE_NAMES.join(", ");
-                        return Some(serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "error": {
-                                "code": -32602,
-                                "message": format!("Unknown MCP profile: '{}'. Available profiles: {}", effective_profile, available)
-                            },
-                            "id": request.id
-                        }));
-                    }
-                    // Build options and delegate to registry
-                    let names_vec: Option<Vec<String>> = names_filter.map(|n| {
-                        n.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    });
-                    let tags_vec: Option<Vec<String>> = tags_filter.map(|t| {
-                        t.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    });
-                    let audience = Some(match effective_audience_str {
-                        "harness" => registry::ToolListAudience::Harness,
-                        "debug" => registry::ToolListAudience::Debug,
-                        _ => registry::ToolListAudience::Model,
-                    });
-                    let options = registry::ToolListOptions {
-                        profile: effective_profile,
-                        names: names_vec.as_deref(),
-                        tier: tier_filter.map(|t| t as u8),
-                        tags: tags_vec.as_deref(),
-                        schema_detail: detail,
-                        audience,
-                    };
-                    let tools = registry::list_tool_definitions(options);
-                    Some(serde_json::json!({"tools": tools}))
+                    handle_tools_list_shared(request.params.as_ref(), request.id.clone(), false)
                 }
 
                 "tools/call" => {
-                    let params = match request.params.as_ref() {
-                        Some(p) => {
-                            if !p.is_object() {
-                                return Some(invalid_request(
-                                    "Invalid params: expected object",
-                                    request.id.clone(),
-                                ));
-                            }
-                            p
-                        }
-                        None => {
-                            return Some(invalid_request(
-                                "Invalid params: expected object",
-                                request.id.clone(),
-                            ));
-                        }
-                    };
-                    let name = match params.get("name").and_then(|v| v.as_str()) {
-                        Some(n) => n,
-                        None => {
-                            return Some(invalid_request(
-                                "Invalid params: missing tool name",
-                                request.id.clone(),
-                            ));
-                        }
-                    };
-                    let arguments_val = match params.get("arguments") {
-                        Some(v) if v.is_object() => v.clone(),
-                        Some(_) => {
-                            return Some(invalid_request(
-                                "Invalid arguments: expected object",
-                                request.id.clone(),
-                            ));
-                        }
-                        None => serde_json::Value::Object(serde_json::Map::new()),
-                    };
-
-                    // Check if request was cancelled before execution
-                    if cancel_flag.load(Ordering::Acquire) {
-                        return Some(wrap_tool_response(&ToolResponse::error_with_code(
-                            "cancelled",
-                            machine_codes::CANCELLED,
-                            &format!("Tool '{}' request was cancelled by the client", name),
-                            Some(vec![
-                                "The request was cancelled before execution started".to_string()
-                            ]),
-                            Some(name),
-                        )));
-                    }
-
-                    // Delegate lookup, profile check, and validation to ToolRegistry
-                    let active_profile = get_active_profile();
-                    let profile = Profile::from_str_opt(&active_profile)
-                        .unwrap_or_else(|| Profile::custom(&active_profile));
-                    let registry =
-                        ToolRegistry::with_profile_and_audience(profile, get_active_audience())
-                            .with_compat_mode(CompatibilityMode::EggcalcPython);
-                    let handler = match registry.prepare_tool_call(name, &arguments_val) {
-                        ToolCallOutcome::Ready { handler } => handler,
-                        ToolCallOutcome::PreExecutionError(e) => {
-                            return match e {
-                        ToolCallError::UnknownTool(tool_name) => {
-                            let tool_names = registry::tool_names();
-                            let tool_name_refs: Vec<&str> = tool_names.to_vec();
-                            let msg = match registry::find_close_match(&tool_name, &tool_name_refs) {
-                                Some(m) => format!("Unknown tool: {}. Did you mean: {}?", tool_name, m),
-                                None => format!("Unknown tool: {}", tool_name),
-                            };
-                            Some(method_not_found(msg, request.id.clone()))
-                        }
-                        ToolCallError::ToolUnavailable { tool, profile } => {
-                            Some(json_rpc_error(
-                                -32602,
-                                format!(
-                                    "Tool '{}' is not available in profile '{}'. Check the tool's declared profiles, or switch to a profile that includes it.",
-                                    tool, profile
-                                ),
-                                request.id.clone(),
-                            ))
-                        }
-                        ToolCallError::ToolNotAllowedForAudience {
-                            tool,
-                            profile,
-                            audience,
-                            exposure,
-                        } => {
-                            Some(json_rpc_error(
-                                -32602,
-                                format!(
-                                    "Tool '{}' (exposure: {}) cannot be executed by {} audience in profile '{}'. Use tools/list with appropriate audience, or use the in-process API with a different audience.",
-                                    tool, exposure, audience, profile
-                                ),
-                                request.id.clone(),
-                            ))
-                        }
-                        ToolCallError::InvalidArguments(msg) => {
-                            Some(json_rpc_error(
-                                -32602,
-                                format!("Invalid arguments for tool '{}': {}", name, msg),
-                                request.id.clone(),
-                            ))
-                        }
-                        ToolCallError::Internal(msg) => {
-                            Some(json_rpc_error(-32603, msg, request.id.clone()))
-                        }
-                    };
-                        }
-                    };
-
-                    let name_owned = name.to_string();
-                    let args_clone = arguments_val.clone();
-                    let sem = tool_semaphore.clone();
-
-                    // Resolve budget for this tool from its declared cost.
-                    // Composite tools get HEAVY budgets; others map from ToolCost.
-                    let tool_budget = registry::get_tool(name)
-                        .map(|spec| budget_for_tool(name, spec.cost))
-                        .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
-
-                    let outcome = execution::execute_tool_bounded(
-                        handler,
-                        args_clone,
-                        name_owned.clone(),
-                        tool_budget,
-                        cancel_flag.clone(),
-                        sem,
-                    )
-                    .await;
-
-                    Some(execution::build_tool_response(
-                        outcome,
-                        &name_owned,
-                        &tool_budget,
+                    handle_tools_call_shared(
+                        request.params.as_ref(),
+                        cancel_flag,
+                        tool_semaphore,
                         request.id.clone(),
-                    ))
+                        false,
+                    )
+                    .await
                 }
 
                 "profiles/list" => {
-                    if let Some(ref params) = request.params {
-                        if !params.is_object() {
-                            return Some(invalid_request(
-                                "Invalid params: expected object",
-                                request.id.clone(),
-                            ));
-                        }
-                    }
-                    let active = get_active_profile();
-                    let mut profiles_info = serde_json::Map::new();
-                    for &name in registry::PROFILE_NAMES {
-                        let tool_specs = registry::tools_for_profile(name);
-                        let mut tool_names: Vec<Value> = tool_specs
-                            .into_iter()
-                            .map(|spec| Value::String(spec.name.to_string()))
-                            .collect();
-                        tool_names
-                            .sort_by(|a, b| a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or("")));
-                        profiles_info.insert(
-                            name.to_string(),
-                            serde_json::json!({
-                                "tools": tool_names,
-                                "tool_count": tool_names.len(),
-                            }),
-                        );
-                    }
-                    Some(serde_json::json!({
-                        "active_profile": active,
-                        "profiles": serde_json::Value::Object(profiles_info),
-                        "available_profiles": registry::PROFILE_NAMES,
-                    }))
+                    handle_profiles_list_shared(request.params.as_ref(), request.id.clone(), false)
                 }
 
                 _ => {
@@ -860,13 +1058,28 @@ pub async fn main() -> ! {
         if request.id.is_none() {
             match request.method.as_str() {
                 "notifications/initialized" => {
-                    // Lifecycle transition: AwaitingInitialized → Ready
-                    let mut state = session_state.lock().await;
-                    if let Err(e) = state.transition_to_ready() {
-                        eprintln!(
-                            "Warning: notifications/initialized ignored: {} (state: {:?})",
-                            e, *state
-                        );
+                    // Modern (2026-07-28) notifications carry a per-request
+                    // envelope and must never mutate legacy SessionState.
+                    let is_modern = request
+                        .params
+                        .as_ref()
+                        .and_then(|p| p.as_object())
+                        .and_then(|o| o.get("_meta"))
+                        .and_then(|m| m.as_object())
+                        .and_then(|mo| mo.get(crate::mcp::runtime::META_PROTOCOL_VERSION))
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| s == crate::mcp::runtime::MODERN_PROTOCOL_VERSION);
+                    if is_modern {
+                        // No handshake in the modern era; nothing to transition.
+                    } else {
+                        // Lifecycle transition: AwaitingInitialized → Ready
+                        let mut state = session_state.lock().await;
+                        if let Err(e) = state.transition_to_ready() {
+                            eprintln!(
+                                "Warning: notifications/initialized ignored: {} (state: {:?})",
+                                e, *state
+                            );
+                        }
                     }
                 }
                 "notifications/cancelled" => {

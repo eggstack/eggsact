@@ -94,7 +94,15 @@ See `architecture/machine-codes.md` for the full code table and design rationale
 
 **Execution routing:** Budget-aware APIs (`call_json_with_budget`, `call_json_with_context`, `call_json_with_execution_context`) route through the `SyncExecutionPool` (8 workers, 32-slot queue) in `src/mcp/sync_pool.rs`, which enforces elapsed-time budgets and provides bounded concurrency. `call_json` dispatches directly without a pool. The MCP server path is unaffected — it uses Tokio `spawn_blocking`.
 
-Tool listing and filtering lives in `src/mcp/registry/listing.rs`, including `list_tool_definitions()` (used by the MCP `tools/list` handler), audience-aware listing, and schema compaction.
+Tool listing and filtering lives in `src/mcp/registry/listing.rs`, including `list_tool_definitions()` (legacy `tools/list`) and `list_modern_tool_values()` (modern `2026-07-28` shape with `annotations` + namespaced `_meta`), audience-aware listing, and schema compaction.
+
+### Dual-Era Protocol (`2026-07-28` + Legacy)
+
+- Legacy (`2025-11-25`, `2024-11-05`) uses `initialize` → `notifications/initialized` + `SessionState`. Modern (`2026-07-28`) is stateless per-request `_meta` (`io.modelcontextprotocol/protocolVersion` + `clientCapabilities`, optional `clientInfo`); `server/discover` works from a fresh process and never touches `SessionState`.
+- Era branching lives at the envelope/serialization boundary (`src/mcp/server.rs` + `parse_modern_request_meta`). Do not duplicate validation, audience/profile checks, budget selection, or execution between eras — use `handle_tools_list_shared`, `handle_tools_call_shared`, `handle_profiles_list_shared` with a `modern` flag.
+- Modern `tools/list` adds `resultType`, `ttlMs` (`MODERN_CACHE_TTL_MS`), `cacheScope` (`public`), `_meta` server identity, and standard `annotations`; registry metadata (`tier`, `tags`, `category`, `llm_exposure`, `cost`) lives under `io.github.eggstack/eggsact`, never top-level. Legacy serialization is unchanged.
+- Modern `tools/call` adds `structuredContent` (= `ToolResponse.result`, conforming to `outputSchema`) + `resultType`/`_meta`; `isError` retained, no `structuredContent` on tool errors. Modern `ping` is removed (`-32601`); malformed envelopes are `-32602`, unsupported versions `-32022` with `{supported, requested}`.
+- Annotations are uniform (`readOnlyHint: true`, `openWorldHint: false`, etc.) via `annotations_for_spec`; if a future tool violates the claim, branch there and update `test_modern_protocol` invariants. Modern and legacy must agree on tool semantics — add cross-era goldens for representative tools in `tests/mcp/test_modern_protocol.rs`.
 
 ### Context-Aware APIs
 

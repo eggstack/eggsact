@@ -207,6 +207,58 @@ pub fn list_tool_definitions(options: ToolListOptions<'_>) -> Vec<super::types::
     tools
 }
 
+/// Filter tools and serialize in the modern (2026-07-28) Tool shape.
+///
+/// Same profile/audience/names/tier/tags filtering and registry ordering as
+/// `list_tool_definitions`, but emits protocol-standard top-level fields plus
+/// `annotations` and a namespaced `_meta` object instead of nonstandard
+/// top-level registry keys. Legacy serialization is untouched.
+pub fn list_modern_tool_values(options: ToolListOptions<'_>) -> Vec<Value> {
+    let profile_tools = match options.audience {
+        Some(aud) => tools_for_profile_audience(options.profile, aud),
+        None => tools_for_profile(options.profile),
+    };
+    let compact = options.schema_detail == "compact";
+
+    // Apply names/tier/tags filters on specs before serialization so modern
+    // and legacy listings agree on membership.
+    let mut specs: Vec<&&'static super::types::ToolSpec> = profile_tools.iter().collect();
+    if let Some(names) = options.names {
+        let name_set: HashSet<&str> = names.iter().map(|s| s.as_str()).collect();
+        specs.retain(|s| name_set.contains(s.name));
+    }
+    if let Some(tier) = options.tier {
+        specs.retain(|s| s.tier == tier);
+    }
+    if let Some(tags) = options.tags {
+        let tag_set: HashSet<&str> = tags.iter().map(|s| s.as_str()).collect();
+        specs.retain(|s| tag_set.iter().all(|tag| s.tags.contains(tag)));
+    }
+
+    specs
+        .into_iter()
+        .map(|spec| {
+            let mut description = spec.description.to_string();
+            if compact && description.chars().count() > 120 {
+                let truncated: String = description.chars().take(117).collect();
+                description = truncated;
+                description.push_str("...");
+            }
+            let mut input_schema = (spec.input_schema)();
+            if compact {
+                input_schema = compact_input_schema(&input_schema);
+            }
+            let mut output_schema = Some((spec.output_schema)());
+            if compact {
+                if let Some(ref output) = output_schema.clone() {
+                    output_schema = Some(compact_output_schema(output));
+                }
+            }
+            super::types::modern_tool_value(spec, description, input_schema, output_schema, compact)
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Audience-aware listing
 // ---------------------------------------------------------------------------

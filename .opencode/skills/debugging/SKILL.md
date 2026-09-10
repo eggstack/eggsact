@@ -51,16 +51,21 @@ actual target, not a hardcoded drive.
 
 ### MCP Server Issues
 
-Test the MCP server interactively:
+Test the MCP server interactively (legacy handshake vs modern stateless):
+
 ```bash
-# Initialize
+# Legacy: initialize
 echo '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | cargo run -- --mcp
 
-# List tools
-echo '{"jsonrpc":"2.0","method":"tools/list","id":2}' | cargo run -- --mcp
+# Modern: discover (no handshake, works from fresh process)
+echo '{"jsonrpc":"2.0","method":"server/discover","id":1,"params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' | cargo run -- --mcp
 
-# Call a tool
-echo '{"jsonrpc":"2.0","method":"tools/call","id":3,"params":{"name":"math_eval","arguments":{"expression":"2+3"}}}' | cargo run -- --mcp
+# Modern: tools/list without initialize
+echo '{"jsonrpc":"2.0","method":"tools/list","id":2,"params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' | cargo run -- --mcp
+
+# Legacy list/call still require initialize → notifications/initialized first.
+# Modern initialize is -32601, modern ping is -32601 (removed), malformed _meta is -32602, unsupported version is -32022 with {supported, requested}.
+# Modern requests must never mutate legacy SessionState — if a legacy call starts working after only modern traffic, the era gate leaked.
 ```
 
 ### Unit Conversion Issues
