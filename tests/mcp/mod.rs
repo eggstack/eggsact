@@ -11,6 +11,7 @@ pub mod test_diagnostics;
 pub mod test_discovery;
 pub mod test_edge_cases;
 pub mod test_edit_preflight_enhanced;
+pub mod test_era_pinning;
 pub mod test_error_structure;
 pub mod test_execution_safety;
 pub mod test_golden_fixtures;

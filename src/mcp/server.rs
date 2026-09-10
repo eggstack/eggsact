@@ -4,7 +4,7 @@ use crate::mcp::compat::CompatibilityMode;
 use crate::mcp::execution;
 use crate::mcp::machine_codes;
 use crate::mcp::protocol::{
-    already_initialized, invalid_request, json_rpc_error, json_rpc_error_with_data,
+    already_initialized, era_mismatch, invalid_request, json_rpc_error, json_rpc_error_with_data,
     method_not_found, not_initialized, server_info_meta, with_request_id, DiscoverResult,
     EggsactExtensions, ExperimentalCapabilities, InitializeParams, InitializeResult,
     JsonRpcRequest, JsonRpcResponse, ServerCapabilities, ServerInfo, ToolsCapability,
@@ -12,12 +12,12 @@ use crate::mcp::protocol::{
 use crate::mcp::registry;
 use crate::mcp::response::{wrap_tool_response, wrap_tool_response_modern, ToolResponse};
 use crate::mcp::runtime::{
-    apply_cancellation, complete_request, get_active_audience, get_active_profile,
-    get_active_surface, get_schema_detail, negotiate_legacy_version, new_active_requests,
-    parse_modern_request_meta, register_request, MetricGuard, ModernRequestContext,
-    NegotiatedProtocol, RegisterRequestError, SessionState, MAX_REQUEST_BYTES,
-    MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS, MCP_SERVER_NAME, MODERN_CACHE_SCOPE,
-    MODERN_CACHE_TTL_MS, RUNTIME_METRICS, SERVER_INSTRUCTIONS,
+    apply_cancellation, complete_request, current_connection_era, get_active_audience,
+    get_active_profile, get_active_surface, get_schema_detail, negotiate_legacy_version,
+    new_active_requests, parse_modern_request_meta, pin_connection_era, register_request,
+    ConnectionEra, EraPinOutcome, MetricGuard, ModernRequestContext, NegotiatedProtocol,
+    RegisterRequestError, SessionState, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS,
+    MCP_SERVER_NAME, MODERN_CACHE_SCOPE, MODERN_CACHE_TTL_MS, RUNTIME_METRICS, SERVER_INSTRUCTIONS,
 };
 use serde_json::Value;
 use std::io::Write;
@@ -850,39 +850,35 @@ async fn handle_request_async(
     cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
     tool_semaphore: &Arc<tokio::sync::Semaphore>,
     session_state: &Arc<Mutex<SessionState>>,
+    connection_era: &Arc<Mutex<ConnectionEra>>,
 ) -> Option<serde_json::Value> {
     // NOTE: Process-global ensure_mcp_defaults() has been removed.
     // MCP evaluator defaults are now set per-request via the eval-context
     // bridge: EvalContext::mcp_mode() is installed as a thread-local in
     // the tools/call handler before dispatching to the tool.
 
-    // ── Dual-era dispatch ──────────────────────────────────────────────
-    // Modern (2026-07-28) requests carry a reserved per-request `_meta`
-    // envelope and bypass legacy `SessionState`. Legacy requests (no envelope)
-    // enforce the initialize handshake as before. Modern requests never mutate
-    // legacy session state.
+    // ── Connection-pinned dual-era dispatch ────────────────────────────
+    // One stdio process is one connection. The opening exchange pins the era
+    // (`Undecided` → `Legacy` on successful `initialize`, → `Modern20260728`
+    // on a valid modern `_meta` envelope). Modern request `_meta` remains
+    // validated per request; pinning never excuses omitting it. Invalid
+    // modern envelopes and failed `initialize` validation never pin, so a
+    // client can retry without poisoned state. Unversioned `server/discover`
+    // (no `_meta`) always answers without pinning and without touching
+    // `SessionState`. Cross-era requests after pinning are rejected with
+    // `ERA_MISMATCH` (-32600) preserving the JSON-RPC id. The era lock is
+    // held only for inspect/select; tool execution stays concurrent.
     let method = request.method.as_str();
 
-    // server/discover is always allowed without prior state and never mutates
-    // SessionState. With a modern envelope it validates the version; without
-    // an envelope it still answers (stdio backward-compat probe).
-    if method == "server/discover" {
-        match parse_modern_request_meta(request.params.as_ref()) {
-            None => {
-                return Some(build_discover_value());
-            }
-            Some(Ok(_ctx)) => {
-                return Some(build_discover_value());
-            }
-            Some(Err(e)) => {
-                return Some(with_request_id(e, request.id.clone()));
-            }
-        }
+    // server/discover without `_meta`: backward-compat probe, allowed in any
+    // era, never pins, never touches SessionState.
+    if method == "server/discover" && parse_modern_request_meta(request.params.as_ref()).is_none() {
+        return Some(build_discover_value());
     }
 
     // For all other methods, a present `_meta` envelope selects the modern era.
-    // Malformed/unsupported envelopes return their protocol error verbatim and
-    // must not silently enter legacy state.
+    // Malformed/unsupported envelopes return their protocol error verbatim,
+    // never pin, and must not silently enter legacy state.
     let modern_ctx: Option<ModernRequestContext> =
         match parse_modern_request_meta(request.params.as_ref()) {
             None => None,
@@ -893,14 +889,24 @@ async fn handle_request_async(
         };
 
     if let Some(_mctx) = modern_ctx {
-        // ── Modern stateless dispatch (no SessionState) ──────────────
+        // Valid modern envelope: pin Modern (or reject if Legacy-pinned).
+        match pin_connection_era(connection_era, ConnectionEra::Modern20260728).await {
+            EraPinOutcome::PinnedNow | EraPinOutcome::AlreadyPinned => {}
+            EraPinOutcome::Mismatch => {
+                return Some(era_mismatch(ConnectionEra::Legacy, request.id.clone()));
+            }
+        }
+        // ── Modern dispatch (no SessionState) ──────────────────────────
         // Do not duplicate validation/execution: delegate to the shared
         // handlers with modern=true so envelope/serialization is the only
         // era branch.
         match method {
+            "server/discover" => {
+                return Some(build_discover_value());
+            }
             "initialize" => {
                 // initialize is legacy-only; a modern envelope claiming it is
-                // an era mismatch.
+                // an era mismatch within an already-modern connection.
                 return Some(method_not_found(
                     "Method not found: initialize (legacy handshake is not part of the 2026-07-28 era; use server/discover)",
                     request.id.clone(),
@@ -959,79 +965,105 @@ async fn handle_request_async(
         }
     }
 
-    // ── Legacy lifecycle enforcement (unchanged) ───────────────────────
-    match method {
-        "initialize" => {
-            // Parse typed initialize parameters.
-            let params = match request.params.as_ref() {
-                Some(p) => {
-                    if !p.is_object() {
-                        return Some(invalid_request(
-                            "Invalid params: expected object",
-                            request.id.clone(),
-                        ));
-                    }
-                    p
-                }
-                None => {
+    // ── Legacy-shaped request (no modern envelope) ─────────────────────
+    // `initialize` is the legacy opening exchange: validate first (no pin on
+    // failure), then pin Legacy, then drive SessionState. All other legacy
+    // methods observe the pin: Modern-pinned connections reject without
+    // touching SessionState; Undecided/Legacy connections use the existing
+    // lifecycle enforcement and do not change the era.
+    if method == "initialize" {
+        // Parse typed initialize parameters.
+        let params = match request.params.as_ref() {
+            Some(p) => {
+                if !p.is_object() {
                     return Some(invalid_request(
                         "Invalid params: expected object",
                         request.id.clone(),
                     ));
                 }
-            };
-
-            // Parse typed InitializeParams
-            let init_params: InitializeParams = match serde_json::from_value(params.clone()) {
-                Ok(p) => p,
-                Err(e) => {
-                    return Some(invalid_request(
-                        format!("Invalid initialize params: {}", e),
-                        request.id.clone(),
-                    ));
-                }
-            };
-
-            // Validate required fields
-            if init_params.client_info.name.is_empty() {
+                p
+            }
+            None => {
                 return Some(invalid_request(
-                    "Invalid params: clientInfo.name is required and must not be empty",
+                    "Invalid params: expected object",
                     request.id.clone(),
                 ));
             }
+        };
 
-            // Negotiate protocol version (legacy era only; modern never uses initialize)
-            let negotiated_version = negotiate_legacy_version(&init_params.protocol_version);
-
-            // Attempt lifecycle transition
-            let negotiated = NegotiatedProtocol {
-                version: negotiated_version.clone(),
-                client_name: init_params.client_info.name,
-                client_version: init_params.client_info.version,
-                client_capabilities: init_params.capabilities,
-            };
-
-            {
-                let mut state = session_state.lock().await;
-                if state.transition_to_awaiting(negotiated).is_err() {
-                    return Some(already_initialized(request.id.clone()));
-                }
+        // Parse typed InitializeParams
+        let init_params: InitializeParams = match serde_json::from_value(params.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return Some(invalid_request(
+                    format!("Invalid initialize params: {}", e),
+                    request.id.clone(),
+                ));
             }
+        };
 
-            // Build initialize result
-            let result = InitializeResult {
-                protocol_version: negotiated_version.to_string(),
-                capabilities: build_server_capabilities(),
-                server_info: ServerInfo {
-                    name: MCP_SERVER_NAME.to_string(),
-                    version: env!("CARGO_PKG_VERSION").to_string(),
-                },
-                instructions: Some(SERVER_INSTRUCTIONS.to_string()),
-            };
-
-            Some(serde_json::to_value(result).unwrap())
+        // Validate required fields (no pin on failure: no poisoned state).
+        if init_params.client_info.name.is_empty() {
+            return Some(invalid_request(
+                "Invalid params: clientInfo.name is required and must not be empty",
+                request.id.clone(),
+            ));
         }
 
+        // Opening exchange validated: pin Legacy or reject if Modern-pinned.
+        match pin_connection_era(connection_era, ConnectionEra::Legacy).await {
+            EraPinOutcome::PinnedNow | EraPinOutcome::AlreadyPinned => {}
+            EraPinOutcome::Mismatch => {
+                return Some(era_mismatch(
+                    ConnectionEra::Modern20260728,
+                    request.id.clone(),
+                ));
+            }
+        }
+
+        // Negotiate protocol version (legacy era only; modern never uses initialize)
+        let negotiated_version = negotiate_legacy_version(&init_params.protocol_version);
+
+        // Attempt lifecycle transition
+        let negotiated = NegotiatedProtocol {
+            version: negotiated_version.clone(),
+            client_name: init_params.client_info.name,
+            client_version: init_params.client_info.version,
+            client_capabilities: init_params.capabilities,
+        };
+
+        {
+            let mut state = session_state.lock().await;
+            if state.transition_to_awaiting(negotiated).is_err() {
+                return Some(already_initialized(request.id.clone()));
+            }
+        }
+
+        // Build initialize result
+        let result = InitializeResult {
+            protocol_version: negotiated_version.to_string(),
+            capabilities: build_server_capabilities(),
+            server_info: ServerInfo {
+                name: MCP_SERVER_NAME.to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+            },
+            instructions: Some(SERVER_INSTRUCTIONS.to_string()),
+        };
+
+        return Some(serde_json::to_value(result).unwrap());
+    }
+
+    // Non-opening legacy method: reject without SessionState access when
+    // Modern-pinned; otherwise existing lifecycle enforcement applies.
+    if current_connection_era(connection_era).await == ConnectionEra::Modern20260728 {
+        return Some(era_mismatch(
+            ConnectionEra::Modern20260728,
+            request.id.clone(),
+        ));
+    }
+
+    // ── Legacy lifecycle enforcement (unchanged within Legacy/Undecided) ─
+    match method {
         "ping" => Some(serde_json::json!({})),
 
         "notifications/initialized" => {
@@ -1113,6 +1145,11 @@ pub async fn main() -> ! {
     let tool_semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_TOOL_WORKERS));
     let active_requests = new_active_requests();
     let session_state = Arc::new(Mutex::new(SessionState::Uninitialized));
+    // One stdio process is one connection: the opening exchange pins the era
+    // exactly once. Shared via the same connection-owned Arc<Mutex<..>>
+    // pattern as SessionState; held only for inspect/select, never across
+    // tool execution.
+    let connection_era = Arc::new(Mutex::new(ConnectionEra::Undecided));
 
     // Dedicated writer task: all stdout writes go through this channel
     // to prevent interleaved output from concurrent request handlers.
@@ -1284,6 +1321,8 @@ pub async fn main() -> ! {
                 "notifications/initialized" => {
                     // Modern (2026-07-28) notifications carry a per-request
                     // envelope and must never mutate legacy SessionState.
+                    // Pinned-modern connections also reject legacy handshake
+                    // notifications without touching SessionState.
                     let is_modern = request
                         .params
                         .as_ref()
@@ -1295,8 +1334,17 @@ pub async fn main() -> ! {
                         .is_some_and(|s| s == crate::mcp::runtime::MODERN_PROTOCOL_VERSION);
                     if is_modern {
                         // No handshake in the modern era; nothing to transition.
+                        // Notifications never pin the connection era.
+                    } else if current_connection_era(&connection_era).await
+                        == ConnectionEra::Modern20260728
+                    {
+                        eprintln!(
+                            "Warning: notifications/initialized ignored: connection pinned to modern era"
+                        );
                     } else {
                         // Lifecycle transition: AwaitingInitialized → Ready
+                        // (Undecided connections stay Undecided; only a
+                        // successful `initialize` request pins Legacy).
                         let mut state = session_state.lock().await;
                         if let Err(e) = state.transition_to_ready() {
                             eprintln!(
@@ -1392,8 +1440,14 @@ pub async fn main() -> ! {
         // notifications/initialized. The lifecycle state transition must
         // complete before the next line is read.
         if request.method == "initialize" {
-            let result =
-                handle_request_async(&request, &cancel_flag, &tool_semaphore, &session_state).await;
+            let result = handle_request_async(
+                &request,
+                &cancel_flag,
+                &tool_semaphore,
+                &session_state,
+                &connection_era,
+            )
+            .await;
             // Awaited cleanup — guaranteed, not best-effort
             complete_request(&active_requests, &registration).await;
             drop(guard);
@@ -1420,6 +1474,7 @@ pub async fn main() -> ! {
         let semaphore_clone = tool_semaphore.clone();
         let cancel_flag_clone = cancel_flag.clone();
         let session_state_clone = session_state.clone();
+        let connection_era_clone = connection_era.clone();
         let request_clone = request;
         let request_id_for_response = request_id.clone();
         let active_requests_clone = active_requests.clone();
@@ -1435,6 +1490,7 @@ pub async fn main() -> ! {
                     &cancel_flag_clone,
                     &semaphore_clone,
                     &session_state_clone,
+                    &connection_era_clone,
                 )
                 .await
             });

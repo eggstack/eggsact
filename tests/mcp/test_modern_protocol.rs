@@ -423,9 +423,13 @@ fn modern_does_not_mutate_legacy_session() {
         serde_json::json!({"jsonrpc": "2.0", "method": "tools/list", "id": 21}).to_string();
     let res = mcp_session(&[modern, legacy]);
     assert!(by_id(&res, 20).get("result").is_some());
+    // Connection pins modern on the first valid envelope, so the legacy
+    // follow-up is a cross-era rejection (not legacy NOT_INITIALIZED and not
+    // a leaked session). See test_era_pinning for the full matrix.
     let err = by_id(&res, 21);
     assert!(err.get("error").is_some());
-    assert_eq!(err["error"]["data"]["code"], "NOT_INITIALIZED");
+    assert_eq!(err["error"]["data"]["code"], "ERA_MISMATCH");
+    assert_eq!(err["error"]["code"], -32600);
 }
 
 // ── cross-era golden parity ──────────────────────────────────────────────

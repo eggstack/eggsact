@@ -133,7 +133,7 @@ The implementation goal is **not** to remove or merge the 86 deterministic
 capabilities. It is to keep the capability registry intact while making the
 ordinary agent-facing surface much smaller, searchable, and protocol-current.
 
-The first two implementation plans have now landed on `main`:
+The first three implementation plans have now landed on `main`:
 
 - **Protocol modernization** (`mcp-surface-01`, commit `35f7dc2e`): added the
   `2026-07-28` modern stateless request envelope alongside the legacy
@@ -146,35 +146,36 @@ The first two implementation plans have now landed on `main`:
   remains the default. Discovery remains presentation-only: profile/audience
   policy is still enforced by `ToolRegistry` and the normal bounded execution
   path. Ordinary CI for `a5c00b8d` passed.
+- **Protocol/contract corrective** (`mcp-surface-02c`): pinned one MCP era per
+  stdio connection (`ConnectionEra::Undecided` → `Legacy`/`Modern20260728`,
+  race-safe via `Arc<Mutex<..>>`, cross-era rejected as `ERA_MISMATCH`
+  `-32600` with id preserved; invalid envelopes and failed `initialize` never
+  pin; unversioned `server/discover` never pins) and removed the misleading
+  dormant `tool_invoke_output_schema()` (router returns target-specific
+  `structuredContent` with no facade-level schema). Direct remains default;
+  discovery still ≤7 `full`/Model definitions. Evidence: `tests/mcp/test_era_pinning.rs`
+  (15 subprocess/state-machine regressions), `connection_era_tests` race test,
+  cross-era goldens kept on separate connections, and official TypeScript SDK
+  2.0.0 stdio smoke (`auto` → `modern` with discover, 77 tools; default →
+  `legacy`).
 
-Post-implementation audit found two corrective items before agent evaluation
-should be treated as authoritative rollout evidence:
+Plan 03 remains the rollout gate.
 
-1. **`mcp-surface-02c-protocol-contract-corrective.md` — P1.** Pin one MCP
-   protocol era per stdio connection rather than permitting the same long-lived
-   process to select legacy vs modern independently per request. Keep modern
-   request metadata request-scoped, but add a race-safe connection-era state
-   (`Undecided` → `Legacy` or `Modern20260728`) and reject cross-era switching
-   after the opening exchange. The same corrective pass removes or neutralizes
-   the dormant `tool_invoke_output_schema()` contract: a generic router returns
-   target-specific structured results and should not advertise a narrow
-   facade-level schema that those results cannot satisfy. This pass lands
-   **before** plan 03.
-2. **`mcp-surface-03-agent-evaluation-and-rollout.md` — P1.** After corrective
-   closure, measure exact serialized Tool-definition cost, build deterministic
-   full-capability retrieval fixtures and hard-negative overlap cases, run
-   portable direct-vs-discovery agent evaluations, and gate any generated
-   client integration default on measured context reduction, selection quality,
-   reachability, and host compatibility.
+- **`mcp-surface-03-agent-evaluation-and-rollout.md` — P1.** After corrective
+  closure, measure exact serialized Tool-definition cost, build deterministic
+  full-capability retrieval fixtures and hard-negative overlap cases, run
+  portable direct-vs-discovery agent evaluations, and gate any generated
+  client integration default on measured context reduction, selection quality,
+  reachability, and host compatibility.
 
-The corrective pass must not broaden the line into a second MCP rewrite. It
-should preserve stdio-only transport, existing tool names/profile membership,
+The corrective pass did not broaden the line into a second MCP rewrite. It
+preserved stdio-only transport, existing tool names/profile membership,
 the seven-or-fewer `full`/Model discovery definitions, direct-mode default,
 existing budget/cancellation behavior, and zero new runtime dependencies. Its
-focused acceptance evidence includes mixed-era rejection, deterministic
+focused acceptance evidence (mixed-era rejection, deterministic
 opening-era selection under races, no poisoned connection state after invalid
 opening attempts, target-diverse `tool_invoke` modern results, and confirmation
-that no generic invoke output schema is advertised.
+that no generic invoke output schema is advertised) is recorded above.
 
 Plan 03 remains the rollout gate. The present discovery tests already prove
 exact-name reachability, profile/audience containment, deterministic ordering,

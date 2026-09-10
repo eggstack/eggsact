@@ -115,17 +115,43 @@ Tool implementations live in `src/tools/` (category modules):
 | `profiles/list` | Both (eggsact extension) | Lists all profiles and their tool counts; modern adds `resultType`, `_meta` |
 | `ping` | Legacy only | Returns empty response (health check); removed in `2026-07-28` (`-32601`) |
 
-### Connection Lifecycle (Dual-Era)
+### Connection Lifecycle (Dual-Era, Connection-Pinned)
 
-The same stdio binary serves both eras. Era is selected per request, not per process:
+One stdio process is one connection. The opening exchange pins the era
+exactly once (`ConnectionEra::Undecided` → `Legacy` on successful
+`initialize`, → `Modern20260728` on a valid modern `_meta` envelope); later
+requests cannot switch eras. This mirrors the official TypeScript SDK
+`serveStdio` model (opening exchange pins; the disposable sibling-process
+`server/discover` probe never appears on the session child's wire). The spec
+allows dual-era servers to serve both eras concurrently on one endpoint, but
+eggsact chooses pinning on stdio so a long-lived process cannot mix eras.
+Modern request `_meta` remains validated per request even though the era is
+per-connection.
 
-- A request carrying modern per-request `_meta` (`io.modelcontextprotocol/protocolVersion` + `clientCapabilities`, optional `clientInfo`) is served statelessly per `2026-07-28` with no handshake and no `SessionState` access.
-- An `initialize` request selects legacy semantics for the stdio process; legacy clients must complete the handshake before calling tools:
+- A successful legacy `initialize` pins `Legacy`; legacy clients must then
+  complete the handshake before calling tools:
 
 1. Client sends `initialize` with `protocolVersion`, `capabilities`, and `clientInfo`
 2. Server responds with negotiated legacy `protocolVersion`, `capabilities`, `serverInfo`, and concise `instructions`
 3. Client sends `notifications/initialized` (no response)
 4. Server transitions to `Ready` state — all legacy methods now available
+
+- A valid modern envelope (normally `server/discover`, or a direct modern
+  `tools/list`/`tools/call`) pins `Modern20260728` with no handshake and no
+  `SessionState` access. Every modern call still validates its own `_meta`.
+- Unversioned `server/discover` (no `_meta`) always answers without pinning
+  and without touching `SessionState`, in any era. A valid modern
+  `server/discover` pins Modern; after Legacy pinning it is rejected as
+  cross-era rather than served.
+- Invalid modern envelopes (`-32602`/`-32022`) and failed `initialize`
+  validation never pin; the connection stays `Undecided` so the client can
+  retry. Other pre-opening legacy traffic (`ping`, pre-handshake `tools/list`
+  → `NOT_INITIALIZED`) also leaves `Undecided`.
+- After pinning, cross-era requests are rejected with `-32600`/`ERA_MISMATCH`
+  (id preserved) via the `era_mismatch()` helper; the other era's lifecycle
+  is never mutated. The era lock (`Arc<Mutex<ConnectionEra>>`, same pattern
+  as `SessionState`) is held only for inspect/select; tool execution stays
+  concurrent. Exactly one concurrent opening wins; the loser sees `Mismatch`.
 
 Modern `server/discover` works from a fresh process before (or without) `initialize` and leaves legacy state untouched, so subsequent modern requests need no `notifications/initialized`.
 
@@ -205,12 +231,13 @@ The modern `server/discover` result advertises the same capabilities plus:
 
 | Error | Code | Data Code | When |
 |-------|------|-----------|------|
-| Not initialized | -32600 | `NOT_INITIALIZED` | Legacy method called before `initialize` (modern bypasses) |
-| Already initialized | -32600 | `ALREADY_INITIALIZED` | Duplicate `initialize` request |
-| Initialized before initialize | — | — | `notifications/initialized` received before `initialize` — **silently ignored** (no response), per JSON-RPC notification semantics |
-| Invalid params (modern envelope) | -32602 | — | Missing/incorrect `protocolVersion` / `clientCapabilities` / malformed `clientInfo` |
-| Unsupported version | -32022 | — | Modern `_meta` names an unsupported revision; `data: {supported, requested}` |
-| Modern initialize / ping | -32601 | — | `initialize` is legacy-only; `ping` removed in `2026-07-28` |
+| Not initialized | -32600 | `NOT_INITIALIZED` | Legacy method called before `initialize` on an Undecided/Legacy connection |
+| Already initialized | -32600 | `ALREADY_INITIALIZED` | Duplicate `initialize` request on a Legacy connection |
+| Era mismatch | -32600 | `ERA_MISMATCH` | Cross-era request after pinning (modern envelope on Legacy-pinned, or legacy method on Modern-pinned); id preserved, other era untouched |
+| Initialized before initialize | — | — | `notifications/initialized` received before `initialize` — **silently ignored** (no response), per JSON-RPC notification semantics; Modern-pinned legacy notifications also ignored without touching `SessionState` |
+| Invalid params (modern envelope) | -32602 | — | Missing/incorrect `protocolVersion` / `clientCapabilities` / malformed `clientInfo`; never pins |
+| Unsupported version | -32022 | — | Modern `_meta` names an unsupported revision; `data: {supported, requested}`; never pins |
+| Modern initialize / ping | -32601 | — | Valid modern envelope naming `initialize`/`ping` on a Modern connection (`initialize` legacy-only; `ping` removed). The same methods arriving as modern envelopes on a Legacy-pinned connection are `ERA_MISMATCH` instead |
 
 The `initialized_before_initialize` helper (`INITIALIZED_BEFORE_INITIALIZE` data code) has been removed. Wrong-state `notifications/initialized` notifications are silently discarded.
 
@@ -328,6 +355,11 @@ env); the default stays `direct` until plan 03 evaluation approves a change.
   `tool_invoke` targets (no recursion) and enforces the same
   profile/audience rules as direct calls — omitted-from-list never means
   unauthorized, and HarnessOnly/Hidden stay unreachable to Model callers.
+  It is intentionally a routing facade with target-specific results and has
+  no facade-level output schema: modern `structuredContent` is the target's
+  normal `ToolResponse.result`. Obtain the target input contract via
+  `tool_search(detail="schema")` or direct/full mode; do not add an 86-way
+  union or duplicate target schemas into the facade.
 
 The two facades are MCP-only orchestration (`src/mcp/discovery.rs`); they
 are not in `ALL_TOOLS_VEC`, `src/tools/`, or generated tool-cards. Eggsact

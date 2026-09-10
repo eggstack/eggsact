@@ -16,7 +16,7 @@ See also: [Math Features](math-features.md), [Library API](library-api.md), [MCP
 
 The server communicates over stdin/stdout using newline-delimited JSON-RPC 2.0 messages. `tools/call` responses follow MCP shape: JSON-RPC `result.content[0].text` contains a JSON-encoded `ToolResponse` envelope with an `ok` boolean field.
 
-Legacy clients (`2025-11-25`, `2024-11-05`) use `initialize` → `notifications/initialized` before `tools/list` / `tools/call`. Modern clients (`2026-07-28`) send stateless per-request `_meta` (`io.modelcontextprotocol/protocolVersion` + `clientCapabilities`, optional `clientInfo`) with no handshake; `server/discover` advertises versions, capabilities, instructions, cache hints, and `_meta` server identity from a fresh process. See `architecture/mcp-server.md` for the dual-era lifecycle.
+Legacy clients (`2025-11-25`, `2024-11-05`) use `initialize` → `notifications/initialized` before `tools/list` / `tools/call`, pinning the stdio connection to the legacy era. Modern clients (`2026-07-28`) send per-request `_meta` (`io.modelcontextprotocol/protocolVersion` + `clientCapabilities`, optional `clientInfo`) with no handshake, pinning the connection modern on the first valid envelope; `server/discover` advertises versions, capabilities, instructions, cache hints, and `_meta` server identity from a fresh process. One connection serves exactly one era: cross-era switches are rejected with `-32600`/`ERA_MISMATCH` (id preserved). Invalid modern envelopes and failed `initialize` validation never pin; unversioned `server/discover` always answers without pinning. See `architecture/mcp-server.md` for the pinned lifecycle.
 
 ### Modern Structured Output (`2026-07-28`)
 
@@ -40,7 +40,7 @@ direct mode is selected; omitted-from-list never means unauthorized.
 | Facade | Input | Output |
 |--------|-------|--------|
 | `tool_search` | `query` (required), `limit` 1–10 (default 5), `detail` `summary\|schema` (default `summary`), `include_deprecated` (default false) | `{"matches": [{"name", "purpose", "category", "required_arguments", "match_reason"}], "query"}`; `inputSchema` per match when `detail="schema"`; deprecated hits carry `deprecated:true` + `replacement` where documented (`json_query` → `json_extract`) |
-| `tool_invoke` | `name` (canonical target, required), `arguments` (object, default `{}`) | Target tool's `ToolResponse` envelope with the target name visible; recursive `tool_search`/`tool_invoke` targets rejected |
+| `tool_invoke` | `name` (canonical target, required), `arguments` (object, default `{}`) | Target tool's `ToolResponse` envelope with the target name visible; recursive `tool_search`/`tool_invoke` targets rejected. Routing facade with target-specific results: intentionally no facade-level `outputSchema` (modern `structuredContent` is the target's normal result; get the target contract via `tool_search(detail="schema")` or direct/full mode) |
 
 Search is deterministic local lexical ranking (exact name > alias > name
 token > tag/category > description > typo recovery; ties by registry

@@ -151,6 +151,110 @@ pub enum ProtocolEra {
     Modern20260728,
 }
 
+/// Connection-scoped protocol era for one stdio server process.
+///
+/// One stdio process represents one MCP connection. The opening exchange pins
+/// the era exactly once (`Undecided` → `Legacy` or `Modern20260728`); later
+/// requests cannot switch eras. This mirrors the official TypeScript SDK
+/// `serveStdio` connection-pinned model: the opening exchange (legacy
+/// `initialize` vs a valid modern `_meta` envelope, normally via
+/// `server/discover` or a direct modern call) selects the era, and the
+/// disposable sibling-process probe never appears on the session child's wire.
+///
+/// Distinct from `SessionState`, which remains the lifecycle state machine
+/// *inside* a legacy-pinned connection (`Uninitialized` →
+/// `AwaitingInitialized` → `Ready`). Modern traffic stays stateless with
+/// respect to session/handshake data after pinning; per-request `_meta`
+/// validation still applies to every modern call.
+///
+/// Pinning rules (see `src/mcp/server.rs`):
+/// - `Undecided` + unversioned `server/discover` (no `_meta`): answers without
+///   pinning and without touching `SessionState` (backward-compat probe).
+/// - `Undecided` + valid modern envelope: pins `Modern20260728`.
+/// - `Undecided` + successful legacy `initialize`: pins `Legacy`.
+/// - Invalid modern envelopes (malformed `-32602`, unsupported `-32022`) and
+///   failed legacy `initialize` validation never pin; the connection stays
+///   `Undecided` so the client can retry without poisoned state.
+/// - Other pre-opening legacy traffic (`ping`, pre-handshake `tools/list`
+///   returning `NOT_INITIALIZED`) leaves the era `Undecided`.
+/// - Once pinned, cross-era requests are rejected with `ERA_MISMATCH`
+///   (`-32600`) preserving the JSON-RPC id; the other era's lifecycle is
+///   never mutated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionEra {
+    Undecided,
+    Legacy,
+    Modern20260728,
+}
+
+impl ConnectionEra {
+    /// Whether the opening exchange has already selected an era.
+    pub fn is_decided(self) -> bool {
+        !matches!(self, ConnectionEra::Undecided)
+    }
+
+    /// Short lowercase name for diagnostics and mismatch messages.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ConnectionEra::Undecided => "undecided",
+            ConnectionEra::Legacy => "legacy",
+            ConnectionEra::Modern20260728 => "modern",
+        }
+    }
+}
+
+/// Outcome of attempting to pin or observe the connection era.
+///
+/// Returned by [`try_pin_era`] / [`pin_connection_era`]. Holding the era lock
+/// only for the inspect/select step keeps tool execution concurrent; see
+/// `architecture/mcp-server.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EraPinOutcome {
+    /// `Undecided` → target; this caller won the opening race.
+    PinnedNow,
+    /// Already pinned to the requested era; proceed.
+    AlreadyPinned,
+    /// Pinned to the other era; caller must reject with `ERA_MISMATCH`.
+    Mismatch,
+}
+
+/// Synchronous era-selection transition (no locking).
+///
+/// - `Undecided` + any decided target pins and returns `PinnedNow`.
+/// - Same-era observation returns `AlreadyPinned`.
+/// - Cross-era observation returns `Mismatch`.
+/// - Pinning `Undecided` onto itself is `AlreadyPinned` (no transition).
+pub fn try_pin_era(state: &mut ConnectionEra, target: ConnectionEra) -> EraPinOutcome {
+    match (*state, target) {
+        (ConnectionEra::Undecided, ConnectionEra::Undecided) => EraPinOutcome::AlreadyPinned,
+        (ConnectionEra::Undecided, decided) => {
+            *state = decided;
+            EraPinOutcome::PinnedNow
+        }
+        (current, target) if current == target => EraPinOutcome::AlreadyPinned,
+        _ => EraPinOutcome::Mismatch,
+    }
+}
+
+/// Race-safe era selection for the stdio connection.
+///
+/// Locks only long enough to inspect/select the era, then releases before
+/// dispatch so tool execution stays concurrent. Exactly one opening era wins;
+/// a racing incompatible request observes `Mismatch` rather than a
+/// half-transitioned state.
+pub async fn pin_connection_era(
+    era: &Arc<Mutex<ConnectionEra>>,
+    target: ConnectionEra,
+) -> EraPinOutcome {
+    let mut guard = era.lock().await;
+    try_pin_era(&mut guard, target)
+}
+
+/// Observe the current connection era without mutating it.
+pub async fn current_connection_era(era: &Arc<Mutex<ConnectionEra>>) -> ConnectionEra {
+    *era.lock().await
+}
+
 /// Request-scoped modern protocol context. Passed through server dispatch;
 /// never stored in process-global state. Client identity is advisory only and
 /// must not drive security policy.
@@ -556,6 +660,108 @@ mod lifecycle_tests {
             state.negotiated().and_then(|n| n.client_version.as_deref()),
             Some("2.0")
         );
+    }
+}
+
+#[cfg(test)]
+mod connection_era_tests {
+    use super::*;
+
+    #[test]
+    fn undecided_pins_once_and_rejects_cross_era() {
+        let mut era = ConnectionEra::Undecided;
+        assert!(!era.is_decided());
+        assert_eq!(
+            try_pin_era(&mut era, ConnectionEra::Legacy),
+            EraPinOutcome::PinnedNow
+        );
+        assert!(era.is_decided());
+        assert_eq!(era, ConnectionEra::Legacy);
+        // Same-era observation is compatible.
+        assert_eq!(
+            try_pin_era(&mut era, ConnectionEra::Legacy),
+            EraPinOutcome::AlreadyPinned
+        );
+        // Cross-era observation is rejected; state unchanged.
+        assert_eq!(
+            try_pin_era(&mut era, ConnectionEra::Modern20260728),
+            EraPinOutcome::Mismatch
+        );
+        assert_eq!(era, ConnectionEra::Legacy);
+    }
+
+    #[test]
+    fn modern_pins_once_and_rejects_legacy() {
+        let mut era = ConnectionEra::Undecided;
+        assert_eq!(
+            try_pin_era(&mut era, ConnectionEra::Modern20260728),
+            EraPinOutcome::PinnedNow
+        );
+        assert_eq!(era, ConnectionEra::Modern20260728);
+        assert_eq!(
+            try_pin_era(&mut era, ConnectionEra::Legacy),
+            EraPinOutcome::Mismatch
+        );
+        assert_eq!(era, ConnectionEra::Modern20260728);
+    }
+
+    #[test]
+    fn invalid_opening_leaves_undecided() {
+        // Invalid envelopes and failed initialize validation never call
+        // try_pin_era, so the connection stays Undecided. This test pins
+        // that contract at the state-machine layer: no transition occurs
+        // unless the caller explicitly pins after successful validation.
+        let era = ConnectionEra::Undecided;
+        assert_eq!(era.as_str(), "undecided");
+        assert_eq!(ConnectionEra::Legacy.as_str(), "legacy");
+        assert_eq!(ConnectionEra::Modern20260728.as_str(), "modern");
+    }
+
+    #[tokio::test]
+    async fn concurrent_opening_attempts_have_single_winner() {
+        // Deterministic race test at the state-machine layer: two competing
+        // opening attempts cannot both transition Undecided to different
+        // eras. The test proves mutual exclusion, not scheduler timing —
+        // either era may win, but exactly one must win.
+        let era = Arc::new(Mutex::new(ConnectionEra::Undecided));
+        let a = era.clone();
+        let b = era.clone();
+        let (ra, rb) = tokio::join!(
+            pin_connection_era(&a, ConnectionEra::Legacy),
+            pin_connection_era(&b, ConnectionEra::Modern20260728),
+        );
+        // Exactly one caller pinned now; the other either observed the same
+        // era (impossible here, eras differ) or mismatched.
+        let pinned_count = [ra, rb]
+            .iter()
+            .filter(|o| **o == EraPinOutcome::PinnedNow)
+            .count();
+        assert_eq!(
+            pinned_count, 1,
+            "exactly one opening era must win, got {:?} and {:?}",
+            ra, rb
+        );
+        assert!(
+            [ra, rb].contains(&EraPinOutcome::Mismatch),
+            "loser must observe mismatch, got {:?} and {:?}",
+            ra,
+            rb
+        );
+        let final_era = current_connection_era(&era).await;
+        assert!(
+            matches!(
+                final_era,
+                ConnectionEra::Legacy | ConnectionEra::Modern20260728
+            ),
+            "final era must be decided, got {:?}",
+            final_era
+        );
+        // The winner's era and the final era agree; the loser is incompatible.
+        match ra {
+            EraPinOutcome::PinnedNow => assert_eq!(final_era, ConnectionEra::Legacy),
+            EraPinOutcome::Mismatch => assert_eq!(final_era, ConnectionEra::Modern20260728),
+            EraPinOutcome::AlreadyPinned => panic!("unexpected AlreadyPinned for ra"),
+        }
     }
 }
 

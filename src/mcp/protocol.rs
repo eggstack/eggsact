@@ -134,6 +134,39 @@ pub fn already_initialized(id: Option<Value>) -> Value {
     )
 }
 
+/// Data `code` for cross-era rejections on a pinned stdio connection.
+pub const ERA_MISMATCH_CODE: &str = "ERA_MISMATCH";
+
+/// Cross-era rejection for a pinned stdio connection (`-32600`).
+///
+/// One stdio process represents one MCP connection pinned by its opening
+/// exchange (see `ConnectionEra` in `runtime.rs`). After pinning, requests
+/// from the other era are rejected rather than switching eras or bypassing
+/// lifecycle state. The original JSON-RPC `id` is preserved for correlation.
+/// Invalid modern envelopes (`-32602`/`-32022`) and failed `initialize`
+/// validation never pin, so they do not produce this error.
+pub fn era_mismatch(pinned: crate::mcp::runtime::ConnectionEra, id: Option<Value>) -> Value {
+    let (expected, got) = match pinned {
+        crate::mcp::runtime::ConnectionEra::Legacy => ("legacy", "modern (2026-07-28 envelope)"),
+        crate::mcp::runtime::ConnectionEra::Modern20260728 => {
+            ("modern (2026-07-28)", "legacy handshake")
+        }
+        crate::mcp::runtime::ConnectionEra::Undecided => ("undecided", "cross-era"),
+    };
+    json_rpc_error_with_data(
+        -32600,
+        format!(
+            "Connection is pinned to {} era; {} request rejected. Open a new connection for the other era.",
+            expected, got
+        ),
+        Some(serde_json::json!({
+            "code": ERA_MISMATCH_CODE,
+            "pinned_era": expected,
+        })),
+        id,
+    )
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // JSON-RPC types
 // ═══════════════════════════════════════════════════════════════════════════════

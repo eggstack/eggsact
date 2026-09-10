@@ -178,22 +178,16 @@ pub fn tool_invoke_input_schema() -> Value {
     })
 }
 
-/// Output schema for `tool_invoke`.
-///
-/// The facade returns the target tool's `ToolResponse` envelope inline so
-/// diagnostics and machine-code routing are not obscured; the schema is
-/// intentionally open because the payload shape depends on the target.
-pub fn tool_invoke_output_schema() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "tool": {"type": "string", "description": "Target tool name that was invoked."},
-            "ok": {"type": "boolean", "description": "Whether the target tool succeeded."}
-        },
-        "required": ["tool", "ok"],
-        "additionalProperties": false
-    })
-}
+// NOTE: `tool_invoke` intentionally has no facade-level output schema.
+// It is a generic router: modern `structuredContent` is the selected target's
+// normal `ToolResponse.result`, whose shape varies per target. Advertising a
+// narrow `{"tool","ok"}` schema with `additionalProperties: false` would be a
+// false contract that real target results violate, and a union of all 86
+// target results would defeat the low-context design. Callers obtain the
+// target input contract via `tool_search(detail="schema")` or direct/full
+// mode. Discovery listings therefore omit `outputSchema` for `tool_invoke`
+// (and for all discovery entries); see `discovery_legacy_definitions` and
+// `discovery_modern_values`.
 
 // ── Facade descriptions ──────────────────────────────────────────────────
 
@@ -767,7 +761,6 @@ mod tests {
             tool_search_input_schema(),
             tool_search_output_schema(),
             tool_invoke_input_schema(),
-            tool_invoke_output_schema(),
         ] {
             let obj = schema.as_object().unwrap();
             for key in obj.keys() {

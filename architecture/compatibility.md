@@ -13,7 +13,8 @@ The mode is a simple enum that threads through the validation pipeline, affectin
 
 | Concern | Legacy (`2025-11-25`, `2024-11-05`) | Modern (`2026-07-28`) | Stable Across Eras |
 |---------|--------------------------------------|------------------------|--------------------|
-| Handshake | `initialize` → `notifications/initialized` + `SessionState` | Stateless per-request `_meta`; `server/discover` optional | Tool names, input contracts, machine codes, verdicts, profile membership |
+| Handshake | `initialize` → `notifications/initialized` + `SessionState` (pins `ConnectionEra::Legacy`) | Per-request `_meta` validated every call; first valid envelope pins `ConnectionEra::Modern20260728`; `server/discover` optional | Tool names, input contracts, machine codes, verdicts, profile membership |
+| Connection | One stdio process pins exactly one era; cross-era switch rejected as `ERA_MISMATCH` (`-32600`, id preserved) | Same pinned connection; request metadata stays per-request | Invalid envelopes / failed `initialize` never pin; unversioned `server/discover` never pins |
 | Tool list | `{"tools": [...]}` with custom top-level `tier`/`tags`/`category`/`llm_exposure`/`cost` | `resultType`, `tools` (standard fields + `annotations` + namespaced `_meta`), `ttlMs`, `cacheScope`, `_meta` identity | Registry order, filtering, profile/audience semantics |
 | Tool call | `content[0].text` JSON envelope | Plus `structuredContent` (= `result`), `resultType`, `_meta` identity; `isError` retained | `ToolResponse` semantics (`ok`, `result`, `verdict`, `machine_code`, findings) |
 | Errors | `-32600` lifecycle, `-32601` unknown | Adds `-32602` malformed envelope, `-32022` unsupported version; `initialize`/`ping` era-mismatched as `-32601` | Tool-level error shapes and codes |

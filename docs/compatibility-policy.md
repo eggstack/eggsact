@@ -115,7 +115,7 @@ The `machine_code` and `verdict` fields on route-critical tools
 `patch_apply_check`, `text_security_inspect`) are particularly sensitive.
 Their values drive downstream action selection in codegg.
 
-### Protocol-Era Serialization (2026-07-28 Dual-Era)
+### Protocol-Era Serialization (2026-07-28 Dual-Era, Connection-Pinned)
 
 Protocol-era-specific standard serialization may differ while tool semantic
 contracts remain stable. This is **not** a breaking change:
@@ -124,9 +124,19 @@ contracts remain stable. This is **not** a breaking change:
   `ttlMs`/`cacheScope` on cacheable lists, standard Tool `annotations`, namespaced
   Tool `_meta`, and `structuredContent` (= `ToolResponse.result`) on successful calls.
 - Legacy (`2025-11-25`, `2024-11-05`) envelopes are byte/semantics-compatible and unchanged.
+- One stdio connection pins exactly one era (`Undecided` → `Legacy` on
+  successful `initialize`, → modern on a valid modern envelope). Cross-era
+  requests after pinning are rejected with `-32600`/`ERA_MISMATCH` (id
+  preserved); this rejection is not breaking — mixing eras on one connection
+  was never a supported contract. Invalid modern envelopes and failed
+  `initialize` validation never pin; unversioned `server/discover` never pins.
 - Tool names, input contracts, machine codes, route-critical verdicts, and profile
   membership must remain equivalent across eras for the same tool and arguments
-  (verified by cross-era goldens in `tests/mcp/test_modern_protocol.rs`).
+  (verified by cross-era goldens in `tests/mcp/test_modern_protocol.rs`, which use
+  separate connections per era, plus `tests/mcp/test_era_pinning.rs` for rejection).
+- `tool_invoke` intentionally has no facade-level `outputSchema`: modern
+  `structuredContent` is target-specific. Omitting it is not an omission to be
+  "fixed" with a union schema.
 
 Removing a modern envelope field that clients already rely on, or changing tool
 semantics under the guise of era work, **is** breaking and follows the rules above.
