@@ -133,7 +133,10 @@ The implementation goal is **not** to remove or merge the 86 deterministic
 capabilities. It is to keep the capability registry intact while making the
 ordinary agent-facing surface much smaller, searchable, and protocol-current.
 
-The first three implementation plans have now landed on `main`:
+The first two implementation plans and the first corrective pass have landed
+on `main`, but a post-`02c` conformance review found one remaining stdio
+classification mismatch against the current official MCP TypeScript SDK v2
+reference behavior. Execute `02d` before plan 03:
 
 - **Protocol modernization** (`mcp-surface-01`, commit `35f7dc2e`): added the
   `2026-07-28` modern stateless request envelope alongside the legacy
@@ -146,46 +149,52 @@ The first three implementation plans have now landed on `main`:
   remains the default. Discovery remains presentation-only: profile/audience
   policy is still enforced by `ToolRegistry` and the normal bounded execution
   path. Ordinary CI for `a5c00b8d` passed.
-- **Protocol/contract corrective** (`mcp-surface-02c`): pinned one MCP era per
-  stdio connection (`ConnectionEra::Undecided` → `Legacy`/`Modern20260728`,
-  race-safe via `Arc<Mutex<..>>`, cross-era rejected as `ERA_MISMATCH`
-  `-32600` with id preserved; invalid envelopes and failed `initialize` never
-  pin; unversioned `server/discover` never pins) and removed the misleading
-  dormant `tool_invoke_output_schema()` (router returns target-specific
-  `structuredContent` with no facade-level schema). Direct remains default;
-  discovery still ≤7 `full`/Model definitions. Evidence: `tests/mcp/test_era_pinning.rs`
-  (15 subprocess/state-machine regressions), `connection_era_tests` race test,
-  cross-era goldens kept on separate connections, and official TypeScript SDK
-  2.0.0 stdio smoke (`auto` → `modern` with discover, 77 tools; default →
-  `legacy`).
-
-Plan 03 remains the rollout gate.
-
-- **`mcp-surface-03-agent-evaluation-and-rollout.md` — P1.** After corrective
+- **Protocol/contract corrective architecture** (`mcp-surface-02c`, commit
+  `77ff57a5`): introduced race-safe one-era-per-stdio-connection state
+  (`ConnectionEra::Undecided` → `Legacy`/`Modern20260728`) separate from
+  legacy `SessionState`, preserved per-request modern `_meta`, and removed the
+  misleading dormant `tool_invoke_output_schema()`. The useful architecture,
+  target-diverse invoke tests, and single-winner race test remain valid.
+  Ordinary CI for `77ff57a5` passed and its official SDK smoke selected modern
+  under auto negotiation and legacy under default negotiation.
+- **`mcp-surface-02d-stdio-era-classification-corrective.md` — P1.** Tighten
+  only the remaining stdio entry/routing semantics to match the current
+  official v2 reference model: classify an `initialize` or other claim-less
+  opening as Legacy under compatibility serving; remove the unversioned
+  `server/discover` neutrality exception; separate edge era classification
+  from modern envelope validation; replace eggsact-specific `-32600` /
+  `ERA_MISMATCH` request handling with standard `-32022 Unsupported protocol
+  version`; and drop mismatched notifications before lifecycle/cancellation
+  side effects. Preserve the `02c` connection-state architecture and rerun the
+  official SDK stdio smoke.
+- **`mcp-surface-03-agent-evaluation-and-rollout.md` — P1.** Only after `02d`
   closure, measure exact serialized Tool-definition cost, build deterministic
   full-capability retrieval fixtures and hard-negative overlap cases, run
   portable direct-vs-discovery agent evaluations, and gate any generated
   client integration default on measured context reduction, selection quality,
   reachability, and host compatibility.
 
-The corrective pass did not broaden the line into a second MCP rewrite. It
-preserved stdio-only transport, existing tool names/profile membership,
-the seven-or-fewer `full`/Model discovery definitions, direct-mode default,
-existing budget/cancellation behavior, and zero new runtime dependencies. Its
-focused acceptance evidence (mixed-era rejection, deterministic
-opening-era selection under races, no poisoned connection state after invalid
-opening attempts, target-diverse `tool_invoke` modern results, and confirmation
-that no generic invoke output schema is advertised) is recorded above.
+The `02d` follow-up is deliberately narrow. Current official `serveStdio`
+documentation defines a legacy opening as an `initialize` request or any
+claim-less message when legacy serving is enabled; the modern stdio auto probe
+already carries the `2026-07-28` request envelope (and on the official
+`StdioClientTransport` runs in a disposable sibling process). Once an instance
+is pinned, edge-classification mismatch is a routing error (`-32022` for
+requests; drop/error-path for notifications), not an opportunity to switch the
+era. The `02d` plan records the current official SDK sources and requires a
+fresh source check before implementation because the v2 surface is still
+active.
 
 Plan 03 remains the rollout gate. The present discovery tests already prove
 exact-name reachability, profile/audience containment, deterministic ordering,
 and a substantial context reduction, but they do **not** yet establish the
 planned natural-language top-1/top-3/top-5 retrieval targets or cross-model
 agent success. Do not change generated client integrations to prefer discovery
-until those measurements pass. The rollout target remains discovery
-Tool-definition bytes <=25% of direct/full where practical, top-5 retrieval
-coverage for all stable Model-visible capability fixtures, and noninferior
-end-to-end agent success across more than one model family/client path.
+until `02d` is closed and those measurements pass. The rollout target remains
+discovery Tool-definition bytes <=25% of direct/full where practical, top-5
+retrieval coverage for all stable Model-visible capability fixtures, and
+noninferior end-to-end agent success across more than one model family/client
+path.
 
 Research sources for the line include the MCP 2026-07-28 release and current
 roadmap, the current MCP Tools rule forbidding per-connection/side-effect-driven
