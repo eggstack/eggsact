@@ -7,10 +7,11 @@
 ## Usage
 
 ```
-eggsact [--mcp | --diagnostics [--format json|text] | update | integrate <client> | expression]
+eggsact [--mcp [--mcp-surface direct|discovery] | --diagnostics [--format json|text] | update | integrate <client> [--discovery] | expression]
 ```
 
 - `--mcp` -- Start MCP server mode (reads JSON-RPC from stdin, writes to stdout)
+- `--mcp-surface direct|discovery` -- Presentation surface for `--mcp` (default: `direct`; `discovery` advertises pinned front doors + `tool_search`/`tool_invoke`). `EGGSACT_MCP_SURFACE` sets the same; CLI overrides env.
 - `--diagnostics` -- Print diagnostic information (version, tool count, profiles, budget tiers, runtime settings, env var names, generated data status)
 - `--format json|text` -- Output format for `--diagnostics` (default: text)
 - `-h`, `--help` -- Print usage information
@@ -44,6 +45,7 @@ may continue using the previous image until their client reconnects.
 eggsact integrate list
 eggsact integrate detect
 eggsact integrate zed
+eggsact integrate zed --discovery
 ```
 
 Integration output uses the resolved executable path and exactly `--mcp`. It is
@@ -78,6 +80,16 @@ eggsact --mcp
 ```
 
 The server reads requests from stdin and writes responses to stdout. This mode is intended for integration with AI agent frameworks.
+
+```bash
+eggsact --mcp --mcp-surface discovery
+# or: EGGSACT_MCP_SURFACE=discovery eggsact --mcp
+```
+
+Discovery mode advertises only the pinned front doors plus
+`tool_search`/`tool_invoke`; all profile/audience-allowed capabilities
+stay reachable through the facades. Direct mode (default) preserves the
+full catalog for clients that implement their own deferred loading.
 
 ### Help and Version
 

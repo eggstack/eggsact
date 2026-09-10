@@ -6,7 +6,7 @@ Generated from the ToolSpec registry. Each section corresponds to a codegg profi
 
 ### `command_preflight`
 
-Composite: analyze a command before user approval or execution. Applies a policy engine (default/strict/permissive) with optional policy_config allow/deny overrides. Calls shell_split and regex_safety_check. Detects behavioral features (network, filesystem, process, env) and destructive patterns. Returns parsed argv, program, subcommand, features, risk findings, matched_rules, and a verdict. Must not execute anything.
+Review a shell command against an allow/review/block policy before approval or execution and return a verdict with parsed argv and risk findings. Prefer over shell_split for approval decisions and over argv_compare for single-command review. Analyzes only; never executes.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -17,7 +17,7 @@ Composite: analyze a command before user approval or execution. Applies a policy
 
 ### `config_preflight`
 
-Composite: validate generated config text. Auto-detects format and runs the appropriate validator. Returns valid/invalid, detected format, parse error location, and machine code.
+Validate generated config text with format auto-detection and return a valid/invalid verdict with error location. Prefer over dotenv_validate, ini_validate, or validate_json/validate_toml when the format is unknown or mixed. Checks syntax only; never writes files.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -28,7 +28,7 @@ Composite: validate generated config text. Auto-detects format and runs the appr
 
 ### `edit_preflight`
 
-Composite: validate a proposed edit before applying it. Calls text_replace_check, patch_apply_check, line_range_extract, text_fingerprint, and text_diff_explain as needed. Optionally composes path_scope_check (when file_path + workspace_root are provided), text_fingerprint newline detection (when newline_policy is not "skip"), and text_security_inspect (when unicode_policy is not "skip"). Returns ok_to_apply verdict with findings and machine codes.
+Validate a proposed text edit in memory and return an ok_to_apply verdict with findings. Prefer over text_replace_check for multi-hunk or patch-shaped edits and over patch_summary when you need an apply decision rather than stats. Inspects only; never writes files.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -39,7 +39,7 @@ Composite: validate a proposed edit before applying it. Calls text_replace_check
 
 ### `text_replace_check`
 
-Check whether a text replacement would apply cleanly before an agent attempts to edit. Reports match count, positions, ambiguity, and optional preview of before/after.
+Check whether a single-string replacement would apply cleanly, reporting match count, ambiguity, and preview. Prefer edit_preflight for patch-shaped or multi-hunk edits needing an apply verdict.
 
 - **Tier**: 1 | **Cost**: cheap | **Stability**: stable
 - **Exposure**: default
@@ -51,7 +51,7 @@ Check whether a text replacement would apply cleanly before an agent attempts to
 
 ### `text_security_inspect`
 
-Composite security-oriented text hygiene pass. Runs text_inspect, unicode_policy_check, canonicalize_text, prompt_input_inspect, and identifier_inspect depending on policy. Returns a verdict (allow/review/block) plus structured findings and machine codes.
+Screen text for security hygiene (hidden characters, confusables, risky prompt patterns) and return an allow/review/block verdict with findings. Prefer over text_inspect for a go/no-go decision and over single-purpose unicode checks when screening untrusted input. Reports observable features only, not intent.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -94,7 +94,7 @@ Return approximate top-level block ranges (functions, classes, modules, headings
 
 ### `command_preflight`
 
-Composite: analyze a command before user approval or execution. Applies a policy engine (default/strict/permissive) with optional policy_config allow/deny overrides. Calls shell_split and regex_safety_check. Detects behavioral features (network, filesystem, process, env) and destructive patterns. Returns parsed argv, program, subcommand, features, risk findings, matched_rules, and a verdict. Must not execute anything.
+Review a shell command against an allow/review/block policy before approval or execution and return a verdict with parsed argv and risk findings. Prefer over shell_split for approval decisions and over argv_compare for single-command review. Analyzes only; never executes.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -105,7 +105,7 @@ Composite: analyze a command before user approval or execution. Applies a policy
 
 ### `config_preflight`
 
-Composite: validate generated config text. Auto-detects format and runs the appropriate validator. Returns valid/invalid, detected format, parse error location, and machine code.
+Validate generated config text with format auto-detection and return a valid/invalid verdict with error location. Prefer over dotenv_validate, ini_validate, or validate_json/validate_toml when the format is unknown or mixed. Checks syntax only; never writes files.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -116,7 +116,7 @@ Composite: validate generated config text. Auto-detects format and runs the appr
 
 ### `edit_preflight`
 
-Composite: validate a proposed edit before applying it. Calls text_replace_check, patch_apply_check, line_range_extract, text_fingerprint, and text_diff_explain as needed. Optionally composes path_scope_check (when file_path + workspace_root are provided), text_fingerprint newline detection (when newline_policy is not "skip"), and text_security_inspect (when unicode_policy is not "skip"). Returns ok_to_apply verdict with findings and machine codes.
+Validate a proposed text edit in memory and return an ok_to_apply verdict with findings. Prefer over text_replace_check for multi-hunk or patch-shaped edits and over patch_summary when you need an apply decision rather than stats. Inspects only; never writes files.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -211,7 +211,7 @@ Compare two strings under raw, Unicode-normalized, casefolded, or trimmed modes 
 
 ### `text_fingerprint`
 
-Compute a deterministic SHA-256 fingerprint of text with canonicalization options for Unicode normalization, newline style, casefold, and final newline trimming.
+Compute a SHA-256 fingerprint with canonicalization for Unicode normalization, newline style, casefold, and final-newline trimming. Prefer over text_hash when equivalent texts with different encodings or line endings should share an identity.
 
 - **Tier**: 0 | **Cost**: cheap | **Stability**: stable
 - **Exposure**: default
@@ -231,7 +231,7 @@ Inspect a string for hidden characters, Unicode confusables, mixed scripts, norm
 
 ### `text_replace_check`
 
-Check whether a text replacement would apply cleanly before an agent attempts to edit. Reports match count, positions, ambiguity, and optional preview of before/after.
+Check whether a single-string replacement would apply cleanly, reporting match count, ambiguity, and preview. Prefer edit_preflight for patch-shaped or multi-hunk edits needing an apply verdict.
 
 - **Tier**: 1 | **Cost**: cheap | **Stability**: stable
 - **Exposure**: default
@@ -243,7 +243,7 @@ Check whether a text replacement would apply cleanly before an agent attempts to
 
 ### `text_security_inspect`
 
-Composite security-oriented text hygiene pass. Runs text_inspect, unicode_policy_check, canonicalize_text, prompt_input_inspect, and identifier_inspect depending on policy. Returns a verdict (allow/review/block) plus structured findings and machine codes.
+Screen text for security hygiene (hidden characters, confusables, risky prompt patterns) and return an allow/review/block verdict with findings. Prefer over text_inspect for a go/no-go decision and over single-purpose unicode checks when screening untrusted input. Reports observable features only, not intent.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -276,7 +276,7 @@ Validate TOML configuration files (Cargo.toml, pyproject.toml, etc.) and report 
 
 ### `command_preflight`
 
-Composite: analyze a command before user approval or execution. Applies a policy engine (default/strict/permissive) with optional policy_config allow/deny overrides. Calls shell_split and regex_safety_check. Detects behavioral features (network, filesystem, process, env) and destructive patterns. Returns parsed argv, program, subcommand, features, risk findings, matched_rules, and a verdict. Must not execute anything.
+Review a shell command against an allow/review/block policy before approval or execution and return a verdict with parsed argv and risk findings. Prefer over shell_split for approval decisions and over argv_compare for single-command review. Analyzes only; never executes.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -287,7 +287,7 @@ Composite: analyze a command before user approval or execution. Applies a policy
 
 ### `config_preflight`
 
-Composite: validate generated config text. Auto-detects format and runs the appropriate validator. Returns valid/invalid, detected format, parse error location, and machine code.
+Validate generated config text with format auto-detection and return a valid/invalid verdict with error location. Prefer over dotenv_validate, ini_validate, or validate_json/validate_toml when the format is unknown or mixed. Checks syntax only; never writes files.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -311,7 +311,7 @@ Composite: inspect proposed dependency file changes before applying. Detects add
 
 ### `edit_preflight`
 
-Composite: validate a proposed edit before applying it. Calls text_replace_check, patch_apply_check, line_range_extract, text_fingerprint, and text_diff_explain as needed. Optionally composes path_scope_check (when file_path + workspace_root are provided), text_fingerprint newline detection (when newline_policy is not "skip"), and text_security_inspect (when unicode_policy is not "skip"). Returns ok_to_apply verdict with findings and machine codes.
+Validate a proposed text edit in memory and return an ok_to_apply verdict with findings. Prefer over text_replace_check for multi-hunk or patch-shaped edits and over patch_summary when you need an apply decision rather than stats. Inspects only; never writes files.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -331,7 +331,7 @@ Inspect lockfile content or diffs for deterministic dependency-change signals. D
 
 ### `patch_contract_check`
 
-Classify a unified diff by contract-relevant change categories (lockfiles, manifests, scope escapes, large deletions, security paths). Reports verdict and structured findings for automated routing.
+Classify a unified diff by contract-relevant categories (lockfiles, manifests, scope escapes, large deletions, security paths) for automated routing. Prefer over patch_summary when you need a policy verdict rather than stats.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
 - **Exposure**: contextual
@@ -341,7 +341,7 @@ Classify a unified diff by contract-relevant change categories (lockfiles, manif
 
 ### `text_security_inspect`
 
-Composite security-oriented text hygiene pass. Runs text_inspect, unicode_policy_check, canonicalize_text, prompt_input_inspect, and identifier_inspect depending on policy. Returns a verdict (allow/review/block) plus structured findings and machine codes.
+Screen text for security hygiene (hidden characters, confusables, risky prompt patterns) and return an allow/review/block verdict with findings. Prefer over text_inspect for a go/no-go decision and over single-purpose unicode checks when screening untrusted input. Reports observable features only, not intent.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -354,7 +354,7 @@ Composite security-oriented text hygiene pass. Runs text_inspect, unicode_policy
 
 ### `diff_risk_classify`
 
-Classify unified diffs by review risk and routing category. Reports risk categories, review focus items, and recommended next tools for reviewer agents.
+Classify unified diffs by review risk and routing category with focus items. Prefer over patch_summary for reviewer triage and over patch_contract_check for heuristic risk rather than contract policy.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
 - **Exposure**: contextual
@@ -364,7 +364,7 @@ Classify unified diffs by review risk and routing category. Reports risk categor
 
 ### `edit_preflight`
 
-Composite: validate a proposed edit before applying it. Calls text_replace_check, patch_apply_check, line_range_extract, text_fingerprint, and text_diff_explain as needed. Optionally composes path_scope_check (when file_path + workspace_root are provided), text_fingerprint newline detection (when newline_policy is not "skip"), and text_security_inspect (when unicode_policy is not "skip"). Returns ok_to_apply verdict with findings and machine codes.
+Validate a proposed text edit in memory and return an ok_to_apply verdict with findings. Prefer over text_replace_check for multi-hunk or patch-shaped edits and over patch_summary when you need an apply decision rather than stats. Inspects only; never writes files.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -409,7 +409,7 @@ Inspect lockfile content or diffs for deterministic dependency-change signals. D
 
 ### `patch_contract_check`
 
-Classify a unified diff by contract-relevant change categories (lockfiles, manifests, scope escapes, large deletions, security paths). Reports verdict and structured findings for automated routing.
+Classify a unified diff by contract-relevant categories (lockfiles, manifests, scope escapes, large deletions, security paths) for automated routing. Prefer over patch_summary when you need a policy verdict rather than stats.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
 - **Exposure**: contextual
@@ -419,7 +419,7 @@ Classify a unified diff by contract-relevant change categories (lockfiles, manif
 
 ### `patch_summary`
 
-Summarize a unified diff without applying it. Reports file counts, hunk counts, additions, deletions, renames, and line ranges by file.
+Summarize a unified diff without applying it: file counts, hunks, additions, deletions, renames, and line ranges. Prefer over patch_contract_check for size/scope stats and over diff_risk_classify for review routing.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
 - **Exposure**: contextual
@@ -451,7 +451,7 @@ Explain why two strings differ, including spans, codepoints, Unicode names, norm
 
 ### `text_replace_check`
 
-Check whether a text replacement would apply cleanly before an agent attempts to edit. Reports match count, positions, ambiguity, and optional preview of before/after.
+Check whether a single-string replacement would apply cleanly, reporting match count, ambiguity, and preview. Prefer edit_preflight for patch-shaped or multi-hunk edits needing an apply verdict.
 
 - **Tier**: 1 | **Cost**: cheap | **Stability**: stable
 - **Exposure**: default
@@ -477,7 +477,7 @@ Composite: inspect a single config file beyond syntax validity. Detects risky ke
 
 ### `config_preflight`
 
-Composite: validate generated config text. Auto-detects format and runs the appropriate validator. Returns valid/invalid, detected format, parse error location, and machine code.
+Validate generated config text with format auto-detection and return a valid/invalid verdict with error location. Prefer over dotenv_validate, ini_validate, or validate_json/validate_toml when the format is unknown or mixed. Checks syntax only; never writes files.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -659,7 +659,7 @@ Convert between byte offsets, codepoint indices, line/column positions, and UTF-
 
 ### `text_security_inspect`
 
-Composite security-oriented text hygiene pass. Runs text_inspect, unicode_policy_check, canonicalize_text, prompt_input_inspect, and identifier_inspect depending on policy. Returns a verdict (allow/review/block) plus structured findings and machine codes.
+Screen text for security hygiene (hidden characters, confusables, risky prompt patterns) and return an allow/review/block verdict with findings. Prefer over text_inspect for a go/no-go decision and over single-purpose unicode checks when screening untrusted input. Reports observable features only, not intent.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -692,7 +692,7 @@ Compare two command strings or argv lists by parsed argv tokens rather than raw 
 
 ### `command_preflight`
 
-Composite: analyze a command before user approval or execution. Applies a policy engine (default/strict/permissive) with optional policy_config allow/deny overrides. Calls shell_split and regex_safety_check. Detects behavioral features (network, filesystem, process, env) and destructive patterns. Returns parsed argv, program, subcommand, features, risk findings, matched_rules, and a verdict. Must not execute anything.
+Review a shell command against an allow/review/block policy before approval or execution and return a verdict with parsed argv and risk findings. Prefer over shell_split for approval decisions and over argv_compare for single-command review. Analyzes only; never executes.
 
 - **Tier**: 1 | **Cost**: heavy | **Stability**: stable
 - **Exposure**: default
@@ -790,7 +790,7 @@ Composite: inspect proposed dependency file changes before applying. Detects add
 
 ### `diff_risk_classify`
 
-Classify unified diffs by review risk and routing category. Reports risk categories, review focus items, and recommended next tools for reviewer agents.
+Classify unified diffs by review risk and routing category with focus items. Prefer over patch_summary for reviewer triage and over patch_contract_check for heuristic risk rather than contract policy.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
 - **Exposure**: contextual
@@ -849,7 +849,7 @@ Parse Markdown structure with a deterministic line scanner: headings (level, tex
 
 ### `patch_contract_check`
 
-Classify a unified diff by contract-relevant change categories (lockfiles, manifests, scope escapes, large deletions, security paths). Reports verdict and structured findings for automated routing.
+Classify a unified diff by contract-relevant categories (lockfiles, manifests, scope escapes, large deletions, security paths) for automated routing. Prefer over patch_summary when you need a policy verdict rather than stats.
 
 - **Tier**: 2 | **Cost**: mod | **Stability**: stable
 - **Exposure**: contextual
@@ -910,7 +910,7 @@ Suggest verification commands (build, test, lint, format) from repository paths 
 
 ### `text_fingerprint`
 
-Compute a deterministic SHA-256 fingerprint of text with canonicalization options for Unicode normalization, newline style, casefold, and final newline trimming.
+Compute a SHA-256 fingerprint with canonicalization for Unicode normalization, newline style, casefold, and final-newline trimming. Prefer over text_hash when equivalent texts with different encodings or line endings should share an identity.
 
 - **Tier**: 0 | **Cost**: cheap | **Stability**: stable
 - **Exposure**: default

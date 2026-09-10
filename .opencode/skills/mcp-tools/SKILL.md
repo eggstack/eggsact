@@ -24,9 +24,16 @@ description: Use when adding a new MCP tool, modifying an existing tool, working
    ```
    This updates the profile reference block in `architecture/mcp-server.md` and `generated/tool-cards.md`. (It does not touch README — that file is hand-maintained.) Commit the generated files alongside your ToolSpec changes.
 
+   Discovery facades (`tool_search`, `tool_invoke` in `src/mcp/discovery.rs`)
+   are MCP-only and intentionally excluded from `ALL_TOOLS_VEC`,
+   `src/tools/`, and generated tool-cards. Do not add them as `ToolSpec`
+   entries.
+
 5. **Add tests** at the right layer:
    - Unit tests: `src/tools/<category>.rs` (inline `#[cfg(test)]`)
    - MCP protocol tests: `tests/mcp/`
+   - Discovery/search routing: `tests/mcp/test_discovery.rs` (pinned count,
+     byte budgets, profile/audience bypass, deprecated/recursion guards)
    - Library behavior tests: `tests/text/` or `tests/calc/`
    - Python parity: `tests/parity/` using `compare_tool_parity()`
 
@@ -61,6 +68,23 @@ ToolSpec {
 | `ExpertOnly` | Specialized tools for manager/reviewer agents |
 | `HarnessOnly` | Harness calls automatically; model should not see |
 | `Hidden` | Internal/compatibility; debug contexts only |
+
+New capabilities must consider discovery: every stable Model tool is
+searchable by exact name and invokable through `tool_invoke` policy, so
+write discriminating descriptions (what result, when to choose vs nearest
+competitor, one critical limitation), avoid call-graph prose (“calls X, Y,
+Z”), and add aliases only for observed model/user vocabulary — never
+speculative synonym lists. `tier`/`tags`/`cost` stay server-side
+discovery inputs, not model prompt tokens.
+
+### Presentation Surface (`McpSurface`)
+
+`Direct` advertises the profile/audience-filtered catalog; `Discovery`
+(`EGGSACT_MCP_SURFACE=discovery` or `--mcp-surface discovery`) advertises
+only the pinned front doors plus `tool_search`/`tool_invoke`. Profiles
+remain the capability boundary — presentation never authorizes. Keep the
+pinned set small and reviewable in `src/mcp/discovery.rs`; do not add a
+`presentation` field to all 86 `ToolSpec` entries without evidence.
 
 ### Audience Filtering
 

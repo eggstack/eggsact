@@ -689,6 +689,62 @@ pub fn get_active_audience() -> ToolAudience {
     *audience
 }
 
+/// Parse an MCP surface name (`direct` / `discovery`, case-insensitive).
+///
+/// Returns `None` for unknown values. Prefer the `EGGSACT_` prefix for new
+/// eggsact-native configuration instead of the historical `EGGCALC_`
+/// compatibility namespace; surface selection is eggsact-native.
+#[doc(hidden)]
+pub fn parse_surface(s: &str) -> Option<crate::mcp::discovery::McpSurface> {
+    crate::mcp::discovery::McpSurface::parse(s)
+}
+
+static ACTIVE_SURFACE: LazyLock<RwLock<crate::mcp::discovery::McpSurface>> = LazyLock::new(|| {
+    let raw = std::env::var("EGGSACT_MCP_SURFACE").unwrap_or_else(|_| "direct".to_string());
+    match crate::mcp::discovery::McpSurface::parse(&raw) {
+        Some(surface) => RwLock::new(surface),
+        None => {
+            eprintln!(
+                    "Warning: Invalid EGGSACT_MCP_SURFACE: {:?}. Accepted values: direct, discovery. Defaulting to direct.",
+                    raw
+                );
+            RwLock::new(crate::mcp::discovery::McpSurface::Direct)
+        }
+    }
+});
+
+/// Validate and initialize the surface selected by the environment.
+///
+/// Call once at MCP startup (before serving). Returns `Err` for unknown
+/// values instead of exiting so library callers can handle bad config.
+pub fn init_active_surface() -> Result<(), String> {
+    let raw = std::env::var("EGGSACT_MCP_SURFACE").unwrap_or_else(|_| "direct".to_string());
+    match crate::mcp::discovery::McpSurface::parse(&raw) {
+        Some(surface) => set_active_surface(surface),
+        None => Err(format!(
+            "Invalid EGGSACT_MCP_SURFACE: {:?}. Accepted values: direct, discovery.",
+            raw
+        )),
+    }
+}
+
+/// Set the active presentation surface explicitly (e.g. from `--mcp-surface`).
+///
+/// CLI-provided values take precedence over the environment. This writes the
+/// same process-global read by `get_active_surface()`; call before serving
+/// (never mutate after worker threads exist).
+pub fn set_active_surface(surface: crate::mcp::discovery::McpSurface) -> Result<(), String> {
+    let mut active = ACTIVE_SURFACE.write().map_err(|e| e.to_string())?;
+    *active = surface;
+    Ok(())
+}
+
+/// Get the active presentation surface.
+pub fn get_active_surface() -> crate::mcp::discovery::McpSurface {
+    let surface = ACTIVE_SURFACE.read().unwrap_or_else(|e| e.into_inner());
+    *surface
+}
+
 pub fn truncate_2000(s: &str) -> String {
     s.chars().take(2000).collect()
 }

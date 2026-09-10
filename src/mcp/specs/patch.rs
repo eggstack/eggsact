@@ -22,7 +22,7 @@ pub const PATCH_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "patch_summary",
-        description: "Summarize a unified diff without applying it. Reports file counts, hunk counts, additions, deletions, renames, and line ranges by file.",
+        description: "Summarize a unified diff without applying it: file counts, hunks, additions, deletions, renames, and line ranges. Prefer over patch_contract_check for size/scope stats and over diff_risk_classify for review routing.",
         handler: patch_summary,
         input_schema: patch_summary_input,
         output_schema: patch_summary_output,
@@ -39,7 +39,7 @@ pub const PATCH_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "edit_preflight",
-        description: "Composite: validate a proposed edit before applying it. Calls text_replace_check, patch_apply_check, line_range_extract, text_fingerprint, and text_diff_explain as needed. Optionally composes path_scope_check (when file_path + workspace_root are provided), text_fingerprint newline detection (when newline_policy is not \"skip\"), and text_security_inspect (when unicode_policy is not \"skip\"). Returns ok_to_apply verdict with findings and machine codes.",
+        description: "Validate a proposed text edit in memory and return an ok_to_apply verdict with findings. Prefer over text_replace_check for multi-hunk or patch-shaped edits and over patch_summary when you need an apply decision rather than stats. Inspects only; never writes files.",
         handler: edit_preflight,
         input_schema: edit_preflight_input,
         output_schema: edit_preflight_output,
@@ -56,7 +56,7 @@ pub const PATCH_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "patch_contract_check",
-        description: "Classify a unified diff by contract-relevant change categories (lockfiles, manifests, scope escapes, large deletions, security paths). Reports verdict and structured findings for automated routing.",
+        description: "Classify a unified diff by contract-relevant categories (lockfiles, manifests, scope escapes, large deletions, security paths) for automated routing. Prefer over patch_summary when you need a policy verdict rather than stats.",
         handler: patch_contract_check,
         input_schema: patch_contract_check_input,
         output_schema: patch_contract_check_output,
@@ -73,7 +73,7 @@ pub const PATCH_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "diff_risk_classify",
-        description: "Classify unified diffs by review risk and routing category. Reports risk categories, review focus items, and recommended next tools for reviewer agents.",
+        description: "Classify unified diffs by review risk and routing category with focus items. Prefer over patch_summary for reviewer triage and over patch_contract_check for heuristic risk rather than contract policy.",
         handler: diff_risk_classify,
         input_schema: diff_risk_classify_input,
         output_schema: diff_risk_classify_output,

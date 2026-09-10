@@ -295,6 +295,44 @@ profile at construction time via `with_profile_and_audience`.
 - `tools/list`: Validates MCP parameters in `server.rs`, builds a `ToolListOptions`, and delegates to `registry::list_tool_definitions()` in `registry/listing.rs`. The registry handles profile filtering, name/tier/tag filtering, schema compaction, and deprecated-field normalization. MCP retains parameter validation and profile resolution.
 - `tools/call`: Resolves the active profile from `get_active_profile()` and creates a `ToolRegistry` with `Model` audience and `EggcalcPython` compatibility mode (Python-parity error messages). Delegates tool lookup, profile checking, audience/exposure checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API. The in-process agent API defaults to `StrictNative` mode (standard JSON Schema error messages). For budget-aware in-process APIs (`call_json_with_budget`, `call_json_with_context`, `call_json_with_execution_context`), the handler is dispatched through the `SyncExecutionPool` rather than directly.
 
+### Direct vs Discovery Surface (`src/mcp/discovery.rs`)
+
+`McpSurface` separates capability policy from presentation. Startup selects
+via `EGGSACT_MCP_SURFACE=direct|discovery` (new `EGGSACT_` namespace for
+eggsact-native config) or `--mcp-surface direct|discovery` (CLI overrides
+env); the default stays `direct` until plan 03 evaluation approves a change.
+
+- **Direct**: current behavior. `tools/list` advertises the
+  profile/audience-filtered canonical set; `tool_search` / `tool_invoke`
+  are unknown tools.
+- **Discovery**: `tools/list` advertises at most the pinned front doors
+  allowed by the active profile/audience plus the two facades (7 entries
+  for `full`/Model; fewer for narrow profiles such as `codegg_patch`).
+  Pinned entries use compact descriptions/schemas with no output schemas
+  or tier/tags/cost bookkeeping; modern entries carry only
+  `name`/`description`/`inputSchema`/`annotations` (no `_meta`). `names`
+  narrows the discovery set; `tier`/`tags` are ignored in discovery mode.
+- **`tool_search`**: deterministic weighted lexical search over the
+  active `ToolSpec` slice after profile/audience filtering (exact name >
+  exact alias > name token/prefix > tag/category > description >
+  Levenshtein recovery; ties break by relevance then registry order).
+  Input: `query` (required), `limit` 1–10 (default 5), `detail`
+  `summary|schema` (default `summary`), `include_deprecated` (default
+  false; deprecated tools such as `json_query` appear only by exact name
+  or opt-in, with `replacement` hint where documented).
+- **`tool_invoke`**: MCP-layer generic router (`name` + `arguments:{}`).
+  It reuses `ToolRegistry::prepare_tool_call` + target
+  `budget_for_tool` + `execution::execute_tool_bounded` and the same
+  era-specific response adapter as a direct call, so the target name stays
+  visible in `ToolResponse`/metadata. It rejects `tool_search` /
+  `tool_invoke` targets (no recursion) and enforces the same
+  profile/audience rules as direct calls — omitted-from-list never means
+  unauthorized, and HarnessOnly/Hidden stay unreachable to Model callers.
+
+The two facades are MCP-only orchestration (`src/mcp/discovery.rs`); they
+are not in `ALL_TOOLS_VEC`, `src/tools/`, or generated tool-cards. Eggsact
+still has 86 underlying deterministic tools.
+
 ## Tool Categories
 
 | Category | Count | Tools |

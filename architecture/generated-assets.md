@@ -12,6 +12,11 @@ Maintainer reference for generated files, doc generation, confusables data, pari
 
 These files are **never hand-edited**. Edit the source of truth and re-run the generator.
 
+Generated tool-card/profile assets continue to be produced from `ToolSpec`
+only. The two MCP-only discovery facades (`tool_search`, `tool_invoke` in
+`src/mcp/discovery.rs`) are intentionally excluded — they are presentation
+facades, not ordinary utility categories.
+
 ## Doc Generation
 
 `src/bin/generate_docs.rs` is a standalone binary that reads the `ToolSpec` registry at compile time and produces two outputs:

@@ -1,5 +1,6 @@
 pub mod budget;
 pub mod compat;
+pub mod discovery;
 pub(crate) mod execution;
 #[doc(hidden)]
 pub mod machine_codes;

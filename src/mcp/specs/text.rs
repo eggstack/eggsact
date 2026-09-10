@@ -141,7 +141,7 @@ pub const TEXT_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "text_hash",
-        description: "Compute cryptographic hashes of text for identity checking.",
+        description: "Compute multi-algorithm hashes of text for exact identity checking without canonicalization. Prefer text_fingerprint when Unicode, newline, or case variants should compare equal.",
         handler: text_hash,
         input_schema: text_hash_input,
         output_schema: text_hash_output,
@@ -209,7 +209,7 @@ pub const TEXT_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "text_fingerprint",
-        description: "Compute a deterministic SHA-256 fingerprint of text with canonicalization options for Unicode normalization, newline style, casefold, and final newline trimming.",
+        description: "Compute a SHA-256 fingerprint with canonicalization for Unicode normalization, newline style, casefold, and final-newline trimming. Prefer over text_hash when equivalent texts with different encodings or line endings should share an identity.",
         handler: text_fingerprint_tool,
         input_schema: text_fingerprint_input,
         output_schema: text_fingerprint_output,
@@ -226,7 +226,7 @@ pub const TEXT_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "text_replace_check",
-        description: "Check whether a text replacement would apply cleanly before an agent attempts to edit. Reports match count, positions, ambiguity, and optional preview of before/after.",
+        description: "Check whether a single-string replacement would apply cleanly, reporting match count, ambiguity, and preview. Prefer edit_preflight for patch-shaped or multi-hunk edits needing an apply verdict.",
         handler: text_replace_check_tool,
         input_schema: text_replace_check_input,
         output_schema: text_replace_check_output,
@@ -294,7 +294,7 @@ pub const TEXT_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "text_security_inspect",
-        description: "Composite security-oriented text hygiene pass. Runs text_inspect, unicode_policy_check, canonicalize_text, prompt_input_inspect, and identifier_inspect depending on policy. Returns a verdict (allow/review/block) plus structured findings and machine codes.",
+        description: "Screen text for security hygiene (hidden characters, confusables, risky prompt patterns) and return an allow/review/block verdict with findings. Prefer over text_inspect for a go/no-go decision and over single-purpose unicode checks when screening untrusted input. Reports observable features only, not intent.",
         handler: text_security_inspect,
         input_schema: text_security_inspect_input,
         output_schema: text_security_inspect_output,

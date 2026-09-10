@@ -102,6 +102,7 @@ Render a current, absolute-path setup instruction with:
 eggsact integrate list
 eggsact integrate detect
 eggsact integrate zed       # or codex, claude, cursor, vscode, opencode
+eggsact integrate zed --discovery  # discovery-mode args (--mcp --mcp-surface discovery)
 ```
 
 The command is read-only. It prints the exact current registration command or

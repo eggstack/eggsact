@@ -8,6 +8,7 @@ pub mod test_comprehensive_parity;
 pub mod test_determinism_concurrency;
 pub mod test_deterministic_real_use;
 pub mod test_diagnostics;
+pub mod test_discovery;
 pub mod test_edge_cases;
 pub mod test_edit_preflight_enhanced;
 pub mod test_error_structure;

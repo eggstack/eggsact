@@ -56,7 +56,7 @@ pub const SHELL_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "command_preflight",
-        description: "Composite: analyze a command before user approval or execution. Applies a policy engine (default/strict/permissive) with optional policy_config allow/deny overrides. Calls shell_split and regex_safety_check. Detects behavioral features (network, filesystem, process, env) and destructive patterns. Returns parsed argv, program, subcommand, features, risk findings, matched_rules, and a verdict. Must not execute anything.",
+        description: "Review a shell command against an allow/review/block policy before approval or execution and return a verdict with parsed argv and risk findings. Prefer over shell_split for approval decisions and over argv_compare for single-command review. Analyzes only; never executes.",
         handler: command_preflight,
         input_schema: command_preflight_input,
         output_schema: command_preflight_output,

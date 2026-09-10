@@ -39,7 +39,7 @@ pub const CONFIG_TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "config_preflight",
-        description: "Composite: validate generated config text. Auto-detects format and runs the appropriate validator. Returns valid/invalid, detected format, parse error location, and machine code.",
+        description: "Validate generated config text with format auto-detection and return a valid/invalid verdict with error location. Prefer over dotenv_validate, ini_validate, or validate_json/validate_toml when the format is unknown or mixed. Checks syntax only; never writes files.",
         handler: config_preflight,
         input_schema: config_preflight_input,
         output_schema: config_preflight_output,

@@ -75,3 +75,19 @@ below show the contracts without assuming a particular installation location.
 
 Use `eggsact --diagnostics` or the binary's `--version` before registering a
 path copied from another machine.
+
+## Discovery vs direct surface
+
+- **Direct** (`eggsact --mcp`): advertise the full profile/audience-filtered
+  catalog. Choose when the client/harness already implements deferred tool
+  loading itself or requires first-class canonical definitions up front.
+- **Discovery** (`eggsact --mcp --mcp-surface discovery` or
+  `EGGSACT_MCP_SURFACE=discovery`): advertise only the pinned front doors
+  (`math_eval`, `edit_preflight`, `command_preflight`, `config_preflight`,
+  `text_security_inspect` when allowed) plus `tool_search` / `tool_invoke`.
+  Choose for low-context models to cut tool-definition tokens; every
+  capability allowed by the profile/audience stays reachable through
+  deterministic search/invoke routing with no bypass. The default rendered
+  configuration stays direct until rollout evaluation passes; render
+  discovery explicitly via `eggsact integrate <client> --discovery` or
+  `render_with_surface(client, path, true)`.

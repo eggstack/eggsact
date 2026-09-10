@@ -28,6 +28,27 @@ Successful modern `tools/call` responses add schema-conforming `structuredConten
 
 Tool-level errors keep `isError: true` with no `structuredContent`. Modern `tools/list` adds `resultType`, `ttlMs: 3600000`, `cacheScope: public`, standard `annotations` (`readOnlyHint: true`, `openWorldHint: false`), and namespaced `_meta` (`io.github.eggstack/eggsact` with `tier`, `tags`, `category`, `llm_exposure`, `cost`); legacy shapes are unchanged. `ping` is legacy-only (removed in modern).
 
+### Progressive Discovery Surface
+
+`EGGSACT_MCP_SURFACE=discovery` (or `--mcp-surface discovery`) switches
+only presentation: `tools/list` advertises the pinned front doors allowed
+by the active profile/audience plus two MCP-only facades (7 entries for
+`full`/Model). Direct mode (`direct`, the default) preserves the full
+profile/audience-filtered catalog. No capability requires the facade when
+direct mode is selected; omitted-from-list never means unauthorized.
+
+| Facade | Input | Output |
+|--------|-------|--------|
+| `tool_search` | `query` (required), `limit` 1–10 (default 5), `detail` `summary\|schema` (default `summary`), `include_deprecated` (default false) | `{"matches": [{"name", "purpose", "category", "required_arguments", "match_reason"}], "query"}`; `inputSchema` per match when `detail="schema"`; deprecated hits carry `deprecated:true` + `replacement` where documented (`json_query` → `json_extract`) |
+| `tool_invoke` | `name` (canonical target, required), `arguments` (object, default `{}`) | Target tool's `ToolResponse` envelope with the target name visible; recursive `tool_search`/`tool_invoke` targets rejected |
+
+Search is deterministic local lexical ranking (exact name > alias > name
+token > tag/category > description > typo recovery; ties by registry
+order) over the profile/audience-filtered catalog — no embeddings or
+network. Both facades enforce the same profile/audience rules as direct
+calls. See `architecture/mcp-server.md` (direct vs discovery flow) and
+`architecture/registry-profiles.md` (capability vs presentation).
+
 ## Transport Protocol
 
 ### Request Format

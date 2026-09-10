@@ -23,63 +23,103 @@ fn json_string(value: &str) -> String {
 }
 
 pub fn render(client: &str, executable: &str) -> Result<String, String> {
+    render_with_surface(client, executable, false)
+}
+
+/// Render client setup with explicit discovery-mode startup arguments.
+///
+/// When `discovery` is true, renderers emit `["--mcp", "--mcp-surface",
+/// "discovery"]` instead of `["--mcp"]`. The default rendering stays
+/// direct until plan 03 evaluation approves a change; discovery rendering
+/// is available explicitly for testing.
+pub fn render_with_surface(
+    client: &str,
+    executable: &str,
+    discovery: bool,
+) -> Result<String, String> {
     let path = Path::new(executable);
     if path.as_os_str().is_empty() {
         return Err("eggsact executable path cannot be empty".into());
     }
+    // Discovery renderers add explicit `--mcp-surface discovery` startup
+    // args; direct renderers keep exactly `--mcp`.
+    let (args_json, args_toml, extra_cli) = if discovery {
+        (
+            r#"["--mcp", "--mcp-surface", "discovery"]"#,
+            r#"["--mcp", "--mcp-surface", "discovery"]"#,
+            " --mcp --mcp-surface discovery",
+        )
+    } else {
+        (r#"["--mcp"]"#, r#"["--mcp"]"#, " --mcp")
+    };
     match client {
         "zed" => Ok(format!(
             r#"{{
   "context_servers": {{
     "eggsact": {{
       "command": {},
-      "args": ["--mcp"],
+      "args": {},
       "env": {{}}
     }}
   }}
 }}"#,
-            json_string(executable)
+            json_string(executable),
+            args_json
         )),
         "codex" => Ok(format!(
-            "[mcp_servers.eggsact]\ncommand = {}\nargs = [\"--mcp\"]\n",
-            json_string(executable)
+            "[mcp_servers.eggsact]\ncommand = {}\nargs = {}\n",
+            json_string(executable),
+            args_toml
         )),
         "claude" => Ok(format!(
-            "claude mcp add eggsact -- {} --mcp",
-            shell_quote(executable)
+            "claude mcp add eggsact -- {}{}",
+            shell_quote(executable),
+            extra_cli
         )),
         "cursor" => Ok(format!(
             r#"{{
   "mcpServers": {{
     "eggsact": {{
       "command": {},
-      "args": ["--mcp"]
+      "args": {}
     }}
   }}
 }}"#,
-            json_string(executable)
+            json_string(executable),
+            args_json
         )),
-        "vscode" => Ok(format!(
-            "code --add-mcp {}",
-            shell_quote(&format!(
-                r#"{{"name":"eggsact","command":{},"args":["--mcp"]}}"#,
-                json_string(executable)
-            ))
-        )),
-        "opencode" => Ok(format!(
-            r#"{{
+        "vscode" => {
+            let inner = format!(
+                r#"{{"name":"eggsact","command":{},"args":{}}}"#,
+                json_string(executable),
+                args_json
+            );
+            Ok(format!("code --add-mcp {}", shell_quote(&inner)))
+        }
+        "opencode" => {
+            let cmd_array = if discovery {
+                format!(
+                    "{}, \"--mcp\", \"--mcp-surface\", \"discovery\"",
+                    json_string(executable)
+                )
+            } else {
+                format!("{}, \"--mcp\"", json_string(executable))
+            };
+            Ok(format!(
+                r#"{{
   "$schema": "https://opencode.ai/config.json",
   "mcp": {{
     "servers": {{
       "eggsact": {{
         "type": "local",
-        "command": [{}, "--mcp"]
+        "command": [{}]
       }}
     }}
   }}
 }}"#,
-            json_string(executable)
-        )),
+                cmd_array
+            ))
+        }
         _ => Err(format!(
             "unknown client '{client}'; choose one of: {}",
             CLIENTS
@@ -119,7 +159,11 @@ fn command_on_path(command: &str) -> bool {
     false
 }
 
-pub fn run(client: Option<&str>) -> Result<(), String> {
+/// Run the integrate renderer with an explicit discovery option.
+///
+/// `discovery=true` (from `integrate <client> --discovery`) renders
+/// discovery-mode startup args; the default stays direct.
+pub fn run_with_options(client: Option<&str>, discovery: bool) -> Result<(), String> {
     let path = resolved_path()?;
     match client {
         None | Some("list") => {
@@ -151,7 +195,14 @@ pub fn run(client: Option<&str>) -> Result<(), String> {
         }
         Some(name) => {
             println!("Register eggsact as the client-owned stdio MCP server named 'eggsact':\n");
-            println!("{}", render(name, &path)?);
+            // Keep `render` as the direct-mode path so the default renderer
+            // stays the single source for `--mcp`-only output.
+            let rendered = if discovery {
+                render_with_surface(name, &path, true)?
+            } else {
+                render(name, &path)?
+            };
+            println!("{}", rendered);
             println!("\nThis command/config is an instruction only; eggsact does not edit client configuration.");
         }
     }
@@ -183,6 +234,21 @@ mod tests {
         let opencode: serde_json::Value =
             serde_json::from_str(&render("opencode", "/opt/eggsact").unwrap()).unwrap();
         assert_eq!(opencode["mcp"]["servers"]["eggsact"]["command"][1], "--mcp");
+    }
+
+    #[test]
+    fn discovery_renderers_emit_surface_args() {
+        for client in ["zed", "codex", "claude", "cursor", "vscode", "opencode"] {
+            let rendered = render_with_surface(client, "/opt/eggsact", true).unwrap();
+            assert!(
+                rendered.contains("--mcp-surface"),
+                "discovery renderer for {client} must include --mcp-surface"
+            );
+            assert!(rendered.contains("discovery"));
+        }
+        // Direct renderers must not include the surface flag.
+        let direct = render("zed", "/opt/eggsact").unwrap();
+        assert!(!direct.contains("--mcp-surface"));
     }
 
     #[test]

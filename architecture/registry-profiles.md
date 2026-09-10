@@ -147,6 +147,26 @@ Profiles are not audience-bound; the audience filter applies on top of profile m
 - **In-process API**: Each `ToolRegistry` is bound to one profile at construction time.
 - **`tools/list`** accepts a `profile` parameter for filtering the listing, but that does not change which profile `tools/call` enforces.
 
+### Capability Policy vs Presentation Surface
+
+Profiles answer “which capabilities are available?” while `McpSurface`
+(`src/mcp/discovery.rs`) answers “which of those capabilities are
+advertised up front?”. Do not reuse `Profile` for presentation.
+
+- `Direct` (default): `tools/list` advertises the profile/audience-filtered canonical set.
+- `Discovery`: `tools/list` advertises at most the pinned front doors
+  (`math_eval`, `edit_preflight`, `command_preflight`, `config_preflight`,
+  `text_security_inspect` — only those allowed by the active
+  profile/audience) plus the MCP-only `tool_search` / `tool_invoke`
+  facades. All other capabilities allowed by the profile/audience stay
+  reachable through deterministic local search/invoke routing.
+
+Presentation never becomes authorization: `tool_search` only returns, and
+`tool_invoke` only executes, tools permitted by the active
+profile/audience. HarnessOnly/Hidden tools stay unreachable to Model
+callers through the router. See `mcp-server.md` (direct vs discovery
+flow) and `coding-agent-integration.md` (when to choose each surface).
+
 ---
 
 ## Audience System

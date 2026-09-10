@@ -9,10 +9,17 @@ mod update;
 enum CliCommand {
     Help,
     Version,
-    Mcp,
-    Diagnostics { format: String },
+    Mcp {
+        surface: eggsact::mcp::discovery::McpSurface,
+    },
+    Diagnostics {
+        format: String,
+    },
     Update,
-    Integrate { client: Option<String> },
+    Integrate {
+        client: Option<String>,
+        discovery: bool,
+    },
     Error(String),
     Evaluate(String),
 }
@@ -20,16 +27,72 @@ enum CliCommand {
 fn parse_args(args: impl IntoIterator<Item = String>) -> CliCommand {
     let args: Vec<String> = args.into_iter().collect();
 
+    // ── MCP surface selection (plan 02 Part F) ─────────────────────────
+    // Explicit startup configuration: `--mcp [--mcp-surface direct|discovery]`.
+    // `Direct` preserves current behavior; `Discovery` advertises only the
+    // pinned front doors plus search/invoke facades. The default stays
+    // `Direct` until plan 03 evaluation approves a change.
+    if args.iter().any(|a| a == "--mcp") {
+        let mut surface = eggsact::mcp::discovery::McpSurface::Direct;
+        let mut surface_seen = false;
+        let mut i = 0;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--mcp" => {}
+                "--mcp-surface" => {
+                    if surface_seen || i + 1 >= args.len() {
+                        return CliCommand::Error(
+                            "--mcp-surface requires exactly one value: direct or discovery"
+                                .to_string(),
+                        );
+                    }
+                    surface_seen = true;
+                    let raw = args[i + 1].as_str();
+                    match eggsact::mcp::discovery::McpSurface::parse(raw) {
+                        Some(s) => surface = s,
+                        None => {
+                            return CliCommand::Error(format!(
+                                "unknown MCP surface '{}'; expected direct or discovery",
+                                raw
+                            ));
+                        }
+                    }
+                    i += 1;
+                }
+                other => {
+                    return CliCommand::Error(format!(
+                        "unexpected argument '{}' with --mcp",
+                        other
+                    ));
+                }
+            }
+            i += 1;
+        }
+        return CliCommand::Mcp { surface };
+    }
+    if args.iter().any(|a| a == "--mcp-surface") {
+        return CliCommand::Error("--mcp-surface requires --mcp".to_string());
+    }
+
     match args.as_slice() {
         [] => CliCommand::Help,
         [flag] if flag == "-h" || flag == "--help" => CliCommand::Help,
         [flag] if flag == "-V" || flag == "--version" => CliCommand::Version,
-        [flag] if flag == "--mcp" => CliCommand::Mcp,
         [command] if command == "update" => CliCommand::Update,
+        [command, client, flag] if command == "integrate" && flag == "--discovery" => {
+            CliCommand::Integrate {
+                client: Some(client.clone()),
+                discovery: true,
+            }
+        }
         [command, client] if command == "integrate" => CliCommand::Integrate {
             client: Some(client.clone()),
+            discovery: false,
         },
-        [command] if command == "integrate" => CliCommand::Integrate { client: None },
+        [command] if command == "integrate" => CliCommand::Integrate {
+            client: None,
+            discovery: false,
+        },
         _ => {
             if !args.iter().any(|arg| arg == "--diagnostics") {
                 if args.iter().any(|arg| arg == "--format") {
@@ -79,14 +142,15 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> CliCommand {
 }
 
 fn print_usage() {
-    println!("Usage: eggsact [--mcp | --diagnostics [--format json|text] | update | integrate <client> | expression]");
+    println!("Usage: eggsact [--mcp [--mcp-surface direct|discovery] | --diagnostics [--format json|text] | update | integrate <client> [--discovery] | expression]");
     println!("  --mcp              Start MCP server mode");
+    println!("  --mcp-surface      Presentation surface: direct (default) or discovery (pinned front doors + tool_search/tool_invoke)");
     println!("  --diagnostics      Print diagnostic information");
     println!("  --format json|text Output format for --diagnostics (default: text)");
     println!("  -h, --help         Print this help message");
     println!("  -V, --version      Print version information");
     println!("  update             Update from the latest stable crates.io release");
-    println!("  integrate <name>   Render MCP setup for a client (or list/detect)");
+    println!("  integrate <name>   Render MCP setup for a client (or list/detect) [--discovery renders --mcp-surface discovery args]");
     println!("  expression         Evaluate math expression");
 }
 
@@ -101,6 +165,7 @@ fn print_diagnostics(format: &str) {
         "EGGCALC_MCP_PROFILE",
         "EGGCALC_MCP_AUDIENCE",
         "EGGCALC_MCP_SCHEMA_DETAIL",
+        "EGGSACT_MCP_SURFACE",
     ];
     let route_critical = eggsact::mcp::registry::ROUTE_CRITICAL_TOOLS;
 
@@ -153,6 +218,7 @@ fn print_diagnostics(format: &str) {
                 "active_profile": runtime::get_active_profile(),
                 "active_audience": runtime::get_active_audience().to_string(),
                 "schema_detail": runtime::get_schema_detail(),
+                "active_surface": runtime::get_active_surface().to_string(),
                 "limits": {
                     "max_in_flight_requests": runtime::MAX_IN_FLIGHT_REQUESTS,
                     "max_tool_workers": runtime::MAX_TOOL_WORKERS,
@@ -187,6 +253,7 @@ fn print_diagnostics(format: &str) {
         println!("  Active profile: {}", runtime::get_active_profile());
         println!("  Active audience: {}", runtime::get_active_audience());
         println!("  Schema detail: {}", runtime::get_schema_detail());
+        println!("  Active surface: {}", runtime::get_active_surface());
         println!(
             "  Limits: {} in-flight, {} workers, {} bytes request, {} bytes output",
             runtime::MAX_IN_FLIGHT_REQUESTS,
@@ -217,10 +284,31 @@ fn main() {
     match parse_args(env::args().skip(1)) {
         CliCommand::Help => print_usage(),
         CliCommand::Version => println!("eggsact {}", env!("CARGO_PKG_VERSION")),
-        CliCommand::Mcp => {
+        CliCommand::Mcp { surface } => {
             if let Err(error) = runtime::init_active_profile() {
                 eprintln!("Error: {error}");
                 std::process::exit(1);
+            }
+            if let Err(error) = runtime::init_active_surface() {
+                eprintln!("Error: {error}");
+                std::process::exit(1);
+            }
+            // Explicit CLI surface overrides the environment. Set before any
+            // worker threads exist; do not mutate process environment.
+            if surface != eggsact::mcp::discovery::McpSurface::Direct
+                || std::env::var("EGGSACT_MCP_SURFACE").is_ok()
+            {
+                // Only override when the flag was explicitly passed or when
+                // env init already ran: the flag value (default Direct when
+                // absent) must not clobber a valid env-provided Discovery.
+                // Detect explicit flag by re-scanning argv.
+                let explicit = env::args().any(|a| a == "--mcp-surface");
+                if explicit {
+                    if let Err(error) = runtime::set_active_surface(surface) {
+                        eprintln!("Error: {error}");
+                        std::process::exit(1);
+                    }
+                }
             }
             // Release builds only: in debug builds this compilation takes
             // multiple wall-clock seconds per process, which multiplied across
@@ -244,8 +332,8 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        CliCommand::Integrate { client } => {
-            if let Err(error) = integrate::run(client.as_deref()) {
+        CliCommand::Integrate { client, discovery } => {
+            if let Err(error) = integrate::run_with_options(client.as_deref(), discovery) {
                 eprintln!("Error: {error}");
                 std::process::exit(2);
             }
@@ -292,7 +380,33 @@ mod tests {
 
     #[test]
     fn parse_mcp_flag() {
-        assert_eq!(parse_args(args(&["--mcp"])), CliCommand::Mcp);
+        use eggsact::mcp::discovery::McpSurface;
+        assert_eq!(
+            parse_args(args(&["--mcp"])),
+            CliCommand::Mcp {
+                surface: McpSurface::Direct
+            }
+        );
+        assert_eq!(
+            parse_args(args(&["--mcp", "--mcp-surface", "discovery"])),
+            CliCommand::Mcp {
+                surface: McpSurface::Discovery
+            }
+        );
+        assert_eq!(
+            parse_args(args(&["--mcp", "--mcp-surface", "direct"])),
+            CliCommand::Mcp {
+                surface: McpSurface::Direct
+            }
+        );
+        assert!(matches!(
+            parse_args(args(&["--mcp", "--mcp-surface", "bogus"])),
+            CliCommand::Error(_)
+        ));
+        assert!(matches!(
+            parse_args(args(&["--mcp-surface", "discovery"])),
+            CliCommand::Error(_)
+        ));
     }
 
     #[test]
@@ -300,12 +414,23 @@ mod tests {
         assert_eq!(parse_args(args(&["update"])), CliCommand::Update);
         assert_eq!(
             parse_args(args(&["integrate"])),
-            CliCommand::Integrate { client: None }
+            CliCommand::Integrate {
+                client: None,
+                discovery: false
+            }
         );
         assert_eq!(
             parse_args(args(&["integrate", "zed"])),
             CliCommand::Integrate {
-                client: Some("zed".to_string())
+                client: Some("zed".to_string()),
+                discovery: false
+            }
+        );
+        assert_eq!(
+            parse_args(args(&["integrate", "zed", "--discovery"])),
+            CliCommand::Integrate {
+                client: Some("zed".to_string()),
+                discovery: true
             }
         );
     }

@@ -2,6 +2,13 @@
 
 The `src/tools/` module contains the actual handler functions for all 86 MCP tools. Each category has its own file, plus a shared helpers module.
 
+The two discovery facades (`tool_search`, `tool_invoke`) are MCP
+orchestration in `src/mcp/discovery.rs` + `src/mcp/server.rs`, not
+`src/tools/` handlers. Do not call one tool handler from another to obtain
+an internal result — call the typed core/service instead, and do not
+implement `tool_invoke` by calling sibling `tools::*` handlers (reuse the
+`ToolRegistry::prepare_tool_call` + `execution::execute_tool_bounded` path).
+
 See also: [MCP Server](mcp-server.md), [Text Library](text-library.md), [Machine Codes](machine-codes.md), [Preflight](preflight.md)
 
 ## Module Overview

@@ -168,7 +168,9 @@ Hand-maintained user-facing docs in `docs/`:
   also invoke Python `eggcalc`; eggsact itself does not mutate the environment.
   `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to
   `Model`), and `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`; defaults
-  to `full`) configure MCP startup.
+  to `full`) configure MCP startup. `EGGSACT_MCP_SURFACE` (`direct`/`discovery`;
+  defaults to `direct`) selects the MCP presentation surface; new
+  eggsact-native config uses the `EGGSACT_` prefix, not `EGGCALC_`.
 - **Deployment commands:** `eggsact update` verifies the crates.io stable
   version, exact GitHub asset, checksum, and candidate identity before
   replacement. Unix replacement is completed before success is reported;
@@ -177,6 +179,7 @@ Hand-maintained user-facing docs in `docs/`:
   list|detect|<client>` renders read-only client-owned stdio setup for Zed,
   Codex, Claude Code, Cursor, VS Code, or OpenCode. It does not add a daemon or
   edit client configuration.
+- **MCP presentation surface (`McpSurface` in `src/mcp/discovery.rs`):** `Direct` (default) preserves the full profile/audience-filtered `tools/list`; `Discovery` (`EGGSACT_MCP_SURFACE=discovery` or `--mcp-surface discovery`) advertises only the pinned front doors allowed by the profile/audience plus MCP-only `tool_search`/`tool_invoke`. Presentation never authorizes: search/invoke enforce the same profile/audience rules as direct calls. Facades are not `ToolSpec` entries, not in `ALL_TOOLS_VEC`/`src/tools/`, and not in generated tool-cards. Adding a capability must keep exact-name search and router invocation working and update `tests/mcp/test_discovery.rs` expectations (pinned count, byte budgets, bypass guards).
 - **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
 - **Test-thread bound:** `--test-threads=4` is used in CI and the release gate to prevent Tokio blocking-pool starvation when many MCP subprocess tests run in parallel. This is a test-runner containment measure, not a product budget. Unit tests (`--lib`) and doc tests do not need it.
 

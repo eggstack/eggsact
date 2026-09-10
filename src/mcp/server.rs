@@ -13,10 +13,11 @@ use crate::mcp::registry;
 use crate::mcp::response::{wrap_tool_response, wrap_tool_response_modern, ToolResponse};
 use crate::mcp::runtime::{
     apply_cancellation, complete_request, get_active_audience, get_active_profile,
-    get_schema_detail, negotiate_legacy_version, new_active_requests, parse_modern_request_meta,
-    register_request, MetricGuard, ModernRequestContext, NegotiatedProtocol, RegisterRequestError,
-    SessionState, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS, MCP_SERVER_NAME,
-    MODERN_CACHE_SCOPE, MODERN_CACHE_TTL_MS, RUNTIME_METRICS, SERVER_INSTRUCTIONS,
+    get_active_surface, get_schema_detail, negotiate_legacy_version, new_active_requests,
+    parse_modern_request_meta, register_request, MetricGuard, ModernRequestContext,
+    NegotiatedProtocol, RegisterRequestError, SessionState, MAX_REQUEST_BYTES,
+    MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS, MCP_SERVER_NAME, MODERN_CACHE_SCOPE,
+    MODERN_CACHE_TTL_MS, RUNTIME_METRICS, SERVER_INSTRUCTIONS,
 };
 use serde_json::Value;
 use std::io::Write;
@@ -401,11 +402,41 @@ fn handle_tools_list_shared(
             "id": id
         }));
     }
-    let audience = Some(match effective_audience_str {
+    let audience_enum = match effective_audience_str {
         "harness" => registry::ToolListAudience::Harness,
         "debug" => registry::ToolListAudience::Debug,
         _ => registry::ToolListAudience::Model,
-    });
+    };
+    let audience = Some(audience_enum);
+    // ── Discovery presentation (plan 02 Part B) ────────────────────────
+    // Presentation only: the active profile/audience above remain the
+    // capability boundary. Discovery advertises at most the pinned front
+    // doors allowed by that boundary plus the two MCP-only facades.
+    // `names` narrows the discovery set; `tier`/`tags` are direct-mode
+    // catalog filters and are ignored in discovery mode.
+    if get_active_surface() == crate::mcp::discovery::McpSurface::Discovery {
+        if modern {
+            let tools = crate::mcp::discovery::discovery_modern_values(
+                effective_profile,
+                audience_enum,
+                filters.names.as_deref(),
+            );
+            return Some(serde_json::json!({
+                "resultType": "complete",
+                "tools": tools,
+                "ttlMs": MODERN_CACHE_TTL_MS,
+                "cacheScope": MODERN_CACHE_SCOPE,
+                "_meta": server_info_meta(),
+            }));
+        } else {
+            let tools = crate::mcp::discovery::discovery_legacy_definitions(
+                effective_profile,
+                audience_enum,
+                filters.names.as_deref(),
+            );
+            return Some(serde_json::json!({"tools": tools}));
+        }
+    }
     // Own the borrowed data for the registry call.
     let effective_profile_owned: String = effective_profile.to_string();
     let detail_owned: String = detail.to_string();
@@ -479,6 +510,152 @@ fn handle_profiles_list_shared(
     }
 }
 
+/// Handle `tool_search` facade invocation (discovery surface only).
+///
+/// Deterministic local search over the active profile/audience-filtered
+/// `ToolSpec` slice. Presentation never widens authorization: only tools
+/// the active profile/audience permits are searchable.
+async fn handle_tool_search_facade(
+    arguments_val: &Value,
+    active_profile: &str,
+    active_audience: ToolAudience,
+    id: Option<Value>,
+    modern: bool,
+) -> Option<Value> {
+    let params = match crate::mcp::discovery::parse_search_params(arguments_val) {
+        Ok(p) => p,
+        Err(msg) => {
+            return Some(json_rpc_error(
+                -32602,
+                format!("Invalid arguments for tool 'tool_search': {}", msg),
+                id.clone(),
+            ));
+        }
+    };
+    let registry_audience = active_audience.as_registry_audience();
+    let specs = registry::tools_for_profile_audience(active_profile, registry_audience);
+    let hits = crate::mcp::discovery::search_filtered(&specs, &params);
+    let matches = crate::mcp::discovery::matches_value(&hits, params.detail_schema);
+    let result = serde_json::json!({
+        "matches": matches,
+        "query": params.query,
+    });
+    let mut response = ToolResponse::success(result, Some(crate::mcp::discovery::TOOL_SEARCH));
+    // Bound the search payload itself (limit<=10 + optional schemas).
+    let budget = crate::mcp::budget::ToolBudget::CHEAP;
+    crate::mcp::response::truncate_response(&mut response, &budget);
+    if modern {
+        Some(wrap_tool_response_modern(&response))
+    } else {
+        Some(wrap_tool_response(&response))
+    }
+}
+
+/// Handle `tool_invoke` facade invocation (discovery surface only).
+///
+/// Reuses the exact target validation/budget/execution path as a direct
+/// `tools/call` (`ToolRegistry::prepare_tool_call` +
+/// `execution::execute_tool_bounded`). The target tool name stays visible
+/// in the resulting envelope. Recursive facade invocation is rejected.
+#[allow(clippy::too_many_arguments)]
+async fn handle_tool_invoke_facade(
+    arguments_val: &Value,
+    active_profile: &str,
+    active_audience: ToolAudience,
+    cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
+    tool_semaphore: &Arc<tokio::sync::Semaphore>,
+    id: Option<Value>,
+    modern: bool,
+) -> Option<Value> {
+    let invoke = match crate::mcp::discovery::parse_invoke_params(arguments_val) {
+        Ok(p) => p,
+        Err(msg) => {
+            return Some(json_rpc_error(
+                -32602,
+                format!("Invalid arguments for tool 'tool_invoke': {}", msg),
+                id.clone(),
+            ));
+        }
+    };
+    let target = invoke.target;
+    let target_args = invoke.arguments;
+    let profile =
+        Profile::from_str_opt(active_profile).unwrap_or_else(|| Profile::custom(active_profile));
+    let tool_registry = ToolRegistry::with_profile_and_audience(profile, active_audience)
+        .with_compat_mode(CompatibilityMode::EggcalcPython);
+    let handler = match tool_registry.prepare_tool_call(&target, &target_args) {
+        ToolCallOutcome::Ready { handler } => handler,
+        ToolCallOutcome::PreExecutionError(e) => {
+            return match e {
+                ToolCallError::UnknownTool(tool_name) => {
+                    let tool_names = registry::tool_names();
+                    let tool_name_refs: Vec<&str> = tool_names.to_vec();
+                    let msg = match registry::find_close_match(&tool_name, &tool_name_refs) {
+                        Some(m) => format!("Unknown tool: {}. Did you mean: {}?", tool_name, m),
+                        None => format!("Unknown tool: {}", tool_name),
+                    };
+                    Some(method_not_found(msg, id.clone()))
+                }
+                ToolCallError::ToolUnavailable { tool, profile } => Some(json_rpc_error(
+                    -32602,
+                    format!(
+                        "Tool '{}' is not available in profile '{}'. Check the tool's declared profiles, or switch to a profile that includes it.",
+                        tool, profile
+                    ),
+                    id.clone(),
+                )),
+                ToolCallError::ToolNotAllowedForAudience {
+                    tool,
+                    profile,
+                    audience,
+                    exposure,
+                } => Some(json_rpc_error(
+                    -32602,
+                    format!(
+                        "Tool '{}' (exposure: {}) cannot be executed by {} audience in profile '{}'. Use tools/list with appropriate audience, or use the in-process API with a different audience.",
+                        tool, exposure, audience, profile
+                    ),
+                    id.clone(),
+                )),
+                ToolCallError::InvalidArguments(msg) => Some(json_rpc_error(
+                    -32602,
+                    format!("Invalid arguments for tool '{}': {}", target, msg),
+                    id.clone(),
+                )),
+                ToolCallError::Internal(msg) => Some(json_rpc_error(-32603, msg, id.clone())),
+            };
+        }
+    };
+    let sem = tool_semaphore.clone();
+    let tool_budget = registry::get_tool(&target)
+        .map(|spec| budget_for_tool(&target, spec.cost))
+        .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
+    let outcome = execution::execute_tool_bounded(
+        handler,
+        target_args,
+        target.clone(),
+        tool_budget,
+        cancel_flag.clone(),
+        sem,
+    )
+    .await;
+    if modern {
+        Some(execution::build_tool_response_modern(
+            outcome,
+            &target,
+            &tool_budget,
+            id.clone(),
+        ))
+    } else {
+        Some(execution::build_tool_response(
+            outcome,
+            &target,
+            &tool_budget,
+            id.clone(),
+        ))
+    }
+}
+
 async fn handle_tools_call_shared(
     params: Option<&Value>,
     cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
@@ -543,7 +720,54 @@ async fn handle_tools_call_shared(
     let active_profile = get_active_profile();
     let profile =
         Profile::from_str_opt(&active_profile).unwrap_or_else(|| Profile::custom(&active_profile));
-    let tool_registry = ToolRegistry::with_profile_and_audience(profile, get_active_audience())
+    let active_audience = get_active_audience();
+    let surface = get_active_surface();
+    // ── Discovery facades (plan 02 Parts C/D) ──────────────────────────
+    // MCP-only orchestration facades, not utility-registry tools. They are
+    // available only when the discovery surface is enabled; in direct mode
+    // they are unknown tools. Capability policy still applies: search only
+    // returns, and invoke only executes, tools allowed by the active
+    // profile/audience.
+    if crate::mcp::discovery::is_discovery_facade(name) {
+        if surface != crate::mcp::discovery::McpSurface::Discovery {
+            let tool_names = registry::tool_names();
+            let tool_name_refs: Vec<&str> = tool_names.to_vec();
+            let msg = match registry::find_close_match(name, &tool_name_refs) {
+                Some(m) => format!(
+                    "Unknown tool: {}. Did you mean: {}? (discovery facades require EGGSACT_MCP_SURFACE=discovery or --mcp-surface discovery)",
+                    name, m
+                ),
+                None => format!(
+                    "Unknown tool: {} (discovery facades require EGGSACT_MCP_SURFACE=discovery or --mcp-surface discovery)",
+                    name
+                ),
+            };
+            return Some(method_not_found(msg, id.clone()));
+        }
+        if name == crate::mcp::discovery::TOOL_SEARCH {
+            return handle_tool_search_facade(
+                &arguments_val,
+                &active_profile,
+                active_audience,
+                id,
+                modern,
+            )
+            .await;
+        }
+        if name == crate::mcp::discovery::TOOL_INVOKE {
+            return handle_tool_invoke_facade(
+                &arguments_val,
+                &active_profile,
+                active_audience,
+                cancel_flag,
+                tool_semaphore,
+                id,
+                modern,
+            )
+            .await;
+        }
+    }
+    let tool_registry = ToolRegistry::with_profile_and_audience(profile, active_audience)
         .with_compat_mode(CompatibilityMode::EggcalcPython);
     let handler = match tool_registry.prepare_tool_call(name, &arguments_val) {
         ToolCallOutcome::Ready { handler } => handler,
