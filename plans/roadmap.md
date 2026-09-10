@@ -166,7 +166,14 @@ reference behavior. Execute `02d` before plan 03:
   `ERA_MISMATCH` request handling with standard `-32022 Unsupported protocol
   version`; and drop mismatched notifications before lifecycle/cancellation
   side effects. Preserve the `02c` connection-state architecture and rerun the
-  official SDK stdio smoke.
+  official SDK stdio smoke. **Complete:** the shipped classifier now follows
+  the current SDK v2 `serveStdio` edge rules, request mismatches use `-32022`,
+  mismatched notifications are dropped before side effects, and local
+  verification passed formatting, generated-doc freshness, clippy, cargo-deny,
+  and the full non-parity test/doc gate (3,064 tests, zero failures). The
+  official `@modelcontextprotocol/client@2.0.0` smoke selected modern with
+  `versionNegotiation=auto` and legacy with default negotiation, with 77 tools
+  in each result; detailed closure evidence is in the plan.
 - **`mcp-surface-03-agent-evaluation-and-rollout.md` — P1.** Only after `02d`
   closure, measure exact serialized Tool-definition cost, build deterministic
   full-capability retrieval fixtures and hard-negative overlap cases, run

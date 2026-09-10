@@ -1,7 +1,7 @@
 //! Modern (2026-07-28) dual-era protocol tests.
 //!
 //! Covers plan `mcp-surface-01-protocol-2026-07-28` Part F:
-//! - `server/discover` before any handshake, without mutating legacy state
+//! - enveloped `server/discover` before any handshake, without mutating legacy state
 //! - direct modern `tools/list` / `tools/call` without `initialize`
 //! - required request `_meta` parsing and malformed reserved metadata
 //! - unsupported protocol version (`-32022`) behavior
@@ -108,19 +108,17 @@ fn modern_discover_before_initialize() {
 }
 
 #[test]
-fn modern_discover_without_meta_still_answers() {
-    // stdio backward-compat probe: no envelope, no prior state, no mutation.
+fn claimless_discover_uses_legacy_path() {
+    // A claim-less opening is legacy traffic under the dual-era stdio serving
+    // posture; it must not silently return the modern discovery result.
     let req = serde_json::json!({
         "jsonrpc": "2.0", "method": "server/discover", "id": 1,
     })
     .to_string();
     let res = mcp_session(&[req]);
     assert_eq!(res.len(), 1);
-    assert!(res[0].get("result").is_some());
-    assert_eq!(
-        res[0]["result"]["supportedVersions"][0],
-        Value::String("2026-07-28".to_string())
-    );
+    assert_eq!(res[0]["error"]["code"], -32600);
+    assert_eq!(res[0]["error"]["data"]["code"], "NOT_INITIALIZED");
 }
 
 #[test]
@@ -428,8 +426,8 @@ fn modern_does_not_mutate_legacy_session() {
     // a leaked session). See test_era_pinning for the full matrix.
     let err = by_id(&res, 21);
     assert!(err.get("error").is_some());
-    assert_eq!(err["error"]["data"]["code"], "ERA_MISMATCH");
-    assert_eq!(err["error"]["code"], -32600);
+    assert_eq!(err["error"]["code"], -32022);
+    assert_eq!(err["error"]["message"], "Unsupported protocol version");
 }
 
 // ── cross-era golden parity ──────────────────────────────────────────────

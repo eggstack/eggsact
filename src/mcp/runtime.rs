@@ -168,18 +168,15 @@ pub enum ProtocolEra {
 /// validation still applies to every modern call.
 ///
 /// Pinning rules (see `src/mcp/server.rs`):
-/// - `Undecided` + unversioned `server/discover` (no `_meta`): answers without
-///   pinning and without touching `SessionState` (backward-compat probe).
-/// - `Undecided` + valid modern envelope: pins `Modern20260728`.
-/// - `Undecided` + successful legacy `initialize`: pins `Legacy`.
-/// - Invalid modern envelopes (malformed `-32602`, unsupported `-32022`) and
-///   failed legacy `initialize` validation never pin; the connection stays
-///   `Undecided` so the client can retry without poisoned state.
-/// - Other pre-opening legacy traffic (`ping`, pre-handshake `tools/list`
-///   returning `NOT_INITIALIZED`) leaves the era `Undecided`.
-/// - Once pinned, cross-era requests are rejected with `ERA_MISMATCH`
-///   (`-32600`) preserving the JSON-RPC id; the other era's lifecycle is
-///   never mutated.
+/// - `Undecided` + a valid modern claim pins `Modern20260728`.
+/// - `Undecided` + `initialize` or any other claim-less message pins `Legacy`.
+///   This includes claim-less notifications and `server/discover`; the latter
+///   is then handled by legacy lifecycle/method semantics, not modern discovery.
+/// - Malformed modern claims and unsupported revisions are answered without
+///   pinning so a client can retry with a supported opening.
+/// - Once pinned, a request classified for the other era receives the standard
+///   `-32022 Unsupported protocol version` response; mismatched notifications
+///   are dropped before lifecycle or cancellation side effects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionEra {
     Undecided,
@@ -214,7 +211,7 @@ pub enum EraPinOutcome {
     PinnedNow,
     /// Already pinned to the requested era; proceed.
     AlreadyPinned,
-    /// Pinned to the other era; caller must reject with `ERA_MISMATCH`.
+    /// Pinned to the other era; caller must reject with `-32022`.
     Mismatch,
 }
 
@@ -233,6 +230,63 @@ pub fn try_pin_era(state: &mut ConnectionEra, target: ConnectionEra) -> EraPinOu
         }
         (current, target) if current == target => EraPinOutcome::AlreadyPinned,
         _ => EraPinOutcome::Mismatch,
+    }
+}
+
+/// Classification of a structurally valid inbound JSON-RPC message at the
+/// stdio edge. This is deliberately separate from modern envelope parsing:
+/// classification selects the claimed era, while `parse_modern_request_meta`
+/// validates the complete modern request once modern traffic is admitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InboundEraClassification {
+    Legacy,
+    Modern20260728,
+    InvalidModernEnvelope,
+    Unsupported { requested: String },
+}
+
+/// Classify one inbound message before method-specific lifecycle or side
+/// effects. Under the compatibility-serving posture, `initialize` and every
+/// message without a modern `_meta` claim are legacy openings. A malformed or
+/// unsupported modern claim is reported by the caller without pinning.
+pub fn classify_inbound_era(method: &str, params: Option<&Value>) -> InboundEraClassification {
+    let params_obj = params.and_then(Value::as_object);
+    let meta_value = params_obj.and_then(|obj| obj.get("_meta"));
+
+    // The official stdio classifier treats initialize as legacy unless it
+    // carries a valid modern protocol claim. Legacy initialize parameters may
+    // contain unrelated extension fields, so do not classify those as modern.
+    if method == "initialize" {
+        let modern_claim = meta_value
+            .and_then(Value::as_object)
+            .and_then(|meta| meta.get(META_PROTOCOL_VERSION))
+            .and_then(Value::as_str)
+            .is_some_and(is_modern_supported_version);
+        return if modern_claim {
+            InboundEraClassification::Modern20260728
+        } else {
+            InboundEraClassification::Legacy
+        };
+    }
+
+    let Some(meta_value) = meta_value else {
+        return InboundEraClassification::Legacy;
+    };
+    let Some(meta) = meta_value.as_object() else {
+        return InboundEraClassification::InvalidModernEnvelope;
+    };
+    let Some(version_value) = meta.get(META_PROTOCOL_VERSION) else {
+        return InboundEraClassification::InvalidModernEnvelope;
+    };
+    let Some(version) = version_value.as_str() else {
+        return InboundEraClassification::InvalidModernEnvelope;
+    };
+    if is_modern_supported_version(version) {
+        InboundEraClassification::Modern20260728
+    } else {
+        InboundEraClassification::Unsupported {
+            requested: version.to_string(),
+        }
     }
 }
 
@@ -707,14 +761,64 @@ mod connection_era_tests {
 
     #[test]
     fn invalid_opening_leaves_undecided() {
-        // Invalid envelopes and failed initialize validation never call
-        // try_pin_era, so the connection stays Undecided. This test pins
-        // that contract at the state-machine layer: no transition occurs
-        // unless the caller explicitly pins after successful validation.
+        // The state transition remains explicit: invalid openings do not call
+        // try_pin_era, while the server pins a claim-less initialize before
+        // method-level validation.
         let era = ConnectionEra::Undecided;
         assert_eq!(era.as_str(), "undecided");
         assert_eq!(ConnectionEra::Legacy.as_str(), "legacy");
         assert_eq!(ConnectionEra::Modern20260728.as_str(), "modern");
+    }
+
+    #[test]
+    fn edge_classifier_distinguishes_claimless_valid_invalid_and_unsupported() {
+        assert_eq!(
+            classify_inbound_era("ping", None),
+            InboundEraClassification::Legacy
+        );
+        assert_eq!(
+            classify_inbound_era("server/discover", None),
+            InboundEraClassification::Legacy
+        );
+        assert_eq!(
+            classify_inbound_era(
+                "tools/list",
+                Some(&serde_json::json!({"_meta": {
+                    "io.modelcontextprotocol/protocolVersion": MODERN_PROTOCOL_VERSION,
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                }}))
+            ),
+            InboundEraClassification::Modern20260728
+        );
+        assert_eq!(
+            classify_inbound_era(
+                "tools/list",
+                Some(&serde_json::json!({"_meta": {
+                    "io.modelcontextprotocol/protocolVersion": "1900-01-01",
+                }}))
+            ),
+            InboundEraClassification::Unsupported {
+                requested: "1900-01-01".to_string()
+            }
+        );
+        assert_eq!(
+            classify_inbound_era(
+                "tools/list",
+                Some(&serde_json::json!({"_meta": {
+                    "io.modelcontextprotocol/protocolVersion": MODERN_PROTOCOL_VERSION,
+                }}))
+            ),
+            InboundEraClassification::Modern20260728
+        );
+        assert_eq!(
+            classify_inbound_era(
+                "tools/list",
+                Some(&serde_json::json!({"_meta": {
+                    "io.modelcontextprotocol/protocolVersion": 20260728,
+                }}))
+            ),
+            InboundEraClassification::InvalidModernEnvelope
+        );
     }
 
     #[tokio::test]

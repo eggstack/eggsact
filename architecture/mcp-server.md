@@ -107,8 +107,8 @@ Tool implementations live in `src/tools/` (category modules):
 | Method | Eras | Description |
 |--------|------|-------------|
 | `initialize` | Legacy only | Returns server info, capabilities, and instructions |
-| `server/discover` | Modern (also answers without `_meta` as stdio probe) | Returns supported versions, capabilities, instructions, cache hints, and `_meta` identity; never touches legacy session state |
-| `notifications/initialized` | Legacy only (notification, no response) | Client acknowledgment; modern envelopes never mutate session state |
+| `server/discover` | Modern with a valid `_meta` claim | Returns supported versions, capabilities, instructions, cache hints, and `_meta` identity; claim-less traffic follows legacy lifecycle/method semantics |
+| `notifications/initialized` | Legacy notification (modern claims are admitted but no-op) | Client acknowledgment; modern envelopes never mutate session state |
 | `notifications/cancelled` | Both | Looks up the request ID in the active-requests map and sets its cancel flag |
 | `tools/list` | Both | Returns registered tool definitions (filtered by profile); modern adds `resultType`, `ttlMs`, `cacheScope`, `_meta`, standard annotations |
 | `tools/call` | Both | Executes a tool by name; modern adds `resultType`, `structuredContent`, `_meta` |
@@ -117,16 +117,16 @@ Tool implementations live in `src/tools/` (category modules):
 
 ### Connection Lifecycle (Dual-Era, Connection-Pinned)
 
-One stdio process is one connection. The opening exchange pins the era
-exactly once (`ConnectionEra::Undecided` → `Legacy` on successful
-`initialize`, → `Modern20260728` on a valid modern `_meta` envelope); later
-requests cannot switch eras. This mirrors the official TypeScript SDK
-`serveStdio` model (opening exchange pins; the disposable sibling-process
-`server/discover` probe never appears on the session child's wire). The spec
-allows dual-era servers to serve both eras concurrently on one endpoint, but
-eggsact chooses pinning on stdio so a long-lived process cannot mix eras.
-Modern request `_meta` remains validated per request even though the era is
-per-connection.
+One stdio process is one connection. The first classifiable inbound message
+pins the era exactly once (`ConnectionEra::Undecided` → `Legacy` for
+`initialize` or any claim-less message, → `Modern20260728` for a valid modern
+claim); later requests cannot switch eras. This mirrors the official
+TypeScript SDK `serveStdio` model (opening exchange pins; its enveloped
+`server/discover` probe runs in a disposable sibling process and never appears
+on the session child's wire). The spec allows dual-era servers to serve both
+eras concurrently on one endpoint, but eggsact chooses pinning on stdio so a
+long-lived process cannot mix eras. Modern request `_meta` remains validated
+per request even though the era is per-connection.
 
 - A successful legacy `initialize` pins `Legacy`; legacy clients must then
   complete the handshake before calling tools:
@@ -136,32 +136,35 @@ per-connection.
 3. Client sends `notifications/initialized` (no response)
 4. Server transitions to `Ready` state — all legacy methods now available
 
-- A valid modern envelope (normally `server/discover`, or a direct modern
-  `tools/list`/`tools/call`) pins `Modern20260728` with no handshake and no
-  `SessionState` access. Every modern call still validates its own `_meta`.
-- Unversioned `server/discover` (no `_meta`) always answers without pinning
-  and without touching `SessionState`, in any era. A valid modern
-  `server/discover` pins Modern; after Legacy pinning it is rejected as
-  cross-era rather than served.
-- Invalid modern envelopes (`-32602`/`-32022`) and failed `initialize`
-  validation never pin; the connection stays `Undecided` so the client can
-  retry. Other pre-opening legacy traffic (`ping`, pre-handshake `tools/list`
-  → `NOT_INITIALIZED`) also leaves `Undecided`.
-- After pinning, cross-era requests are rejected with `-32600`/`ERA_MISMATCH`
-  (id preserved) via the `era_mismatch()` helper; the other era's lifecycle
-  is never mutated. The era lock (`Arc<Mutex<ConnectionEra>>`, same pattern
-  as `SessionState`) is held only for inspect/select; tool execution stays
-  concurrent. Exactly one concurrent opening wins; the loser sees `Mismatch`.
+- A valid modern envelope (normally enveloped `server/discover`, or a direct
+  modern `tools/list`/`tools/call`) pins `Modern20260728` with no handshake
+  and no `SessionState` access. Every modern call still validates its own
+  `_meta`.
+- Claim-less opening traffic (`ping`, `tools/list` / `tools/call`, unknown
+  methods, notifications, and `server/discover`) pins Legacy. Claim-less
+  `server/discover` is then handled by legacy lifecycle/method semantics and
+  does not return modern discovery.
+- Malformed modern envelopes (`-32602`) and unsupported claims (`-32022`) are
+  answered without pinning; the client can retry. Failed legacy `initialize`
+  validation is method-level behavior after its claim-less opening has already
+  pinned Legacy.
+- After pinning, a request classified for the other era receives
+  `-32022 Unsupported protocol version` with the original id preserved; no
+  `ERA_MISMATCH` wire code exists. Mismatched notifications are dropped
+  without a response or lifecycle/cancellation side effect. The era lock
+  (`Arc<Mutex<ConnectionEra>>`, same pattern as `SessionState`) is held only
+  for inspect/select; tool execution stays concurrent. Exactly one concurrent
+  opening wins; the loser sees the standard unsupported-version response.
 
-Modern `server/discover` works from a fresh process before (or without) `initialize` and leaves legacy state untouched, so subsequent modern requests need no `notifications/initialized`.
+An enveloped modern `server/discover` works from a fresh process before (or without) `initialize` and leaves legacy state untouched, so subsequent modern requests need no `notifications/initialized`.
 
 #### Session States (Legacy Only)
 
 | State | Allowed Methods | Notes |
 |-------|----------------|-------|
-| `Uninitialized` | `initialize`, `server/discover`, `ping` | Default state at connection start; `server/discover` bypasses state |
-| `AwaitingInitialized` | `notifications/initialized`, `server/discover`, `ping` | After `initialize` response sent |
-| `Ready` | All legacy methods + `server/discover` | After `notifications/initialized` received |
+| `Uninitialized` | `initialize`, `ping` | Default state at connection start; claim-less `server/discover` is not a modern probe |
+| `AwaitingInitialized` | `notifications/initialized`, `ping` | After `initialize` response sent |
+| `Ready` | All legacy methods | After `notifications/initialized` received; `server/discover` is not a legacy method |
 
 Modern requests never consult or mutate `SessionState`.
 
@@ -233,11 +236,11 @@ The modern `server/discover` result advertises the same capabilities plus:
 |-------|------|-----------|------|
 | Not initialized | -32600 | `NOT_INITIALIZED` | Legacy method called before `initialize` on an Undecided/Legacy connection |
 | Already initialized | -32600 | `ALREADY_INITIALIZED` | Duplicate `initialize` request on a Legacy connection |
-| Era mismatch | -32600 | `ERA_MISMATCH` | Cross-era request after pinning (modern envelope on Legacy-pinned, or legacy method on Modern-pinned); id preserved, other era untouched |
+| Era-classification mismatch | -32022 | — | Cross-era request after pinning (modern claim on Legacy-pinned, or claim-less legacy message on Modern-pinned); id preserved, other era untouched |
 | Initialized before initialize | — | — | `notifications/initialized` received before `initialize` — **silently ignored** (no response), per JSON-RPC notification semantics; Modern-pinned legacy notifications also ignored without touching `SessionState` |
-| Invalid params (modern envelope) | -32602 | — | Missing/incorrect `protocolVersion` / `clientCapabilities` / malformed `clientInfo`; never pins |
+| Invalid params (modern envelope) | -32602 | — | Malformed claimed modern envelope; never pins |
 | Unsupported version | -32022 | — | Modern `_meta` names an unsupported revision; `data: {supported, requested}`; never pins |
-| Modern initialize / ping | -32601 | — | Valid modern envelope naming `initialize`/`ping` on a Modern connection (`initialize` legacy-only; `ping` removed). The same methods arriving as modern envelopes on a Legacy-pinned connection are `ERA_MISMATCH` instead |
+| Modern initialize / ping | -32601 | — | Valid modern envelope naming `initialize`/`ping` on a Modern connection (`initialize` legacy-only; `ping` removed). A valid modern claim arriving on a Legacy-pinned connection is a `-32022` routing mismatch |
 
 The `initialized_before_initialize` helper (`INITIALIZED_BEFORE_INITIALIZE` data code) has been removed. Wrong-state `notifications/initialized` notifications are silently discarded.
 
@@ -475,11 +478,13 @@ stages in order:
 8. For requests: reject null IDs → in-flight check → duplicate ID check → register + dispatch
 
 **Cancellation model:** Each request gets an `Arc<AtomicBool>` cancel flag at
-dispatch time. When a `notifications/cancelled` notification arrives for an
-active request ID, the flag is set to `true` cooperatively. The flag is shared
-between the timeout path (`tokio::time::timeout` in `handle_request_async`) and
-the handler (via `budget::with_cancel_flag()` thread-local), so external
-cancellation and timeout share the same signal. The handler can check
+dispatch time. A correctly classified `notifications/cancelled` notification
+in either supported stdio era sets the flag for an active request ID. A
+cross-era or malformed notification is dropped before lookup, with no stdout
+response and no cancellation side effect. The flag is shared between the
+timeout path (`tokio::time::timeout` in `handle_request_async`) and the handler
+(via `budget::with_cancel_flag()` thread-local), so external cancellation and
+timeout share the same signal. The handler can check
 `BudgetContext::should_stop()` at any pipeline stage to detect cancellation.
 
 `apply_cancellation` is `async` — it uses `.lock().await` on the

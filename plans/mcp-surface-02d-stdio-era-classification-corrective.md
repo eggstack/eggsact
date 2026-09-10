@@ -1,6 +1,6 @@
 # MCP Stdio Era-Classification Corrective Pass
 
-Status: planned
+Status: complete
 Priority: P1
 Scope: stdio opening-message classification, cross-era routing errors, notification-era enforcement, protocol documentation/tests; no discovery-ranking or model-evaluation work
 
@@ -375,3 +375,24 @@ Where invalid/malformed opening rows depend on the exact official classifier, ad
 ## Completion criteria
 
 This pass is complete when eggsact's dual-era stdio entry behavior matches the current official v2 reference semantics: one connection pins one era; a supported modern claim selects Modern; `initialize` or other claim-less opening traffic selects Legacy under compatibility serving; unversioned `server/discover` is no longer an era-neutral bypass; cross-era/classification-mismatch requests return the standard `-32022` routing error with id preserved; mismatched notifications are dropped before any lifecycle/cancellation side effect; valid legacy and modern cancellation still work; the useful `02c` race and generic-invoke corrections remain intact; discovery remains opt-in and <=7 definitions; direct remains default; no new runtime dependencies are introduced; ordinary CI/full verification pass; official SDK auto/default stdio smokes select modern/legacy respectively; and plan 03 can begin without a known stdio-era conformance discrepancy.
+
+## Closure evidence
+
+Implementation and test evidence is recorded in the final commit. The edge
+classifier is `classify_inbound_era` in `src/mcp/runtime.rs`; request routing
+uses the standard `-32022` unsupported-version constructors in
+`src/mcp/protocol.rs`; notifications are classified and pinned before
+`notifications/initialized` or `notifications/cancelled` side effects in
+`src/mcp/server.rs`. Focused regressions live in
+`tests/mcp/test_era_pinning.rs`, `tests/mcp/test_modern_protocol.rs`, and the
+runtime state-machine tests. The official reference checked on 2026-09-10
+was MCP TypeScript SDK v2 package `@modelcontextprotocol/server@2.0.0`,
+including its `serveStdio` source and 2026-07-28 migration guidance. Local
+verification on 2026-09-10 passed `cargo fmt --all -- --check`, generated-doc
+freshness, clippy with `-D warnings`, cargo-deny, and the full
+`cargo test --locked --all-features -- --skip parity --test-threads=4` gate:
+3,002 integration/unit tests, 51 context-isolation tests, and 11 doc tests,
+with zero failures. The ephemeral official SDK smoke against
+`@modelcontextprotocol/client@2.0.0` reported
+`versionNegotiation=auto -> modern (77 tools)` and
+`versionNegotiation=default -> legacy (77 tools)`.

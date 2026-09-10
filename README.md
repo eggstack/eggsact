@@ -64,6 +64,14 @@ eggsact --mcp
 eggsact --mcp --mcp-surface discovery
 ```
 
+Each stdio process is pinned to one protocol era by its first classifiable
+message: an enveloped modern claim selects `2026-07-28`; `initialize` or any
+claim-less opening selects the legacy path. The official SDK's automatic
+modern probe is enveloped and runs in a disposable sibling process. A
+claim-less `server/discover` is therefore legacy traffic, not an era-neutral
+probe. Cross-era requests return `-32022 Unsupported protocol version`, while
+mismatched notifications are dropped before side effects.
+
 ### MCP client setup
 
 Render a read-only, absolute-path registration instruction for a client-owned

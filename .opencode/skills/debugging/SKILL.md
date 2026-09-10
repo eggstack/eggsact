@@ -64,9 +64,9 @@ echo '{"jsonrpc":"2.0","method":"server/discover","id":1,"params":{"_meta":{"io.
 echo '{"jsonrpc":"2.0","method":"tools/list","id":2,"params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' | cargo run -- --mcp
 
 # Legacy list/call still require initialize → notifications/initialized first.
-# One connection pins one era: after successful initialize, modern envelopes are -32600/ERA_MISMATCH; after a valid modern envelope, legacy methods are ERA_MISMATCH. Invalid _meta (-32602), unsupported version (-32022), and failed initialize never pin.
-# Modern initialize is -32601 on a Modern connection (ERA_MISMATCH on Legacy-pinned), modern ping is -32601 (removed), malformed _meta is -32602, unsupported version is -32022 with {supported, requested}.
-# Modern requests must never mutate legacy SessionState — if a legacy call starts working after only modern traffic, the era gate leaked. Unversioned server/discover always answers without pinning.
+# One connection pins one era: initialize or any claim-less opening selects Legacy; a valid modern claim selects Modern. After pinning, cross-era requests are -32022 Unsupported protocol version and mismatched notifications are dropped before side effects.
+# Modern initialize is -32601 on a Modern connection, modern ping is -32601 (removed), malformed claimed _meta is -32602, unsupported version is -32022 with {supported, requested}. Claim-less server/discover is legacy traffic and follows lifecycle/method semantics.
+# Modern requests and correctly enveloped notifications must never mutate legacy SessionState — if a legacy call starts working after only modern traffic, the era gate leaked. The official auto probe is enveloped and runs in a disposable sibling process.
 ```
 
 ### Unit Conversion Issues

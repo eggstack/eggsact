@@ -4,20 +4,23 @@ use crate::mcp::compat::CompatibilityMode;
 use crate::mcp::execution;
 use crate::mcp::machine_codes;
 use crate::mcp::protocol::{
-    already_initialized, era_mismatch, invalid_request, json_rpc_error, json_rpc_error_with_data,
-    method_not_found, not_initialized, server_info_meta, with_request_id, DiscoverResult,
+    already_initialized, invalid_params, invalid_request, json_rpc_error, json_rpc_error_with_data,
+    method_not_found, not_initialized, server_info_meta, unsupported_protocol_version,
+    unsupported_protocol_version_without_requested, with_request_id, DiscoverResult,
     EggsactExtensions, ExperimentalCapabilities, InitializeParams, InitializeResult,
     JsonRpcRequest, JsonRpcResponse, ServerCapabilities, ServerInfo, ToolsCapability,
 };
 use crate::mcp::registry;
 use crate::mcp::response::{wrap_tool_response, wrap_tool_response_modern, ToolResponse};
 use crate::mcp::runtime::{
-    apply_cancellation, complete_request, current_connection_era, get_active_audience,
-    get_active_profile, get_active_surface, get_schema_detail, negotiate_legacy_version,
-    new_active_requests, parse_modern_request_meta, pin_connection_era, register_request,
-    ConnectionEra, EraPinOutcome, MetricGuard, ModernRequestContext, NegotiatedProtocol,
-    RegisterRequestError, SessionState, MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS,
-    MCP_SERVER_NAME, MODERN_CACHE_SCOPE, MODERN_CACHE_TTL_MS, RUNTIME_METRICS, SERVER_INSTRUCTIONS,
+    apply_cancellation, classify_inbound_era, complete_request, current_connection_era,
+    get_active_audience, get_active_profile, get_active_surface, get_schema_detail,
+    negotiate_legacy_version, new_active_requests, parse_modern_request_meta, pin_connection_era,
+    register_request, ConnectionEra, EraPinOutcome, InboundEraClassification, MetricGuard,
+    ModernRequestContext, NegotiatedProtocol, RegisterRequestError, SessionState,
+    MAX_REQUEST_BYTES, MAX_REQUEST_ID_LENGTH, MAX_TOOL_WORKERS, MCP_SERVER_NAME,
+    MODERN_CACHE_SCOPE, MODERN_CACHE_TTL_MS, MODERN_PROTOCOL_VERSION, RUNTIME_METRICS,
+    SERVER_INSTRUCTIONS,
 };
 use serde_json::Value;
 use std::io::Write;
@@ -858,44 +861,66 @@ async fn handle_request_async(
     // the tools/call handler before dispatching to the tool.
 
     // ── Connection-pinned dual-era dispatch ────────────────────────────
-    // One stdio process is one connection. The opening exchange pins the era
-    // (`Undecided` → `Legacy` on successful `initialize`, → `Modern20260728`
-    // on a valid modern `_meta` envelope). Modern request `_meta` remains
-    // validated per request; pinning never excuses omitting it. Invalid
-    // modern envelopes and failed `initialize` validation never pin, so a
-    // client can retry without poisoned state. Unversioned `server/discover`
-    // (no `_meta`) always answers without pinning and without touching
-    // `SessionState`. Cross-era requests after pinning are rejected with
-    // `ERA_MISMATCH` (-32600) preserving the JSON-RPC id. The era lock is
-    // held only for inspect/select; tool execution stays concurrent.
+    // One stdio process is one connection. Classify each structurally valid
+    // message at the edge before method-specific semantics: valid modern
+    // claims select Modern; initialize and claim-less traffic select Legacy.
+    // Malformed/unsupported modern claims do not pin. Once pinned, a request
+    // classified for the other era receives the standard -32022 response.
     let method = request.method.as_str();
 
-    // server/discover without `_meta`: backward-compat probe, allowed in any
-    // era, never pins, never touches SessionState.
-    if method == "server/discover" && parse_modern_request_meta(request.params.as_ref()).is_none() {
-        return Some(build_discover_value());
-    }
-
-    // For all other methods, a present `_meta` envelope selects the modern era.
-    // Malformed/unsupported envelopes return their protocol error verbatim,
-    // never pin, and must not silently enter legacy state.
-    let modern_ctx: Option<ModernRequestContext> =
-        match parse_modern_request_meta(request.params.as_ref()) {
-            None => None,
-            Some(Ok(ctx)) => Some(ctx),
-            Some(Err(e)) => {
-                return Some(with_request_id(e, request.id.clone()));
-            }
-        };
-
-    if let Some(_mctx) = modern_ctx {
-        // Valid modern envelope: pin Modern (or reject if Legacy-pinned).
-        match pin_connection_era(connection_era, ConnectionEra::Modern20260728).await {
-            EraPinOutcome::PinnedNow | EraPinOutcome::AlreadyPinned => {}
-            EraPinOutcome::Mismatch => {
-                return Some(era_mismatch(ConnectionEra::Legacy, request.id.clone()));
+    let classification = classify_inbound_era(method, request.params.as_ref());
+    let modern_ctx: Option<ModernRequestContext> = match &classification {
+        InboundEraClassification::Modern20260728 => {
+            // Classification identifies modern traffic; this second step owns
+            // complete envelope validation. Invalid envelopes remain
+            // unpinned, matching the official opening classifier.
+            match parse_modern_request_meta(request.params.as_ref()) {
+                Some(Ok(ctx)) => Some(ctx),
+                Some(Err(e)) => return Some(with_request_id(e, request.id.clone())),
+                None => {
+                    return Some(invalid_params(
+                        "Invalid params: modern request envelope is required",
+                        request.id.clone(),
+                    ))
+                }
             }
         }
+        InboundEraClassification::InvalidModernEnvelope => {
+            return Some(match parse_modern_request_meta(request.params.as_ref()) {
+                Some(Err(e)) => with_request_id(e, request.id.clone()),
+                _ => invalid_params(
+                    "Invalid params: malformed modern request envelope",
+                    request.id.clone(),
+                ),
+            });
+        }
+        InboundEraClassification::Unsupported { requested } => {
+            return Some(unsupported_protocol_version(requested, request.id.clone()));
+        }
+        InboundEraClassification::Legacy => None,
+    };
+
+    let target_era = if modern_ctx.is_some() {
+        ConnectionEra::Modern20260728
+    } else {
+        ConnectionEra::Legacy
+    };
+    match pin_connection_era(connection_era, target_era).await {
+        EraPinOutcome::PinnedNow | EraPinOutcome::AlreadyPinned => {}
+        EraPinOutcome::Mismatch => {
+            return Some(match target_era {
+                ConnectionEra::Modern20260728 => {
+                    unsupported_protocol_version(MODERN_PROTOCOL_VERSION, request.id.clone())
+                }
+                ConnectionEra::Legacy => {
+                    unsupported_protocol_version_without_requested(request.id.clone())
+                }
+                ConnectionEra::Undecided => unreachable!("request target is always decided"),
+            });
+        }
+    }
+
+    if modern_ctx.is_some() {
         // ── Modern dispatch (no SessionState) ──────────────────────────
         // Do not duplicate validation/execution: delegate to the shared
         // handlers with modern=true so envelope/serialization is the only
@@ -966,11 +991,10 @@ async fn handle_request_async(
     }
 
     // ── Legacy-shaped request (no modern envelope) ─────────────────────
-    // `initialize` is the legacy opening exchange: validate first (no pin on
-    // failure), then pin Legacy, then drive SessionState. All other legacy
-    // methods observe the pin: Modern-pinned connections reject without
-    // touching SessionState; Undecided/Legacy connections use the existing
-    // lifecycle enforcement and do not change the era.
+    // `initialize` is a legacy-classified opening exchange. Classification has
+    // already pinned the connection before its method-level validation, so a
+    // malformed initialize cannot leave the connection open for takeover by a
+    // modern claim.
     if method == "initialize" {
         // Parse typed initialize parameters.
         let params = match request.params.as_ref() {
@@ -1002,23 +1026,13 @@ async fn handle_request_async(
             }
         };
 
-        // Validate required fields (no pin on failure: no poisoned state).
+        // Validate required fields after the claim-less opening has already
+        // pinned Legacy; a method-level failure does not reopen the edge.
         if init_params.client_info.name.is_empty() {
             return Some(invalid_request(
                 "Invalid params: clientInfo.name is required and must not be empty",
                 request.id.clone(),
             ));
-        }
-
-        // Opening exchange validated: pin Legacy or reject if Modern-pinned.
-        match pin_connection_era(connection_era, ConnectionEra::Legacy).await {
-            EraPinOutcome::PinnedNow | EraPinOutcome::AlreadyPinned => {}
-            EraPinOutcome::Mismatch => {
-                return Some(era_mismatch(
-                    ConnectionEra::Modern20260728,
-                    request.id.clone(),
-                ));
-            }
         }
 
         // Negotiate protocol version (legacy era only; modern never uses initialize)
@@ -1053,16 +1067,7 @@ async fn handle_request_async(
         return Some(serde_json::to_value(result).unwrap());
     }
 
-    // Non-opening legacy method: reject without SessionState access when
-    // Modern-pinned; otherwise existing lifecycle enforcement applies.
-    if current_connection_era(connection_era).await == ConnectionEra::Modern20260728 {
-        return Some(era_mismatch(
-            ConnectionEra::Modern20260728,
-            request.id.clone(),
-        ));
-    }
-
-    // ── Legacy lifecycle enforcement (unchanged within Legacy/Undecided) ─
+    // ── Legacy lifecycle enforcement ───────────────────────────────────
     match method {
         "ping" => Some(serde_json::json!({})),
 
@@ -1317,34 +1322,56 @@ pub async fn main() -> ! {
         // spawned as concurrent tasks that send responses through the channel.
         // Notifications bypass the ordinary request rate limiter.
         if request.id.is_none() {
+            // Notifications use the same edge classifier and connection pin
+            // as requests. Mismatches are intentionally out-of-band only:
+            // no JSON-RPC response, lifecycle transition, or cancellation
+            // side effect is produced for a dropped notification.
+            let classification =
+                classify_inbound_era(request.method.as_str(), request.params.as_ref());
+            let target_era = match &classification {
+                InboundEraClassification::Legacy => Some(ConnectionEra::Legacy),
+                InboundEraClassification::Modern20260728 => {
+                    match parse_modern_request_meta(request.params.as_ref()) {
+                        Some(Ok(_)) => Some(ConnectionEra::Modern20260728),
+                        Some(Err(_)) | None => {
+                            eprintln!(
+                                "Warning: dropped notification with malformed modern envelope"
+                            );
+                            None
+                        }
+                    }
+                }
+                InboundEraClassification::InvalidModernEnvelope => {
+                    eprintln!("Warning: dropped notification with malformed modern envelope");
+                    None
+                }
+                InboundEraClassification::Unsupported { requested } => {
+                    eprintln!(
+                        "Warning: dropped notification claiming unsupported protocol revision {}",
+                        requested
+                    );
+                    None
+                }
+            };
+            let Some(target_era) = target_era else {
+                continue;
+            };
+            if matches!(
+                pin_connection_era(&connection_era, target_era).await,
+                EraPinOutcome::Mismatch
+            ) {
+                eprintln!(
+                    "Warning: dropped {:?}-era notification on {:?}-pinned connection",
+                    target_era,
+                    current_connection_era(&connection_era).await
+                );
+                continue;
+            }
+            let modern_notification = target_era == ConnectionEra::Modern20260728;
             match request.method.as_str() {
                 "notifications/initialized" => {
-                    // Modern (2026-07-28) notifications carry a per-request
-                    // envelope and must never mutate legacy SessionState.
-                    // Pinned-modern connections also reject legacy handshake
-                    // notifications without touching SessionState.
-                    let is_modern = request
-                        .params
-                        .as_ref()
-                        .and_then(|p| p.as_object())
-                        .and_then(|o| o.get("_meta"))
-                        .and_then(|m| m.as_object())
-                        .and_then(|mo| mo.get(crate::mcp::runtime::META_PROTOCOL_VERSION))
-                        .and_then(|v| v.as_str())
-                        .is_some_and(|s| s == crate::mcp::runtime::MODERN_PROTOCOL_VERSION);
-                    if is_modern {
-                        // No handshake in the modern era; nothing to transition.
-                        // Notifications never pin the connection era.
-                    } else if current_connection_era(&connection_era).await
-                        == ConnectionEra::Modern20260728
-                    {
-                        eprintln!(
-                            "Warning: notifications/initialized ignored: connection pinned to modern era"
-                        );
-                    } else {
+                    if !modern_notification {
                         // Lifecycle transition: AwaitingInitialized → Ready
-                        // (Undecided connections stay Undecided; only a
-                        // successful `initialize` request pins Legacy).
                         let mut state = session_state.lock().await;
                         if let Err(e) = state.transition_to_ready() {
                             eprintln!(
@@ -1355,10 +1382,7 @@ pub async fn main() -> ! {
                     }
                 }
                 "notifications/cancelled" => {
-                    // Set the cancel flag on the active request, if any.
-                    // Uses async lock to avoid losing cancellations under
-                    // contention (the old try_lock approach could silently
-                    // drop valid cancellation notifications).
+                    // Stdio cancellation remains supported in both eras.
                     if let Some(params) = &request.params {
                         if let Some(request_id) = params.get("requestId") {
                             apply_cancellation(&active_requests, request_id).await;

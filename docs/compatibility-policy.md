@@ -124,12 +124,12 @@ contracts remain stable. This is **not** a breaking change:
   `ttlMs`/`cacheScope` on cacheable lists, standard Tool `annotations`, namespaced
   Tool `_meta`, and `structuredContent` (= `ToolResponse.result`) on successful calls.
 - Legacy (`2025-11-25`, `2024-11-05`) envelopes are byte/semantics-compatible and unchanged.
-- One stdio connection pins exactly one era (`Undecided` → `Legacy` on
-  successful `initialize`, → modern on a valid modern envelope). Cross-era
-  requests after pinning are rejected with `-32600`/`ERA_MISMATCH` (id
-  preserved); this rejection is not breaking — mixing eras on one connection
-  was never a supported contract. Invalid modern envelopes and failed
-  `initialize` validation never pin; unversioned `server/discover` never pins.
+- One stdio connection pins exactly one era (`Undecided` → `Legacy` for
+  `initialize` or any claim-less opening, → modern on a valid modern claim).
+  Cross-era requests after pinning return `-32022 Unsupported protocol
+  version` (id preserved); mismatched notifications are dropped before side
+  effects. Invalid modern envelopes and unsupported claims do not pin;
+  claim-less `server/discover` is legacy traffic, not an era-neutral probe.
 - Tool names, input contracts, machine codes, route-critical verdicts, and profile
   membership must remain equivalent across eras for the same tool and arguments
   (verified by cross-era goldens in `tests/mcp/test_modern_protocol.rs`, which use

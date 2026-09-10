@@ -1,11 +1,12 @@
 //! Connection-era pinning regressions (plan 02c Parts A/B/C).
 //!
 //! One stdio process is one connection. The opening exchange pins the era
-//! exactly once (`Undecided` → `Legacy` on successful `initialize`, → modern
-//! on a valid `2026-07-28` envelope). Later cross-era requests are rejected
-//! with `ERA_MISMATCH` (-32600) preserving the JSON-RPC id. Invalid modern
-//! envelopes and failed `initialize` validation never pin, so the client can
-//! retry. Unversioned `server/discover` always answers without pinning.
+//! exactly once (`Undecided` → `Legacy` on `initialize` or any claim-less
+//! opening, → modern on a valid `2026-07-28` envelope). Later cross-era
+//! requests are rejected with `-32022 Unsupported protocol version`,
+//! preserving the JSON-RPC id. Invalid modern envelopes and unsupported
+//! versions never pin, so the client can retry. Claim-less `server/discover`
+//! follows legacy lifecycle/method semantics.
 //!
 //! Also covers the generic-invoke output contract: discovery `tools/list`
 //! omits `tool_invoke.outputSchema` in both eras, and modern `tool_invoke`
@@ -50,6 +51,13 @@ fn mcp_session_sequential_with_env(requests: &[String], envs: &[(&str, &str)]) -
         stdin.write_all(req.as_bytes()).unwrap();
         stdin.write_all(b"\n").unwrap();
         stdin.flush().unwrap();
+        if serde_json::from_str::<Value>(req)
+            .unwrap()
+            .get("id")
+            .is_none()
+        {
+            continue;
+        }
         // Sequential: one outstanding request, so the next line is its
         // response. This makes opening-order deterministic (the first
         // request pins before the second is sent), unlike batch mode where
@@ -122,19 +130,19 @@ fn legacy_initialize(id: i64) -> String {
     .to_string()
 }
 
-fn assert_era_mismatch(response: &Value, expected_id: i64) {
+fn assert_protocol_mismatch(response: &Value, expected_id: i64) {
     assert_eq!(
         response.get("id"),
         Some(&Value::Number(expected_id.into())),
         "era rejection must preserve request id"
     );
-    let err = response.get("error").expect("ERA_MISMATCH error");
-    assert_eq!(err.get("code"), Some(&Value::Number((-32600).into())));
+    let err = response
+        .get("error")
+        .expect("unsupported protocol version error");
+    assert_eq!(err.get("code"), Some(&Value::Number((-32022).into())));
     assert_eq!(
-        err.pointer("/data/code"),
-        Some(&Value::String("ERA_MISMATCH".to_string())),
-        "data.code must be ERA_MISMATCH, got {}",
-        response
+        err.get("message"),
+        Some(&Value::String("Unsupported protocol version".to_string()))
     );
 }
 
@@ -175,8 +183,8 @@ fn legacy_pinned_rejects_modern_envelope() {
     .to_string();
     let res = mcp_session(&[init, notif, modern_list, modern_call]);
     assert!(by_id(&res, 10).get("result").is_some());
-    assert_era_mismatch(&by_id(&res, 11), 11);
-    assert_era_mismatch(&by_id(&res, 12), 12);
+    assert_protocol_mismatch(&by_id(&res, 11), 11);
+    assert_protocol_mismatch(&by_id(&res, 12), 12);
     // Ids preserved even under concurrent dispatch.
     let ids = by_id_map(&res);
     assert!(ids.contains_key("11") && ids.contains_key("12"));
@@ -226,10 +234,10 @@ fn modern_pinned_rejects_legacy_initialize_without_state() {
     let res = mcp_session_sequential(&[d, init, legacy_list, modern_list]);
     assert!(by_id(&res, 30).get("result").is_some());
     // initialize after modern pin is rejected, not ALREADY_INITIALIZED.
-    assert_era_mismatch(&by_id(&res, 31), 31);
+    assert_protocol_mismatch(&by_id(&res, 31), 31);
     // The rejected initialize created no legacy session: legacy list is an
     // era mismatch, not NOT_INITIALIZED, and modern still works.
-    assert_era_mismatch(&by_id(&res, 32), 32);
+    assert_protocol_mismatch(&by_id(&res, 32), 32);
     assert!(by_id(&res, 33).get("result").is_some());
 }
 
@@ -244,7 +252,7 @@ fn direct_modern_request_pins_without_discover() {
     // Sequential: direct modern call must pin before `initialize` is sent.
     let res = mcp_session_sequential(&[l, init]);
     assert!(by_id(&res, 40).get("result").is_some());
-    assert_era_mismatch(&by_id(&res, 41), 41);
+    assert_protocol_mismatch(&by_id(&res, 41), 41);
 }
 
 #[test]
@@ -320,7 +328,7 @@ fn malformed_envelope_does_not_block_legacy_opening() {
 }
 
 #[test]
-fn failed_initialize_validation_does_not_pin() {
+fn failed_initialize_validation_still_pins_legacy() {
     let bad_init = serde_json::json!({
         "jsonrpc": "2.0", "method": "initialize", "id": 90,
         "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": ""}},
@@ -332,16 +340,17 @@ fn failed_initialize_validation_does_not_pin() {
     })
     .to_string();
     let res = mcp_session_sequential(&[bad_init, good_modern]);
-    // Empty clientInfo.name is invalid_request (-32600), not -32602, and must
-    // not pin: the follow-up modern request still pins and succeeds.
+    // Empty clientInfo.name is invalid_request (-32600), not -32602. The
+    // claim-less initialize still classified and pinned the connection as
+    // Legacy before method-level validation.
     assert_eq!(by_id(&res, 90)["error"]["code"], -32600);
-    // Failed legacy opening left Undecided: modern can still pin and succeed.
-    assert!(by_id(&res, 91).get("result").is_some());
+    assert_protocol_mismatch(&by_id(&res, 91), 91);
 }
 
 #[test]
-fn unversioned_discover_never_pins() {
-    // Unversioned probe then legacy opening: must still pin Legacy.
+fn claimless_discover_pins_legacy() {
+    // A claim-less discover is legacy traffic, so it does not return the
+    // modern discovery result and is subject to legacy lifecycle rules.
     let probe = serde_json::json!({
         "jsonrpc": "2.0", "method": "server/discover", "id": 100,
     })
@@ -349,12 +358,12 @@ fn unversioned_discover_never_pins() {
     let init = legacy_initialize(101);
     let notif = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.to_string();
     let list = serde_json::json!({"jsonrpc": "2.0", "method": "tools/list", "id": 102}).to_string();
-    let res = mcp_session(&[probe, init, notif, list]);
-    assert!(by_id(&res, 100).get("result").is_some());
+    let res = mcp_session_sequential(&[probe, init, notif, list]);
+    assert_eq!(by_id(&res, 100)["error"]["code"], -32600);
     assert!(by_id(&res, 101).get("result").is_some());
     assert!(by_id(&res, 102)["result"]["tools"].as_array().is_some());
 
-    // Unversioned probe then modern: must still pin Modern.
+    // The same opening cannot later be taken over by modern traffic.
     let probe2 = serde_json::json!({
         "jsonrpc": "2.0", "method": "server/discover", "id": 110,
     })
@@ -364,14 +373,14 @@ fn unversioned_discover_never_pins() {
         "params": {"_meta": modern_meta()},
     })
     .to_string();
-    let res2 = mcp_session(&[probe2, modern]);
-    assert!(by_id(&res2, 110).get("result").is_some());
-    assert!(by_id(&res2, 111).get("result").is_some());
+    let res2 = mcp_session_sequential(&[probe2, modern]);
+    assert_eq!(by_id(&res2, 110)["error"]["code"], -32600);
+    assert_protocol_mismatch(&by_id(&res2, 111), 111);
 }
 
 #[test]
-fn unversioned_discover_still_answers_after_pinning() {
-    // Legacy-pinned: unversioned discover answers without switching.
+fn claimless_discover_is_not_era_neutral_after_pinning() {
+    // Legacy-pinned: discover is handled by legacy method/lifecycle semantics.
     let init = legacy_initialize(120);
     let notif = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.to_string();
     let probe = serde_json::json!({
@@ -385,11 +394,11 @@ fn unversioned_discover_still_answers_after_pinning() {
     .to_string();
     let res = mcp_session(&[init, notif, probe, modern_after]);
     assert!(by_id(&res, 120).get("result").is_some());
-    assert!(by_id(&res, 121).get("result").is_some());
+    assert_eq!(by_id(&res, 121)["error"]["code"], -32601);
     // The probe did not switch eras: modern is still rejected.
-    assert_era_mismatch(&by_id(&res, 122), 122);
+    assert_protocol_mismatch(&by_id(&res, 122), 122);
 
-    // Modern-pinned: unversioned discover still answers.
+    // Modern-pinned: a claim-less discover is a legacy-classified mismatch.
     let d = serde_json::json!({
         "jsonrpc": "2.0", "method": "server/discover", "id": 130,
         "params": {"_meta": modern_meta()},
@@ -401,21 +410,22 @@ fn unversioned_discover_still_answers_after_pinning() {
     .to_string();
     let res2 = mcp_session(&[d, probe2]);
     assert!(by_id(&res2, 130).get("result").is_some());
-    assert!(by_id(&res2, 131).get("result").is_some());
+    assert_protocol_mismatch(&by_id(&res2, 131), 131);
 }
 
 #[test]
-fn legacy_ping_does_not_pin_but_modern_pin_rejects_it() {
-    // Legacy ping before any opening leaves Undecided: modern can still pin.
+fn claimless_ping_pins_legacy() {
+    // Legacy ping before any opening pins Legacy; modern traffic cannot take
+    // over the connection afterward.
     let ping = serde_json::json!({"jsonrpc": "2.0", "method": "ping", "id": 140}).to_string();
     let modern = serde_json::json!({
         "jsonrpc": "2.0", "method": "tools/list", "id": 141,
         "params": {"_meta": modern_meta()},
     })
     .to_string();
-    let res = mcp_session(&[ping, modern]);
+    let res = mcp_session_sequential(&[ping, modern]);
     assert!(by_id(&res, 140).get("result").is_some());
-    assert!(by_id(&res, 141).get("result").is_some());
+    assert_protocol_mismatch(&by_id(&res, 141), 141);
 
     // After modern pinning, legacy ping is a cross-era request (sequential to
     // avoid the spawn-vs-inline opening race).
@@ -427,7 +437,100 @@ fn legacy_ping_does_not_pin_but_modern_pin_rejects_it() {
     let ping2 = serde_json::json!({"jsonrpc": "2.0", "method": "ping", "id": 151}).to_string();
     let res2 = mcp_session_sequential(&[d, ping2]);
     assert!(by_id(&res2, 150).get("result").is_some());
-    assert_era_mismatch(&by_id(&res2, 151), 151);
+    assert_protocol_mismatch(&by_id(&res2, 151), 151);
+}
+
+#[test]
+fn claimless_tools_and_unknown_methods_pin_legacy() {
+    let list = serde_json::json!({
+        "jsonrpc": "2.0", "method": "tools/list", "id": 155,
+    })
+    .to_string();
+    let unknown = serde_json::json!({
+        "jsonrpc": "2.0", "method": "unknown/opening", "id": 156,
+    })
+    .to_string();
+    let modern = serde_json::json!({
+        "jsonrpc": "2.0", "method": "tools/list", "id": 157,
+        "params": {"_meta": modern_meta()},
+    })
+    .to_string();
+
+    let res = mcp_session_sequential(&[list, modern.clone()]);
+    assert_eq!(by_id(&res, 155)["error"]["data"]["code"], "NOT_INITIALIZED");
+    assert_protocol_mismatch(&by_id(&res, 157), 157);
+
+    let res = mcp_session_sequential(&[unknown, modern]);
+    assert_eq!(by_id(&res, 156)["error"]["code"], -32600);
+    assert_eq!(by_id(&res, 156)["error"]["data"]["code"], "NOT_INITIALIZED");
+    assert_protocol_mismatch(&by_id(&res, 157), 157);
+}
+
+#[test]
+fn notifications_share_opening_classification_and_have_no_response() {
+    let legacy_initialized =
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.to_string();
+    let modern_list = serde_json::json!({
+        "jsonrpc": "2.0", "method": "tools/list", "id": 160,
+        "params": {"_meta": modern_meta()},
+    })
+    .to_string();
+    let res = mcp_session_sequential(&[legacy_initialized, modern_list]);
+    assert_eq!(
+        res.len(),
+        1,
+        "notifications must not produce JSON-RPC output"
+    );
+    assert_protocol_mismatch(&by_id(&res, 160), 160);
+
+    let modern_initialized = serde_json::json!({
+        "jsonrpc": "2.0", "method": "notifications/initialized",
+        "params": {"_meta": modern_meta()},
+    })
+    .to_string();
+    let legacy_list =
+        serde_json::json!({"jsonrpc": "2.0", "method": "tools/list", "id": 161}).to_string();
+    let res = mcp_session_sequential(&[modern_initialized, legacy_list]);
+    assert_eq!(
+        res.len(),
+        1,
+        "notifications must not produce JSON-RPC output"
+    );
+    assert_protocol_mismatch(&by_id(&res, 161), 161);
+}
+
+#[test]
+fn wrong_era_initialized_notification_cannot_ready_legacy_session() {
+    let init = legacy_initialize(170);
+    let modern_initialized = serde_json::json!({
+        "jsonrpc": "2.0", "method": "notifications/initialized",
+        "params": {"_meta": modern_meta()},
+    })
+    .to_string();
+    let list = serde_json::json!({"jsonrpc": "2.0", "method": "tools/list", "id": 171}).to_string();
+    let res = mcp_session_sequential(&[init, modern_initialized, list]);
+    assert!(by_id(&res, 170).get("result").is_some());
+    assert_eq!(
+        res.len(),
+        2,
+        "notifications must not produce JSON-RPC output"
+    );
+    assert_eq!(by_id(&res, 171)["error"]["data"]["code"], "NOT_INITIALIZED");
+
+    // The correctly classified legacy notification is still admitted and
+    // transitions the handshake normally.
+    let init = legacy_initialize(172);
+    let modern_initialized = serde_json::json!({
+        "jsonrpc": "2.0", "method": "notifications/initialized",
+        "params": {"_meta": modern_meta()},
+    })
+    .to_string();
+    let legacy_initialized =
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.to_string();
+    let list = serde_json::json!({"jsonrpc": "2.0", "method": "tools/list", "id": 173}).to_string();
+    let res = mcp_session_sequential(&[init, modern_initialized, legacy_initialized, list]);
+    assert!(by_id(&res, 172).get("result").is_some());
+    assert!(by_id(&res, 173)["result"]["tools"].is_array());
 }
 
 // ── Part C3: generic-invoke output contract ──────────────────────────────
