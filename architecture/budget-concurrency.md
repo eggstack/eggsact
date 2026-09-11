@@ -172,6 +172,7 @@ call_json_with_budget()
 | `call_json_with_budget()` | Yes | Yes |
 | `call_json_with_context()` | Yes | Yes |
 | `call_json_with_execution_context()` | Yes | Yes |
+| `call_json_with_execution_template()` | Yes | Yes (delegates to `call_json_with_execution_context`) |
 
 ---
 
@@ -255,3 +256,18 @@ tracked by the stuck-workers gauge.)
 | Input size | `schema_validation.rs` (pre-dispatch) | `budget.max_input_bytes` (default 1 MB) |
 | Output size | `response.rs` (post-execution) | `budget.max_output_bytes` (default 1–2 MB) |
 | Text size | Handler validation | `budget.max_text_bytes` (default 100 KB) |
+
+---
+
+## Composite Sub-Budgets (`budget.rs`)
+
+Composite tools fan out to sub-tools internally; `CompositeBudgetAllocator`
+stops one sub-tool from eating the whole budget. One allocator per composite
+invocation, constructed with the parent `BudgetContext` and the total sub-tool
+count; each `allocate()` call returns a `SubBudget` (shared parent deadline,
+input/output/text/list/findings caps divided evenly across `N`, minimum 1)
+and `remaining()` reports unallocated slots. `sub_budget_context(parent, sub)`
+builds the child's `BudgetContext` — same deadline and cancellation flag,
+reduced caps. Related reads: `BudgetContext::remaining_time_ms()` (time left
+before deadline, `None` when unbounded) and `check_should_stop()` (unified
+cancelled-or-expired gate used at pipeline stages).

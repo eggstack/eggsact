@@ -7,8 +7,8 @@ The `src/calc/` module is the mathematical brain of eggsact. It accepts natural 
 | File | Lines | Purpose |
 |------|-------|---------|
 | `context.rs` | 82 | Per-evaluation mutable state (`EvalContext`) for PRNG, memory registers, user variables, and function permissions |
-| `normalize.rs` | ~2270 | Natural language pipeline: NL→math tokenization, 33-step `normalize()`, unit preprocessing, `split_at_operators()`, `run()`/`run_with_context()` orchestration |
-| `evaluator.rs` | ~3800 | AST-based expression evaluator: tokenizer, recursive-descent parser, ~100 functions, big-integer arithmetic, helper algorithms |
+| `normalize.rs` | ~2270 | Natural language pipeline: NL→math tokenization, 32-stage `normalize()`, unit preprocessing, `split_at_operators()`, `run()`/`run_with_context()` orchestration |
+| `evaluator.rs` | ~3800 | AST-based expression evaluator: tokenizer, recursive-descent parser, ~90 functions, big-integer arithmetic, helper algorithms |
 | `units.rs` | ~2310 | Unit system: definitions, 500+ aliases, conversion factors, physical constants metadata, temperature conversion algorithm |
 
 ```
@@ -19,7 +19,7 @@ The `src/calc/` module is the mathematical brain of eggsact. It accepts natural 
                                     │
                  ┌──────────────────▼───────────────────────────┐
                  │           normalize.rs                        │
-                 │  1. normalize() — 33-step NL pipeline         │
+                  │  1. normalize() — 32-stage NL pipeline         │
                  │  2. split_at_operators() — tokenization       │
                  │  3. preprocess_units() — unit detection/conversion │
                  │  4. add_same_unit_division_parens()            │
@@ -30,7 +30,7 @@ The `src/calc/` module is the mathematical brain of eggsact. It accepts natural 
                  │          evaluator.rs                          │
                  │  1. tokenize() — hex/octal/binary/scientific  │
                  │  2. parse_bit_or → ... → parse_unary → parse_power → parse_primary │
-                 │  3. evaluate_function() — ~100 functions       │
+                  │  3. evaluate_function() — ~90 functions       │
                  │  4. format_result() — int/float/str dispatch   │
                  └──────────────────┬───────────────────────────┘
                                     │
@@ -154,11 +154,11 @@ The `run()` function orchestrates the full pipeline:
 ```
 ┌─────────────┐    ┌──────────────────┐    ┌───────────────────┐    ┌──────────────┐    ┌───────────────┐
 │  Input text  │───▶│  normalize()     │───▶│  split_at_        │───▶│  preprocess_ │───▶│  evaluate()   │
-│  "thirty + 5"│    │  33-step NL→math │    │  operators()      │    │  units()     │    │  or convert() │
+│  "thirty + 5"│    │  32-stage NL→math │    │  operators()      │    │  units()     │    │  or convert() │
 └─────────────┘    └──────────────────┘    └───────────────────┘    └──────────────┘    └───────────────┘
 ```
 
-### The Complete 33-Step `normalize()` Pipeline
+### The Complete 32-Stage `normalize()` Pipeline
 
 Every input passes through these steps in order. Steps marked with a reference ID correspond to specific bug fixes or parity requirements.
 
@@ -192,9 +192,10 @@ Every input passes through these steps in order. Steps marked with a reference I
 | 26 | — | Fix "func * expr" patterns from "of"→"*" conversion | `half of 100` → `0.5 * 100` → `50` |
 | 27 | NZ-9/M25 | Postfix unit power words | `m squared` → `m2`, `cm cubed` → `cm3` |
 | 28 | NZ-10/M26 | Spelled unit conversions | `30 km/h in mph` → `convert(30*km/h,mph)` |
-| 29 | — | Complex number patterns | `3+4i` → `(3+4j)` |
-| 30 | M22 | Insert implicit multiplication | `5sin` → `5*sin`, `(2)(3)` → `(2)*(3)` |
-| 31 | NZ-13/M21 | Factorial postfix | `5!` → `factorial(5)`, `5!!` → `factorial(factorial(5))` |
+| 29 | NZ-10/M27 | Compound unit conversions | `60mi/h in m/s` → `convert(60*mi/h,m/s)` |
+| 30 | — | Complex number patterns | `3+4i` → `(3+4j)` |
+| 31 | M22 | Insert implicit multiplication | `5sin` → `5*sin`, `(2)(3)` → `(2)*(3)` |
+| 32 | NZ-13/M21 | Factorial postfix | `5!` → `factorial(5)`, `5!!` → `factorial(factorial(5))` |
 
 ### Static Data Tables
 
@@ -207,7 +208,7 @@ Maps English number words to their digit representations:
 | Single digits | `zero`–`nine` → `"0"`–`"9"` |
 | Teens | `ten`–`nineteen` → `"10"`–`"19"` |
 | Tens | `twenty`–`ninety` → `"20"`, `"30"`, … `"90"` |
-| Multipliers | `hundred` → `"100"`, `thousand` → `"1000"`, `million` → `"1000000"`, `billion` → `"1000000000"`, `trillion` → `"10^12"`, `quadrillion` → `"10^15"`, `quintillion` → `"10^18"` |
+| Multipliers | `hundred` → `"100"`, `thousand` → `"1000"`, `million` → `"1000000"`, `billion` → `"1000000000"`, `trillion` → `"1000000000000"`, `quadrillion` → `"1000000000000000"`, `quintillion` → `"1000000000000000000"` (plain decimal strings, not `10^n`) |
 | Fractions | `half` → `"0.5"`, `quarter` → `"0.25"`, `thousandth` → `"0.001"`, `millionth` → `"0.000001"`, `billionth` → `"0.000000001"` |
 
 #### `MULTI_WORD_NUMBERS`
@@ -360,7 +361,7 @@ Returns `(re_tokens, Option<target_unit>)`.
 ### `run()` and `run_with_context()` Pipeline
 
 ```
-1.  normalize(expr)                              — 33-step NL→math
+1.  normalize(expr)                              — 32-stage NL→math
 2.  handle_convert_pattern(normalized)            — detect convert() → early return
 3.  handle_temp_pattern(normalized)               — detect temp() → early return
 4.  split_at_operators(normalized)                — tokenize
@@ -393,7 +394,7 @@ The tokenizer handles:
 | Identifiers | `sin`, `pi`, `myvar` | `Token::Identifier(name)` |
 | Parentheses / commas | `(`, `)`, `,` | Matching tokens |
 
-### Parser Precedence (8 Levels)
+### Parser Precedence (9 Levels)
 
 The parser is a recursive-descent implementation of standard operator precedence. Each level is implemented as a pair of functions: one for global statics (legacy), one context-aware.
 
@@ -566,7 +567,7 @@ The parser is a recursive-descent implementation of standard operator precedence
 | Function | Args | Description |
 |----------|------|-------------|
 | `real(z)` | 1 | Returns z (real part) |
-| `imag(z)` | 1 | Returns 0.0 (imaginary part, f64-only) |
+| `imag(z)` / `imaginary` | 1 | Returns 0.0 (imaginary part, f64-only) |
 | `conj(z)` / `conjugate` | 1 | Returns z (conjugate, f64-only) |
 | `phase(z)` / `arg` / `argument` | 1 | Returns 0 or π |
 | `polar(z)` | 1 | Returns `(r, phi)` as `__string_result__` |
@@ -657,17 +658,11 @@ For `factorial(n)`: multiply `1 × 2 × ... × n`.
 
 #### Banker's Rounding (`banker_round`)
 
-Matches Python's `round()` — round half to even:
+Matches Python's `round()` — round half to even — via the std one-liner (`src/calc/evaluator.rs`):
 
 ```rust
 fn banker_round(x: f64) -> f64 {
-    let floor = x.floor();
-    let frac = x - floor;
-    if (frac - 0.5).abs() < f64::EPSILON {
-        if (floor as i64) % 2 == 0 { floor } else { floor + 1.0 }
-    } else {
-        x.round()
-    }
+    x.round_ties_even()
 }
 ```
 

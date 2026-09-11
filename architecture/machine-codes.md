@@ -75,7 +75,7 @@ These constants are defined in `src/mcp/machine_codes.rs` (and re-exported from 
 
 ## Composite Tool Verdicts
 
-Composite tools (`edit_preflight`, `command_preflight`, `config_preflight`, `text_security_inspect`, `structured_data_compare`, `config_file_inspect` — the six specs with `composite: true`) emit a `verdict` field in their `result` object via the `.with_verdict(verdict)` builder. Verdicts use the `verdict` constants above. Composite tools also emit a `machine_code` at the top level to summarize the overall outcome (e.g. `COMMAND_OK`, `SHELL_RISK`, `CONFIG_OK`, `TEXT_SECURITY_OK`).
+Composite tools (`edit_preflight`, `command_preflight`, `config_preflight`, `text_security_inspect`, `structured_data_compare`, `config_file_inspect`, `dependency_edit_preflight` — the seven specs with `composite: true`) emit a `verdict` field in their `result` object via the `.with_verdict(verdict)` builder. Verdicts use the `verdict` constants above. Composite tools also emit a `machine_code` at the top level to summarize the overall outcome (e.g. `COMMAND_OK`, `SHELL_RISK`, `CONFIG_OK`, `TEXT_SECURITY_OK`).
 
 All composite tools use `finding()` / `finding_with_location()` helpers with canonical `severity::*` and `disposition::*` constants for structured findings. Severity values map from legacy vocab: `"error"` → `severity::HIGH`, `"warn"` → `severity::MEDIUM`, `"info"` → `severity::INFO`.
 
@@ -146,6 +146,8 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | `UNSUPPORTED_FEATURE` | Operation not supported | medium | yes | skip | any tool |
 | `INTERNAL_ERROR` | Unexpected internal error | critical | yes | report bug | any tool |
 | `INVALID_ARGUMENTS` | Arguments don't match schema | medium | yes | fix arguments | any tool |
+| `DUPLICATE_REQUEST_ID` | Request with a duplicate non-null ID was rejected | medium | yes | use a fresh ID | server |
+| `RESOURCE_EXHAUSTED` | All workers and queue slots occupied; request rejected | high | yes | retry later | server |
 
 ### Edit / Patch
 
@@ -270,6 +272,7 @@ These aliases are included in the `ALL` array and are interchangeable with their
 | `REGEX_SAFE` | Pattern is safe | info | no | proceed | `regex_safety_check` |
 | `REGEX_UNSAFE` | Pattern has safety issues (catastrophic backtracking risk) | medium | review | fix pattern | `regex_safety_check` |
 | `REGEX_UNSUPPORTED_FEATURE` | Pattern uses unsupported PCRE-only constructs | high | yes | rewrite pattern or simplify | `validate_regex`, `regex_safety_check` |
+| `REGEX_ASCII_NOT_SUPPORTED` | Pattern requests ASCII-only mode, which the engines do not support | high | yes | drop the ASCII flag | `validate_regex` |
 
 `REGEX_SAFE` and `REGEX_UNSAFE` concern pattern safety (ReDoS risk). `REGEX_UNSUPPORTED_FEATURE` concerns dialect compatibility — the pattern parsed but contains PCRE-only constructs neither Rust `regex` nor `fancy-regex` can compile: branch reset `(?|...)`, recursion `(?R)`, `\K`, control verbs `(*SKIP)`/`(*PRUNE)`/etc., atomic groups `(?>...)`. These are distinct from `REGEX_UNSAFE` — a pattern can be both safe and unsupported, or unsafe but fully supported.
 

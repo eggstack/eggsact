@@ -248,13 +248,13 @@ The `runtime_diagnostics` tool returns a JSON object:
 {
   "active_profile": "full",
   "active_audience": "model",
-  "tool_count": 80,
+  "tool_count": 86,
   "route_critical_tools": ["edit_preflight", "command_preflight", "config_preflight", "patch_apply_check", "text_security_inspect"],
-  "profile_tool_count": 80,
-  "model_visible_tool_count": 71,
-  "harness_visible_tool_count": 80,
+  "profile_tool_count": 86,
+  "model_visible_tool_count": 77,
+  "harness_visible_tool_count": 86,
   "compatibility_mode": "eggcalc_python",
-  "budget_tier_summary": { "cheap": 42, "moderate": 33, "heavy": 5 },
+  "budget_tier_summary": { "cheap": 47, "moderate": 34, "heavy": 5 },
   "runtime": {
     "active_profile": "full",
     "active_audience": "harness",

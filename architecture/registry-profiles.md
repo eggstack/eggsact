@@ -199,7 +199,9 @@ flow) and `coding-agent-integration.md` (when to choose each surface).
 | `tools_for_profile(profile)` | All tools in a profile (no audience filter) |
 | `tools_for_profile_audience(profile, audience)` | Tools filtered by profile + audience exposure |
 | `list_tool_definitions(...)` | Full filtering by profile/names/tier/tags/schema_detail |
+| `list_modern_tool_values(...)` | Same filtering, modern-era `Value` encoding (adds `resultType`, `_meta`, annotations) |
 | `compact_input_schema(schema)` | Truncate descriptions to 120 chars, strip defaults |
+| `compact_output_schema(schema)` | Same compaction for response schemas |
 | `find_close_match(name)` | Levenshtein-based tool name suggestions |
 
 Registry-check helpers live on `ToolRegistry` in `src/agent/mod.rs`: `has_tool(name)` (existence with profile/audience filtering), `get_tool_unfiltered(name)` (administrative lookup bypassing audience/exposure), and `has_registered_tool(name)` (existence without filtering).

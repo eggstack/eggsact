@@ -235,6 +235,15 @@ pub struct EditPreflightInput {
 | `SourceCode` | `"source_code"` | Stricter policy for source code files |
 | `Identifier` | `"identifier"` | Policy for identifier text |
 
+#### Standalone `LineEndingPolicy` / `UnicodePolicy`
+
+Two additional public string-valued enums (`src/preflight/mod.rs`) for edit
+operations — `LineEndingPolicy::{Preserve, NormalizeLf, NormalizeCrlf}` and
+`UnicodePolicy::{Raw, Nfc, Nfkc, Casefold, WhitespaceCollapse}`. They are not
+wired into any wrapper input today (wrappers use `EditNewlinePolicy` /
+`EditUnicodePolicy` above); they exist as shared vocabulary for downstream
+consumers.
+
 #### EditMetadata
 
 ```rust
@@ -436,6 +445,13 @@ pub struct ConfigPreflightOutput {
 ## Patch Apply Check
 
 Typed wrapper for the `patch_apply_check` tool. Tests whether a unified diff patch applies cleanly to the original text without actually modifying anything.
+
+> `PatchApplyCheck::run` does **not** use the shared `DEFAULT_REGISTRY`.
+> The `patch_apply_check` tool is `HarnessOnly`, so the wrapper builds its
+> own `ToolRegistry::with_profile_and_audience(Profile::Full,
+> ToolAudience::Harness)` internally — a default (Model-audience) registry
+> would reject the call. Use `run_with_registry()` only with a
+> Harness-audience registry.
 
 ### Input
 

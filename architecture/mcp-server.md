@@ -86,7 +86,7 @@ Tool implementations live in `src/tools/` (category modules):
 | `list.rs` | list_compare, list_dedupe, list_sort |
 | `markdown.rs` | markdown_structure, code_fence_extract |
 | `patch.rs` | patch_apply_check, patch_summary, edit_preflight, diff_risk_classify, patch_contract_check |
-| `config.rs` | dotenv_validate, ini_validate, config_preflight, toml_shape_tool |
+| `config.rs` | dotenv_validate, ini_validate, config_preflight (plus the `toml_shape` handler, which lives here but is spec'd under the `toml` category) |
 | `identifier.rs` | identifier_analyze, identifier_inspect, identifier_table_inspect |
 | `unicode.rs` | unicode_policy_check, canonicalize_text |
 | `version.rs` | version_compare, version_constraint_check |
@@ -95,6 +95,9 @@ Tool implementations live in `src/tools/` (category modules):
 | `diagnostics.rs` | runtime_diagnostics, profile_inspect, tool_availability_explain |
 | `repo.rs` | repo_manifest_inspect, config_file_inspect, repo_tree_summarize, test_command_suggest, repo_language_detect |
 | `analysis.rs` | import_export_inspect, code_block_map, symbol_name_diff, lockfile_inspect |
+| `network.rs` | ip_inspect, cidr_inspect |
+| `encoding.rs` | codec_convert, radix_convert |
+| `temporal.rs` | datetime_convert, cron_inspect |
 
 ## Protocol
 
@@ -415,6 +418,9 @@ integrations stay direct until that evidence lands (see
 | repo | 5 | repo_manifest_inspect, config_file_inspect, repo_tree_summarize, test_command_suggest, repo_language_detect |
 | analysis | 4 | import_export_inspect, code_block_map, symbol_name_diff, lockfile_inspect |
 | diagnostics | 3 | runtime_diagnostics, profile_inspect, tool_availability_explain |
+| network | 2 | ip_inspect, cidr_inspect |
+| encoding | 2 | codec_convert, radix_convert |
+| temporal | 2 | datetime_convert, cron_inspect |
 
 ### Regex Backend Contract
 
@@ -444,6 +450,8 @@ Tools marked `composite: true` orchestrate other tools internally. All emit a `v
 | `config_preflight` | valid / valid_with_warnings / invalid | Pre-checks a config file using validation tools |
 | `text_security_inspect` | allow / review / block | Calls multiple text inspection tools and aggregates results |
 | `structured_data_compare` | — | Uses json_compare and list tools for structured data |
+| `config_file_inspect` | — | Composite config-file analysis emitting config-risk findings |
+| `dependency_edit_preflight` | — | Ecosystem-aware dependency edit checks (Rust/Python/Node) |
 
 ## Route-Critical Tools
 

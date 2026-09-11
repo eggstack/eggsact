@@ -9,7 +9,7 @@ See also: [Preflight Wrappers](preflight.md), [MCP Server](mcp-server.md), [Comp
 | File | Purpose |
 |------|---------|
 | `src/agent/mod.rs` | `ToolRegistry`, `Profile`, `ToolAudience`, `ToolView`, `ToolSpecView`, `ToolCallError`, `ToolCallOutcome`, `ExecutionContext`, `ExecutionSource`, `ExecutionContextBuilder`, all dispatch methods |
-| `src/preflight/` | Typed preflight wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`) built on top of `ToolRegistry` |
+| `src/preflight/` | Typed preflight wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`, `DependencyPreflight`) built on top of `ToolRegistry` |
 | `tests/test_context_isolation.rs` | Integration tests for profile, audience, compat, budget, and eval-context isolation |
 | `tests/mcp/test_route_contracts.rs` | Route-contract tests that exercise `prepare_tool_call` through the in-process API |
 
@@ -293,10 +293,13 @@ pub fn call_json_with_execution_template(
 
 Use this when you want to make the immutability intent explicit at the call site. The implementation delegates to `call_json_with_execution_context`.
 
-### `call_json_with_execution_context_mut(name, args, ctx)` — Mutable Persistent Context
+### `call_json_with_execution_context_mut(name, args, ctx)` — Deprecated Alias
 
-**Deprecated since 1.0.0.** The mutable variant that persists handler state
-mutations back to the caller's `ExecutionContext`.
+**Deprecated since 1.0.0.** Thin wrapper that delegates directly to
+`call_json_with_execution_context` (`src/agent/mod.rs`) — despite the
+`&mut` signature, `ctx.eval_ctx` **is cloned** and handler mutations do
+**not** persist back to the caller. The deprecation note states it plainly:
+"Does not persist calculator state through math_eval."
 
 ```rust
 #[deprecated(since = "1.0.0")]
@@ -305,19 +308,11 @@ pub fn call_json_with_execution_context_mut(
 ) -> Result<ToolResponse, ToolCallError>
 ```
 
-**Key difference from `call_json_with_execution_context`:** `ctx.eval_ctx` is
-**not** cloned — the handler receives a thread-local reference to the caller's
-`EvalContext` directly. PRNG draws, memory mutations, and variable assignments
-inside the handler persist back to `ctx.eval_ctx`.
-
-**Limitation:** Does **not** persist calculator state through `math_eval`.
-The `math_eval` handler runs inside `catch_unwind` and creates a fresh
-`EvalContext` via the MCP dispatch path, so calculator state changes do not
-propagate back through this method.
+**No persistence of any kind** — calculator or otherwise. The old
+commit-slot machinery it was built for no longer exists.
 
 Use `evaluate_with_context()` or `run_with_context()` directly for persistent
-calculator state across calls. Use this method only when you need non-calculator
-handler state to accumulate across calls.
+calculator state across calls. Do not use this method in new code.
 
 #### When to Use Each
 
@@ -325,9 +320,9 @@ handler state to accumulate across calls.
 |--------|-------------------|----------|
 | `call_json_with_execution_context` | Cloned (immutable) | Standard tool calls; state isolation between calls |
 | `call_json_with_execution_template` | Cloned (immutable) | Same as above, explicit immutability intent |
-| `call_json_with_execution_context_mut` | Shared (mutable) | **Deprecated since 1.0.0.** Does not persist calculator state through `math_eval`. Use `evaluate_with_context()`/`run_with_context()` for persistent calculator state. |
+| `call_json_with_execution_context_mut` | Cloned (immutable, delegates to the row above) | **Deprecated since 1.0.0.** No persistence of any kind. Use `evaluate_with_context()`/`run_with_context()` for persistent calculator state. |
 
-**Do not mix** `call_json_with_execution_context_mut` and `evaluate_with_context`/`run_with_context` for the same `EvalContext` — both mutate the context, which can lead to unexpected interleaving.
+**Do not mix** `call_json_with_execution_context` and `evaluate_with_context` for the same `EvalContext` — the former clones and discards mutations, the latter persists them.
 
 ### `call_json_value(name, args)` — Convenience
 
@@ -489,9 +484,9 @@ The `eval_ctx` field holds calculator state (PRNG seed, memory registers, user-d
 4. PRNG draws, memory mutations, and variable assignments inside the handler are confined to the clone
 5. The caller's `ExecutionContext.eval_ctx` is **never mutated**
 
-Two calls with identical seeds produce the same first random value. For persistent mutable state across calls, use `evaluate_with_context()` / `run_with_context()` directly (which operate on the caller's `EvalContext` without cloning), or use `call_json_with_execution_context_mut()` which shares the `EvalContext` directly.
+Two calls with identical seeds produce the same first random value. For persistent mutable state across calls, use `evaluate_with_context()` / `run_with_context()` directly (which operate on the caller's `EvalContext` without cloning).
 
-**Do not mix** `call_json_with_execution_context` and `evaluate_with_context` for the same `EvalContext` — the former clones and discards mutations, the latter persists them. Similarly, do not mix `call_json_with_execution_context_mut` (deprecated since 1.0.0) and `evaluate_with_context` for the same `EvalContext` without understanding the interleaving semantics. For persistent calculator state, prefer `evaluate_with_context()` / `run_with_context()` directly.
+**Do not mix** `call_json_with_execution_context` and `evaluate_with_context` for the same `EvalContext` — the former clones and discards mutations, the latter persists them. For persistent calculator state, prefer `evaluate_with_context()` / `run_with_context()` directly.
 
 ---
 

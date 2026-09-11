@@ -98,4 +98,7 @@ The workflow does not build ARMv7 until its qualification gate is added.
 ## `generate-docs` binary
 
 The separate `generate-docs` binary remains the registry documentation
-generator. It is not involved in release binary assembly.
+generator. It is not involved in release binary assembly. It accepts
+`--check` (fail if generated blocks are stale, for CI) and `--output-dir
+<dir>` (rewrite paths relative to `<dir>` instead of the current directory,
+used by release tooling).

@@ -32,7 +32,8 @@ eggsact integrate opencode
 ```
 
 `list` describes the supported adapters. `detect` only checks known command
-names on `PATH`; it does not recursively scan the filesystem or read unrelated
+names on `PATH` (with two renames: `vscode` → `code`, `cursor` →
+`cursor-agent`); it does not recursively scan the filesystem or read unrelated
 configuration. A client name renders an instruction and never mutates files.
 
 ## Rendered formats

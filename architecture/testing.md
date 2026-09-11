@@ -9,12 +9,12 @@ See also: [Calculator](calculator.md), [MCP Server](mcp-server.md), [Agent API](
 ```
 tests/
   lib.rs                          # single test crate root, declares 5 modules
-  test_context_isolation.rs       # context isolation integration tests (2102 lines)
+  test_context_isolation.rs       # context isolation integration tests (2143 lines)
   calc/                           # calculator tests (4 files + shared mod.rs)
-  mcp/                            # MCP protocol + tool tests (28 files)
+  mcp/                            # MCP protocol + tool tests (32 files)
   text/                           # text processing tests (24 files)
   parity/                         # Python/Rust parity tests (11 files)
-  property/                       # property-based tests (10 files + mod.rs, 55 tests)
+  property/                       # property-based tests (11 files + mod.rs, 61 tests)
   fixtures/
     accepted_parity_failures.txt  # 37 accepted parity failures for regression detection
 fuzz/
@@ -51,7 +51,7 @@ Tests call `eggsact::calc::run()` or `eggsact::calc::evaluate()` directly — no
 
 ## MCP Tests (`tests/mcp/`)
 
-28 test files covering the MCP server, protocol, tool execution, and contract enforcement.
+32 test files covering the MCP server, protocol, tool execution, and contract enforcement.
 
 ### Important Test Files
 
@@ -229,7 +229,7 @@ This file is used for regression detection: any parity failure NOT in this list 
 
 ## Context Isolation Tests
 
-`tests/test_context_isolation.rs` (2102 lines, 49 tests) verifies per-request state isolation across multiple dimensions. Representative tests:
+`tests/test_context_isolation.rs` (2143 lines, 51 tests) verifies per-request state isolation across multiple dimensions. Representative tests:
 
 | Test | What It Verifies |
 |------|-----------------|
@@ -483,7 +483,7 @@ cargo test --locked --test lib mcp -- --skip parity
 
 ## Property Tests (`tests/property/`)
 
-11 test files containing 59 property-based tests that verify algebraic invariants across all major surfaces. Property tests run in ordinary CI via `cargo test --test lib property`.
+11 test files containing 61 property-based tests that verify algebraic invariants across all major surfaces. Property tests run in ordinary CI via `cargo test --test lib property`.
 
 | File | Tests | Properties Verified |
 |------|-------|-------------------|
@@ -497,6 +497,7 @@ cargo test --locked --test lib mcp -- --skip parity
 | `test_markdown_properties.rs` | 3 | markdown_structure no-panic/determinism; code_fence span ordering/determinism |
 | `test_path_glob_properties.rs` | 4 | glob_match determinism/no-panic; path_normalize idempotence; path_analyze determinism |
 | `test_serialization_determinism.rs` | 8 | ToolResponse serialization determinism across runs |
+| `test_utility_properties.rs` | 6 | Cron ordering/reference-time rules; datetime nanosecond round-trip; CIDR idempotence; codec/radix round-trips |
 
 Properties verified include:
 - **Determinism**: identical inputs produce identical outputs
@@ -531,6 +532,7 @@ cargo test --locked --test lib property -- calculator  # calculator properties o
 | `unicode_inspection` | Unicode normalization, policy, confusables |
 | `markdown_fences` | Markdown structure, code fence extraction |
 | `glob_matching` | Glob matching, path normalization idempotence |
+| `cron_inspection` | Bounded cron parser, DOM/DOW star-syntax rules |
 
 ### How to Run Fuzz Targets
 

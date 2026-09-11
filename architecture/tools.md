@@ -484,7 +484,7 @@ Route-critical tools **must** always emit `machine_code` and `verdict` in their 
 
 | Tool | Description | Notable Details |
 |------|-------------|-----------------|
-| `toml_shape_tool` | Describe TOML structure | Reports top_level_keys, tables, truncated, summary. Handler is in `src/tools/config.rs` but tool spec declares `toml` category. |
+| `toml_shape` | Describe TOML structure | Reports top_level_keys, tables, truncated, summary. Handler fn `toml_shape_tool` lives in `src/tools/config.rs` (there is no `tools/toml.rs`) but the tool spec declares the `toml` category. |
 
 ### Identifier (3 tools)
 
