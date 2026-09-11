@@ -288,7 +288,12 @@ fn prng_randn_with(ctx: &mut EvalContext) -> f64 {
     if let Some(val) = ctx.gauss_spare.take() {
         return val;
     }
-    let u1 = (xorshift64(&mut ctx.prng_state) as f64 / u64::MAX as f64).max(1e-300);
+    // Resample on exact zero to avoid log(0); clamping would spike the
+    // distribution instead (see B7).
+    let mut u1 = xorshift64(&mut ctx.prng_state) as f64 / u64::MAX as f64;
+    while u1 == 0.0 {
+        u1 = xorshift64(&mut ctx.prng_state) as f64 / u64::MAX as f64;
+    }
     let u2 = xorshift64(&mut ctx.prng_state) as f64 / u64::MAX as f64;
     let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
     let z1 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).sin();
@@ -1715,6 +1720,7 @@ fn evaluate_function(
             let mut result = ints[0].abs();
             for &v in &ints[1..] {
                 let g = gcd(result, v.abs());
+                // gcd == 0 iff both operands are zero, so lcm is 0.
                 if g == 0 {
                     result = 0;
                 } else {
@@ -2460,6 +2466,7 @@ fn evaluate_function_with(
             let mut result = ints[0].abs();
             for &v in &ints[1..] {
                 let g = gcd(result, v.abs());
+                // gcd == 0 iff both operands are zero, so lcm is 0.
                 if g == 0 {
                     result = 0;
                 } else {
@@ -3189,11 +3196,27 @@ fn random_int_inclusive(a: i64, b: i64, mut next: impl FnMut() -> u64) -> i64 {
     } else {
         let range = range as u64;
         let limit = u64::MAX - u64::MAX % range;
-        loop {
+        let mut fallback = 0u64;
+        let mut sampled = false;
+        let mut result = 0u128;
+        let mut accepted = false;
+        for _ in 0..1000 {
             let value = next();
+            fallback = value;
+            sampled = true;
             if value < limit {
-                break (value % range) as u128;
+                result = (value % range) as u128;
+                accepted = true;
+                break;
             }
+        }
+        if accepted {
+            result
+        } else {
+            // Degenerate PRNG stream: fall back to biased modulo to guarantee
+            // termination (unreachable with xorshift64; see B6).
+            debug_assert!(sampled, "rejection loop must sample at least once");
+            (fallback % range) as u128
         }
     };
     (a as i128 + offset as i128) as i64
@@ -3210,7 +3233,11 @@ fn prng_randn() -> f64 {
     if let Some(val) = prng.1.take() {
         return val;
     }
-    let u1 = (xorshift64(&mut prng.0) as f64 / u64::MAX as f64).max(1e-300);
+    // Resample on exact zero to avoid log(0); see B7.
+    let mut u1 = xorshift64(&mut prng.0) as f64 / u64::MAX as f64;
+    while u1 == 0.0 {
+        u1 = xorshift64(&mut prng.0) as f64 / u64::MAX as f64;
+    }
     let u2 = xorshift64(&mut prng.0) as f64 / u64::MAX as f64;
     let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
     let z1 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).sin();

@@ -1528,9 +1528,8 @@ fn test_version_compare_prerelease_before_release() {
         serde_json::json!({"a": "1.0.0-alpha", "b": "1.0.0"}),
     );
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
-    // Note: Rust implementation treats prerelease as equal to release (comparison=0)
-    // This differs from strict semver, but matches the Python reference behavior
-    assert_eq!(r["result"]["comparison"], 0);
+    // semver §11: prerelease sorts before release.
+    assert_eq!(r["result"]["comparison"], -1);
 }
 
 #[test]

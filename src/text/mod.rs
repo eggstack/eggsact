@@ -82,11 +82,11 @@ pub use unicode_policy::{
 };
 pub use validate::{
     json_canonicalize, json_compare, json_extract, json_shape, list_dedupe, list_sort,
-    regex_finditer, regex_test, validate_brackets, validate_brackets_with_pairs, validate_json,
-    validate_regex, validate_schema_light, CheckBracketsResult, JsonCanonicalizeResult,
-    JsonCompareDiff, JsonCompareResult, JsonExtractResult, JsonShapeKey, JsonShapeResult,
-    RegexFindIterMatch, RegexFindIterResult, RegexMatch, RegexTestResult, SchemaViolation,
-    ValidateJsonResult, ValidateSchemaLightResult,
+    python_style_canonical_string, regex_finditer, regex_test, validate_brackets,
+    validate_brackets_with_pairs, validate_json, validate_regex, validate_schema_light,
+    CheckBracketsResult, JsonCanonicalizeResult, JsonCompareDiff, JsonCompareResult,
+    JsonExtractResult, JsonShapeKey, JsonShapeResult, RegexFindIterMatch, RegexFindIterResult,
+    RegexMatch, RegexTestResult, SchemaViolation, ValidateJsonResult, ValidateSchemaLightResult,
 };
 pub use version::{
     check_version_constraint, version_compare, VersionCompareResult, VersionConstraintResult,

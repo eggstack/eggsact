@@ -1060,7 +1060,7 @@ pub fn json_shape(
     max_array_items: usize,
 ) -> Result<JsonShapeResult, String> {
     let text_length = text.chars().count();
-    if text_length > MAX_PATTERN_LENGTH * 100 {
+    if text_length > MAX_INPUT_LENGTH {
         return Err(format!("Input length {} exceeds limit", text_length));
     }
 
@@ -1254,8 +1254,6 @@ fn build_shape_summary(shape: &JsonShapeKey) -> String {
 
 const MAX_TEXT_LENGTH_REGEX: usize = 100_000;
 const MAX_PATTERN_LENGTH_REGEX: usize = 1000;
-const _MAX_MATCHES: usize = 100;
-const _MAX_GROUPS: usize = 100;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegexFindIterMatch {
@@ -1308,15 +1306,21 @@ fn regex_finditer_internal_error(
 }
 
 fn get_line_column_for_index(text: &str, index: usize) -> (i32, i32) {
+    let table = build_line_column_table(text);
+    line_column_lookup(&table, index)
+}
+
+/// Precompute `(line, column)` for every char index (plus end position) in one
+/// pass, preserving `get_line_column_for_index` semantics (including CRLF as a
+/// single break with the `\r` skipped). Callers use [`line_column_lookup`]
+/// for O(log n) or O(1) lookup instead of re-scanning per match.
+fn build_line_column_table(text: &str) -> Vec<(i32, i32)> {
     let chars: Vec<char> = text.chars().collect();
+    let mut table: Vec<(i32, i32)> = Vec::with_capacity(chars.len() + 1);
     let mut line = 0usize;
     let mut column = 0usize;
-
     for i in 0..chars.len() {
-        if i == index {
-            return (line as i32 + 1, column as i32 + 1);
-        }
-
+        table.push((line as i32 + 1, column as i32 + 1));
         match chars[i] {
             '\n' => {
                 line += 1;
@@ -1334,12 +1338,31 @@ fn get_line_column_for_index(text: &str, index: usize) -> (i32, i32) {
             }
         }
     }
+    table.push((line as i32 + 1, column as i32 + 1));
+    table
+}
 
-    if index >= chars.len() {
-        return (line as i32 + 1, column as i32 + 1);
+fn line_column_lookup(table: &[(i32, i32)], index: usize) -> (i32, i32) {
+    if index < table.len() {
+        table[index]
+    } else {
+        *table.last().unwrap_or(&(1, 1))
     }
+}
 
-    (line as i32 + 1, column as i32 + 1)
+/// Map a byte offset to a char index via binary search on precomputed char
+/// start offsets. Floors mid-codepoint offsets to the previous boundary, matching
+/// `byte_offset_to_char_index` semantics.
+fn byte_offset_to_char_index_sorted(
+    byte_starts: &[usize],
+    text_len: usize,
+    byte_offset: usize,
+) -> usize {
+    let mut off = byte_offset.min(text_len);
+    while off > 0 && off < text_len && byte_starts.binary_search(&off).is_err() {
+        off -= 1;
+    }
+    byte_starts.partition_point(|&b| b < off)
 }
 
 fn advance_to_next_char_boundary(text: &str, byte_offset: usize) -> usize {
@@ -1360,16 +1383,16 @@ pub fn regex_finditer(
     include_line_column: bool,
     include_groups: bool,
 ) -> RegexFindIterResult {
-    if text.len() > MAX_TEXT_LENGTH_REGEX {
+    let text_length = text.chars().count();
+    if text_length > MAX_TEXT_LENGTH_REGEX {
         return RegexFindIterResult {
             valid_pattern: false,
             matches: vec![],
             truncated: false,
             match_count: 0,
             error: Some(format!(
-                "Text length {} bytes exceeds MAX_TEXT_LENGTH_REGEX {}",
-                text.len(),
-                MAX_TEXT_LENGTH_REGEX
+                "Text length {} exceeds MAX_TEXT_LENGTH_REGEX {}",
+                text_length, MAX_TEXT_LENGTH_REGEX
             )),
             engine_used: None,
             dialect: None,
@@ -1481,6 +1504,17 @@ pub fn regex_finditer(
 
     // Route to the correct iteration path based on compiled backend
     let engine_name_clone = engine_name.clone();
+    // Precompute once per call: byte→char mapping and line/column table so
+    // per-match lookup is O(log n)/O(1) instead of O(n) scans + allocs.
+    let byte_starts: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
+    let line_table: Option<Vec<(i32, i32)>> = if include_line_column {
+        Some(build_line_column_table(text))
+    } else {
+        None
+    };
+    let to_char = |byte_offset: usize| -> usize {
+        byte_offset_to_char_index_sorted(&byte_starts, text.len(), byte_offset)
+    };
     if compiled.is_rust() {
         // Rust-regex path: manual iteration with text slicing
         let std_re = match &compiled {
@@ -1538,10 +1572,11 @@ pub fn regex_finditer(
             }
 
             let (line, column) = if include_line_column {
-                let (l, c) = get_line_column_for_index(
-                    text,
-                    byte_offset_to_char_index(text, abs_start).unwrap_or(text.chars().count()),
-                );
+                let char_idx = to_char(abs_start);
+                let (l, c) = line_table
+                    .as_ref()
+                    .map(|t| line_column_lookup(t, char_idx))
+                    .unwrap_or_else(|| get_line_column_for_index(text, char_idx));
                 (Some(l), Some(c))
             } else {
                 (None, None)
@@ -1549,11 +1584,7 @@ pub fn regex_finditer(
 
             matches_out.push(RegexFindIterMatch {
                 m: first_match.as_str().to_string(),
-                span: vec![
-                    byte_offset_to_char_index(text, abs_start).unwrap_or(text.chars().count())
-                        as i32,
-                    byte_offset_to_char_index(text, abs_end).unwrap_or(text.chars().count()) as i32,
-                ],
+                span: vec![to_char(abs_start) as i32, to_char(abs_end) as i32],
                 line,
                 column,
                 groups,
@@ -1643,10 +1674,11 @@ pub fn regex_finditer(
 
             let (line, column) = if include_line_column {
                 if let Some(m) = first_match {
-                    let (l, c) = get_line_column_for_index(
-                        text,
-                        byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count()),
-                    );
+                    let char_idx = to_char(m.start());
+                    let (l, c) = line_table
+                        .as_ref()
+                        .map(|t| line_column_lookup(t, char_idx))
+                        .unwrap_or_else(|| get_line_column_for_index(text, char_idx));
                     (Some(l), Some(c))
                 } else {
                     (None, None)
@@ -1660,14 +1692,7 @@ pub fn regex_finditer(
                     .map(|m| m.as_str().to_string())
                     .unwrap_or_default(),
                 span: first_match
-                    .map(|m| {
-                        vec![
-                            byte_offset_to_char_index(text, m.start())
-                                .unwrap_or(text.chars().count()) as i32,
-                            byte_offset_to_char_index(text, m.end()).unwrap_or(text.chars().count())
-                                as i32,
-                        ]
-                    })
+                    .map(|m| vec![to_char(m.start()) as i32, to_char(m.end()) as i32])
                     .unwrap_or_default(),
                 line,
                 column,
@@ -2548,8 +2573,8 @@ pub fn json_compare(
                         );
                     }
                     if len_a != len_b {
-                        // BUG-203: this branch handles objects, not arrays;
-                        // use a dedicated kind and don't flip same_type (both
+                        // BUG-203 (fixed): this branch handles objects, not arrays;
+                        // it uses a dedicated kind and does not flip same_type (both
                         // values are still objects).
                         diffs.push(JsonCompareDiff {
                             path: path.to_string(),
@@ -2837,6 +2862,54 @@ pub struct JsonCanonicalizeResult {
     pub column: Option<i32>,
 }
 
+// ── JSON canonical formatting ──────────────────────────────────────────
+
+/// Serialize `value` with Python `json.dumps` default separators (`", "` /
+/// `": "`), matching `json_canonicalize` adapter output and Python parity.
+///
+/// Shared by the typed core (`json_canonicalize` below) and the tool adapter
+/// in `src/tools/json.rs` so both emit identical canonical text and hashes.
+pub fn python_style_canonical_string(value: &serde_json::Value) -> String {
+    struct PythonStyleFormatter;
+    impl serde_json::ser::Formatter for PythonStyleFormatter {
+        fn begin_array_value<W: std::io::Write + ?Sized>(
+            &mut self,
+            writer: &mut W,
+            first: bool,
+        ) -> std::io::Result<()> {
+            if first {
+                Ok(())
+            } else {
+                writer.write_all(b", ")
+            }
+        }
+        fn begin_object_key<W: std::io::Write + ?Sized>(
+            &mut self,
+            writer: &mut W,
+            first: bool,
+        ) -> std::io::Result<()> {
+            if first {
+                Ok(())
+            } else {
+                writer.write_all(b", ")
+            }
+        }
+        fn begin_object_value<W: std::io::Write + ?Sized>(
+            &mut self,
+            writer: &mut W,
+        ) -> std::io::Result<()> {
+            writer.write_all(b": ")
+        }
+    }
+    let mut buf = Vec::new();
+    {
+        let mut serializer = serde_json::Serializer::with_formatter(&mut buf, PythonStyleFormatter);
+        use serde::Serialize;
+        value.serialize(&mut serializer).unwrap_or_default();
+    }
+    String::from_utf8(buf).unwrap_or_default()
+}
+
 pub fn json_canonicalize(
     text: &str,
     sort_keys: bool,
@@ -2942,7 +3015,7 @@ pub fn json_canonicalize(
             }
             String::from_utf8(buf).unwrap_or_default()
         } else {
-            serde_json::to_string(&canonical_data).unwrap_or_default()
+            python_style_canonical_string(&canonical_data)
         }
     };
     let canonical = if ensure_ascii {
@@ -2968,14 +3041,14 @@ pub fn json_canonicalize(
 
     let sha256_hash = {
         let mut hasher = Sha256::new();
-        hasher.update(canonical.as_bytes());
+        hasher.update(canonical_out.as_bytes());
         let result = hasher.finalize();
         hex_encode(&result)
     };
 
     Ok(JsonCanonicalizeResult {
         valid: true,
-        canonical: Some(canonical),
+        canonical: Some(canonical_out),
         minified: Some(minified),
         sha256: Some(sha256_hash),
         duplicate_keys,

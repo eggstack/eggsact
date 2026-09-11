@@ -44,7 +44,6 @@ pub struct VersionConstraintResult {
     pub findings: Vec<String>,
 }
 
-#[allow(dead_code)]
 fn _get_pre_release_order(ident: &str) -> i32 {
     match ident.to_lowercase().as_str() {
         "dev" | "snapshot" | "pre" => -1,
@@ -137,13 +136,17 @@ fn compare_pre_release(a: &[String], b: &[String]) -> i32 {
     0
 }
 
-fn parse_semver_prefix(version: &str) -> Option<(u64, u64, u64)> {
+fn parse_semver_prefix(version: &str) -> Option<(u64, u64, u64, Vec<String>)> {
     let trimmed = version.trim();
     let caps = SEMVER_RE.captures(trimmed).ok()??;
     let major = caps.get(1)?.as_str().parse().ok()?;
     let minor = caps.get(2)?.as_str().parse().ok()?;
     let patch = caps.get(3)?.as_str().parse().ok()?;
-    Some((major, minor, patch))
+    let pre = caps
+        .get(4)
+        .map(|m| parse_pre_release_identifiers(m.as_str()))
+        .unwrap_or_default();
+    Some((major, minor, patch, pre))
 }
 
 fn python_semver_compare(a: &str, b: &str) -> VersionCompareResult {
@@ -167,13 +170,17 @@ fn python_semver_compare(a: &str, b: &str) -> VersionCompareResult {
         };
     }
 
-    let (maj_a, min_a, pat_a) = parsed_a.unwrap();
-    let (maj_b, min_b, pat_b) = parsed_b.unwrap();
+    let (maj_a, min_a, pat_a, pre_a) = parsed_a.unwrap();
+    let (maj_b, min_b, pat_b, pre_b) = parsed_b.unwrap();
 
     let (comparison, summary) = match (maj_a, min_a, pat_a).cmp(&(maj_b, min_b, pat_b)) {
         std::cmp::Ordering::Less => (-1, format!("{a} < {b}")),
         std::cmp::Ordering::Greater => (1, format!("{a} > {b}")),
-        std::cmp::Ordering::Equal => (0, format!("{a} == {b}")),
+        std::cmp::Ordering::Equal => match compare_pre_release(&pre_a, &pre_b) {
+            c if c < 0 => (-1, format!("{a} < {b}")),
+            c if c > 0 => (1, format!("{a} > {b}")),
+            _ => (0, format!("{a} == {b}")),
+        },
     };
 
     VersionCompareResult {
@@ -222,18 +229,6 @@ fn python_loose_compare(a: &str, b: &str) -> VersionCompareResult {
         scheme: "loose".to_string(),
         summary: format!("{} == {}", a, b),
     }
-}
-
-#[allow(dead_code)]
-fn _sort_pre_release_key(ident: &str) -> (i32, String) {
-    if ident.chars().all(|c| c.is_ascii_digit()) {
-        return (1, ident.to_string());
-    }
-    let order = _get_pre_release_order(ident);
-    if order != -1 {
-        return (0, order.to_string());
-    }
-    (2, ident.to_string())
 }
 
 fn version_less_than(a: &ParsedVersion, b: &ParsedVersion) -> bool {

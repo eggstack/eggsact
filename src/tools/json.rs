@@ -679,63 +679,7 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
             }
         }
     } else {
-        struct PythonStyleFormatter;
-        impl serde_json::ser::Formatter for PythonStyleFormatter {
-            fn begin_array_value<W: std::io::Write + ?Sized>(
-                &mut self,
-                writer: &mut W,
-                first: bool,
-            ) -> std::io::Result<()> {
-                if first {
-                    Ok(())
-                } else {
-                    writer.write_all(b", ")
-                }
-            }
-            fn begin_object_key<W: std::io::Write + ?Sized>(
-                &mut self,
-                writer: &mut W,
-                first: bool,
-            ) -> std::io::Result<()> {
-                if first {
-                    Ok(())
-                } else {
-                    writer.write_all(b", ")
-                }
-            }
-            fn begin_object_value<W: std::io::Write + ?Sized>(
-                &mut self,
-                writer: &mut W,
-            ) -> std::io::Result<()> {
-                writer.write_all(b": ")
-            }
-        }
-        let mut buf = Vec::new();
-        {
-            let mut serializer =
-                serde_json::Serializer::with_formatter(&mut buf, PythonStyleFormatter);
-            if let Err(e) = canonical_data.serialize(&mut serializer) {
-                return ToolResponse::error_with_code(
-                    "serialization_error",
-                    machine_codes::INTERNAL_ERROR,
-                    &e.to_string(),
-                    None,
-                    Some("json_canonicalize"),
-                );
-            }
-        }
-        match String::from_utf8(buf) {
-            Ok(s) => s,
-            Err(e) => {
-                return ToolResponse::error_with_code(
-                    "serialization_error",
-                    machine_codes::INTERNAL_ERROR,
-                    &format!("invalid UTF-8 output: {}", e),
-                    None,
-                    Some("json_canonicalize"),
-                )
-            }
-        }
+        crate::text::validate::python_style_canonical_string(&canonical_data)
     };
     let canonical = if ensure_ascii {
         escape_ascii(&canonical)

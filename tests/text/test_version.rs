@@ -54,14 +54,17 @@ fn test_version_compare_invalid() {
 }
 
 #[test]
-fn test_version_compare_prerelease_ignored_by_semver() {
-    // version_compare (semver scheme) only compares major.minor.patch;
-    // pre-release identifiers are ignored for the comparison result
+fn test_version_compare_prerelease_semver_ordering() {
+    // semver §11: pre-release < release; build metadata ignored.
     let result = version_compare("1.0.0-alpha", "1.0.0", "semver");
-    assert_eq!(result.comparison, 0);
+    assert_eq!(result.comparison, -1);
     assert!(result.valid);
 
     let result = version_compare("1.0.0-alpha", "1.0.0-beta", "semver");
+    assert_eq!(result.comparison, -1);
+    assert!(result.valid);
+
+    let result = version_compare("1.0.0+build", "1.0.0", "semver");
     assert_eq!(result.comparison, 0);
     assert!(result.valid);
 }

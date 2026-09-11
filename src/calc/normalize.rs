@@ -33,7 +33,7 @@ where
 static PCT_SYMBOL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d+(?:\.\d+)?)\s*%(?!\s*\d)").unwrap());
 static PERCENT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(\d+(?:\.\d+)?)\s*percent").unwrap());
+    LazyLock::new(|| Regex::new(r"(\d+(?:\.\d+)?)\s*percent\b").unwrap());
 static COMPLEX_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d+(?:\.\d+)?)\s*([+-])\s*(\d+(?:\.\d+)?)\s*i").unwrap());
 

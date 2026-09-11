@@ -6,7 +6,6 @@
 //!
 //! BUGS DISCOVERED BY THESE TESTS:
 //! - BUG-LRC-001: line_range_compare panics on out-of-bounds line indices
-//! - BUG-VC-001: version_compare treats "1.0.0-alpha" as == "1.0.0" (prerelease ignored)
 //! - BUG-MATH-001: math_eval 2**100 returns type "float" instead of "int" (trailing zeros truncated)
 
 use serde_json::Value;
@@ -2388,34 +2387,27 @@ fn test_text_count_byte_mode() {
 
 #[test]
 fn test_version_compare_prerelease_before_release() {
-    // BUG-VC-001: semver says prerelease < release, but both impls return 0.
-    // This test documents the known parity limitation.
+    // semver §11: prerelease < release.
     let r = call_tool(
         "version_compare",
         serde_json::json!({"a": "1.0.0-alpha", "b": "1.0.0", "scheme": "semver"}),
     );
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
-    // Documents BUG-VC-001: both Python and Rust return 0 (equal)
     assert_eq!(
-        r["result"]["comparison"], 0,
-        "BUG-VC-001: prerelease currently treated as equal to release (known limitation)"
+        r["result"]["comparison"], -1,
+        "prerelease must sort before release"
     );
 }
 
 #[test]
 fn test_version_compare_two_prereleases() {
-    // Documents BUG-VC-002: both prereleases are treated as equal.
-    // Semver says 1.0.0-beta > 1.0.0-alpha, but both impls return 0.
+    // Semver says 1.0.0-beta > 1.0.0-alpha.
     let r = call_tool(
         "version_compare",
         serde_json::json!({"a": "1.0.0-beta", "b": "1.0.0-alpha", "scheme": "semver"}),
     );
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
-    // Documents known limitation: prerelease ordering not implemented
-    assert_eq!(
-        r["result"]["comparison"], 0,
-        "BUG-VC-002: prerelease ordering not implemented (known limitation)"
-    );
+    assert_eq!(r["result"]["comparison"], 1, "beta must sort after alpha");
 }
 
 #[test]
