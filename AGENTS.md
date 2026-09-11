@@ -1,220 +1,63 @@
 # AGENTS.md
 
-Deterministic MCP and in-process utility tools for coding agents. Single crate, no workspace. 86 tools across 23 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, network, encoding, temporal, and more.
+Single-crate Rust (`eggsact`): deterministic MCP server + in-process tools. 86 tools across 23 categories. No workspace. `Cargo.lock` tracked — always pass `--locked`.
 
-## Commands
+## Merge gate (in order)
 
 ```bash
-cargo build                          # debug build
-cargo build --release                # release build
-cargo test --locked                  # all tests (unit + integration + parity)
-cargo test --locked --lib            # unit tests in src/ only
-cargo test --locked --test lib mcp   # MCP tests only
-cargo test --locked --test lib parity # parity tests only
-cargo test --locked --test lib text  # text tests only
-cargo test --locked --doc            # doc tests
-cargo fmt --all -- --check            # format check
-cargo clippy --locked --all-targets --all-features  # lint
-cargo package --locked                # crates.io packaging dry run
-cargo build --locked --release        # staged binary for local smoke
-cargo deny check advisories bans licenses sources  # supply-chain audit
-cargo run --features dev-tools --bin generate-docs        # regenerate docs from ToolSpec registry
-cargo run --features dev-tools --bin generate-docs -- --check  # verify generated docs are current (CI)
-scripts/release-check.sh               # full local release gate (no publish, no tag); requires clean tree + cargo-deny
-python3 scripts/check-release-contract.py # target/asset matrix consistency
-bash -n packaging/install.sh            # installer syntax check
-shellcheck packaging/install.sh         # when available
+cargo fmt --all -- --check
+cargo run --locked --features dev-tools --bin generate-docs -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features -- --skip parity --test-threads=4
+cargo test --locked --doc
 ```
 
-## Verification order
+Notes:
+- `--test-threads=4` is required for integration tests (Tokio blocking-pool starvation), not a product budget. `--lib`/doc tests don't need it.
+- Parity is excluded from CI (Python `eggcalc` not in CI). Full local gate: `scripts/release-check.sh` (requires clean tree + `cargo-deny`; never publishes/tags).
 
-`cargo fmt --all -- --check` → `cargo clippy --locked --all-targets --all-features -- -D warnings` → `cargo test --locked --all-features --lib` → `cargo test --locked --all-features --bins` → `cargo test --locked --all-features -- --skip parity --test-threads=4` → `cargo test --locked --doc` → `cargo run --locked --features dev-tools --bin generate-docs -- --check` → `cargo deny check advisories bans licenses sources` → `cargo package --locked --list` → `cargo package --locked --verbose` → `cargo publish --locked --dry-run`
+Focused runs:
 
-## CI
+```bash
+cargo test --locked --test lib <filter>  # e.g. text, mcp, calc, property
+cargo build && cargo test --locked --test lib parity  # requires eggcalc at ../eggcalc
+```
 
-GitHub Actions CI runs on push/PR to `main` (plus manual `workflow_dispatch`):
-
-**Linux correctness** (single job, one cache):
-- `cargo fmt --all -- --check`
-- `cargo run --locked --features dev-tools --bin generate-docs -- --check`
-- `cargo clippy --locked --all-targets --all-features -- -D warnings`
-- `cargo test --locked --all-features -- --skip parity --test-threads=4`
-- `cargo test --locked --doc`
-
-**Supported-platform compilation** (matrix, scheduled/manual only):
-- Windows: `cargo check --locked --all-targets --all-features`
-- macOS: `cargo check --locked --all-targets --all-features`
-
-MSRV, cargo-deny, parity, latest-compatible, and fuzz/sanitizer checks are scheduled/manual (not merge-blocking). See `docs/verification.md`.
-
-Parity tests are excluded from CI because Python `eggcalc` is not available in the CI environment. Run parity locally with `cargo test --test lib parity`.
-
-GitHub CI verifies merge correctness but does **not** publish to crates.io. The maintainer publishes manually per `docs/release.md`.
-The tag-only `release-binaries.yml` workflow builds verified release binaries
-after crates.io visibility, then creates or updates only a draft GitHub Release;
-it never creates tags, publishes crates, or publishes the draft. The first
-binary-bearing release is v1.2.4, published after successful workflow
-33944943782 with five target binaries, checksums, and both installers.
+Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_failures.txt` / `docs/parity.md`. Only failures NOT in that list are regressions.
 
 ## Structure
 
-```
-src/
-  main.rs           # CLI entry, arg parsing, dispatch
-  update.rs         # crates.io/GitHub verified self-update (binary module)
-  integrate.rs      # read-only MCP client setup renderers (binary module)
-  lib.rs            # library root, re-exports run()/evaluate()
-  calc/             # calculator: evaluator, normalize, units, context (4 modules)
-  mcp/              # MCP server protocol, runtime, registry, validation
-    server.rs       # protocol orchestration, stdio loop, dispatch
-    registry/       # tool registration (ToolSpec declarations, single source of truth)
-      types.rs      # ToolDefinition, ToolSpec, enums
-      all_tools.rs  # ALL_TOOLS aggregation from specs/
-    specs/          # ToolSpec declarations per tool category (23 files)
-    schemas/        # JSON-schema builders per tool category (23 files)
-  tools/            # MCP tool implementations (by category, 23 files)
-    helpers.rs      # shared constants, utilities, helper functions
-  services/         # typed deterministic composite services (no ToolResponse/JSON)
-    mod.rs          # fingerprint/newline/security/repo/patch re-exports, layering contract
-    fingerprint.rs  # FingerprintFacts over text_fingerprint (raw/raw)
-    newline.rs      # NewlineFacts composite style derivation
-    security.rs     # SecurityInspection pipeline over text::* cores
-    repo.rs         # RepoFacts canonical ecosystem/path/language facts
-    patch_analysis.rs # PatchAnalysis single-parse neutral diff facts
-  text/             # text processing library (25 modules + generated confusables data file)
-    regex_engine.rs # regex backend classifier
-    confusables_generated.rs  # AUTO-GENERATED — never edit
-  temporal/         # fixed-offset datetime helpers and bounded cron parser/search
-  agent/            # in-process agent API (ToolRegistry, Profile, call_json)
-  preflight/        # typed preflight wrappers (EditPreflight, CommandPreflight, etc.)
-tests/
-  lib.rs            # declares test modules: calc, mcp, parity, text, property
-  parity/           # Python/Rust parity tests (requires ../eggcalc)
-  property/         # property-based tests (11 modules, 59 tests)
-architecture/       # detailed design docs (15 files) — see index below
-plans/
-  roadmap.md        # the single living plan; completed phase records were pruned (git history keeps them)
-docs/releases/      # archived v1.2.0 evidence ledgers (historical only)
-packaging/          # release bootstrap installers (excluded from crates.io)
-```
+- `src/main.rs` → CLI; `--mcp` → `mcp/server.rs` stdio loop; expression args → `calc/`
+- `src/lib.rs` → `run()`/`evaluate()` re-exports
+- `src/mcp/specs/` + `src/mcp/schemas/` → `ToolSpec` declarations + JSON schemas (23 files each); aggregated in `mcp/registry/all_tools.rs`
+- `src/tools/` → JSON adapters (parse input, call core/service, build response once). Never call one handler from another.
+- `src/services/` → typed composites (`RepoFacts`, `PatchAnalysis`, `SecurityInspection`, `FingerprintFacts`, `NewlineFacts`). Call these, not sibling handlers.
+- `src/text/` → leaf deterministic cores; `src/calc/` → math; `src/agent/` → `ToolRegistry`; `src/preflight/` → typed wrappers; `src/temporal/` → fixed-offset datetime/cron.
+- Start at `architecture/overview.md`; full API hierarchy in `docs/library-api.md`.
 
-## Architecture docs index
+## Adding / changing a tool
 
-Detailed design documentation lives in `architecture/`. Use these as the deep-reference for the gotchas below:
+- One `ToolSpec` in `src/mcp/specs/<category>.rs` is the single source of truth. Test `tool_registration_tables_are_in_sync` catches drift.
+- After any registry/profile/exposure change: `cargo run --features dev-tools --bin generate-docs` (CI checks with `-- --check`).
+- Never hand-edit: `src/text/confusables_generated.rs` (from `scripts/generate_confusables.py`, pinned Unicode 17.0.0 + SHA), `generated/tool-cards.md`, profile block in `architecture/mcp-server.md`, registry block in `architecture/overview.md`.
+- New Rust code: `calc`/root → typed `text` → `agent::ToolRegistry` → typed `preflight` → MCP server. Raw `tools::*`, `services::*` internals, and `mcp` sub-modules beyond `server` are `pub` for 1.x compat, not the import surface.
 
-| Doc | Covers |
-|-----|--------|
-| `architecture/overview.md` | Start here: crate layout, module map, request flow |
-| `architecture/machine-codes.md` | Full machine code table, finding helpers, verdict constants |
-| `architecture/budget-concurrency.md` | SyncExecutionPool, truncation, budget checks |
-| `architecture/mcp-server.md` | MCP lifecycle, concurrency, response ordering, generated profile reference block |
-| `architecture/registry-profiles.md` | Profile definitions, audience model, exposure levels |
-| `architecture/calculator.md` | Evaluator, normalization, units, context |
-| `architecture/text-library.md` | Text module catalog and conventions |
-| `architecture/preflight.md` | Typed preflight wrappers, composite tools |
-| `architecture/agent-api.md` | ToolRegistry, in-process execution path |
-| `architecture/testing.md` | Test structure, parity, property tests, fuzzing |
-| `architecture/generated-assets.md` | What `generate-docs` writes, confusables generation, parity harness, diagnostics |
-| `architecture/tools.md` | The 23 tool categories and their handlers |
-| `architecture/cli-binaries.md` | CLI flags and binary behavior |
-| `architecture/coding-agent-integration.md` | How coding agents should integrate eggsact |
-| `architecture/compatibility.md` | CompatibilityMode (EggcalcPython vs StrictNative) semantics |
+## Gotchas
 
-## Docs index
-
-Hand-maintained user-facing docs in `docs/`:
-
-| Doc | Covers |
-|-----|--------|
-| `docs/mcp-tools.md` | Full MCP tool reference and wire protocol |
-| `docs/library-api.md` | Rust library API guide |
-| `docs/math-features.md` | Math functions, constants, units |
-| `docs/cli.md` | CLI usage |
-| `docs/parity.md` | Python parity status and accepted differences |
-| `docs/compatibility-policy.md` | Semver policy, machine-code/profile stability rules |
-| `docs/release.md` | Canonical release checklist (manual publish) |
-| `docs/verification.md` | Verification tiers and gates |
-| `docs/contributing.md` | Contribution workflow |
-| `docs/msrv.md`, `docs/fuzzing.md` | MSRV policy; fuzz corpus/triage policy |
-
-## Key gotchas
-
-- **`^` is XOR, not exponentiation.** Use `**` for power. Matches Python.
-- **`g` means gram** in unit expressions. Use `gravity` or `standardgravity` for standard gravity.
-- **Never edit `src/text/confusables_generated.rs`** — auto-generated sorted static table by `scripts/generate_confusables.py`. Edit the script, not the output. The generator pins the expected Unicode Security version and SHA-256 checksum; regenerating with different source data fails loudly. Use `lookup()` for single-character lookups.
-- **Confusables source pin:** regeneration uses the official version-specific Unicode 17.0.0 source at `https://www.unicode.org/Public/17.0.0/security/confusables.txt`, verifies the pinned SHA-256 and header before writing, and is not part of ordinary CI or `scripts/release-check.sh`.
-- **Bounded JSONL reader:** `read_bounded_line()` counts every byte before LF, discounts only a final CR for CRLF, retains at most `MAX_REQUEST_BYTES`, and drains through exactly LF with `fill_buf()`/`consume()` so following frames remain intact.
-- **Windows drive-relative diagnostics:** `path_scope_check()` conservatively rejects `D:foo`-style targets and reports the actual target text/drive; it does not model per-drive current directories.
-- **Never hand-edit generated assets** — the profile reference block in `architecture/mcp-server.md` and `generated/tool-cards.md` are produced by `cargo run --features dev-tools --bin generate-docs`; `src/text/confusables_generated.rs` is produced by `scripts/generate_confusables.py`. Edit `ToolSpec` entries in `src/mcp/specs/` (or the generator script) instead. README and all `docs/*.md` are hand-maintained. See `architecture/generated-assets.md`.
-- **Adding an MCP tool requires one `ToolSpec` entry** in `src/mcp/specs/<category>.rs`. This is the single source of truth. A test (`tool_registration_tables_are_in_sync`) catches drift.
-- **Parity tests require `eggcalc`** Python package at `../eggcalc`. See `docs/parity.md` for 37 known failures (C1–C6), enumerated in `tests/fixtures/accepted_parity_failures.txt`. Any parity failure NOT in that list is an unexpected regression. Do not treat listed failures as regressions.
-- **`Cargo.lock` is tracked** because eggsact ships binaries. CI uses `--locked` for reproducible builds.
-- **`serde_json` uses `preserve_order`** — key order is intentional in serialized JSON.
-- **Regex backend auto-selection**: `regex_finditer` and `validate_regex` use `compile_regex()` in `src/text/regex_engine.rs` to pick between Rust `regex` (fast, linear-time) and `fancy-regex` (lookaround/backreferences). Outputs report `engine_used` and `unsupported_features`. This is NOT PCRE2.
-- **Context-aware vs legacy APIs**: `call_json_with_execution_context()` clones `eval_ctx` — mutations do **not** persist back. Use `evaluate_with_context()`/`run_with_context()` for calculator state. **`call_json_with_execution_context_mut` is `#[deprecated(since = "1.0.0")]`**. Use `with_current_eval_context()` for closure-scoped thread-local access. Re-entrant mutable access panics via an exclusive-access guard.
-- **Response truncation is automatic**: `truncate_response()` caps findings/output when a tool exceeds its budget. Check `limits_applied` in the response envelope. See `architecture/budget-concurrency.md`.
-- **Typed composition layering:** deterministic cores live in `text/` (and `calc/` for math); reusable composite logic lives in `services/` (`FingerprintFacts`, `NewlineFacts`, `SecurityInspection`, `RepoFacts`, `PatchAnalysis`); `tools/*` are JSON adapters that parse/validate their own input, call typed cores/services, and build the existing response shape once at the boundary. Do not call one tool handler from another to obtain an internal result — call the typed core/service instead. Repo tools project `RepoFacts`; patch tools project/apply policy over `PatchAnalysis` (single parse, canonical repo buckets). The three remaining same-module JSON reuses (`json_compare`/`json_shape_tool` in `structured_data_compare`, `toml_shape_tool` in `config_preflight`) are intentional and commented; `TYPE_MISMATCH` from `json_shape` is dead code preserved for parity (BUG-006). See `architecture/tools.md`.
-- **MCP response ordering is concurrent**: Responses may arrive out of request order. **Correlate by JSON-RPC `id`**, not arrival position. See `architecture/mcp-server.md`.
-- **Supported Rust API hierarchy:** `calc`/root re-exports → typed `text` primitives → `agent::ToolRegistry`/execution contexts → typed `preflight` workflow APIs (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`, `DependencyPreflight`) → MCP server entry surface. Raw `tools::*` handlers are JSON adapter internals (kept `pub` for 1.x compat, not the recommended import surface); same for `services::*` internals and `mcp` transport sub-modules beyond `server`. No visibility reduction ships in 1.x. See `docs/library-api.md`.
-- **YAML is heuristic-only:** `config_file_inspect` detects `.yaml`/`.yml` but has no YAML parser — key extraction is a naive `key: value` line scan and `parse_ok` is true for any non-empty input. The additive `analysis_mode` result field reports `"heuristic"` vs `"parser"`; never read YAML `parse_ok` as syntax validity. `config_preflight` intentionally excludes YAML. First-class YAML needs a concrete workflow + parser review (not this pass).
-- **Sync execution pool for budget-aware APIs**: `call_json_with_budget`, `call_json_with_context`, and `call_json_with_execution_context` route through `SyncExecutionPool` (8 workers, 32-slot queue). Queue saturation returns `RESOURCE_EXHAUSTED`. `call_json` remains direct (no pool). The MCP server path uses Tokio `spawn_blocking`. See `architecture/budget-concurrency.md`.
-- **MCP dual-era lifecycle (connection-pinned)**: One stdio process is one connection pinned by its first classifiable message (`ConnectionEra::Undecided` → `Legacy` for `initialize` or any claim-less opening, → `Modern20260728` for a valid modern claim). Legacy (`2025-11-25`, `2024-11-05`) requires `initialize` → `notifications/initialized` before `tools/list`, `tools/call`, `profiles/list`; methods before initialization return `-32600` with `NOT_INITIALIZED` data code. Modern (`2026-07-28`) sends per-request `_meta` (`io.modelcontextprotocol/protocolVersion` + `clientCapabilities`, optional `clientInfo`) with no handshake; the official auto-negotiation probe is enveloped and runs in a disposable sibling process, so it is not a session-child message. Claim-less `server/discover` is legacy traffic, not an era-neutral modern probe. Cross-era requests after pinning return `-32022`/`Unsupported protocol version` with the id preserved; mismatched notifications are dropped before side effects. Malformed modern envelopes and unsupported claims do not pin. Modern request metadata stays per-request even though the era is per-connection. Modern `tools/call` adds `structuredContent` (= `ToolResponse.result`) plus `resultType`/`_meta` server identity; legacy envelopes are unchanged. Modern `ping` is removed (`-32601`); legacy `ping` is available only on the legacy path. See `architecture/mcp-server.md`.
-- **`ToolDefinition`** lives in `src/mcp/registry/types.rs` (not `server.rs`).
-- **`ToolAudience`** enum (`Model`, `Harness`, `Debug`) controls exposure. Use `available_tools_model_safe()` for model-facing integrations.
-- **`Profile::from_str_opt`** is strict — returns `None` for unknown names. Use `Profile::custom(name)` for custom profiles.
-- **Deterministic utility semantics**: `ip_inspect`, `cidr_inspect`, `codec_convert`, `radix_convert`, `datetime_convert`, and `cron_inspect` use explicit inputs only. Datetime/cron use fixed numeric offsets; they never read the clock, locale, timezone database, filesystem, network, or environment.
-- **Cron day matching**: `cron_inspect` uses Vixie/Cronie star syntax — when neither DOM nor DOW starts with `*`, either parsed field may match; when either starts with `*` (including `*/n` steps), both must match. Bare `*` is a wildcard via full value coverage; explicit full ranges/lists are not star syntax.
-- **Env vars:** `EGGCALC_NO_CONFIG=1` is a compatibility name for callers that
-  also invoke Python `eggcalc`; eggsact itself does not mutate the environment.
-  `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (case-insensitive, defaults to
-  `Model`), and `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`; defaults
-  to `full`) configure MCP startup. `EGGSACT_MCP_SURFACE` (`direct`/`discovery`;
-  defaults to `direct`) selects the MCP presentation surface; new
-  eggsact-native config uses the `EGGSACT_` prefix, not `EGGCALC_`.
-- **Deployment commands:** `eggsact update` verifies the crates.io stable
-  version, exact GitHub asset, checksum, and candidate identity before
-  replacement. Unix replacement is completed before success is reported;
-  Windows reports `update staged` and leaves an adjacent failure status file if
-  its bounded post-exit helper cannot replace the image. `eggsact integrate
-  list|detect|<client>` renders read-only client-owned stdio setup for Zed,
-  Codex, Claude Code, Cursor, VS Code, or OpenCode. It does not add a daemon or
-  edit client configuration.
-- **MCP presentation surface (`McpSurface` in `src/mcp/discovery.rs`):** `Direct` (default) preserves the full profile/audience-filtered `tools/list`; `Discovery` (`EGGSACT_MCP_SURFACE=discovery` or `--mcp-surface discovery`) advertises only the pinned front doors allowed by the profile/audience plus MCP-only `tool_search`/`tool_invoke`. Presentation never authorizes: search/invoke enforce the same profile/audience rules as direct calls. Facades are not `ToolSpec` entries, not in `ALL_TOOLS_VEC`/`src/tools/`, and not in generated tool-cards. `tool_invoke` is a routing facade with target-specific results and intentionally has no facade-level output schema (no `tool_invoke_output_schema()`; obtain target contracts via `tool_search(detail="schema")` or direct/full mode). Adding a capability must keep exact-name search and router invocation working and update `tests/mcp/test_discovery.rs` expectations (pinned count, byte budgets, bypass guards).
-- **Discovery evaluation is deterministic and offline:** `src/mcp/discovery_eval.rs` measures exact serialized Tool-definition bytes; `tests/fixtures/tool_discovery_intents.json` (76 stable Model targets at 100% coverage, 88 positive intents with second phrasings, 9 containment) and `tests/fixtures/tool_discovery_scenarios.json` (48 Model tasks + 4 `must_not_expose` containment, `audience`/`kind` + plural `expected_tools` contract) are the frozen corpus; `scripts/score-discovery-traces.py` scores recorded traces and `--pair` direct/discovery comparisons (2pp noninferiority gates, strict validation, legacy `expected_tool` warns) without network access. Keep top-1 >=90%, top-3 >=98%, top-5 100%, discovery/full-Model <=25% of direct bytes, zero Model-audience leaks, and Model tasks 40–60. Provider-backed OpenAI/Anthropic traces plus instructions A/B live in `tests/fixtures/discovery_traces/` and are maintainer evidence, not ordinary CI; that external evidence is still pending under `mcp-surface-03c`.
-- **Input limits:** MAX_TEXT_LENGTH=100k, MAX_EXPRESSION_LENGTH=10k, MAX_LIST_ITEMS=10k, MAX_REGEX_SAMPLES=100, MAX_PATTERN_LENGTH=1k, MAX_REQUEST_BYTES=1M, MAX_OUTPUT_BYTES=1M.
-- **Test-thread bound:** `--test-threads=4` is used in CI and the release gate to prevent Tokio blocking-pool starvation when many MCP subprocess tests run in parallel. This is a test-runner containment measure, not a product budget. Unit tests (`--lib`) and doc tests do not need it.
-
-## Exposure & Audience Model
-
-Tools have typed `ToolExposure` and `ToolListAudience` enums in `src/mcp/registry/types.rs` and `src/mcp/registry/listing.rs`:
-
-- **Exposure**: `Default`, `Contextual`, `ExpertOnly`, `HarnessOnly`, `Hidden`
-- **Audience**: `Model` (excludes HarnessOnly+Hidden), `Harness` (excludes Hidden), `Debug` (all non-hidden)
-
-**No per-call profile override**: `tools/call` intentionally does NOT accept a `profile` parameter. The active profile is set once at server startup via `EGGCALC_MCP_PROFILE` and applies to all `tools/call` requests.
-
-See `architecture/registry-profiles.md` for profile definitions and the audience model.
+- Calculator: `^` is XOR, `**` is power. `g` means gram; use `gravity`/`standardgravity` for standard gravity.
+- MCP responses are concurrent — correlate by JSON-RPC `id`, not arrival order.
+- One stdio process = one protocol era pinned by first message (`initialize`/claim-less → legacy; enveloped claim → `2026-07-28`). Legacy needs `initialize` → `notifications/initialized` first. See `architecture/mcp-server.md`.
+- No per-call profile: `tools/call` takes no `profile`; server-wide `EGGCALC_MCP_PROFILE` applies. `Profile::from_str_opt` is strict (`None` on unknown); use `Profile::custom(name)` for custom. Model-facing code uses `available_tools_model_safe()` (`Model` excludes `HarnessOnly`+`Hidden`).
+- `Discovery` surface (`EGGSACT_MCP_SURFACE=discovery`) is presentation-only; search/invoke enforce the same profile/audience rules. Facades aren't `ToolSpec`s. If touching it, update `tests/mcp/test_discovery.rs`.
+- Context APIs: `call_json_with_execution_context()` clones `eval_ctx` (mutations don't persist). Use `evaluate_with_context()`/`run_with_context()` for calculator state. `..._context_mut` is deprecated; `with_current_eval_context()` for closure scope. Re-entrant mutable access panics.
+- Regex is NOT PCRE2: `compile_regex()` (`src/text/regex_engine.rs`) picks `regex` vs `fancy-regex`; outputs report `engine_used`.
+- YAML is heuristic-only: `config_file_inspect` has no YAML parser (`parse_ok` true if non-empty, naive `key: value` scan, `analysis_mode: "heuristic"`). Never treat as syntax validity; `config_preflight` excludes YAML.
+- Deterministic utils (`ip/cidr/codec/radix/datetime/cron`) use explicit inputs only — no clock, TZ db, env, net. Cron is Vixie/Cronie star syntax: if either DOM/DOW starts with `*` (incl. `*/n`) both must match, else either may; bare `*` is wildcard, explicit full ranges are not.
+- `serde_json` has `preserve_order` — key order is intentional.
+- Limits: text 100k, expr 10k, list 10k, regex samples 100, pattern 1k, request/output 1M each. Check `limits_applied`; truncation is automatic.
+- Env: `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (`Model` default, case-insensitive), `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`), `EGGSACT_MCP_SURFACE` (`direct`/`discovery`). `EGGCALC_NO_CONFIG=1` is for Python-`eggcalc` callers.
+- `eggsact update` / `eggsact integrate list|detect|<client>` are verified/read-only; they never install a daemon or edit client config.
 
 ## Skills
 
-Agent task skills in `.opencode/skills/` (symlinked from `.agents/skills/` for Codex compatibility):
-
-- `.opencode/skills/mcp-tools/SKILL.md` — how to add or update MCP tools
-- `.opencode/skills/testing/SKILL.md` — testing patterns, commands, test structure
-- `.opencode/skills/debugging/SKILL.md` — common issues, debugging workflows
-- `.opencode/skills/release/SKILL.md` — release process and checklist
-- `.opencode/skills/text-processing/SKILL.md` — text module conventions and patterns
-
-## Fuzzing
-
-13 fuzz targets via `cargo-fuzz` + libFuzzer in `fuzz/`. Requires nightly Rust.
-
-```bash
-cargo install cargo-fuzz --locked
-cargo fuzz build
-cargo fuzz run calculator_expression -- -max_total_time=60 -timeout=5
-```
-
-Property tests run in ordinary CI: `cargo test --locked --all-features property`
-
-See `docs/fuzzing.md` for corpus policy, crash triage, and regression promotion workflow.
+`.opencode/skills/` (symlinked to `.agents/skills/`): `mcp-tools`, `testing`, `debugging`, `release`, `text-processing`. Load the matching skill before those tasks.
