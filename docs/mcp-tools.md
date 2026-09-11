@@ -1375,7 +1375,7 @@ Return structured runtime diagnostics including active profile, tool counts, bud
 
 **Return (top-level):** `{"active_profile": <string>, "active_audience": <string>, "tool_count": <int>, "model_visible_tool_count": <int>, "harness_visible_tool_count": <int>, "route_critical_tools": [<string>], "profile_tool_count": <int>, "compatibility_mode": <string>, "budget_tier_summary": <object>, "runtime": <object>, "known_env_vars": [<string>], "generated_doc_command": <string>, "verification_command": <string>, "generated_data": <object>, "parity_available": <boolean>}`
 
-**`runtime` object (nested):** `{"active_profile": <string>, "active_audience": <string>, "schema_detail": <string>, "limits": {"max_requests_per_second": <int>, "max_in_flight_requests": <int>, "max_tool_workers": <int>, "max_request_bytes": <int>, "max_output_bytes": <int>}}`
+**`runtime` object (nested):** `{"active_profile": <string>, "active_audience": <string>, "schema_detail": <string>, "limits": {"max_in_flight_requests": <int>, "max_tool_workers": <int>, "max_request_bytes": <int>, "max_output_bytes": <int>}}`
 
 **`generated_data` object (nested):** `{"confusables_generated_rs": <boolean>, "tool_cards_md": <boolean>}`
 

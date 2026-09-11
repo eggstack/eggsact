@@ -94,7 +94,7 @@ membership, profile exposure, or discovery front doors.
 │  NL → tokens → AST   │ │  execution.rs      │ │                    │
 │  → evaluation        │ │  sync_pool.rs      │ │  call_json()       │
 │                      │ │  schema_valid.     │ │  call_json_        │
-│  100+ math functions │ │  compat.rs         │ │    with_budget()   │
+│  ~90 math functions  │ │  compat.rs         │ │    with_budget()   │
 │  30+ unit categories │ │  machine_codes.rs  │ │  call_json_        │
 │  50+ constants       │ │  registry/         │ │    with_execution_  │
 │                      │ │  specs/            │ │    context()        │
@@ -157,7 +157,7 @@ One paragraph per discrete module — what it is, what it owns, how it connects.
 
 ### Calculator core (`src/calc/`)
 
-Natural-language math pipeline: `normalize.rs` turns English ("thirty miles per hour in meters per sec") into math, `evaluator.rs` parses and evaluates it (recursive descent, 8 precedence levels, ~100 functions, big-integer factorial/perm/comb), `units.rs` handles 150+ units with 500+ aliases plus physical constants, and `context.rs` carries per-call mutable state (`EvalContext`: PRNG, memory registers, user variables). Surfaced as the 4 `math` tools and directly via `run()`/`evaluate()`. Deep dive → [calculator.md](calculator.md).
+Natural-language math pipeline: `normalize.rs` turns English ("thirty miles per hour in meters per sec") into math, `evaluator.rs` parses and evaluates it (recursive descent, 8 precedence levels, ~90 functions, big-integer factorial/perm/comb), `units.rs` handles 150+ units with 500+ aliases plus physical constants, and `context.rs` carries per-call mutable state (`EvalContext`: PRNG, memory registers, user variables). Surfaced as the 4 `math` tools and directly via `run()`/`evaluate()`. Deep dive → [calculator.md](calculator.md).
 
 ### Text library (`src/text/`)
 
@@ -223,7 +223,7 @@ Each major component has a dedicated architecture doc. The table below serves as
 
 | Component | Doc | What It Covers | Key Files |
 |-----------|-----|----------------|-----------|
-| **Calculator Core** | [calculator.md](calculator.md) | NL normalization pipeline (32-stage), AST evaluator (recursive descent, 9 precedence levels), 150+ unit definitions (500+ aliases), 55 math constants + 54 physical constants, EvalContext for mutable per-call state, big-integer factorial/perm/comb, sentinel-based return protocol | `src/calc/{normalize,evaluator,units,context}.rs` |
+| **Calculator Core** | [calculator.md](calculator.md) | NL normalization pipeline (32-stage), AST evaluator (recursive descent, 8 precedence levels), 150+ unit definitions (500+ aliases), 55 math constants + 54 physical constants, EvalContext for mutable per-call state, big-integer factorial/perm/comb, sentinel-based return protocol | `src/calc/{normalize,evaluator,units,context}.rs` |
 | **MCP Server** | [mcp-server.md](mcp-server.md) | JSON-RPC 2.0 over stdio, tokio concurrent dispatch via JoinSet, protocol negotiation, request lifecycle, schema validation (JSON Schema subset), bounded line allocation, cancellation model, python-compatible JSON serialization | `src/mcp/{server,protocol,response,compat,machine_codes}.rs` |
 | **Registry & Profiles** | [registry-profiles.md](registry-profiles.md) | `ToolSpec` single source of truth, `ALL_TOOLS_VEC` aggregation, 11 named profiles, `ToolAudience` (Model/Harness/Debug), `ToolExposure` levels, route-critical tools, schema compaction, Levenshtein suggestions, `McpSurface` capability-vs-presentation split | `src/mcp/registry/{types,all_tools,listing}.rs`, `src/mcp/specs/`, `src/mcp/discovery.rs` |
 | **Budget & Concurrency** | [budget-concurrency.md](budget-concurrency.md) | `ToolBudget` (3 tiers), `BudgetContext` with cooperative cancellation, `SyncExecutionPool` (8 workers, 32-slot queue), `HandlerPhase` state machine, runtime metrics, timeout lifecycle, thread-local bridges | `src/mcp/{budget,execution,sync_pool,runtime}.rs` |
@@ -441,8 +441,8 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 | `src/lib.rs` | 84 | Library root, re-exports |
 | `src/calc/mod.rs` | — | Calculator module re-exports |
 | `src/calc/normalize.rs` | ~2270 | Natural language tokenization (tagged transformation pipeline) |
-| `src/calc/evaluator.rs` | ~3800 | AST-based expression evaluator (100+ functions) |
-| `src/calc/units.rs` | ~2310 | Unit definitions (150+), aliases (560+), conversions |
+| `src/calc/evaluator.rs` | ~3800 | AST-based expression evaluator (~90 functions) |
+| `src/calc/units.rs` | ~2310 | Unit definitions (150+), aliases (500+), conversions |
 | `src/calc/context.rs` | 82 | EvalContext (mutable per-call state) |
 | `src/mcp/server.rs` | ~2250 | Protocol orchestration, stdio loop, concurrent dispatch |
 | `src/mcp/protocol.rs` | ~480 | JSON-RPC types |

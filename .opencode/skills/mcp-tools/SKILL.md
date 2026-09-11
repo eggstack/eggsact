@@ -15,12 +15,12 @@ description: Use when adding a new MCP tool, modifying an existing tool, working
 
 3. **Run the invariant test** to verify sync:
    ```bash
-   cargo test tool_registration_tables_are_in_sync -- --nocapture
+   cargo test --locked tool_registration_tables_are_in_sync -- --nocapture
    ```
 
 4. **Regenerate docs** from the registry:
    ```bash
-   cargo run --features dev-tools --bin generate-docs
+   cargo run --locked --features dev-tools --bin generate-docs
    ```
    This updates the profile reference block in `architecture/mcp-server.md` and `generated/tool-cards.md`. (It does not touch README — that file is hand-maintained.) Commit the generated files alongside your ToolSpec changes.
 

@@ -103,7 +103,7 @@ eggsact --version
 ```bash
 eggsact --diagnostics
 # Prints: version, tool count, active profile, budget tiers, env var names (no values),
-# active audience, active schema detail, and runtime limits (max_requests_per_second,
+# active audience, active schema detail, and runtime limits (
 # max_in_flight_requests, max_tool_workers, max_request_bytes, max_output_bytes)
 
 eggsact --diagnostics --format json
@@ -115,12 +115,15 @@ eggsact --diagnostics --format json
 ```bash
 eggsact
 # Output:
-# Usage: eggsact [--mcp | --diagnostics [--format json|text] | expression]
+# Usage: eggsact [--mcp [--mcp-surface direct|discovery] | --diagnostics [--format json|text] | update | integrate <client> [--discovery] | expression]
 #   --mcp          Start MCP server mode
+#   --mcp-surface  Presentation surface: direct (default) or discovery (pinned front doors + tool_search/tool_invoke)
 #   --diagnostics  Print diagnostic information
 #   --format       Output format for --diagnostics (default: text)
 #   -h, --help     Print this help message
 #   -V, --version  Print version information
+#   update         Update from the latest stable crates.io release
+#   integrate      Render MCP setup for a client (or list/detect)
 #   expression     Evaluate math expression
 ```
 

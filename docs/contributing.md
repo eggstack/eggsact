@@ -49,11 +49,12 @@ eggsact/
   src/
     main.rs              # CLI entry point, argument parsing
     lib.rs               # Library root, re-exports run()/evaluate()
-    calc/                # Calculator core (4 modules)
+    calc/                # Calculator core (5 files)
       mod.rs
       evaluator.rs       # AST-based expression evaluation
       normalize.rs       # Natural language normalization
       units.rs           # Unit definitions and conversion
+      context.rs         # Per-evaluation mutable state (EvalContext)
     mcp/                 # MCP server protocol, runtime, registry, validation
       server.rs          # Protocol orchestration, stdio loop, dispatch
       compat.rs          # CompatibilityMode enum
@@ -88,8 +89,7 @@ eggsact/
       list.rs            # List tools (3)
       markdown.rs        # Markdown tools (2)
       patch.rs           # Patch tools (5)
-      config.rs          # Config tools (3)
-      toml.rs            # TOML tools (1)
+      config.rs          # Config tools (3) + TOML shape tool (toml category handler lives here)
       identifier.rs      # Identifier tools (3)
       unicode.rs         # Unicode tools (2)
       version.rs         # Version tools (2)
@@ -103,7 +103,11 @@ eggsact/
       temporal.rs        # Datetime and cron tools (2)
     agent/               # In-process agent API (ToolRegistry, Profile, call_json)
     preflight/           # Typed preflight wrappers
+    services/            # Typed composite services (RepoFacts, PatchAnalysis, SecurityInspection, ...)
+    temporal/            # Fixed-offset datetime/cron cores (leaf, like text/)
     text/                # Text processing library (25 modules)
+    integrate.rs         # Read-only per-client MCP setup renderers
+    update.rs            # Verified binary self-update
   tests/
     lib.rs               # Test entry point
     parity/              # Python/Rust comparison tests
@@ -126,12 +130,12 @@ eggsact/
 
 3. **Run the invariant test** to verify sync:
    ```bash
-   cargo test tool_registration_tables_are_in_sync -- --nocapture
+   cargo test --locked tool_registration_tables_are_in_sync -- --nocapture
    ```
 
 4. **Regenerate docs** from the registry:
    ```bash
-   cargo run --features dev-tools --bin generate-docs
+   cargo run --locked --features dev-tools --bin generate-docs
    ```
    This updates the profile reference block in `architecture/mcp-server.md`
    and `generated/tool-cards.md`. README is hand-maintained and not touched.
@@ -170,7 +174,7 @@ eggsact/
   PascalCase for types.
 - Keep error types consistent with the existing set: `input_too_large`,
   `invalid_arguments`, `evaluation_error`, etc.
-- Prefer `ahash` for hash maps (already a dependency).
+- Prefer `std::collections::HashMap` for hash maps (no external hash-map dependency).
 - Keep the crate standard-library-plus-minimal-deps. Check `Cargo.toml` before
   adding a new dependency.
 
@@ -183,7 +187,7 @@ It requires Python 3.x and `eggcalc` at `../eggcalc` (sibling directory).
 cargo test --test lib parity
 ```
 
-As of 2026-07-08, the Rust parity suite has known gaps documented in `docs/parity.md`
+As of 2026-09-11, the Rust parity suite has known gaps documented in `docs/parity.md`
 (`Verification status` and `Known parity gaps` sections). The 86-tool Rust superset
 passes for matching tools; the 37 remaining failures are categorized as accepted
 behavioral differences (shell tokenization, prompt input inspect, unicode policy check,
@@ -203,12 +207,11 @@ and profiles.
 
 ## Supply-Chain Auditing
 
-The project uses `cargo-deny` (configured in `deny.toml`) and `cargo-audit` for
+The project uses `cargo-deny` (configured in `deny.toml`) for
 dependency hygiene:
 
 ```sh
-cargo audit              # check for known vulnerabilities
-cargo deny check         # license, advisory, ban, and source checks
+cargo deny check advisories bans licenses sources  # license, advisory, ban, and source checks
 ```
 
 Allowed licenses: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, Unlicense,

@@ -386,7 +386,8 @@ let rt = tokio::runtime::Builder::new_multi_thread()
 rt.block_on(eggsact::mcp::server::main());
 ```
 
-The server supports MCP protocol versions `2025-11-25` (preferred) and `2024-11-05` (legacy).
+The server speaks MCP `2026-07-28` (preferred, modern stateless) with legacy
+`2025-11-25` / `2024-11-05` support on era-pinned connections.
 
 **Lifecycle**: Clients must complete the initialization handshake before calling tools:
 

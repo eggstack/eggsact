@@ -17,7 +17,7 @@ description: Use when preparing or performing a release of eggsact, running the 
 2. Regenerate confusables data from the pinned Unicode 17.0.0 source:
    `python3 scripts/generate_confusables.py` (this is the only release-step
    network access; CI and the release check use checked-in generated data)
-3. Regenerate docs: `cargo run --features dev-tools --bin generate-docs`
+3. Regenerate docs: `cargo run --locked --features dev-tools --bin generate-docs`
 4. Run the local release check: `scripts/release-check.sh`
 5. Optional parity gate: `cargo test --test lib parity`
 6. Publish: `cargo publish --locked`
@@ -57,7 +57,7 @@ See `docs/release.md` for the canonical release checklist and `docs/verification
 - [ ] Version bumped in `Cargo.toml`
 - [ ] CHANGELOG.md updated
 - [ ] Confusables data regenerated: `python3 scripts/generate_confusables.py`
-- [ ] Generated docs current: `cargo run --features dev-tools --bin generate-docs -- --check`
+- [ ] Generated docs current: `cargo run --locked --features dev-tools --bin generate-docs -- --check`
 - [ ] `scripts/release-check.sh` passes from clean worktree
 - [ ] Target/asset contract and Unix installer syntax checks pass
 

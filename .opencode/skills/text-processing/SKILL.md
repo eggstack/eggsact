@@ -54,7 +54,7 @@ so ordinary CI does not need network access.
 4. Add MCP tool wrapper in `src/tools/<category>.rs`
 5. Add a `ToolSpec` entry in `src/mcp/specs/<category>.rs` (single source of truth for registration)
 6. Add tests in `tests/text/test_<module>.rs`
-7. Run `cargo run --features dev-tools --bin generate-docs` to regenerate docs
+7. Run `cargo run --locked --features dev-tools --bin generate-docs` to regenerate docs
 8. Run `cargo test` to verify
 
 ## Reusable Library Pattern
@@ -65,7 +65,7 @@ This keeps logic testable without JSON-RPC overhead. Never call one `crate::tool
 
 ## Key Dependencies
 
-- `ahash` for hash maps (faster than std HashMap)
+- `std::collections::HashMap` for hash maps (no external hash-map dependency)
 - `serde` for JSON serialization
 - `unicode-normalization`, `unicode-segmentation` for Unicode
 - `fancy-regex` for regex with lookahead

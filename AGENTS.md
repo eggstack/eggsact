@@ -38,7 +38,7 @@ Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_fai
 ## Adding / changing a tool
 
 - One `ToolSpec` in `src/mcp/specs/<category>.rs` is the single source of truth. Test `tool_registration_tables_are_in_sync` catches drift.
-- After any registry/profile/exposure change: `cargo run --features dev-tools --bin generate-docs` (CI checks with `-- --check`).
+- After any registry/profile/exposure change: `cargo run --locked --features dev-tools --bin generate-docs` (CI checks with `-- --check`).
 - Never hand-edit: `src/text/confusables_generated.rs` (from `scripts/generate_confusables.py`, pinned Unicode 17.0.0 + SHA), `generated/tool-cards.md`, profile block in `architecture/mcp-server.md`, registry block in `architecture/overview.md`.
 - New Rust code: `calc`/root → typed `text` → `agent::ToolRegistry` → typed `preflight` → MCP server. Raw `tools::*`, `services::*` internals, and `mcp` sub-modules beyond `server` are `pub` for 1.x compat, not the import surface.
 

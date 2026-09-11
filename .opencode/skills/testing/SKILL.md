@@ -61,7 +61,7 @@ tests/
     test_units.rs            # unit conversion tests
     test_bug_regression.rs   # regression tests for bugs
   mcp/
-    mod.rs                   # re-exports 30 modules
+    mod.rs                   # re-exports 32 test modules + support
     test_protocol.rs         # JSON-RPC protocol tests (legacy lifecycle)
     test_modern_protocol.rs  # 2026-07-28 dual-era tests: discover, modern list/call, _meta validation, -32022, cache hints, deterministic order, structuredContent, cross-era goldens, annotation invariants
     test_mcp_tools.rs        # tool behavior tests
@@ -109,7 +109,7 @@ tests/
     mod.rs                   # re-exports 24 modules
     test_<module>.rs         # one file per text module (24 files)
   property/
-    mod.rs                   # re-exports 10 property test modules
+    mod.rs                   # re-exports 11 property test modules
     test_calculator_properties.rs
     test_config_properties.rs
     test_diff_properties.rs
@@ -178,7 +178,7 @@ Existing truncation tests live in `src/mcp/response.rs` (`truncate_*` tests) and
 `tests/mcp/test_golden_fixtures.rs` verifies tool outputs match expected JSON.
 Update fixtures when tool output intentionally changes:
 ```bash
-UPDATE_GOLDEN=1 cargo test test_golden
+UPDATE_GOLDEN=1 cargo test --locked test_golden
 ```
 
 ## Context Isolation Testing
@@ -206,7 +206,7 @@ Verify that:
 
 ## Property Tests
 
-`tests/property/` contains 59 property-based tests across 11 modules. These verify algebraic invariants (round-trip, idempotence, determinism, symmetry, span validity) using a deterministic xorshift64 PRNG for input generation — no external property-test framework required. The utility expansion adds deterministic network, codec/radix, datetime, and cron invariants in `test_utility_properties.rs`.
+`tests/property/` contains 61 property-based tests across 11 modules. These verify algebraic invariants (round-trip, idempotence, determinism, symmetry, span validity) using a deterministic xorshift64 PRNG for input generation — no external property-test framework required. The utility expansion adds deterministic network, codec/radix, datetime, and cron invariants in `test_utility_properties.rs`.
 
 ```bash
 cargo test --locked --test lib property              # all property tests

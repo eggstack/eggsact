@@ -1,6 +1,6 @@
 # Testing
 
-The eggsact test suite spans 70+ test files across 5 integration suites, plus unit tests in `src/` and doc tests. All integration tests compile into a single test crate via `tests/lib.rs`.
+The eggsact test suite spans 90 Rust files across 5 integration suites, plus unit tests in `src/` and doc tests. All integration tests compile into a single test crate via `tests/lib.rs`.
 
 See also: [Calculator](calculator.md), [MCP Server](mcp-server.md), [Agent API](agent-api.md), [Preflight](preflight.md)
 

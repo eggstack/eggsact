@@ -145,7 +145,7 @@ They do not affect client-facing behavior or interchangeability.
 Both implementations identify themselves identically to MCP clients:
 
 - **Name:** `eggsact`
-- **Version:** `1.2.0` for the final release candidate
+- **Version:** the crate version from `Cargo.toml` (reported via `env!("CARGO_PKG_VERSION")`)
 
 This ensures clients see the same server regardless of which backend is running.
 
@@ -284,8 +284,12 @@ severity/details differ between Rust and Python for `unicode_policy_check`.
 `edit_preflight` missing `match_codepoint_length` field in subtool output,
 `math_eval` power expression output, `version_compare` phase4 case output.
 
-**C5 — Tools/list ordering and tool-set gap (8 failures).** Rust has 80
-tools; Python has 67. Thirteen extra Rust tools (`runtime_diagnostics`,
+**C5 — Tools/list ordering and tool-set gap (8 failures).** Rust ships 86
+tools in the full profile; Python defines 67. Nineteen extra Rust tools (the
+thirteen below plus the six deterministic utilities `cidr_inspect`,
+`ip_inspect`, `codec_convert`, `radix_convert`, `datetime_convert`,
+`cron_inspect` added after the original 80-tool registration order:
+`runtime_diagnostics`,
 `profile_inspect`, `tool_availability_explain`, `repo_tree_summarize`,
 `diff_risk_classify`, `path_batch_scope_check`, `code_block_map`,
 `import_export_inspect`, `symbol_name_diff`, `lockfile_inspect`,
@@ -310,18 +314,20 @@ calls a HarnessOnly tool without proper audience setup.
 | C2 — Prompt input inspect | 4 | Defer: Rust has richer findings | No |
 | C3 — Unicode policy check | 3 | Defer: Rust has different finding structure | No |
 | C4 — Tool output drift | 11 | Defer: cosmetic or intentional Rust differences | No |
-| C5 — Tools/list ordering | 8 | Defer: Rust superset (80 vs 67 tools) | No |
+| C5 — Tools/list ordering | 8 | Defer: Rust superset (86 vs 67 tools) | No |
 | C6 — Error handling | 2 | Defer: needs Harness audience in test | No |
 | **Total** | **60** | **383 passed, 37 failed, 5 ignored** | **None** |
 
-### Known tool-set gap: 80 vs 67 tools
+### Known tool-set gap: 86 vs 67 tools
 
 The Rust `full` profile ships 86 tools; the Python reference defines 67.
-Thirteen extra Rust tools not in Python: `runtime_diagnostics`,
+Nineteen extra Rust tools not in Python: `runtime_diagnostics`,
 `profile_inspect`, `tool_availability_explain`, `repo_tree_summarize`,
 `diff_risk_classify`, `path_batch_scope_check`, `code_block_map`,
 `import_export_inspect`, `symbol_name_diff`, `lockfile_inspect`,
-`patch_contract_check`, `test_command_suggest`, `repo_language_detect`.
+`patch_contract_check`, `test_command_suggest`, `repo_language_detect`,
+plus the six deterministic utilities `cidr_inspect`, `ip_inspect`,
+`codec_convert`, `radix_convert`, `datetime_convert`, `cron_inspect`.
 
 The three tools previously missing from Rust (`config_file_inspect`,
 `dependency_edit_preflight`, `repo_manifest_inspect`) were added in phase 09.

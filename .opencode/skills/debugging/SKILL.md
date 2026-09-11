@@ -7,7 +7,7 @@ description: Use when diagnosing issues in the eggsact codebase, troubleshooting
 
 ### Tool Registration Drift
 
-If `tool_registration_tables_are_in_sync` fails, you've modified the ToolSpec registry (`src/mcp/specs/<category>.rs`) without running `cargo run --features dev-tools --bin generate-docs`. See `.opencode/skills/mcp-tools/SKILL.md` for the complete list.
+If `tool_registration_tables_are_in_sync` fails, you've modified the ToolSpec registry (`src/mcp/specs/<category>.rs`) without running `cargo run --locked --features dev-tools --bin generate-docs`. See `.opencode/skills/mcp-tools/SKILL.md` for the complete list.
 
 ### Parity Test Failures
 
@@ -25,7 +25,7 @@ investigating a new parity failure:
 
 ```bash
 cargo fmt --all -- --check           # check formatting first (CI-equivalent)
-cargo clippy --all-targets --all-features -- -D warnings  # check lint
+cargo clippy --locked --all-targets --all-features -- -D warnings  # check lint
 ```
 
 ### Confusables Data Stale
@@ -109,3 +109,4 @@ test dependency.
 | `EGGCALC_MCP_PROFILE` | Select MCP tool profile |
 | `EGGCALC_MCP_AUDIENCE` | Select MCP audience (Model, Harness, Debug) |
 | `EGGCALC_MCP_SCHEMA_DETAIL` | Control schema detail level |
+| `EGGSACT_MCP_SURFACE` | Presentation surface (`direct`/`discovery`; CLI `--mcp-surface` overrides) |

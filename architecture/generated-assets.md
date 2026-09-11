@@ -208,7 +208,7 @@ There are **37 accepted parity failures**. These are accepted behavioral differe
 | C2 | 4 | Prompt input inspect output shape differences |
 | C3 | 3 | Unicode policy check finding structure differences |
 | C4 | 11 | Miscellaneous tool output drift (metadata, error envelopes, cosmetic) |
-| C5 | 8 | `tools/list` ordering and Rust superset (80 vs 67 tools) |
+| C5 | 8 | `tools/list` ordering and Rust superset (86 vs 67 tools) |
 | C6 | 2 | Raw MCP response comparison — needs Harness audience in test |
 
 These accumulated across phases 06–09. An earlier Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE` env var support.
