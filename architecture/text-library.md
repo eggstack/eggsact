@@ -15,7 +15,7 @@ The `src/text/` module provides **25 text processing modules** plus auto-generat
 | `inspect_prompt` | `inspect_prompt.rs` | `prompt_input_inspect` | `prompt_input_inspect()` |
 | `line_range` | `line_range.rs` | `line_range_extract`, `line_range_compare` | `line_range_extract()`, `line_range_compare()` |
 | `markdown` | `markdown.rs` | `markdown_structure`, `code_fence_extract` | `markdown_structure()`, `code_fence_extract()` |
-| `measure` | `measure.rs` | `text_measure` | `text_length()`, `word_count()`, `line_count()`, `char_frequency()`, `word_metrics()`, `char_category_metrics()` |
+| `measure` | `measure.rs` | `text_measure` | `text_length()`, `word_count()`, `line_count()`, `char_frequency()` (via `text::` root) + `measure::word_metrics()`, `measure::char_category_metrics()` (via `text::measure::` path only) |
 | `patch` | `patch.rs` | `patch_apply_check`, `patch_summary` | `patch_apply_check()`, `patch_summary()` |
 | `path` | `path.rs` | `path_analyze`, `path_compare`, `path_scope_check` | `path_analyze()`, `path_compare()`, `path_scope_check()` |
 | `position` | `position.rs` | `text_position`, `text_window` | `text_position()`, `text_window()` |

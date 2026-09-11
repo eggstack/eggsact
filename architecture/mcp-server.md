@@ -16,6 +16,8 @@ The `src/mcp/` module implements a JSON-RPC 2.0 server over stdio for AI coding 
 | `response.rs` | `ToolResponse` struct, `sanitize_error`, response builders, `CallMetrics` |
 | `schema_validation.rs` | MCP argument validation against tool input schemas |
 | `compat.rs` | `CompatibilityMode` enum (EggcalcPython vs StrictNative) |
+| `discovery.rs` | Progressive-discovery surface: `McpSurface`, pinned front doors, `tool_search`/`tool_invoke` facades |
+| `discovery_eval.rs` | Byte-level direct-vs-discovery catalog metrics for regression tests |
 | `machine_codes.rs` | Machine-readable response codes, severity/disposition/verdict constants |
 | `budget.rs` | Per-tool budget limits, `BudgetTier` enum, composite sub-budgets, `BudgetContext` with cooperative helpers |
 | `schemas/` | JSON-schema builders per tool category (math, text, json, regex, etc.) |

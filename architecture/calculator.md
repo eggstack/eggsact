@@ -6,10 +6,10 @@ The `src/calc/` module is the mathematical brain of eggsact. It accepts natural 
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `context.rs` | 77 | Per-evaluation mutable state (`EvalContext`) for PRNG, memory registers, user variables, and function permissions |
+| `context.rs` | 82 | Per-evaluation mutable state (`EvalContext`) for PRNG, memory registers, user variables, and function permissions |
 | `normalize.rs` | ~2270 | Natural language pipeline: NL→math tokenization, 33-step `normalize()`, unit preprocessing, `split_at_operators()`, `run()`/`run_with_context()` orchestration |
-| `evaluator.rs` | ~3790 | AST-based expression evaluator: tokenizer, recursive-descent parser, ~100 functions, big-integer arithmetic, helper algorithms |
-| `units.rs` | ~2350 | Unit system: definitions, 500+ aliases, conversion factors, physical constants metadata, temperature conversion algorithm |
+| `evaluator.rs` | ~3800 | AST-based expression evaluator: tokenizer, recursive-descent parser, ~100 functions, big-integer arithmetic, helper algorithms |
+| `units.rs` | ~2310 | Unit system: definitions, 500+ aliases, conversion factors, physical constants metadata, temperature conversion algorithm |
 
 ```
                  ┌──────────────────────────────────────────────┐
@@ -714,12 +714,12 @@ fn is_prime(n: i64) -> bool {
 | `MAX_EXPONENT` | 10,000.0 | Maximum `**` exponent magnitude |
 | `MAX_RESULT_VALUE` | 1e308 | Maximum result magnitude (near f64 limit) |
 | `MAX_SHIFT_COUNT` | 50,000 | Maximum bit shift count for `<<`/`>>` |
-| `MAX_INPUT_LENGTH` | 10,000 | Maximum input expression length in characters |
+| `MAX_INPUT_length` | 100,000 | Maximum input expression length in bytes |
 | `MAX_FACTORIAL` | 1,000 | Maximum n for factorial (big-integer) |
 | `MAX_PRIME` | 10¹² | Maximum n for isprime/nextprime/prevprime |
 | `MAX_PERM_COMB` | 10,000 | Maximum n or r for perm/comb |
 | `MAX_USER_VARIABLES` | 1,000 | Maximum user variables (evicts oldest on overflow) |
-| `MAX_TEXT_LENGTH` (normalize) | 10,000 | Maximum normalized input length |
+| `MAX_TEXT_LENGTH` (normalize) | 100,000 | Maximum normalized input length in bytes |
 
 ### MCP-Safe Mode
 

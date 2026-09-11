@@ -130,9 +130,8 @@ membership, profile exposure, or discovery front doors.
 │  No ToolResponse, registry, profile/audience, or schema deps.     │
 │  Cancellation via lightweight should_stop view.                   │
 └─────────────────────────────┬───────────────────────────────────┘
-                              │
-                              ▼
-                              ▼
+                               │
+                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     text/ — Text Processing Library               │
 │                                                                   │
@@ -144,8 +143,77 @@ membership, profile exposure, or discovery front doors.
 │  synthesis, cargo, version                                       │
 │                                                                   │
 │  confusables_generated.rs — auto-generated Unicode data           │
+│                                                                     │
+│  src/temporal/ (leaf, like text/) feeds the temporal tools:         │
+│  fixed-offset datetime helpers + bounded cron parser/search         │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Discrete Modules at a Glance
+
+One paragraph per discrete module — what it is, what it owns, how it connects. Each paragraph ends with its deep-dive doc.
+
+### Calculator core (`src/calc/`)
+
+Natural-language math pipeline: `normalize.rs` turns English ("thirty miles per hour in meters per sec") into math, `evaluator.rs` parses and evaluates it (recursive descent, 8 precedence levels, ~100 functions, big-integer factorial/perm/comb), `units.rs` handles 150+ units with 500+ aliases plus physical constants, and `context.rs` carries per-call mutable state (`EvalContext`: PRNG, memory registers, user variables). Surfaced as the 4 `math` tools and directly via `run()`/`evaluate()`. Deep dive → [calculator.md](calculator.md).
+
+### Text library (`src/text/`)
+
+Leaf deterministic cores — 25 modules (measure, diff, validate, transform, position, regex engine/safety, shell tokenizer, path, identifier, markdown, patch, Unicode policy/tools, confusables, prompt inspection, …) plus auto-generated `confusables_generated.rs` (Unicode 17.0.0, never hand-edit). Pure functions with no dependency on agent/mcp/tools; the recommended Rust import surface below `calc`. Deep dive → [text-library.md](text-library.md).
+
+### Temporal core (`src/temporal/`, `pub(crate)`)
+
+Explicit-inputs-only time utilities with no clock, TZ database, env, or network: fixed-offset RFC 3339 datetime conversion (`mod.rs`) and Vixie/Cronie cron parsing with bounded next-match search (`cron.rs`). Surfaced exclusively through the 2 `temporal` tools. Deep dive → [tools.md](tools.md) (temporal section).
+
+### Tool adapters (`src/tools/`)
+
+JSON boundary for all 86 tools: each handler parses/validates input, calls typed `text/` cores, `services/`, or `calc/`, and builds the wire `ToolResponse` once. Handlers never call sibling handlers. Shared limits and input helpers live in `helpers.rs`. Deep dive → [tools.md](tools.md).
+
+### Typed services (`src/services/`)
+
+Composite layer between leaf cores and JSON adapters: `FingerprintFacts`, `NewlineFacts`, `SecurityInspection`, `RepoFacts` (canonical ecosystem/path/language facts), and `PatchAnalysis` (single-parse neutral diff facts). No `ToolResponse`, registry, profile, or schema dependencies; cancellation via a lightweight `should_stop` view. Deep dive → [tools.md](tools.md) (services sections).
+
+### MCP server (`src/mcp/` transport)
+
+JSON-RPC 2.0 over stdio with dual-era protocol pinning (legacy vs `2026-07-28`), concurrent dispatch via `JoinSet` with an `mpsc` writer (correlate by `id`, not order), schema validation against a strict JSON Schema subset, and Python-compatible JSON serialization. Deep dive → [mcp-server.md](mcp-server.md).
+
+### Registry, profiles & discovery (`src/mcp/registry/`, `specs/`, `schemas/`, `discovery.rs`)
+
+One `ToolSpec` per tool is the single source of truth (23 spec files + 23 schema files, aggregated into `ALL_TOOLS_VEC`); 11 named profiles plus `ToolAudience`/`ToolExposure` control `tools/list` and dispatch; the `Discovery` surface (`tool_search`/`tool_invoke` facades over pinned front doors) is presentation-only and enforces the same rules. Deep dive → [registry-profiles.md](registry-profiles.md) (and [mcp-server.md](mcp-server.md) for the discovery surface).
+
+### Budget & concurrency (`src/mcp/budget.rs`, `execution.rs`, `sync_pool.rs`)
+
+Three budget tiers with cooperative cancellation (`BudgetContext::should_stop()`), a 5-phase handler lifecycle executed on blocking threads with timeouts, and a bounded sync worker pool (8 workers, 32-slot queue) for the in-process API. Deep dive → [budget-concurrency.md](budget-concurrency.md).
+
+### Machine codes (`src/mcp/machine_codes.rs`)
+
+Machine-readable response-code vocabulary (upper-snake-case constants plus severity/disposition/verdict helpers) so harnesses can route on `machine_code`/`findings` without parsing prose. Deep dive → [machine-codes.md](machine-codes.md).
+
+### Compatibility (`src/mcp/compat.rs`)
+
+Two validation vocabularies: `EggcalcPython` (Python-parity error messages, the MCP server default) vs `StrictNative` (strict JSON Schema wording, the in-process default). Deep dive → [compatibility.md](compatibility.md).
+
+### Agent API (`src/agent/`)
+
+Synchronous in-process `ToolRegistry`: profile/audience/compat dispatch with 4 call levels (`call_json` → `call_json_with_execution_context`), `ExecutionContext` builder, and `prepare_tool_call()` as the shared lookup/validate core. No IPC, no stdio. Deep dive → [agent-api.md](agent-api.md).
+
+### Preflight wrappers (`src/preflight/`)
+
+Six typed workflow wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`, `DependencyPreflight`) that dispatch through `ToolRegistry` and parse responses into verdict enums with fail-closed `PreflightError`s. Highest layer — depends on `agent/`. Deep dive → [preflight.md](preflight.md).
+
+### CLI & binaries (`src/main.rs`, `integrate.rs`, `update.rs`, `src/bin/generate_docs.rs`)
+
+`eggsact` CLI modes (expression eval, `--mcp`, `--diagnostics`, `update`, `integrate`); `integrate`/`update` are verified/read-only w.r.t. the host (render setup text, never install daemons or edit client config); `generate-docs` regenerates the registry-facts/profile/tool-card blocks. Deep dive → [cli-binaries.md](cli-binaries.md) (and [generated-assets.md](generated-assets.md) for the generator).
+
+### Testing & generated assets
+
+Five test suites (`calc`, `mcp`, `text`, `parity`, `property`) plus doc tests, with parity exclusions tracked in fixtures and CI freshness checks on generated docs. Deep dives → [testing.md](testing.md), [generated-assets.md](generated-assets.md).
+
+### Coding-agent integration
+
+Transport choice (stdio vs in-process), profile/audience selection, budget tuning, and per-client setup examples. Deep dive → [coding-agent-integration.md](coding-agent-integration.md).
 
 ---
 
@@ -162,6 +230,8 @@ Each major component has a dedicated architecture doc. The table below serves as
 | **Machine Codes** | [machine-codes.md](machine-codes.md) | ~145 machine-readable response code constants (UPPER_SNAKE_CASE), severity/disposition/verdict constants, `finding()` helper functions for constructing structured findings, route-critical tool contract | `src/mcp/machine_codes.rs` |
 | **Text Library** | [text-library.md](text-library.md) | 25 text processing modules: primitives (grapheme-aware), diff/similarity (Levenshtein, LCS), validation (JSON/brackets/regex/TOML), transforms (case/normalize/escape), shell tokenizer, regex engine auto-selection (rust-regex vs fancy-regex), Unicode policy engine, confusables detection, prompt injection detection, composite tool orchestration | `src/text/*.rs` (25 files) |
 | **Typed Services** | [tools.md](tools.md) | Typed composite layer (`FingerprintFacts`, `NewlineFacts`, `SecurityInspection`, `RepoFacts`, `PatchAnalysis`) over `text/` cores; `tools/*` adapters call services, never sibling handlers | `src/services/{mod,fingerprint,newline,security,repo,patch_analysis}.rs` |
+| **Temporal Core** | [tools.md](tools.md) | `pub(crate)` fixed-offset datetime helpers + bounded cron parser/search (no clock/TZ/env/net); surfaced via the 2 `temporal` tools | `src/temporal/{mod,cron}.rs` |
+| **Discovery Surface** | [mcp-server.md](mcp-server.md) | Presentation-only `Discovery` surface (`McpSurface`, pinned front doors, `tool_search`/`tool_invoke` facades); search/invoke enforce the same profile/audience rules | `src/mcp/{discovery,discovery_eval}.rs` |
 | **Compatibility** | [compatibility.md](compatibility.md) | `EggcalcPython` vs `StrictNative` validation modes — Python-parity error messages vs strict JSON Schema enforcement, how compat mode propagates through MCP server and agent API | `src/mcp/compat.rs` |
 | **Agent API** | [agent-api.md](agent-api.md) | In-process `ToolRegistry` (synchronous dispatch), 11 named `Profile` variants + Custom, `ToolAudience` (Model/Harness/Debug), `ExecutionContext` with builder pattern, 4 dispatch levels (`call_json` → `call_json_with_execution_context`), tool listing methods, `prepare_tool_call()` shared core | `src/agent/mod.rs` |
 | **Preflight Wrappers** | [preflight.md](preflight.md) | 6 typed wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`, `DependencyPreflight`), `PreflightError` taxonomy (ToolCall/ToolRejected/ContractViolation), typed verdict enums with `Other(String)` forward-compat, strict vs permissive `Finding` parsing, `RecommendedNextTool` | `src/preflight/mod.rs` |
@@ -367,29 +437,31 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/main.rs` | 253 | CLI entry point, arg parsing, dispatch |
-| `src/lib.rs` | 82 | Library root, re-exports |
+| `src/main.rs` | 518 | CLI entry point, arg parsing, dispatch |
+| `src/lib.rs` | 84 | Library root, re-exports |
 | `src/calc/mod.rs` | — | Calculator module re-exports |
 | `src/calc/normalize.rs` | ~2270 | Natural language tokenization (tagged transformation pipeline) |
 | `src/calc/evaluator.rs` | ~3800 | AST-based expression evaluator (100+ functions) |
-| `src/calc/units.rs` | ~2360 | Unit definitions (150+), aliases (560+), conversions |
-| `src/calc/context.rs` | 77 | EvalContext (mutable per-call state) |
-| `src/mcp/server.rs` | ~1730 | Protocol orchestration, stdio loop, concurrent dispatch |
-| `src/mcp/protocol.rs` | ~350 | JSON-RPC types |
+| `src/calc/units.rs` | ~2310 | Unit definitions (150+), aliases (560+), conversions |
+| `src/calc/context.rs` | 82 | EvalContext (mutable per-call state) |
+| `src/mcp/server.rs` | ~2250 | Protocol orchestration, stdio loop, concurrent dispatch |
+| `src/mcp/protocol.rs` | ~480 | JSON-RPC types |
 | `src/mcp/response.rs` | — | ToolResponse, python_json_dumps, finding helpers, truncation |
-| `src/mcp/runtime.rs` | ~750 | Rate limiter, constants, profile/audience management, metrics |
+| `src/mcp/runtime.rs` | ~1320 | Rate limiter, constants, profile/audience management, metrics |
 | `src/mcp/budget.rs` | ~970 | ToolBudget (3 tiers), BudgetContext, thread-local bridges |
-| `src/mcp/execution.rs` | ~2260 | HandlerPhase state machine, execute_tool_handler, test hooks (`#[cfg(test)]`) |
+| `src/mcp/execution.rs` | ~2350 | HandlerPhase state machine, execute_tool_handler, test hooks (`#[cfg(test)]`) |
 | `src/mcp/sync_pool.rs` | ~1260 | SyncExecutionPool (bounded worker pool) |
 | `src/mcp/schema_validation.rs` | — | Argument validation against tool schemas |
-| `src/mcp/compat.rs` | ~300 | CompatibilityMode (EggcalcPython vs StrictNative) |
+| `src/mcp/compat.rs` | — | CompatibilityMode (EggcalcPython vs StrictNative) |
+| `src/mcp/discovery.rs` | — | McpSurface, pinned front doors, tool_search/tool_invoke facades |
+| `src/mcp/discovery_eval.rs` | — | Direct-vs-discovery catalog byte metrics |
 | `src/mcp/machine_codes.rs` | ~600 | ~145 machine-readable response code constants |
-| `src/mcp/registry/types.rs` | ~100 | ToolDefinition, ToolSpec, enums |
+| `src/mcp/registry/types.rs` | ~220 | ToolDefinition, ToolSpec, enums |
 | `src/mcp/registry/all_tools.rs` | ~60 | ALL_TOOLS aggregation, PROFILE_NAMES |
 | `src/mcp/registry/listing.rs` | ~530 | Filtering, audience, schema compaction, suggestions |
 | `src/mcp/specs/*.rs` | — | ToolSpec declarations (23 files, one per category) |
 | `src/mcp/schemas/*.rs` | — | JSON-schema builders (23 files, one per category) |
-| `src/tools/helpers.rs` | ~1710 | Shared constants, utilities |
+| `src/tools/helpers.rs` | ~1340 | Shared constants, utilities |
 | `src/tools/*.rs` | — | Tool implementations (23 files; the toml handler lives in `config.rs`). JSON adapters over `text/` + `services/` |
 | `src/services/mod.rs` | — | Typed service layer re-exports + layering contract |
 | `src/services/fingerprint.rs` | — | `FingerprintFacts` over `text_fingerprint` (raw/raw) |
@@ -399,18 +471,20 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 | `src/services/patch_analysis.rs` | — | `PatchAnalysis` single-parse neutral diff facts |
 | `src/text/*.rs` | — | Text processing library (25 modules + generated `confusables_generated.rs` data file) |
 | `src/temporal/*.rs` | — | Fixed-offset datetime helpers and bounded cron parser/search |
-| `src/agent/mod.rs` | ~1810 | ToolRegistry, Profile, ExecutionContext |
-| `src/preflight/mod.rs` | ~3150 | Typed preflight wrappers |
+| `src/agent/mod.rs` | ~1820 | ToolRegistry, Profile, ExecutionContext |
+| `src/preflight/mod.rs` | ~3540 | Typed preflight wrappers |
+| `src/integrate.rs` | ~260 | Read-only per-client MCP setup renderers |
+| `src/update.rs` | ~570 | Binary-first self-update from crates.io/GitHub releases |
 
 ### Tests
 
 | Directory | Files | What They Cover |
 |-----------|-------|----------------|
 | `tests/calc/` | 4 | Calculator unit tests (normalize, evaluator, units, regression) |
-| `tests/mcp/` | 28 | MCP protocol, tool tests, route contracts, concurrency, hardening |
+| `tests/mcp/` | 32 | MCP protocol, tool tests, route contracts, concurrency, hardening |
 | `tests/text/` | 24 | Text processing module tests (+ regression; regex engine tested via tools) |
 | `tests/parity/` | 11 | Python/Rust parity tests (requires `eggcalc` at `../eggcalc`) |
-| `tests/property/` | 10 | Property-based tests (55 tests: round-trip, idempotence, determinism, symmetry) |
+| `tests/property/` | 11 | Property-based tests (55 tests: round-trip, idempotence, determinism, symmetry) |
 | `tests/test_context_isolation.rs` | 1 | Context isolation integration test |
 
 ### Generated, Config & Data
@@ -422,7 +496,7 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 | `scripts/release-check.sh` | Canonical local release gate |
 | `data/confusables.rs` | Confusables data used by the generator script |
 | `deny.toml` | cargo-deny license/advisory checks |
-| `Cargo.toml` | Package manifest (18 dependencies) |
+| `Cargo.toml` | Package manifest (19 dependencies) |
 
 ---
 
@@ -430,11 +504,11 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 
 | Category | Crates |
 |----------|--------|
-| Core | `serde`, `serde_json` (preserve_order), `tokio` (rt, macros, io-std, io-util, sync, time) |
+| Core | `serde`, `serde_json` (preserve_order), `tokio` (rt, macros, io-std, io-util, sync, time), `base64`, `time` |
 | Regex | `fancy-regex`, `regex` |
 | Unicode | `unicode-normalization`, `unicode-segmentation`, `unicode_names2`, `unicode-general-category`, `caseless` |
 | Crypto | `sha2`, `sha1`, `md5`, `crc32fast` |
-| Data | `ahash`, `urlencoding`, `toml`, `toml_edit` |
+| Data | `urlencoding`, `toml`, `toml_edit` |
 
 ---
 
@@ -462,26 +536,18 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 | `EGGCALC_MCP_PROFILE` | Active profile for MCP server (set at startup) |
 | `EGGCALC_MCP_AUDIENCE` | Active audience for MCP server (`Model`/`Harness`/`Debug`) |
 | `EGGCALC_MCP_SCHEMA_DETAIL` | Schema compaction control (`compact`, `normal`, `full`; default: `full`) |
+| `EGGSACT_MCP_SURFACE` | Presentation surface (`direct`/`discovery`; CLI `--mcp-surface` overrides) |
 
 ---
 
 ## Build & Test
 
 ```bash
-cargo build                          # debug build
-cargo build --release                # release build
-cargo test --locked                  # all tests
-cargo test --locked --lib            # unit tests only
-cargo test --locked --test lib mcp   # MCP tests only
-cargo test --locked --test lib parity # parity tests only
-cargo test --locked --test lib text  # text tests only
-cargo test --locked --doc            # doc tests
-cargo fmt --all -- --check           # format check
-cargo clippy --locked --all-targets --all-features  # lint
-cargo deny check advisories bans licenses sources  # supply-chain audit
-cargo run --features dev-tools --bin generate-docs        # regenerate docs
-cargo run --features dev-tools --bin generate-docs -- --check  # verify docs are current
-scripts/release-check.sh               # full local release gate
+cargo fmt --all -- --check
+cargo run --locked --features dev-tools --bin generate-docs -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features -- --skip parity --test-threads=4
+cargo test --locked --doc
 ```
 
 ---
