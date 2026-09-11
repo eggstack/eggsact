@@ -216,7 +216,7 @@ The modern `server/discover` result advertises the same capabilities plus:
   "instructions": "eggsact is a local deterministic utility server. ...",
   "ttlMs": 3600000,
   "cacheScope": "public",
-  "_meta": { "io.modelcontextprotocol/serverInfo": { "name": "eggsact", "version": "1.2.4" } }
+  "_meta": { "io.modelcontextprotocol/serverInfo": { "name": "eggsact", "version": "1.2.5" } }
 }
 ```
 

@@ -6,7 +6,7 @@
 
 ```toml
 [dependencies]
-eggsact = "1.2.4"
+eggsact = "1.2.5"
 ```
 
 The crate exposes six public modules:

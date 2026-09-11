@@ -28,7 +28,9 @@ tool substrate, not a reason to accumulate unrelated agent features.
 
 ## Current release state
 
-Latest published version: **1.2.4**. The deterministic utility, cron, and
+Latest published version: **1.2.5** (binaries for all five qualified targets;
+see the [v1.2.5 release](https://github.com/eggstack/eggsact/releases/tag/v1.2.5)).
+The deterministic utility, cron, and
 binary-distribution corrective lines are closed. The original 80-tool
 registration order remains an exact prefix, with the six later utilities in
 the full profile only.

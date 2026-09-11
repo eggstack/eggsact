@@ -23,7 +23,7 @@ Legacy clients (`2025-11-25`, `2024-11-05`) use `initialize` → `notifications/
 Successful modern `tools/call` responses add schema-conforming `structuredContent` (= `ToolResponse.result`, which the tool `outputSchema` already describes) plus `resultType: complete` and `_meta.io.modelcontextprotocol/serverInfo`, while retaining the text JSON fallback:
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","content":[{"type":"text","text":"{\"ok\": true, ...}"}],"structuredContent":{"value":"5","type":"int"},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"eggsact","version":"1.2.4"}}}}
+{"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","content":[{"type":"text","text":"{\"ok\": true, ...}"}],"structuredContent":{"value":"5","type":"int"},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"eggsact","version":"1.2.5"}}}}
 ```
 
 Tool-level errors keep `isError: true` with no `structuredContent`. Modern `tools/list` adds `resultType`, `ttlMs: 3600000`, `cacheScope: public`, standard `annotations` (`readOnlyHint: true`, `openWorldHint: false`), and namespaced `_meta` (`io.github.eggstack/eggsact` with `tier`, `tags`, `category`, `llm_exposure`, `cost`); legacy shapes are unchanged. `ping` is legacy-only (removed in modern).

@@ -2,17 +2,17 @@
 
 ## Current installation path
 
-The latest binary-bearing release is v1.2.4. For supported hosts, use the
+The latest binary-bearing release is v1.2.5. For supported hosts, use the
 verified Unix installer:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
   https://github.com/eggstack/eggsact/releases/latest/download/install.sh \
-  | bash -s -- --version 1.2.4
+  | bash -s -- --version 1.2.5
 ```
 
 The exact-tag form is also available at
-`https://github.com/eggstack/eggsact/releases/download/v1.2.4/install.sh`.
+`https://github.com/eggstack/eggsact/releases/download/v1.2.5/install.sh`.
 The script requires Bash, verifies the SHA-256 sidecar, and checks the
 candidate's reported version before installation.
 
@@ -23,7 +23,7 @@ cargo install eggsact
 ```
 
 Operators who prefer to inspect first can download `install.sh`, review it, and
-run `bash install.sh --version 1.2.4`. It does not invoke `sudo` or edit shell
+run `bash install.sh --version 1.2.5`. It does not invoke `sudo` or edit shell
 startup files.
 
 The Windows PowerShell fast path is:
@@ -35,12 +35,12 @@ irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | i
 The inspect-first form is:
 
 ```powershell
-Invoke-WebRequest https://github.com/eggstack/eggsact/releases/download/v1.2.4/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/eggstack/eggsact/releases/download/v1.2.5/install.ps1 -OutFile install.ps1
 Get-Content .\install.ps1
 . .\install.ps1
 ```
 
-Use `-Version 1.2.4` for a pinned install. The PowerShell installer maps
+Use `-Version 1.2.5` for a pinned install. The PowerShell installer maps
 Windows x86-64 to the prebuilt asset and uses the same Cargo fallback for
 Windows ARM64 and other unsupported architectures.
 
@@ -48,11 +48,11 @@ Windows ARM64 and other unsupported architectures.
 
 | Host | Asset | Status |
 |---|---|---|
-| Linux x86-64 / amd64 | `eggsact-x86_64-unknown-linux-gnu` | published in v1.2.4; glibc 2.17 build floor |
-| Linux AArch64 / arm64 | `eggsact-aarch64-unknown-linux-gnu` | published in v1.2.4; native ARM smoke passed |
-| macOS Intel | `eggsact-x86_64-apple-darwin` | published in v1.2.4; unsigned/not notarized |
-| macOS Apple Silicon | `eggsact-aarch64-apple-darwin` | published in v1.2.4; unsigned/not notarized |
-| Windows x86-64 | `eggsact-x86_64-pc-windows-msvc.exe` | published in v1.2.4; no code-signing claim |
+| Linux x86-64 / amd64 | `eggsact-x86_64-unknown-linux-gnu` | published in v1.2.5; glibc 2.17 build floor |
+| Linux AArch64 / arm64 | `eggsact-aarch64-unknown-linux-gnu` | published in v1.2.5; native ARM smoke passed |
+| macOS Intel | `eggsact-x86_64-apple-darwin` | published in v1.2.5; unsigned/not notarized |
+| macOS Apple Silicon | `eggsact-aarch64-apple-darwin` | published in v1.2.5; unsigned/not notarized |
+| Windows x86-64 | `eggsact-x86_64-pc-windows-msvc.exe` | published in v1.2.5; no code-signing claim |
 | Linux ARMv7 | `armv7-unknown-linux-gnueabihf` | recognized, Cargo fallback only until qualification |
 
 Raw executables use stable, versionless asset names. Each published executable

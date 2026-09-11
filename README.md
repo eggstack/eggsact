@@ -8,13 +8,13 @@ Deterministic MCP and in-process utility tools for coding agents. 86 tools acros
 
 ## Installation
 
-The latest release is v1.2.4. The verified binary installer is the recommended
+The latest release is v1.2.5. The verified binary installer is the recommended
 path for supported hosts:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
   https://github.com/eggstack/eggsact/releases/latest/download/install.sh \
-  | bash -s -- --version 1.2.4
+  | bash -s -- --version 1.2.5
 ```
 
 On Windows, run the published PowerShell installer:
@@ -23,7 +23,7 @@ On Windows, run the published PowerShell installer:
 irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | iex
 ```
 
-Pin the Windows installer with `-Version 1.2.4`. Both installers verify the
+Pin the Windows installer with `-Version 1.2.5`. Both installers verify the
 downloaded binary's checksum and reported version. Cargo remains available as
 the fallback for unsupported hosts and source builds:
 
