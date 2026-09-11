@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-09-11
+
+### Added
+- MCP `2026-07-28` modern envelopes alongside the legacy revisions:
+  `server/discover`, stateless per-request dispatch, schema-conforming
+  `structuredContent` on `tools/call`, cacheable `tools/list` metadata, and
+  standard tool annotations. One stdio process serves exactly one era, pinned
+  by its first message.
+- Progressive discovery presentation surface: five pinned front doors plus
+  deterministic `tool_search` / `tool_invoke` facades, selectable via
+  `--mcp-surface discovery` or `EGGSACT_MCP_SURFACE=discovery`. Direct mode
+  remains the default; profiles stay the capability boundary.
+- Typed `DependencyPreflight` wrapper with ecosystem detection and
+  verdict/machine-code contracts.
+- Additive `analysis_mode` field on `config_file_inspect` (`"parser"` vs
+  `"heuristic"`); YAML remains heuristic-only.
+
+### Changed
+- Typed-first composition: shared logic now lives in `src/services/`
+  (`RepoFacts`, `PatchAnalysis`, `SecurityInspection`, fingerprint/newline
+  facts) with tool handlers as thin JSON adapters. No intentional behavior
+  change; raw `tools::*` handlers stay `pub` for 1.x compatibility.
+- `tool_invoke` is a routing facade with target-specific results and no
+  facade-level output schema.
+
+### Fixed
+- Semver prerelease ordering, JSON canonicalization parity, and
+  regex/input hardening.
+- Stdio era classification aligned with the current SDK reference behavior:
+  `initialize` or any claim-less opening selects legacy, enveloped modern
+  claims select `2026-07-28`, and cross-era requests return `-32022`.
+
 ## [1.2.4] - 2026-09-05
 
 ### Added
