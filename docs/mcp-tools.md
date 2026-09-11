@@ -49,6 +49,11 @@ network. Both facades enforce the same profile/audience rules as direct
 calls. See `architecture/mcp-server.md` (direct vs discovery flow) and
 `architecture/registry-profiles.md` (capability vs presentation).
 
+The current full/Model baseline is 77 direct Tool definitions (111,911
+serialized UTF-8 bytes) versus 7 discovery definitions (6,088 bytes, 5.44%).
+`tests/mcp/test_discovery.rs` enforces the byte and retrieval gates; the
+task-oriented corpus lives in `tests/fixtures/tool_discovery_intents.json`.
+
 ## Transport Protocol
 
 ### Request Format

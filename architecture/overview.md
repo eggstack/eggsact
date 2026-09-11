@@ -6,6 +6,62 @@ eggsact is a deterministic MCP (Model Context Protocol) server and in-process ut
 
 This document is the **master index** for the architecture directory. Each major component has a dedicated deep-dive doc linked in the table below — read this overview for the bird's-eye picture, then follow the link for the full design.
 
+## Generated Registry Facts
+
+<!-- BEGIN GENERATED: registry facts -->
+| Registry fact | Value |
+|---|---:|
+| Underlying tools | 86 |
+| Full/Model direct tools | 77 |
+| Full/Model discovery tools | 7 |
+
+| Category | Count |
+|---|---:|
+| `analysis` | 4 |
+| `cargo` | 1 |
+| `config` | 3 |
+| `dependency` | 1 |
+| `diagnostics` | 3 |
+| `encoding` | 2 |
+| `identifier` | 3 |
+| `json` | 6 |
+| `list` | 3 |
+| `markdown` | 2 |
+| `math` | 4 |
+| `network` | 2 |
+| `patch` | 5 |
+| `path` | 6 |
+| `regex` | 3 |
+| `repo` | 5 |
+| `shell` | 4 |
+| `temporal` | 2 |
+| `text` | 18 |
+| `toml` | 1 |
+| `unicode` | 2 |
+| `validation` | 4 |
+| `version` | 2 |
+
+| Profile | Model | Harness |
+|---|---:|---:|
+| `full` | 77 | 86 |
+| `default` | 25 | 25 |
+| `codegg_core_min` | 6 | 6 |
+| `codegg_core` | 19 | 19 |
+| `codegg_preflight` | 7 | 13 |
+| `codegg_patch` | 10 | 12 |
+| `codegg_config` | 14 | 14 |
+| `codegg_unicode_security` | 6 | 8 |
+| `codegg_shell` | 5 | 6 |
+| `codegg_repo_audit` | 18 | 18 |
+| `human_math` | 4 | 4 |
+
+<!-- END GENERATED: registry facts -->
+
+The registry counts below are generated from `ToolSpec` declarations. Run
+`cargo run --features dev-tools --bin generate-docs` after changing registry
+membership, profile exposure, or discovery front doors.
+
+
 ---
 
 ## High-Level Architecture
@@ -111,7 +167,7 @@ Each major component has a dedicated architecture doc. The table below serves as
 | **Preflight Wrappers** | [preflight.md](preflight.md) | 6 typed wrappers (`EditPreflight`, `CommandPreflight`, `ConfigPreflight`, `PatchApplyCheck`, `TextSecurityInspect`, `DependencyPreflight`), `PreflightError` taxonomy (ToolCall/ToolRejected/ContractViolation), typed verdict enums with `Other(String)` forward-compat, strict vs permissive `Finding` parsing, `RecommendedNextTool` | `src/preflight/mod.rs` |
 | **Tool Implementations** | [tools.md](tools.md) | Per-category tool handler details, composite tool orchestration pattern (edit/command/config preflight), route-critical tools, command policy engine, dependency ecosystem detection, repo analysis, source analysis, network/encoding/temporal utilities | `src/tools/*.rs` (23 files) |
 | **Testing** | [testing.md](testing.md) | Test structure (70+ files across 5 suites), parity test framework (Python/Rust comparison), CI pipeline, how to add tests, fixture-backed route contract tests | `tests/` |
-| **CLI & Binaries** | [cli-binaries.md](cli-binaries.md) | `main.rs` CLI modes, `generate-docs` binary (README/profile/tool-cards generation), `--diagnostics` flag | `src/main.rs`, `src/bin/generate_docs.rs` |
+| **CLI & Binaries** | [cli-binaries.md](cli-binaries.md) | `main.rs` CLI modes, `generate-docs` binary (registry facts/profile/tool-card generation), `--diagnostics` flag | `src/main.rs`, `src/bin/generate_docs.rs` |
 | **Generated Assets** | [generated-assets.md](generated-assets.md) | Doc generation pipeline, confusables data, diagnostics, verification, profile tool cards | `src/bin/generate_docs.rs`, `scripts/generate_confusables.py` |
 | **Coding-Agent Integration** | [coding-agent-integration.md](coding-agent-integration.md) | MCP stdio vs in-process transport, profile selection, audience selection, concurrency, budget tuning, integration examples | `src/agent/`, `src/mcp/server.rs` |
 

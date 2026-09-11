@@ -30,8 +30,8 @@ pub fn render(client: &str, executable: &str) -> Result<String, String> {
 ///
 /// When `discovery` is true, renderers emit `["--mcp", "--mcp-surface",
 /// "discovery"]` instead of `["--mcp"]`. The default rendering stays
-/// direct until plan 03 evaluation approves a change; discovery rendering
-/// is available explicitly for testing.
+/// direct for 1.x compatibility; discovery rendering is available explicitly
+/// for evaluation and controlled rollout.
 pub fn render_with_surface(
     client: &str,
     executable: &str,

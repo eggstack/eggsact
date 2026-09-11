@@ -8,6 +8,7 @@ Maintainer reference for generated files, doc generation, confusables data, pari
 |------|--------|-------------------|---------|
 | `architecture/mcp-server.md` profile reference | `ToolSpec` registry + `available_profiles()` | `cargo run --features dev-tools --bin generate-docs` | Per-profile model/harness tool counts and harness-only listings |
 | `generated/tool-cards.md` | `ToolSpec` registry | `cargo run --features dev-tools --bin generate-docs` | Per-codegg-profile tool cards with required args, aliases, composite flags |
+| `architecture/overview.md` registry facts | `ToolSpec` registry + profiles + discovery policy | `cargo run --features dev-tools --bin generate-docs` | Underlying/category/profile counts and discovery advertised count |
 | `src/text/confusables_generated.rs` | Unicode UTS #39 `confusables.txt` | `python3 scripts/generate_confusables.py` | Sorted static table of Unicode codepoints to confusable alternatives (binary-search key lookup) |
 
 These files are **never hand-edited**. Edit the source of truth and re-run the generator.
@@ -19,7 +20,7 @@ facades, not ordinary utility categories.
 
 ## Doc Generation
 
-`src/bin/generate_docs.rs` is a standalone binary that reads the `ToolSpec` registry at compile time and produces two outputs:
+`src/bin/generate_docs.rs` is a standalone binary that reads the `ToolSpec` registry at compile time and produces three outputs:
 
 ### What It Reads
 
@@ -52,6 +53,13 @@ A standalone file (no markers) organized by codegg profile. Each tool gets a car
 - Aliases (if any)
 
 Eight codegg profiles are generated: `codegg_core_min`, `codegg_core`, `codegg_preflight`, `codegg_patch`, `codegg_config`, `codegg_unicode_security`, `codegg_shell`, `codegg_repo_audit`.
+
+**3. Registry facts in `architecture/overview.md`**
+
+The generated registry-facts block contains the underlying tool count,
+category counts, per-profile Model/Harness counts, and full/Model discovery
+advertised count. This keeps drift-prone numbers out of hand-maintained
+architecture prose while leaving explanatory text editable.
 
 ### Marker-Based Insertion
 

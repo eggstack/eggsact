@@ -50,6 +50,23 @@ Runs `cargo update` to find the newest semver-compatible dependency set, then ch
 
 Spawns both Rust and Python MCP servers, sends identical tool calls, and compares outputs. A failed workflow is the actionable output; the log provides version context.
 
+## Discovery evaluation
+
+The progressive-discovery rollout has a deterministic, offline gate in the
+ordinary MCP integration test suite. It measures exact serialized UTF-8 Tool
+definitions and runs the checked-in intent corpus through the production
+lexical search function. The current gate is discovery/full-Model <=25% of
+direct/full-Model bytes, top-1 >=90%, top-3 >=98%, top-5 100%, and zero
+Model-audience HarnessOnly/Hidden leaks.
+
+The portable end-to-end scenario corpus is
+`tests/fixtures/tool_discovery_scenarios.json`. Maintainers may record direct
+and discovery traces from any provider/client combination and score them with
+`python3 scripts/score-discovery-traces.py trace.json`; the scorer is offline
+and provider-neutral. Model-driven results are evidence for rollout policy,
+not a networked merge check. Generated client integrations stay on direct mode
+until those external traces show noninferior success and host compatibility.
+
 ## Tier 3 — Targeted Hardening
 
 Run manually before material releases or after relevant implementation changes. Answers: "Are there latent defects in parser/regex/concurrency surfaces?"

@@ -16,6 +16,14 @@ cargo test --locked --doc                         # doc tests
 cargo package --locked --verbose                  # package verification
 ```
 
+Progressive-discovery verification is part of the ordinary MCP suite:
+`tests/mcp/test_discovery.rs` measures serialized direct-vs-discovery bytes,
+checks profile/audience containment, and enforces the frozen intent corpus in
+`tests/fixtures/tool_discovery_intents.json` (top-1 >=90%, top-3 >=98%,
+top-5 100%). Portable provider/client traces use
+`python3 scripts/score-discovery-traces.py`; this scorer is offline and must
+not add model SDKs or network calls to CI.
+
 Release-binary smoke helpers (the release workflow repeats these on each
 staged target):
 

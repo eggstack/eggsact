@@ -86,6 +86,17 @@ remain the capability boundary — presentation never authorizes. Keep the
 pinned set small and reviewable in `src/mcp/discovery.rs`; do not add a
 `presentation` field to all 86 `ToolSpec` entries without evidence.
 
+### Discovery Evaluation Contract
+
+Descriptions and tags are part of the agent-facing API. For each new stable
+Model-visible tool, add a task-oriented intent fixture to
+`tests/fixtures/tool_discovery_intents.json` (or document why it is
+HarnessOnly/Hidden), then run the deterministic discovery tests. Keep aliases
+to real vocabulary gaps; do not repeat canonical names to game retrieval.
+`src/mcp/discovery_eval.rs` owns byte baselines. Provider/client traces are
+scored offline with `scripts/score-discovery-traces.py`; ordinary CI must not
+gain model SDKs, API keys, network calls, or provider tokenizers.
+
 ### Audience Filtering
 
 Use `tools_for_profile_audience(profile, audience)` for filtered listings:

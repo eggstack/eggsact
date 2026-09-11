@@ -1,7 +1,6 @@
 //! Progressive-discovery presentation surface (`McpSurface`).
 //!
-//! This module owns the MCP-only discovery presentation described in
-//! `plans/mcp-surface-02-progressive-discovery.md`:
+//! This module owns the MCP-only progressive-discovery presentation:
 //!
 //! - [`McpSurface`] (`Direct` vs `Discovery`) — presentation policy only,
 //!   never authorization. The active profile + audience remain the
@@ -326,6 +325,33 @@ pub fn parse_invoke_params(args: &Value) -> Result<InvokeParams, String> {
 struct ScoredHit {
     index: usize,
     relevance: u8,
+    matched_tokens: usize,
+}
+
+fn useful_name_token(token: &str) -> bool {
+    !matches!(
+        token,
+        "check"
+            | "config"
+            | "convert"
+            | "data"
+            | "diff"
+            | "extract"
+            | "file"
+            | "inspect"
+            | "json"
+            | "list"
+            | "path"
+            | "text"
+            | "tool"
+            | "unit"
+            | "summarize"
+            | "validate"
+    )
+}
+
+fn useful_tag_token(token: &str) -> bool {
+    !matches!(token, "check" | "compare" | "data" | "text" | "tool")
 }
 
 fn tokenize(s: &str) -> Vec<String> {
@@ -360,7 +386,7 @@ fn score_spec(
     query_lower: &str,
     qtokens: &[String],
     include_deprecated: bool,
-) -> Option<(u8, &'static str)> {
+) -> Option<(u8, usize, &'static str)> {
     let is_deprecated = spec.stability == ToolStability::Deprecated;
     let name_lower = spec.name.to_lowercase();
     // Deprecated tools are hidden unless exactly named or explicitly included.
@@ -369,48 +395,65 @@ fn score_spec(
     }
     // 0. exact canonical-name match (deprecated included by exact name).
     if name_lower == query_lower {
-        return Some((0, "exact_name"));
+        return Some((0, usize::MAX, "exact_name"));
     }
     // 1. exact alias match.
     for alias in spec.aliases {
         if alias.to_lowercase() == query_lower {
-            return Some((1, "alias"));
+            return Some((1, usize::MAX, "alias"));
         }
     }
     // 2. canonical-name token/prefix match.
     let name_tokens = tokenize(spec.name);
-    for qt in qtokens {
-        for nt in &name_tokens {
-            if nt == qt || nt.starts_with(qt.as_str()) || qt.starts_with(nt.as_str()) {
-                return Some((2, "name_token"));
-            }
-        }
-        // Whole-name prefix (e.g. "patch" matches "patch_summary").
-        if name_lower.starts_with(qt.as_str()) {
-            return Some((2, "name_token"));
-        }
-    }
-    // 3. tag/category token overlap.
+    let name_matches = qtokens
+        .iter()
+        .filter(|qt| {
+            name_tokens.iter().any(|nt| {
+                useful_name_token(nt)
+                    && (nt.as_str() == qt.as_str()
+                        || (qt.len() >= 3 && nt.starts_with(qt.as_str()))
+                        || (nt.len() >= 3
+                            && qt.starts_with(nt.as_str())
+                            && qt.len() <= nt.len().saturating_add(3)))
+            })
+        })
+        .count();
     let mut tag_tokens: Vec<String> = spec.tags.iter().flat_map(|t| tokenize(t)).collect();
     tag_tokens.extend(tokenize(spec.category));
-    for qt in qtokens {
-        if tag_tokens.iter().any(|t| t == qt) {
-            return Some((3, "tag"));
-        }
+    let tag_matches = qtokens
+        .iter()
+        .filter(|qt| useful_tag_token(qt) && tag_tokens.iter().any(|t| t.as_str() == qt.as_str()))
+        .count();
+    if name_matches > 0 {
+        return Some((2, name_matches + tag_matches * 2, "name_token"));
+    }
+    // Whole-name prefix (e.g. "patch" matches "patch_summary"). Avoid
+    // short generic prefixes such as "text" and "check".
+    if qtokens
+        .iter()
+        .any(|qt| qt.len() >= 5 && name_lower.starts_with(qt.as_str()))
+    {
+        return Some((2, 1, "name_token"));
+    }
+    // 3. tag/category token overlap.
+    if tag_matches > 0 {
+        return Some((3, tag_matches, "tag"));
     }
     // 4. description token overlap.
     let desc_tokens = query_tokens(spec.description);
-    for qt in qtokens {
-        if desc_tokens.iter().any(|t| t == qt) {
-            return Some((4, "description"));
-        }
+    let description_matches = qtokens
+        .iter()
+        .filter(|qt| desc_tokens.iter().any(|t| t.as_str() == qt.as_str()))
+        .count();
+    if description_matches > 0 {
+        return Some((4, description_matches, "description"));
     }
     // 5. bounded Levenshtein recovery for typo-like queries.
     if query_lower.len() <= 200 {
         let dist = crate::text::levenshtein_distance(query_lower, &name_lower);
         let threshold = query_lower.chars().count().min(name_lower.chars().count()) / 2;
         if dist <= threshold {
-            return Some((5, "close_match"));
+            return Some((5, 1, "close_match"));
         }
         // Also try aliases with Levenshtein.
         for alias in spec.aliases {
@@ -418,7 +461,7 @@ fn score_spec(
             let d = crate::text::levenshtein_distance(query_lower, &a);
             let th = query_lower.chars().count().min(a.chars().count()) / 2;
             if d <= th {
-                return Some((5, "close_match"));
+                return Some((5, 1, "close_match"));
             }
         }
     }
@@ -460,16 +503,24 @@ pub fn search_filtered<'a>(
     let qtokens = query_tokens(&params.query);
     let mut hits: Vec<(ScoredHit, &'static str)> = Vec::new();
     for (index, spec) in specs.iter().enumerate() {
-        if let Some((relevance, reason)) =
+        if let Some((relevance, matched_tokens, reason)) =
             score_spec(spec, &query_lower, &qtokens, params.include_deprecated)
         {
-            hits.push((ScoredHit { index, relevance }, reason));
+            hits.push((
+                ScoredHit {
+                    index,
+                    relevance,
+                    matched_tokens,
+                },
+                reason,
+            ));
         }
     }
     // Stable: relevance class, then registry order.
     hits.sort_by(|a, b| {
         a.0.relevance
             .cmp(&b.0.relevance)
+            .then_with(|| b.0.matched_tokens.cmp(&a.0.matched_tokens))
             .then_with(|| a.0.index.cmp(&b.0.index))
     });
     hits.truncate(params.limit);

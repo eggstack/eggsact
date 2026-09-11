@@ -330,7 +330,8 @@ profile at construction time via `with_profile_and_audience`.
 `McpSurface` separates capability policy from presentation. Startup selects
 via `EGGSACT_MCP_SURFACE=direct|discovery` (new `EGGSACT_` namespace for
 eggsact-native config) or `--mcp-surface direct|discovery` (CLI overrides
-env); the default stays `direct` until plan 03 evaluation approves a change.
+env); the default remains `direct` for 1.x compatibility, while discovery is
+explicitly opt-in.
 
 - **Direct**: current behavior. `tools/list` advertises the
   profile/audience-filtered canonical set; `tool_search` / `tool_invoke`
@@ -367,6 +368,14 @@ env); the default stays `direct` until plan 03 evaluation approves a change.
 The two facades are MCP-only orchestration (`src/mcp/discovery.rs`); they
 are not in `ALL_TOOLS_VEC`, `src/tools/`, or generated tool-cards. Eggsact
 still has 86 underlying deterministic tools.
+
+The rollout baseline is measured by `src/mcp/discovery_eval.rs` and guarded by
+`tests/mcp/test_discovery.rs`: full/Model direct advertises 77 tools in 111,911
+serialized UTF-8 bytes, while discovery advertises 7 in 6,088 bytes (5.44%).
+The checked-in intent corpus must keep top-1 retrieval at least 90%, top-3 at
+least 98%, top-5 at 100%, and must not leak Model-ineligible tools. These are
+byte/lexical regression gates; provider-backed model traces are scored
+separately with `scripts/score-discovery-traces.py`.
 
 ## Tool Categories
 

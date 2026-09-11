@@ -4,11 +4,14 @@ use std::process;
 
 use eggsact::mcp::registry::tools_for_profile_audience;
 use eggsact::mcp::registry::{
-    available_profiles, ToolCost, ToolExposure, ToolListAudience, ToolSpec, ToolStability,
+    all_tools_vec, available_profiles, ToolCost, ToolExposure, ToolListAudience, ToolSpec,
+    ToolStability,
 };
 
 const BEGIN_PROFILES: &str = "<!-- BEGIN GENERATED: profile reference -->";
 const END_PROFILES: &str = "<!-- END GENERATED: profile reference -->";
+const BEGIN_REGISTRY_FACTS: &str = "<!-- BEGIN GENERATED: registry facts -->";
+const END_REGISTRY_FACTS: &str = "<!-- END GENERATED: registry facts -->";
 
 const REGENERATE_COMMAND: &str = "cargo run --features dev-tools --bin generate-docs";
 
@@ -93,6 +96,42 @@ fn generate_profile_reference() -> String {
         ));
     }
 
+    out
+}
+
+fn generate_registry_facts() -> String {
+    let tools = all_tools_vec();
+    let mut categories = std::collections::BTreeMap::<&str, usize>::new();
+    for tool in tools {
+        *categories.entry(tool.category).or_default() += 1;
+    }
+
+    let mut out = String::new();
+    out.push_str("| Registry fact | Value |\n|---|---:|\n");
+    out.push_str(&format!("| Underlying tools | {} |\n", tools.len()));
+    out.push_str(&format!(
+        "| Full/Model direct tools | {} |\n",
+        tools_for_profile_audience("full", ToolListAudience::Model).len()
+    ));
+    out.push_str(&format!(
+        "| Full/Model discovery tools | {} |\n",
+        eggsact::mcp::discovery::discovery_legacy_definitions(
+            "full",
+            ToolListAudience::Model,
+            None,
+        )
+        .len()
+    ));
+    out.push_str("\n| Category | Count |\n|---|---:|\n");
+    for (category, count) in categories {
+        out.push_str(&format!("| `{category}` | {count} |\n"));
+    }
+    out.push_str("\n| Profile | Model | Harness |\n|---|---:|---:|\n");
+    for &profile in available_profiles() {
+        let model = tools_for_profile_audience(profile, ToolListAudience::Model).len();
+        let harness = tools_for_profile_audience(profile, ToolListAudience::Harness).len();
+        out.push_str(&format!("| `{profile}` | {model} | {harness} |\n"));
+    }
     out
 }
 
@@ -330,6 +369,7 @@ fn main() {
         .unwrap_or_else(|| ".".to_string());
 
     let profile_content = generate_profile_reference();
+    let registry_content = generate_registry_facts();
     let cards_content = generate_tool_cards();
 
     let mut stale_files = Vec::new();
@@ -368,6 +408,49 @@ fn main() {
                 out
             };
             write_file(&arch_path, &updated);
+        }
+    }
+
+    // Check/update generated registry facts in architecture/overview.md.
+    let overview_path = format!("{}/architecture/overview.md", output_dir);
+    let overview_file = read_file(&overview_path);
+    let existing =
+        extract_between(&overview_file, BEGIN_REGISTRY_FACTS, END_REGISTRY_FACTS).unwrap_or("");
+    let overview_orphans =
+        count_orphan_begins(&overview_file, BEGIN_REGISTRY_FACTS, END_REGISTRY_FACTS);
+    let overview_needs_update = !overview_file.contains(BEGIN_REGISTRY_FACTS)
+        || overview_orphans > 0
+        || existing.trim() != registry_content.trim();
+    if overview_needs_update {
+        stale_files.push(overview_path.clone());
+        if !check_mode {
+            let cleaned = strip_all_generated_blocks(
+                &overview_file,
+                BEGIN_REGISTRY_FACTS,
+                END_REGISTRY_FACTS,
+            );
+            let marker_section = format!(
+                "\n{}\n{}\n{}\n",
+                BEGIN_REGISTRY_FACTS, registry_content, END_REGISTRY_FACTS
+            );
+            let updated = if let Some(pos) = cleaned.find("## Generated Registry Facts") {
+                let heading_end = pos + "## Generated Registry Facts".len();
+                let rest = &cleaned[heading_end..];
+                let insert_at = heading_end + rest.find('\n').unwrap_or(0) + 1;
+                let mut out = String::with_capacity(cleaned.len() + marker_section.len());
+                out.push_str(&cleaned[..insert_at]);
+                out.push_str(&marker_section);
+                out.push_str(&cleaned[insert_at..]);
+                out
+            } else {
+                let mut out = String::with_capacity(cleaned.len() + marker_section.len() + 1);
+                out.push_str(&cleaned);
+                out.push('\n');
+                out.push_str("## Generated Registry Facts\n");
+                out.push_str(&marker_section);
+                out
+            };
+            write_file(&overview_path, &updated);
         }
     }
 

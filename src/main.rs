@@ -30,8 +30,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> CliCommand {
     // ── MCP surface selection (plan 02 Part F) ─────────────────────────
     // Explicit startup configuration: `--mcp [--mcp-surface direct|discovery]`.
     // `Direct` preserves current behavior; `Discovery` advertises only the
-    // pinned front doors plus search/invoke facades. The default stays
-    // `Direct` until plan 03 evaluation approves a change.
+    // pinned front doors plus search/invoke facades. The default remains
+    // `Direct` for 1.x compatibility.
     if args.iter().any(|a| a == "--mcp") {
         let mut surface = eggsact::mcp::discovery::McpSurface::Direct;
         let mut surface_seen = false;
@@ -168,6 +168,16 @@ fn print_diagnostics(format: &str) {
         "EGGSACT_MCP_SURFACE",
     ];
     let route_critical = eggsact::mcp::registry::ROUTE_CRITICAL_TOOLS;
+    let direct_discovery_metrics = (
+        eggsact::mcp::discovery_eval::direct_metrics(
+            "full",
+            eggsact::mcp::registry::ToolListAudience::Model,
+        ),
+        eggsact::mcp::discovery_eval::discovery_metrics(
+            "full",
+            eggsact::mcp::registry::ToolListAudience::Model,
+        ),
+    );
 
     let budget_tiers = [
         ("cheap", "1 MB in/out, 10s, 100 findings"),
@@ -214,6 +224,14 @@ fn print_diagnostics(format: &str) {
             },
             "route_critical_tools": route_critical_vec,
             "budget_tiers": tiers_obj,
+            "discovery_metrics": {
+                "direct_full_model": direct_discovery_metrics.0,
+                "discovery_full_model": direct_discovery_metrics.1,
+                "discovery_ratio": eggsact::mcp::discovery_eval::discovery_ratio(
+                    "full",
+                    eggsact::mcp::registry::ToolListAudience::Model,
+                ),
+            },
             "runtime": {
                 "active_profile": runtime::get_active_profile(),
                 "active_audience": runtime::get_active_audience().to_string(),
@@ -254,6 +272,15 @@ fn print_diagnostics(format: &str) {
         println!("  Active audience: {}", runtime::get_active_audience());
         println!("  Schema detail: {}", runtime::get_schema_detail());
         println!("  Active surface: {}", runtime::get_active_surface());
+        println!(
+            "  Discovery context: {} direct bytes, {} discovery bytes ({:.1}%)",
+            direct_discovery_metrics.0.serialized_bytes,
+            direct_discovery_metrics.1.serialized_bytes,
+            eggsact::mcp::discovery_eval::discovery_ratio(
+                "full",
+                eggsact::mcp::registry::ToolListAudience::Model,
+            ) * 100.0
+        );
         println!(
             "  Limits: {} in-flight, {} workers, {} bytes request, {} bytes output",
             runtime::MAX_IN_FLIGHT_REQUESTS,

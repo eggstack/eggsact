@@ -15,6 +15,16 @@ use eggsact::mcp::discovery;
 use eggsact::mcp::registry::{self, ToolListAudience, ToolStability};
 use serde_json::Value;
 
+#[derive(Debug, serde::Deserialize)]
+struct IntentFixture {
+    id: String,
+    intent: String,
+    primary: String,
+    acceptable: Vec<String>,
+    category: String,
+    kind: String,
+}
+
 fn full_model_audience() -> ToolListAudience {
     ToolListAudience::Model
 }
@@ -335,4 +345,123 @@ fn search_result_size_bounded_for_max_schema_detail() {
     let summary = discovery::matches_value(&hits, false);
     let summary_bytes = serde_json::to_string(&summary).unwrap().len();
     assert!(summary_bytes <= bytes);
+}
+
+#[test]
+fn discovery_fixture_retrieval_meets_rollout_gates() {
+    let fixtures: Vec<IntentFixture> =
+        serde_json::from_str(include_str!("../fixtures/tool_discovery_intents.json"))
+            .expect("discovery intent fixture JSON must parse");
+    assert!(fixtures.len() >= 40, "fixture corpus must stay substantial");
+
+    let specs = registry::tools_for_profile_audience("full", ToolListAudience::Model);
+    let model_names: std::collections::HashSet<&str> = specs.iter().map(|s| s.name).collect();
+    let mut evaluated = 0usize;
+    let mut top1 = 0usize;
+    let mut top3 = 0usize;
+    let mut top5 = 0usize;
+    let mut top1_failures = Vec::new();
+    let mut top3_failures = Vec::new();
+
+    for fixture in fixtures {
+        assert!(!fixture.id.is_empty());
+        assert!(!fixture.category.is_empty());
+        if fixture.kind == "negative_selection" {
+            assert!(
+                !model_names.contains(fixture.primary.as_str()),
+                "negative fixture '{}' targets a Model-visible tool",
+                fixture.id
+            );
+            let params = discovery::parse_search_params(&serde_json::json!({
+                "query": fixture.intent,
+                "limit": 10
+            }))
+            .unwrap();
+            let hits = discovery::search_filtered(&specs, &params);
+            assert!(
+                hits.iter().all(|(spec, _)| spec.name != fixture.primary),
+                "Model search leaked negative target '{}' for fixture '{}'",
+                fixture.primary,
+                fixture.id
+            );
+            continue;
+        }
+        assert!(
+            model_names.contains(fixture.primary.as_str()),
+            "fixture '{}' primary '{}' must be Model-visible",
+            fixture.id,
+            fixture.primary
+        );
+        evaluated += 1;
+        let params = discovery::parse_search_params(&serde_json::json!({
+            "query": fixture.intent,
+            "limit": 5
+        }))
+        .unwrap();
+        let hits = discovery::search_filtered(&specs, &params);
+        let names: Vec<&str> = hits.iter().map(|(spec, _)| spec.name).collect();
+        let accepted =
+            |name: &str| name == fixture.primary || fixture.acceptable.iter().any(|a| a == name);
+        if names.first().is_some_and(|name| accepted(name)) {
+            top1 += 1;
+        } else {
+            top1_failures.push((fixture.id.clone(), fixture.primary.clone(), names.clone()));
+        }
+        if names.iter().take(3).any(|name| accepted(name)) {
+            top3 += 1;
+        } else {
+            top3_failures.push((fixture.id.clone(), fixture.primary.clone(), names.clone()));
+        }
+        if names.iter().take(5).any(|name| accepted(name)) {
+            top5 += 1;
+        }
+        assert!(
+            names.iter().take(5).any(|name| accepted(name)),
+            "fixture '{}' did not retrieve '{}' in top five: {:?}",
+            fixture.id,
+            fixture.primary,
+            names
+        );
+    }
+
+    assert!(evaluated >= 40);
+    assert!(
+        top1 * 100 >= evaluated * 90,
+        "top-1 {top1}/{evaluated}; failures: {top1_failures:?}"
+    );
+    assert!(
+        top3 * 100 >= evaluated * 98,
+        "top-3 {top3}/{evaluated}; failures: {top3_failures:?}"
+    );
+    assert_eq!(top5, evaluated, "top-5 must recall every positive fixture");
+}
+
+#[test]
+fn discovery_metrics_enforce_context_budget() {
+    let direct = eggsact::mcp::discovery_eval::direct_metrics("full", ToolListAudience::Model);
+    let discovery =
+        eggsact::mcp::discovery_eval::discovery_metrics("full", ToolListAudience::Model);
+    assert_eq!(direct.advertised_tools, 77);
+    assert_eq!(discovery.advertised_tools, 7);
+    assert!(
+        discovery.serialized_bytes * 100 <= direct.serialized_bytes * 25,
+        "discovery {} bytes must be <=25% of direct {} bytes",
+        discovery.serialized_bytes,
+        direct.serialized_bytes
+    );
+}
+
+#[test]
+fn portable_model_evaluation_scenarios_are_well_formed() {
+    let scenarios: Vec<Value> =
+        serde_json::from_str(include_str!("../fixtures/tool_discovery_scenarios.json"))
+            .expect("portable discovery scenario JSON must parse");
+    assert!(scenarios.len() >= 40);
+    for scenario in scenarios {
+        for field in ["id", "user_request", "expected_tools", "success_criteria"] {
+            assert!(scenario.get(field).is_some(), "scenario missing {field}");
+        }
+        assert!(scenario["expected_tools"].is_array());
+        assert!(scenario["search_expected"].is_boolean());
+    }
 }

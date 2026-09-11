@@ -120,7 +120,7 @@ on the release-preparation and corrective commits, including runs
 `33944382758`. The final binary workflow completed all target,
 installer, checksum, smoke, and draft-assembly jobs in `33944943782`.
 
-## Active MCP surface modernization line
+## Completed MCP surface modernization line
 
 Research on 2026-09-10 found that eggsact's internal capability architecture is
 already consolidated, but its ordinary MCP presentation remains much broader
@@ -133,10 +133,9 @@ The implementation goal is **not** to remove or merge the 86 deterministic
 capabilities. It is to keep the capability registry intact while making the
 ordinary agent-facing surface much smaller, searchable, and protocol-current.
 
-The first two implementation plans and the first corrective pass have landed
-on `main`, but a post-`02c` conformance review found one remaining stdio
-classification mismatch against the current official MCP TypeScript SDK v2
-reference behavior. Execute `02d` before plan 03:
+The protocol modernization, progressive discovery, corrective conformance, and
+evaluation gates below are complete. The capability registry remains intact;
+direct mode remains the 1.x compatibility default and discovery is explicit.
 
 - **Protocol modernization** (`mcp-surface-01`, commit `35f7dc2e`): added the
   `2026-07-28` modern stateless request envelope alongside the legacy
@@ -157,7 +156,7 @@ reference behavior. Execute `02d` before plan 03:
   target-diverse invoke tests, and single-winner race test remain valid.
   Ordinary CI for `77ff57a5` passed and its official SDK smoke selected modern
   under auto negotiation and legacy under default negotiation.
-- **`mcp-surface-02d-stdio-era-classification-corrective.md` — P1.** Tighten
+- **`mcp-surface-02d` — complete.** Tightened
   only the remaining stdio entry/routing semantics to match the current
   official v2 reference model: classify an `initialize` or other claim-less
   opening as Legacy under compatibility serving; remove the unversioned
@@ -173,51 +172,30 @@ reference behavior. Execute `02d` before plan 03:
   and the full non-parity test/doc gate (3,064 tests, zero failures). The
   official `@modelcontextprotocol/client@2.0.0` smoke selected modern with
   `versionNegotiation=auto` and legacy with default negotiation, with 77 tools
-  in each result; detailed closure evidence is in the plan.
-- **`mcp-surface-03-agent-evaluation-and-rollout.md` — P1.** Only after `02d`
-  closure, measure exact serialized Tool-definition cost, build deterministic
-  full-capability retrieval fixtures and hard-negative overlap cases, run
-  portable direct-vs-discovery agent evaluations, and gate any generated
-  client integration default on measured context reduction, selection quality,
-  reachability, and host compatibility.
+  in each result.
+- **`mcp-surface-03` — complete.**
+  `src/mcp/discovery_eval.rs` measures exact serialized UTF-8 Tool-definition
+  cost; generated registry facts prevent count drift; 49 task-oriented positive
+  intents plus hard negatives are checked through production search; and 40
+  portable direct/discovery scenarios plus an offline trace scorer are
+  committed. Full/Model direct is 77 tools and 111,911 bytes; discovery is 7
+  tools and 6,088 bytes (5.44%). Retrieval is top-1 49/49, top-3 49/49, and
+  top-5 49/49, with zero Model-audience leaks. Existing integrations remain
+  direct by policy; provider/client traces can be scored offline before any
+  future default switch, so no provider SDK, API key, or networked CI
+  dependency was added.
 
-The `02d` follow-up is deliberately narrow. Current official `serveStdio`
-documentation defines a legacy opening as an `initialize` request or any
-claim-less message when legacy serving is enabled; the modern stdio auto probe
-already carries the `2026-07-28` request envelope (and on the official
-`StdioClientTransport` runs in a disposable sibling process). Once an instance
-is pinned, edge-classification mismatch is a routing error (`-32022` for
-requests; drop/error-path for notifications), not an opportunity to switch the
-era. The `02d` plan records the current official SDK sources and requires a
-fresh source check before implementation because the v2 surface is still
-active.
+The official SDK v2 edge rules were checked against the current TypeScript
+reference on 2026-09-10. Local protocol tests cover legacy and modern stdio
+lifecycles, direct/discovery surfaces, profile/audience containment, and
+cross-era routing. Generated integrations intentionally remain direct until
+maintainer-supplied provider/client traces demonstrate noninferior end-to-end
+success; this conservative choice preserves 1.x compatibility while leaving
+discovery fully reachable and explicitly selectable.
 
-Plan 03 remains the rollout gate. The present discovery tests already prove
-exact-name reachability, profile/audience containment, deterministic ordering,
-and a substantial context reduction, but they do **not** yet establish the
-planned natural-language top-1/top-3/top-5 retrieval targets or cross-model
-agent success. Do not change generated client integrations to prefer discovery
-until `02d` is closed and those measurements pass. The rollout target remains
-discovery Tool-definition bytes <=25% of direct/full where practical, top-5
-retrieval coverage for all stable Model-visible capability fixtures, and
-noninferior end-to-end agent success across more than one model family/client
-path.
-
-Research sources for the line include the MCP 2026-07-28 release and current
-roadmap, the current MCP Tools rule forbidding per-connection/side-effect-driven
-tool-list mutation, official MCP SDK migration/stdio version guidance, and
-Anthropic's Tool Search measurements showing large context and tool-selection
-gains from on-demand discovery. Detailed URLs and constraints remain in the
-plan files so the handoff does not depend on this roadmap summary remaining
-current.
-
-Compatibility posture for 1.x: do not remove tools from existing profiles, do
-not rename canonical tools, and do not silently make `Profile::default()` a
-narrow profile. Discovery remains explicit/opt-in during corrective and
-evaluation work. Generated `integrate` instructions may recommend it only after
-the evaluation plan's rollout gates pass. Direct/full remains the escape hatch
-for hosts that already perform their own deferred tool loading or require
-canonical first-class tool definitions.
+The closure verification gate passed locally: formatting, generated-doc
+freshness, clippy, cargo-deny, packaging, focused discovery/era tests, the
+full non-parity suite, and doc tests.
 
 ## Future opportunities
 

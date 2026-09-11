@@ -67,6 +67,13 @@ echo '{"jsonrpc":"2.0","method":"tools/list","id":2,"params":{"_meta":{"io.model
 # One connection pins one era: initialize or any claim-less opening selects Legacy; a valid modern claim selects Modern. After pinning, cross-era requests are -32022 Unsupported protocol version and mismatched notifications are dropped before side effects.
 # Modern initialize is -32601 on a Modern connection, modern ping is -32601 (removed), malformed claimed _meta is -32602, unsupported version is -32022 with {supported, requested}. Claim-less server/discover is legacy traffic and follows lifecycle/method semantics.
 # Modern requests and correctly enveloped notifications must never mutate legacy SessionState — if a legacy call starts working after only modern traffic, the era gate leaked. The official auto probe is enveloped and runs in a disposable sibling process.
+
+For discovery regressions, run the focused retrieval gate in
+`tests/mcp/test_discovery.rs` and inspect the exact serialized byte metrics
+from `src/mcp/discovery_eval.rs`. The checked-in intent/scenario fixtures are
+offline and provider-neutral; recorded provider/client traces are scored with
+`python3 scripts/score-discovery-traces.py` and must not become a networked
+test dependency.
 ```
 
 ### Unit Conversion Issues

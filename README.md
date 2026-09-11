@@ -72,6 +72,13 @@ claim-less `server/discover` is therefore legacy traffic, not an era-neutral
 probe. Cross-era requests return `-32022 Unsupported protocol version`, while
 mismatched notifications are dropped before side effects.
 
+Discovery is an explicit low-context presentation option, not a capability
+reduction: full/Model direct definitions are 77 tools / 111,911 serialized
+bytes, while discovery advertises 7 / 6,088 bytes (5.44%). Deterministic
+retrieval and policy-containment gates live in `tests/mcp/test_discovery.rs`;
+provider/client traces can be scored offline with
+`scripts/score-discovery-traces.py`.
+
 ### MCP client setup
 
 Render a read-only, absolute-path registration instruction for a client-owned
