@@ -69,8 +69,8 @@ history retains their execution detail and evidence.
   - `config_file_inspect` reports an additive `analysis_mode`
     (`"parser"` vs `"heuristic"`); YAML stays heuristic-only with no parser
     dependency and `config_preflight` intentionally excludes YAML;
-  - coarse feature gating was measured and explicitly declined: 20 direct /
-    88 total dependency crates, 7.4 MiB stripped release binary, ~58s
+  - coarse feature gating was measured and explicitly declined: 19 direct /
+    73 total dependency crates (`Cargo.lock`), 7.4 MiB stripped release binary, ~58s
     warm-cache release build; tokio/serde_json/toml/regex/unicode span all
     layers and the shipped binary stays full-featured, so cfg-gating would
     add CI-matrix and conditional-compilation cost for no binary win;

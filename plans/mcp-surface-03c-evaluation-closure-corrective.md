@@ -1,8 +1,39 @@
 # MCP Discovery Evaluation Closure Corrective
 
-Status: planned
+Status: active — deterministic preparation complete; external model/client evidence pending
 Priority: P1
 Scope: semantic discovery coverage, provider/client direct-vs-discovery evidence, server-instructions A/B, trace/scorer contract, closure evidence; no protocol, registry, transport, or capability redesign
+
+## Progress (2026-09-11)
+
+Deterministic/scorer preparation (Parts A–C, G1) is complete; Parts D–F
+remain pending for lack of provider credentials, subscriptions, or
+evaluation budget. The body below is retained as the work specification;
+status annotations mark what is done.
+
+- **A (semantic coverage) — done.** The retrieval gate derives the stable
+  full/Model set from the registry and requires 100% task-oriented fixture
+  coverage: 76 stable tools, 76 positive targets, 88 selection intents, 9
+  containment intents, no bare-name fixtures (`tests/mcp/test_discovery.rs`,
+  `tests/fixtures/tool_discovery_intents.json`). Measured retrieval holds
+  top-1 96.6% / top-3 100% / top-5 100% with zero Model-audience leaks.
+- **B (scenario contract) — done.** `tests/fixtures/tool_discovery_scenarios.json`
+  holds 52 scenarios (48 `model`/`task` + 4 `model`/`must_not_expose`) with
+  `audience`/`kind`, plural `expected_tools`, and per-task success criteria.
+- **C (offline scorer) — done.** `scripts/score-discovery-traces.py` enforces
+  the plural trace contract with strict validation, `--pair`
+  direct/discovery deltas, and 2pp noninferiority PASS/FAIL gates; it performs
+  no network or model calls.
+- **D (model/client traces) — pending.** `tests/fixtures/discovery_traces/`
+  contains only its README; no OpenAI/Anthropic direct/discovery pairs are
+  recorded. Attempted 2026-09-11: `codex`/`claude` CLIs are installed but no
+  provider credentials or evaluation budget were available, so no traces were
+  fabricated.
+- **E (server-instructions A/B) — pending**, blocked on the same evidence access.
+- **F (rollout decision) — pending.** Generated integrations stay on direct;
+  discovery remains explicitly selectable until the evidence gates pass.
+- **G1 (roadmap honesty) — done.** `plans/roadmap.md` distinguishes
+  implementation, deterministic infrastructure, and pending external evidence.
 
 ## Objective
 
@@ -45,7 +76,7 @@ Preserve all of the following:
 
 Do not change ranking weights merely to improve a benchmark unless a failing fixture exposes a real vocabulary/semantic problem. Prefer description/alias corrections that make the intended capability distinction clearer to both models and humans.
 
-## Part A — Make semantic fixture coverage honest and complete
+## Part A — Make semantic fixture coverage honest and complete [COMPLETE — see Progress]
 
 ### A1. Derive the required positive-coverage set from the registry
 
@@ -101,7 +132,7 @@ negative/containment count       <derived>
 
 Do not hide missing capability coverage behind a perfect score on a smaller corpus.
 
-## Part B — Repair the portable end-to-end scenario contract
+## Part B — Repair the portable end-to-end scenario contract [COMPLETE — see Progress]
 
 ### B1. Separate Model-facing success scenarios from containment scenarios
 
@@ -174,7 +205,7 @@ Add strict validation in the scorer for:
 
 Malformed traces should fail loudly rather than quietly scoring `None` as an expected tool.
 
-## Part C — Make the offline scorer answer the rollout question
+## Part C — Make the offline scorer answer the rollout question [COMPLETE — see Progress]
 
 ### C1. Record the metrics plan 03 originally required
 
@@ -240,7 +271,7 @@ For a model/client pair to support recommending discovery:
 
 The script may return a clear PASS/FAIL summary for these gates, but model-backed traces remain maintainer-run evidence rather than merge-blocking CI.
 
-## Part D — Run actual model/client evaluations
+## Part D — Run actual model/client evaluations [PENDING — blocked on provider access]
 
 ### D1. Required model families
 
@@ -285,7 +316,7 @@ Document the exact invocation procedure in `docs/verification.md` or a short adj
 
 Ordinary CI may syntax-validate committed trace JSON and run the offline scorer, but it must never call provider APIs.
 
-## Part E — Evaluate server instructions separately
+## Part E — Evaluate server instructions separately [PENDING — blocked on provider access]
 
 ### E1. Run a controlled A/B subset
 
@@ -316,7 +347,7 @@ Keep instructions only if they are neutral or beneficial across the tested model
 
 Maintain a <=500 UTF-8 byte budget unless a measured reason justifies otherwise.
 
-## Part F — Rollout decision
+## Part F — Rollout decision [PENDING — awaits Parts D/E evidence]
 
 ### F1. Keep direct mode as the safe default during this pass
 
@@ -345,7 +376,7 @@ Do not call “no model evidence, therefore keep direct” a completed evaluatio
 
 ## Part G — Documentation and roadmap correction
 
-### G1. While this plan is active
+### G1. While this plan is active [COMPLETE — see Progress]
 
 Update `plans/roadmap.md` so it no longer states that the entire MCP discovery evaluation line is complete.
 
@@ -355,7 +386,7 @@ Durable wording should distinguish:
 - deterministic context/retrieval evaluation infrastructure: complete;
 - external model/client evidence and instructions A/B: pending under this corrective.
 
-### G2. At closure
+### G2. At closure [PENDING — awaits Parts D–F evidence]
 
 Record in `plans/roadmap.md`:
 
