@@ -120,82 +120,96 @@ on the release-preparation and corrective commits, including runs
 `33944382758`. The final binary workflow completed all target,
 installer, checksum, smoke, and draft-assembly jobs in `33944943782`.
 
-## Completed MCP surface modernization line
+## MCP surface modernization — evaluation closure pending
 
 Research on 2026-09-10 found that eggsact's internal capability architecture is
 already consolidated, but its ordinary MCP presentation remains much broader
 than current agent-tool guidance recommends: the `full` Model audience exposes
-77 canonical tools and schema detail defaults to `full`. Current MCP and model
-platform work increasingly treats large always-loaded tool catalogs as a
-selection/context-scaling problem.
+77 canonical tools and schema detail defaults to `full`. The implementation
+keeps all underlying deterministic capabilities while adding a smaller,
+searchable, protocol-current presentation surface.
 
-The implementation goal is **not** to remove or merge the 86 deterministic
-capabilities. It is to keep the capability registry intact while making the
-ordinary agent-facing surface much smaller, searchable, and protocol-current.
+The protocol/runtime/discovery implementation is complete. The deterministic
+evaluation harness is also useful and passing. The remaining work is a narrow
+evidence-closure pass: the prior `mcp-surface-03` roadmap entry was marked
+complete before the model/client evidence required by its own completion
+criteria existed. `mcp-surface-03c-evaluation-closure-corrective.md` is now the
+only active MCP plan.
 
-The protocol modernization, progressive discovery, corrective conformance, and
-evaluation gates below are complete. The capability registry remains intact;
-direct mode remains the 1.x compatibility default and discovery is explicit.
-
-- **Protocol modernization** (`mcp-surface-01`, commit `35f7dc2e`): added the
-  `2026-07-28` modern stateless request envelope alongside the legacy
-  initialize-era revisions, `server/discover`, modern cache/result metadata,
-  standard Tool annotations, and schema-conforming `structuredContent` while
-  reusing existing registry/validation/execution paths.
-- **Progressive discovery** (`mcp-surface-02`, commit `a5c00b8d`): added
-  `McpSurface::{Direct, Discovery}`, five profile-filtered pinned front doors,
-  and MCP-only deterministic `tool_search` / `tool_invoke` facades. Direct
-  remains the default. Discovery remains presentation-only: profile/audience
-  policy is still enforced by `ToolRegistry` and the normal bounded execution
-  path. Ordinary CI for `a5c00b8d` passed.
+- **Protocol modernization** (`mcp-surface-01`, commit `35f7dc2e`) — complete:
+  `2026-07-28` modern request envelopes coexist with legacy revisions;
+  `server/discover`, modern cache/result metadata, standard Tool annotations,
+  and schema-conforming `structuredContent` reuse the existing registry and
+  bounded execution paths.
+- **Progressive discovery** (`mcp-surface-02`, commit `a5c00b8d`) — complete:
+  `McpSurface::{Direct, Discovery}` provides five profile-filtered pinned front
+  doors plus MCP-only deterministic `tool_search` / `tool_invoke` facades.
+  Profile/audience policy remains authoritative and direct remains the 1.x
+  default.
 - **Protocol/contract corrective architecture** (`mcp-surface-02c`, commit
-  `77ff57a5`): introduced race-safe one-era-per-stdio-connection state
-  (`ConnectionEra::Undecided` → `Legacy`/`Modern20260728`) separate from
-  legacy `SessionState`, preserved per-request modern `_meta`, and removed the
-  misleading dormant `tool_invoke_output_schema()`. The useful architecture,
-  target-diverse invoke tests, and single-winner race test remain valid.
-  Ordinary CI for `77ff57a5` passed and its official SDK smoke selected modern
-  under auto negotiation and legacy under default negotiation.
-- **`mcp-surface-02d` — complete.** Tightened
-  only the remaining stdio entry/routing semantics to match the current
-  official v2 reference model: classify an `initialize` or other claim-less
-  opening as Legacy under compatibility serving; remove the unversioned
-  `server/discover` neutrality exception; separate edge era classification
-  from modern envelope validation; replace eggsact-specific `-32600` /
-  `ERA_MISMATCH` request handling with standard `-32022 Unsupported protocol
-  version`; and drop mismatched notifications before lifecycle/cancellation
-  side effects. Preserve the `02c` connection-state architecture and rerun the
-  official SDK stdio smoke. **Complete:** the shipped classifier now follows
-  the current SDK v2 `serveStdio` edge rules, request mismatches use `-32022`,
-  mismatched notifications are dropped before side effects, and local
-  verification passed formatting, generated-doc freshness, clippy, cargo-deny,
-  and the full non-parity test/doc gate (3,064 tests, zero failures). The
-  official `@modelcontextprotocol/client@2.0.0` smoke selected modern with
-  `versionNegotiation=auto` and legacy with default negotiation, with 77 tools
-  in each result.
-- **`mcp-surface-03` — complete.**
-  `src/mcp/discovery_eval.rs` measures exact serialized UTF-8 Tool-definition
-  cost; generated registry facts prevent count drift; 49 task-oriented positive
-  intents plus hard negatives are checked through production search; and 40
-  portable direct/discovery scenarios plus an offline trace scorer are
-  committed. Full/Model direct is 77 tools and 111,911 bytes; discovery is 7
-  tools and 6,088 bytes (5.44%). Retrieval is top-1 49/49, top-3 49/49, and
-  top-5 49/49, with zero Model-audience leaks. Existing integrations remain
-  direct by policy; provider/client traces can be scored offline before any
-  future default switch, so no provider SDK, API key, or networked CI
-  dependency was added.
+  `77ff57a5`) — complete: race-safe one-era-per-stdio-connection state is
+  separate from legacy `SessionState`, and the misleading generic
+  `tool_invoke_output_schema()` was removed.
+- **Stdio era-classification corrective** (`mcp-surface-02d`, commit
+  `121babde`) — complete: `initialize` or other claim-less openings select the
+  legacy path; modern claims select modern; cross-era requests use `-32022`;
+  mismatched notifications are dropped before side effects. Local verification
+  passed, and the official `@modelcontextprotocol/client@2.0.0` smoke selected
+  modern with `versionNegotiation=auto` and legacy under default negotiation.
+- **Deterministic discovery evaluation infrastructure** (commit `40222999`) —
+  landed and retained: `src/mcp/discovery_eval.rs` measures serialized Tool
+  definitions; registry facts are generated; the current corpus reports
+  full/Model direct at 77 tools / 111,911 bytes versus discovery at 7 /
+  6,088 bytes (5.44%); the checked-in positive corpus currently contains 49
+  semantic target tools and passes its top-1/top-3/top-5 gates; 40 portable
+  scenarios and `scripts/score-discovery-traces.py` provide a foundation for
+  external evaluation. CI run `34546867650` passed on `40222999`.
+- **`mcp-surface-03c-evaluation-closure-corrective.md` — P1, active.** Close
+  the evidence gap without changing protocol or capability architecture:
+  derive complete stable full/Model semantic fixture coverage; separate
+  Model-facing success scenarios from HarnessOnly containment cases; unify and
+  harden the scenario/trace scorer contract; run matched direct-vs-discovery
+  evaluations through real relevant clients for at least one current OpenAI
+  coding/agent model and one current Anthropic coding/agent model; run a
+  controlled server-instructions with/without subset; and record the measured
+  rollout/default decision before pruning the plan.
 
-The official SDK v2 edge rules were checked against the current TypeScript
-reference on 2026-09-10. Local protocol tests cover legacy and modern stdio
-lifecycles, direct/discovery surfaces, profile/audience containment, and
-cross-era routing. Generated integrations intentionally remain direct until
-maintainer-supplied provider/client traces demonstrate noninferior end-to-end
-success; this conservative choice preserves 1.x compatibility while leaving
-discovery fully reachable and explicitly selectable.
+The current deterministic corpus should not be described as full semantic
+coverage yet. Exact-name reachability exists for all stable Model tools, but
+only 49 Model-visible targets currently have positive task-oriented semantic
+fixtures. In addition, the portable scenario file currently includes
+HarnessOnly targets such as `path_scope_check`, `shell_split`,
+`patch_apply_check`, and `unicode_policy_check`; those are valid containment or
+Harness tests, not successful Model-audience discovery tasks, and must be
+separated before model evaluation.
 
-The closure verification gate passed locally: formatting, generated-doc
-freshness, clippy, cargo-deny, packaging, focused discovery/era tests, the
-full non-parity suite, and doc tests.
+Generated integrations intentionally remain direct while `03c` is active. This
+is the conservative 1.x behavior and prevents an evidence gap from becoming a
+user-facing default change. Discovery remains fully reachable and explicitly
+selectable. If external model/client execution is unavailable, the corrective
+must remain active or explicitly blocked; the existence of a trace scorer is
+not a substitute for recorded traces.
+
+The durable rollout gates remain:
+
+```text
+semantic stable-Model coverage        100%
+retrieval top-1                       >=90%
+retrieval top-3                       >=98%
+retrieval top-5                       100%
+Model -> HarnessOnly leaks            0
+discovery/full direct byte ratio      <=25%
+Model task scenarios                  >=40 after containment split
+OpenAI direct/discovery pair          recorded + scored
+Anthropic direct/discovery pair       recorded + scored
+server-instructions A/B               recorded
+```
+
+After these gates are satisfied, the roadmap should record exact model/client
+versions, success/selection/invalid-argument/retry/call-count results, the
+instructions A/B result, and the final integration/default decision. Only then
+is the MCP modernization/evaluation line closed and the `03c` plan eligible for
+pruning.
 
 ## Future opportunities
 
