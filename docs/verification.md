@@ -53,19 +53,63 @@ Spawns both Rust and Python MCP servers, sends identical tool calls, and compare
 ## Discovery evaluation
 
 The progressive-discovery rollout has a deterministic, offline gate in the
-ordinary MCP integration test suite. It measures exact serialized UTF-8 Tool
-definitions and runs the checked-in intent corpus through the production
-lexical search function. The current gate is discovery/full-Model <=25% of
-direct/full-Model bytes, top-1 >=90%, top-3 >=98%, top-5 100%, and zero
-Model-audience HarnessOnly/Hidden leaks.
+ordinary MCP integration test suite (`tests/mcp/test_discovery.rs`). It
+measures exact serialized UTF-8 Tool definitions and runs the checked-in
+intent corpus through the production lexical search function:
 
-The portable end-to-end scenario corpus is
-`tests/fixtures/tool_discovery_scenarios.json`. Maintainers may record direct
-and discovery traces from any provider/client combination and score them with
-`python3 scripts/score-discovery-traces.py trace.json`; the scorer is offline
-and provider-neutral. Model-driven results are evidence for rollout policy,
-not a networked merge check. Generated client integrations stay on direct mode
-until those external traces show noninferior success and host compatibility.
+- full/Model direct advertises 77 tools; discovery advertises 7 (5 pinned
+  front doors + `tool_search`/`tool_invoke`), currently ~5.44% of direct
+  bytes with a <=25% gate;
+- semantic coverage is derived from the registry, not hard-coded: all 76
+  stable full/Model tools have task-oriented fixtures (100% coverage, 88
+  positive intents including second phrasings for overlap-prone tools, 9
+  HarnessOnly/Hidden containment fixtures);
+- retrieval gates stay top-1 >=90%, top-3 >=98%, top-5 100%, zero
+  Model-audience HarnessOnly/Hidden leaks, zero deprecated wins for
+  migration targets, and no bare-canonical-name fixtures;
+- the portable scenario corpus
+  (`tests/fixtures/tool_discovery_scenarios.json`) keeps 48 Model task
+  scenarios (40–60 required) plus 4 Model `must_not_expose` containment
+  cases for the reclassified HarnessOnly targets; Harness tasks never join
+  the Model denominator. Scenarios declare `audience`/`kind` and use the
+  canonical plural `expected_tools`/`acceptable_tools` contract shared with
+  traces.
+
+Maintainer model/client evidence is recorded offline and never runs in merge
+CI. The canonical trace contract uses plural `expected_tools` plus
+`acceptable_tools`, per-scenario `success`, `selected_tool`,
+`search_calls`, `tool_invoke_calls`, `mcp_calls`, `invalid_arguments`,
+`wrong_tool_retries`, and header `model`, `provider`, `client`, `mode`,
+`run_date`, `initial_tool_definition_bytes`, `server_instructions`
+(`on|off`). Legacy singular `expected_tool` loads with a warning. Malformed
+traces fail loudly (missing ids, empty tool sets, bad counters,
+duplicate/mismatched scenario ids, cross-mode pair mismatches).
+
+```bash
+# Single-trace scoring (offline, provider-neutral):
+python3 scripts/score-discovery-traces.py trace.json
+# Matched direct-vs-discovery pair with noninferiority gates:
+python3 scripts/score-discovery-traces.py --pair \
+  tests/fixtures/discovery_traces/<date>-<model>-<client>-direct.json \
+  tests/fixtures/discovery_traces/<date>-<model>-<client>-discovery.json
+```
+
+The pair must share model, provider, client, corpus revision, and
+instructions treatment with opposite modes and identical scenario IDs.
+Gates for recommending discovery: success within 2pp of direct, selection
+within 2pp, no harmful invalid/retry regression, and observed search +
+invoke use. See `tests/fixtures/discovery_traces/README.md` for the exact
+maintainer procedure (same 48 Model tasks in both modes, sanitized fields
+only, plus a 10–15-scenario instructions with/without A/B via a temporary
+local build, <=500-byte instruction budget).
+
+Model-driven results are evidence for rollout policy, not a networked merge
+check. Generated client integrations stay on direct mode until paired OpenAI
+and Anthropic traces plus the instructions A/B are recorded and show
+noninferior success and host compatibility. As of this revision that
+external evidence is still pending under
+`plans/mcp-surface-03c-evaluation-closure-corrective.md`; the scorer and
+corpus preparation above are complete, but the plan remains active.
 
 ## Tier 3 — Targeted Hardening
 

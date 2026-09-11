@@ -371,11 +371,23 @@ still has 86 underlying deterministic tools.
 
 The rollout baseline is measured by `src/mcp/discovery_eval.rs` and guarded by
 `tests/mcp/test_discovery.rs`: full/Model direct advertises 77 tools in 111,911
-serialized UTF-8 bytes, while discovery advertises 7 in 6,088 bytes (5.44%).
-The checked-in intent corpus must keep top-1 retrieval at least 90%, top-3 at
-least 98%, top-5 at 100%, and must not leak Model-ineligible tools. These are
-byte/lexical regression gates; provider-backed model traces are scored
-separately with `scripts/score-discovery-traces.py`.
+serialized UTF-8 bytes, while discovery advertises 7 in 6,088 bytes (5.44%,
+gate <=25%). Semantic coverage is registry-derived, not hard-coded: all 76
+stable full/Model tools have task-oriented fixtures (88 positive intents with
+second phrasings for overlap-prone tools, 9 containment; no bare-name
+fixtures, no HarnessOnly counted as positive, deprecated stays
+migration/negative). Retrieval gates stay top-1 >=90%, top-3 >=98%, top-5
+100% with zero Model-audience leaks. The portable corpus holds 48 Model task
+scenarios plus 4 `must_not_expose` containment cases (`audience`/`kind`,
+plural `expected_tools`); Model tasks must stay 40–60 and Harness tasks never
+join the Model denominator. These are byte/lexical regression gates;
+paired provider traces are scored separately with
+`scripts/score-discovery-traces.py --pair` (strict validation, 2pp
+success/selection noninferiority, invalid/retry and workflow-exercised
+gates). External OpenAI/Anthropic direct/discovery pairs plus the
+instructions A/B are still pending under `mcp-surface-03c`; generated
+integrations stay direct until that evidence lands (see
+`tests/fixtures/discovery_traces/README.md` and `docs/verification.md`).
 
 ## Tool Categories
 

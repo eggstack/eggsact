@@ -91,11 +91,16 @@ pinned set small and reviewable in `src/mcp/discovery.rs`; do not add a
 Descriptions and tags are part of the agent-facing API. For each new stable
 Model-visible tool, add a task-oriented intent fixture to
 `tests/fixtures/tool_discovery_intents.json` (or document why it is
-HarnessOnly/Hidden), then run the deterministic discovery tests. Keep aliases
-to real vocabulary gaps; do not repeat canonical names to game retrieval.
-`src/mcp/discovery_eval.rs` owns byte baselines. Provider/client traces are
-scored offline with `scripts/score-discovery-traces.py`; ordinary CI must not
-gain model SDKs, API keys, network calls, or provider tokenizers.
+HarnessOnly/Hidden), plus a second materially different phrasing when the
+capability overlaps neighbors; never use a bare canonical name as the only
+cue. The registry-derived gate requires 100% stable-Model coverage, so a new
+tool without a fixture fails `test_discovery`. Keep aliases to real
+vocabulary gaps; do not repeat canonical names to game retrieval.
+`src/mcp/discovery_eval.rs` owns byte baselines. Provider/client traces use
+the plural `expected_tools` contract and are scored offline with
+`scripts/score-discovery-traces.py --pair` (2pp gates, strict validation);
+ordinary CI must not gain model SDKs, API keys, network calls, or provider
+tokenizers.
 
 ### Audience Filtering
 

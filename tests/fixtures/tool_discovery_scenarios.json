@@ -1,42 +1,575 @@
 [
-  {"id":"s01","user_request":"Evaluate 2+2 and return the exact result.","expected_tools":["math_eval"],"success_criteria":"The expression result is 4.","search_expected":false},
-  {"id":"s02","user_request":"Convert 3 feet to meters.","expected_tools":["unit_convert"],"success_criteria":"The converted quantity is returned with units.","search_expected":true},
-  {"id":"s03","user_request":"Tell me whether these two strings are identical.","expected_tools":["text_equal"],"success_criteria":"The result reports equality and no text mutation.","search_expected":true},
-  {"id":"s04","user_request":"Explain what changed between the old and new text.","expected_tools":["text_diff_explain"],"success_criteria":"The result identifies deterministic text differences.","search_expected":true},
-  {"id":"s05","user_request":"Find hidden or confusable Unicode characters in this identifier list.","expected_tools":["text_security_inspect"],"success_criteria":"The result reports security findings without modifying input.","search_expected":false},
-  {"id":"s06","user_request":"Create a stable hash of this text.","expected_tools":["text_hash"],"success_criteria":"The result contains a deterministic digest.","search_expected":true},
-  {"id":"s07","user_request":"Extract lines 20 through 30 from this file content.","expected_tools":["line_range_extract"],"success_criteria":"Only the requested line range is returned.","search_expected":true},
-  {"id":"s08","user_request":"Compare these JSON configs without treating key order as meaningful.","expected_tools":["json_compare","structured_data_compare"],"success_criteria":"The comparison distinguishes semantic equality from formatting.","search_expected":true},
-  {"id":"s09","user_request":"Get the value at this JSON pointer.","expected_tools":["json_extract"],"success_criteria":"The selected JSON value is returned.","search_expected":true},
-  {"id":"s10","user_request":"Produce canonical JSON for a cache key.","expected_tools":["json_canonicalize"],"success_criteria":"Equivalent objects serialize deterministically.","search_expected":true},
-  {"id":"s11","user_request":"Check whether this payload is valid JSON.","expected_tools":["validate_json"],"success_criteria":"The result reports parse validity.","search_expected":false},
-  {"id":"s12","user_request":"Validate this object against the supplied lightweight schema.","expected_tools":["validate_schema_light"],"success_criteria":"The result reports schema validation findings.","search_expected":true},
-  {"id":"s13","user_request":"Run this regex against the sample strings.","expected_tools":["validate_regex"],"success_criteria":"Matches and validity are reported.","search_expected":true},
-  {"id":"s14","user_request":"Review this regular expression for unsafe constructs.","expected_tools":["regex_safety_check"],"success_criteria":"The result classifies regex safety.","search_expected":true},
-  {"id":"s15","user_request":"Show items present in one list but not the other.","expected_tools":["list_compare"],"success_criteria":"Set differences are returned deterministically.","search_expected":true},
-  {"id":"s16","user_request":"Deduplicate this list while keeping first-seen order.","expected_tools":["list_dedupe"],"success_criteria":"Duplicate values are removed deterministically.","search_expected":true},
-  {"id":"s17","user_request":"Normalize this relative path lexically.","expected_tools":["path_normalize"],"success_criteria":"The normalized path is returned without filesystem access.","search_expected":true},
-  {"id":"s18","user_request":"Verify that this edit target stays under the workspace root.","expected_tools":["path_scope_check"],"success_criteria":"The scope verdict reports containment.","search_expected":true},
-  {"id":"s19","user_request":"Determine whether this path matches the glob.","expected_tools":["glob_match"],"success_criteria":"The result reports a deterministic match boolean.","search_expected":true},
-  {"id":"s20","user_request":"Parse this shell command into argv; do not execute it.","expected_tools":["shell_split"],"success_criteria":"The argument vector is returned without execution.","search_expected":true},
-  {"id":"s21","user_request":"Quote these arguments for a shell command.","expected_tools":["shell_quote_join"],"success_criteria":"The resulting command safely represents each argument.","search_expected":true},
-  {"id":"s22","user_request":"Compare these two argument vectors.","expected_tools":["argv_compare"],"success_criteria":"Argument additions, removals, and changes are identified.","search_expected":true},
-  {"id":"s23","user_request":"Check whether this proposed source edit can be applied once.","expected_tools":["edit_preflight"],"success_criteria":"The preflight verdict and findings are returned.","search_expected":false},
-  {"id":"s24","user_request":"Review this unified patch before applying it.","expected_tools":["patch_apply_check"],"success_criteria":"Patch policy findings and a verdict are returned.","search_expected":true},
-  {"id":"s25","user_request":"Summarize changed files and hunks in this diff.","expected_tools":["patch_summary"],"success_criteria":"File and hunk counts are reported.","search_expected":true},
-  {"id":"s26","user_request":"Check a patch against its declared contract.","expected_tools":["patch_contract_check"],"success_criteria":"Contract compliance findings are returned.","search_expected":true},
-  {"id":"s27","user_request":"Classify the risk represented by these changes.","expected_tools":["diff_risk_classify"],"success_criteria":"The diff receives a deterministic risk classification.","search_expected":true},
-  {"id":"s28","user_request":"Preflight this command for destructive operations.","expected_tools":["command_preflight"],"success_criteria":"Command policy and findings are returned.","search_expected":false},
-  {"id":"s29","user_request":"Preflight this TOML or JSON configuration change.","expected_tools":["config_preflight"],"success_criteria":"Configuration validation and policy findings are returned.","search_expected":false},
-  {"id":"s30","user_request":"Inspect this config file to identify its format and validity.","expected_tools":["config_file_inspect"],"success_criteria":"The detected format and analysis mode are reported.","search_expected":true},
-  {"id":"s31","user_request":"Check these dotenv assignments for syntax issues.","expected_tools":["dotenv_validate"],"success_criteria":"Dotenv validation findings are returned.","search_expected":true},
-  {"id":"s32","user_request":"Validate this INI document.","expected_tools":["ini_validate"],"success_criteria":"INI parse and validation findings are returned.","search_expected":true},
-  {"id":"s33","user_request":"Find Unicode policy violations in these names.","expected_tools":["unicode_policy_check"],"success_criteria":"Unicode policy findings are returned.","search_expected":true},
-  {"id":"s34","user_request":"Normalize this text to NFC.","expected_tools":["canonicalize_text"],"success_criteria":"The requested normalization form is applied.","search_expected":true},
-  {"id":"s35","user_request":"Inspect these identifiers for naming and character problems.","expected_tools":["identifier_inspect"],"success_criteria":"Identifier findings and positions are returned.","search_expected":true},
-  {"id":"s36","user_request":"Tell me which languages are used in this repository.","expected_tools":["repo_language_detect"],"success_criteria":"Language evidence is reported deterministically.","search_expected":true},
-  {"id":"s37","user_request":"Summarize the files and directories in this repository.","expected_tools":["repo_tree_summarize"],"success_criteria":"Tree counts and bounded summaries are returned.","search_expected":true},
-  {"id":"s38","user_request":"Inspect manifests to determine the repository ecosystem.","expected_tools":["repo_manifest_inspect"],"success_criteria":"Manifest and ecosystem facts are returned.","search_expected":true},
-  {"id":"s39","user_request":"Suggest the command that should run this repository's tests.","expected_tools":["test_command_suggest"],"success_criteria":"A deterministic test command suggestion is returned.","search_expected":true},
-  {"id":"s40","user_request":"Convert these bytes between supported encodings.","expected_tools":["codec_convert"],"success_criteria":"The converted representation and codec are returned.","search_expected":true}
+  {
+    "id": "s01",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Evaluate 2+2 and return the exact result.",
+    "expected_tools": [
+      "math_eval"
+    ],
+    "success_criteria": "The expression result is 4.",
+    "search_expected": false
+  },
+  {
+    "id": "s02",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Convert 3 feet to meters.",
+    "expected_tools": [
+      "unit_convert"
+    ],
+    "success_criteria": "The converted quantity is returned with units.",
+    "search_expected": true
+  },
+  {
+    "id": "s03",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Tell me whether these two strings are identical.",
+    "expected_tools": [
+      "text_equal"
+    ],
+    "success_criteria": "The result reports equality and no text mutation.",
+    "search_expected": true
+  },
+  {
+    "id": "s04",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Explain what changed between the old and new text.",
+    "expected_tools": [
+      "text_diff_explain"
+    ],
+    "success_criteria": "The result identifies deterministic text differences.",
+    "search_expected": true
+  },
+  {
+    "id": "s05",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Find hidden or confusable Unicode characters in this identifier list.",
+    "expected_tools": [
+      "text_security_inspect"
+    ],
+    "success_criteria": "The result reports security findings without modifying input.",
+    "search_expected": false
+  },
+  {
+    "id": "s06",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Create a stable hash of this text.",
+    "expected_tools": [
+      "text_hash"
+    ],
+    "success_criteria": "The result contains a deterministic digest.",
+    "search_expected": true
+  },
+  {
+    "id": "s07",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Extract lines 20 through 30 from this file content.",
+    "expected_tools": [
+      "line_range_extract"
+    ],
+    "success_criteria": "Only the requested line range is returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s08",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Compare these JSON configs without treating key order as meaningful.",
+    "expected_tools": [
+      "json_compare",
+      "structured_data_compare"
+    ],
+    "success_criteria": "The comparison distinguishes semantic equality from formatting.",
+    "search_expected": true
+  },
+  {
+    "id": "s09",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Get the value at this JSON pointer.",
+    "expected_tools": [
+      "json_extract"
+    ],
+    "success_criteria": "The selected JSON value is returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s10",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Produce canonical JSON for a cache key.",
+    "expected_tools": [
+      "json_canonicalize"
+    ],
+    "success_criteria": "Equivalent objects serialize deterministically.",
+    "search_expected": true
+  },
+  {
+    "id": "s11",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Check whether this payload is valid JSON.",
+    "expected_tools": [
+      "validate_json"
+    ],
+    "success_criteria": "The result reports parse validity.",
+    "search_expected": false
+  },
+  {
+    "id": "s12",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Validate this object against the supplied lightweight schema.",
+    "expected_tools": [
+      "validate_schema_light"
+    ],
+    "success_criteria": "The result reports schema validation findings.",
+    "search_expected": true
+  },
+  {
+    "id": "s13",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Run this regex against the sample strings.",
+    "expected_tools": [
+      "validate_regex"
+    ],
+    "success_criteria": "Matches and validity are reported.",
+    "search_expected": true
+  },
+  {
+    "id": "s14",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Review this regular expression for unsafe constructs.",
+    "expected_tools": [
+      "regex_safety_check"
+    ],
+    "success_criteria": "The result classifies regex safety.",
+    "search_expected": true
+  },
+  {
+    "id": "s15",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Show items present in one list but not the other.",
+    "expected_tools": [
+      "list_compare"
+    ],
+    "success_criteria": "Set differences are returned deterministically.",
+    "search_expected": true
+  },
+  {
+    "id": "s16",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Deduplicate this list while keeping first-seen order.",
+    "expected_tools": [
+      "list_dedupe"
+    ],
+    "success_criteria": "Duplicate values are removed deterministically.",
+    "search_expected": true
+  },
+  {
+    "id": "s17",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Normalize this relative path lexically.",
+    "expected_tools": [
+      "path_normalize"
+    ],
+    "success_criteria": "The normalized path is returned without filesystem access.",
+    "search_expected": true
+  },
+  {
+    "id": "s18",
+    "audience": "model",
+    "kind": "must_not_expose",
+    "user_request": "Verify that this edit target stays under the workspace root.",
+    "forbidden_tools": [
+      "path_scope_check"
+    ],
+    "success_criteria": "Model discovery surface does not expose path_scope_check; harness-only policy stays enforced.",
+    "search_expected": false
+  },
+  {
+    "id": "s19",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Determine whether this path matches the glob.",
+    "expected_tools": [
+      "glob_match"
+    ],
+    "success_criteria": "The result reports a deterministic match boolean.",
+    "search_expected": true
+  },
+  {
+    "id": "s20",
+    "audience": "model",
+    "kind": "must_not_expose",
+    "user_request": "Parse this shell command into argv; do not execute it.",
+    "forbidden_tools": [
+      "shell_split"
+    ],
+    "success_criteria": "Model discovery surface does not expose shell_split; harness-only policy stays enforced.",
+    "search_expected": false
+  },
+  {
+    "id": "s21",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Quote these arguments for a shell command.",
+    "expected_tools": [
+      "shell_quote_join"
+    ],
+    "success_criteria": "The resulting command safely represents each argument.",
+    "search_expected": true
+  },
+  {
+    "id": "s22",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Compare these two argument vectors.",
+    "expected_tools": [
+      "argv_compare"
+    ],
+    "success_criteria": "Argument additions, removals, and changes are identified.",
+    "search_expected": true
+  },
+  {
+    "id": "s23",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Check whether this proposed source edit can be applied once.",
+    "expected_tools": [
+      "edit_preflight"
+    ],
+    "success_criteria": "The preflight verdict and findings are returned.",
+    "search_expected": false
+  },
+  {
+    "id": "s24",
+    "audience": "model",
+    "kind": "must_not_expose",
+    "user_request": "Review this unified patch before applying it.",
+    "forbidden_tools": [
+      "patch_apply_check"
+    ],
+    "success_criteria": "Model discovery surface does not expose patch_apply_check; harness-only policy stays enforced.",
+    "search_expected": false
+  },
+  {
+    "id": "s25",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Summarize changed files and hunks in this diff.",
+    "expected_tools": [
+      "patch_summary"
+    ],
+    "success_criteria": "File and hunk counts are reported.",
+    "search_expected": true
+  },
+  {
+    "id": "s26",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Check a patch against its declared contract.",
+    "expected_tools": [
+      "patch_contract_check"
+    ],
+    "success_criteria": "Contract compliance findings are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s27",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Classify the risk represented by these changes.",
+    "expected_tools": [
+      "diff_risk_classify"
+    ],
+    "success_criteria": "The diff receives a deterministic risk classification.",
+    "search_expected": true
+  },
+  {
+    "id": "s28",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Preflight this command for destructive operations.",
+    "expected_tools": [
+      "command_preflight"
+    ],
+    "success_criteria": "Command policy and findings are returned.",
+    "search_expected": false
+  },
+  {
+    "id": "s29",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Preflight this TOML or JSON configuration change.",
+    "expected_tools": [
+      "config_preflight"
+    ],
+    "success_criteria": "Configuration validation and policy findings are returned.",
+    "search_expected": false
+  },
+  {
+    "id": "s30",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Inspect this config file to identify its format and validity.",
+    "expected_tools": [
+      "config_file_inspect"
+    ],
+    "success_criteria": "The detected format and analysis mode are reported.",
+    "search_expected": true
+  },
+  {
+    "id": "s31",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Check these dotenv assignments for syntax issues.",
+    "expected_tools": [
+      "dotenv_validate"
+    ],
+    "success_criteria": "Dotenv validation findings are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s32",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Validate this INI document.",
+    "expected_tools": [
+      "ini_validate"
+    ],
+    "success_criteria": "INI parse and validation findings are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s33",
+    "audience": "model",
+    "kind": "must_not_expose",
+    "user_request": "Find Unicode policy violations in these names.",
+    "forbidden_tools": [
+      "unicode_policy_check"
+    ],
+    "success_criteria": "Model discovery surface does not expose unicode_policy_check; harness-only policy stays enforced.",
+    "search_expected": false
+  },
+  {
+    "id": "s34",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Normalize this text to NFC.",
+    "expected_tools": [
+      "canonicalize_text"
+    ],
+    "success_criteria": "The requested normalization form is applied.",
+    "search_expected": true
+  },
+  {
+    "id": "s35",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Inspect these identifiers for naming and character problems.",
+    "expected_tools": [
+      "identifier_inspect"
+    ],
+    "success_criteria": "Identifier findings and positions are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s36",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Tell me which languages are used in this repository.",
+    "expected_tools": [
+      "repo_language_detect"
+    ],
+    "success_criteria": "Language evidence is reported deterministically.",
+    "search_expected": true
+  },
+  {
+    "id": "s37",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Summarize the files and directories in this repository.",
+    "expected_tools": [
+      "repo_tree_summarize"
+    ],
+    "success_criteria": "Tree counts and bounded summaries are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s38",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Inspect manifests to determine the repository ecosystem.",
+    "expected_tools": [
+      "repo_manifest_inspect"
+    ],
+    "success_criteria": "Manifest and ecosystem facts are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s39",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Suggest the command that should run this repository's tests.",
+    "expected_tools": [
+      "test_command_suggest"
+    ],
+    "success_criteria": "A deterministic test command suggestion is returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s40",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Convert these bytes between supported encodings.",
+    "expected_tools": [
+      "codec_convert"
+    ],
+    "success_criteria": "The converted representation and codec are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s41",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Preflight these dependency changes including added and removed packages.",
+    "expected_tools": [
+      "dependency_edit_preflight"
+    ],
+    "success_criteria": "Dependency version, source, and hook findings are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s42",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Inspect markdown headings, links, and fenced blocks in this document.",
+    "expected_tools": [
+      "markdown_structure"
+    ],
+    "success_criteria": "Headings, links, and fenced block structure are reported.",
+    "search_expected": true
+  },
+  {
+    "id": "s43",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Extract fenced code blocks with language labels from this markdown.",
+    "expected_tools": [
+      "code_fence_extract"
+    ],
+    "success_criteria": "Code fences and language labels are extracted deterministically.",
+    "search_expected": true
+  },
+  {
+    "id": "s44",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Inspect this IP address literal for validity and metadata.",
+    "expected_tools": [
+      "ip_inspect"
+    ],
+    "success_criteria": "IP inspection facts are returned without network access.",
+    "search_expected": true
+  },
+  {
+    "id": "s45",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Convert this integer between decimal and hexadecimal bases.",
+    "expected_tools": [
+      "radix_convert"
+    ],
+    "success_criteria": "The converted representation and radix are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s46",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Convert this timestamp using an explicit numeric offset.",
+    "expected_tools": [
+      "datetime_convert"
+    ],
+    "success_criteria": "The converted timestamp with fixed offset is returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s47",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Evaluate whether this five-field cron expression can ever match.",
+    "expected_tools": [
+      "cron_inspect"
+    ],
+    "success_criteria": "Cron parsing and match analysis are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s48",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Compare these two software version strings.",
+    "expected_tools": [
+      "version_compare"
+    ],
+    "success_criteria": "Version ordering is reported deterministically.",
+    "search_expected": true
+  },
+  {
+    "id": "s49",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Check this identifier table for collisions and confusable names.",
+    "expected_tools": [
+      "identifier_table_inspect"
+    ],
+    "success_criteria": "Table collision and confusable findings are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s50",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Sort these strings with Unicode-aware ordering.",
+    "expected_tools": [
+      "list_sort"
+    ],
+    "success_criteria": "Sorted strings with normalization and casefold are returned.",
+    "search_expected": true
+  },
+  {
+    "id": "s51",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Find every match of this pattern with positions and capture groups.",
+    "expected_tools": [
+      "regex_finditer"
+    ],
+    "success_criteria": "All matches with spans and groups are reported.",
+    "search_expected": true
+  },
+  {
+    "id": "s52",
+    "audience": "model",
+    "kind": "task",
+    "user_request": "Describe the tables and keys in this TOML document.",
+    "expected_tools": [
+      "toml_shape"
+    ],
+    "success_criteria": "TOML structure with tables and nesting is reported.",
+    "search_expected": true
+  }
 ]

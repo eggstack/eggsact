@@ -156,32 +156,40 @@ only active MCP plan.
   mismatched notifications are dropped before side effects. Local verification
   passed, and the official `@modelcontextprotocol/client@2.0.0` smoke selected
   modern with `versionNegotiation=auto` and legacy under default negotiation.
-- **Deterministic discovery evaluation infrastructure** (commit `40222999`) —
-  landed and retained: `src/mcp/discovery_eval.rs` measures serialized Tool
-  definitions; registry facts are generated; the current corpus reports
-  full/Model direct at 77 tools / 111,911 bytes versus discovery at 7 /
-  6,088 bytes (5.44%); the checked-in positive corpus currently contains 49
-  semantic target tools and passes its top-1/top-3/top-5 gates; 40 portable
-  scenarios and `scripts/score-discovery-traces.py` provide a foundation for
-  external evaluation. CI run `34546867650` passed on `40222999`.
-- **`mcp-surface-03c-evaluation-closure-corrective.md` — P1, active.** Close
-  the evidence gap without changing protocol or capability architecture:
-  derive complete stable full/Model semantic fixture coverage; separate
-  Model-facing success scenarios from HarnessOnly containment cases; unify and
-  harden the scenario/trace scorer contract; run matched direct-vs-discovery
-  evaluations through real relevant clients for at least one current OpenAI
-  coding/agent model and one current Anthropic coding/agent model; run a
-  controlled server-instructions with/without subset; and record the measured
-  rollout/default decision before pruning the plan.
+- **Deterministic discovery evaluation infrastructure** (commit `40222999`,
+  extended under `03c` deterministic preparation) — landed and retained:
+  `src/mcp/discovery_eval.rs` measures serialized Tool definitions; registry
+  facts are generated; full/Model direct is 77 tools / 111,911 bytes versus
+  discovery 7 / 6,088 bytes (5.44%, gate <=25%); semantic coverage is now
+  registry-derived at 100% (76 stable full/Model targets, 88 positive intents
+  with second phrasings for overlap-prone tools, 9 HarnessOnly/Hidden
+  containment, no bare-name fixtures, deprecated stays migration/negative);
+  retrieval holds top-1 ~96.6% / top-3 100% / top-5 100% with zero leaks;
+  48 Model task scenarios plus 4 Model `must_not_expose` containment cases
+  (`audience`/`kind`, plural `expected_tools`) replace the prior mixed 40;
+  `scripts/score-discovery-traces.py` now enforces the plural contract with
+  strict validation and `--pair` direct/discovery deltas plus 2pp
+  noninferiority gates. CI run `34546867650` passed on `40222999`; local
+  `test_discovery` (15 tests) passes on the expanded corpus.
+- **`mcp-surface-03c-evaluation-closure-corrective.md` — P1, active
+  (deterministic preparation complete; external evidence blocked).**
+  Deterministic/scorer preparation above is done without changing protocol or
+  capability architecture. Still required before pruning: matched
+  direct-vs-discovery runs through real relevant clients for at least one
+  current OpenAI coding/agent model and one current Anthropic coding/agent
+  model; a controlled server-instructions with/without subset; and the
+  evidence-backed rollout/default decision. Attempted 2026-09-11 in this
+  environment: `codex`/`claude` CLIs exist but no provider credentials,
+  subscriptions, or evaluation budget were available for ~200 model calls, so
+  no traces were fabricated. Sanitized evidence belongs in
+  `tests/fixtures/discovery_traces/` per its README; the scorer is ready but
+  is not a substitute for recorded traces.
 
-The current deterministic corpus should not be described as full semantic
-coverage yet. Exact-name reachability exists for all stable Model tools, but
-only 49 Model-visible targets currently have positive task-oriented semantic
-fixtures. In addition, the portable scenario file currently includes
-HarnessOnly targets such as `path_scope_check`, `shell_split`,
-`patch_apply_check`, and `unicode_policy_check`; those are valid containment or
-Harness tests, not successful Model-audience discovery tasks, and must be
-separated before model evaluation.
+Deterministic semantic coverage is now complete: every stable Model-visible
+capability has task-oriented discovery coverage, and the four prior
+HarnessOnly scenario targets (`path_scope_check`, `shell_split`,
+`patch_apply_check`, `unicode_policy_check`) are separated as Model
+`must_not_expose` containment rather than successful discovery tasks.
 
 Generated integrations intentionally remain direct while `03c` is active. This
 is the conservative 1.x behavior and prevents an evidence gap from becoming a

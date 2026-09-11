@@ -75,9 +75,15 @@ mismatched notifications are dropped before side effects.
 Discovery is an explicit low-context presentation option, not a capability
 reduction: full/Model direct definitions are 77 tools / 111,911 serialized
 bytes, while discovery advertises 7 / 6,088 bytes (5.44%). Deterministic
-retrieval and policy-containment gates live in `tests/mcp/test_discovery.rs`;
-provider/client traces can be scored offline with
-`scripts/score-discovery-traces.py`.
+retrieval and policy-containment gates live in `tests/mcp/test_discovery.rs`
+(76 stable Model tools at 100% semantic coverage with 88 task intents,
+top-1 >=90% / top-3 >=98% / top-5 100%, zero Model-audience leaks; 48 Model
+task scenarios plus 4 containment cases). Paired provider/client traces can
+be scored offline with `scripts/score-discovery-traces.py --pair
+direct.json discovery.json` (plural `expected_tools` contract, 2pp
+noninferiority gates); see `tests/fixtures/discovery_traces/README.md`.
+External OpenAI/Anthropic evidence is still pending, so generated
+integrations stay on direct while discovery remains explicitly selectable.
 
 ### MCP client setup
 

@@ -18,11 +18,14 @@ cargo package --locked --verbose                  # package verification
 
 Progressive-discovery verification is part of the ordinary MCP suite:
 `tests/mcp/test_discovery.rs` measures serialized direct-vs-discovery bytes,
-checks profile/audience containment, and enforces the frozen intent corpus in
-`tests/fixtures/tool_discovery_intents.json` (top-1 >=90%, top-3 >=98%,
-top-5 100%). Portable provider/client traces use
-`python3 scripts/score-discovery-traces.py`; this scorer is offline and must
-not add model SDKs or network calls to CI.
+checks profile/audience containment, enforces registry-derived 100% stable-
+Model semantic coverage (88 positive intents, 9 containment) with top-1
+>=90%, top-3 >=98%, top-5 100%, and validates the portable scenario corpus
+(48 Model tasks + 4 containment, `audience`/`kind`, plural `expected_tools`).
+Portable provider/client traces use
+`python3 scripts/score-discovery-traces.py --pair direct.json discovery.json`;
+this scorer is offline, strictly validates, and must not add model SDKs or
+network calls to CI.
 
 Release-binary smoke helpers (the release workflow repeats these on each
 staged target):

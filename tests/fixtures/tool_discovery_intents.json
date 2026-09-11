@@ -1,55 +1,788 @@
 [
-  {"id":"math-01","intent":"evaluate a bounded math arithmetic expression with units","primary":"math_eval","acceptable":[],"category":"math","kind":"selection"},
-  {"id":"math-02","intent":"perform a unit conversion between compatible measurement units","primary":"unit_convert","acceptable":[],"category":"math","kind":"selection"},
-  {"id":"text-01","intent":"compare two strings for exact equality","primary":"text_equal","acceptable":[],"category":"text","kind":"selection"},
-  {"id":"text-02","intent":"explain the differences between two text values","primary":"text_diff_explain","acceptable":[],"category":"text","kind":"selection"},
-  {"id":"text-03","intent":"screen text for security hygiene, invisible or confusable characters, and risky prompt patterns","primary":"text_security_inspect","acceptable":[],"category":"security","kind":"selection"},
-  {"id":"text-04","intent":"calculate a stable hash or digest for exact text identity","primary":"text_hash","acceptable":[],"category":"text","kind":"selection"},
-  {"id":"text-05","intent":"extract only a requested line range from a document","primary":"line_range_extract","acceptable":[],"category":"text","kind":"selection"},
-  {"id":"json-01","intent":"compare JSON configuration while ignoring formatting and key order","primary":"json_compare","acceptable":["structured_data_compare"],"category":"json","kind":"selection"},
-  {"id":"json-02","intent":"pull a value from a JSON document using a pointer path","primary":"json_extract","acceptable":[],"category":"json","kind":"selection"},
-  {"id":"json-03","intent":"canonicalize JSON for a deterministic representation","primary":"json_canonicalize","acceptable":[],"category":"json","kind":"selection"},
-  {"id":"json-04","intent":"inspect the shape and structure of nested JSON data","primary":"json_shape","acceptable":["structured_data_compare"],"category":"json","kind":"selection"},
-  {"id":"validation-01","intent":"validate JSON syntax and report whether this payload is valid","primary":"validate_json","acceptable":[],"category":"validation","kind":"selection"},
-  {"id":"validation-02","intent":"validate an input object against a lightweight schema","primary":"validate_schema_light","acceptable":[],"category":"validation","kind":"selection"},
-  {"id":"regex-01","intent":"validate this regex pattern against sample strings","primary":"validate_regex","acceptable":[],"category":"regex","kind":"selection"},
-  {"id":"regex-02","intent":"inspect regex safety and classify unsafe or unsupported constructs","primary":"regex_safety_check","acceptable":[],"category":"regex","kind":"selection"},
-  {"id":"list-01","intent":"compare two list values as sets and report missing items","primary":"list_compare","acceptable":[],"category":"list","kind":"selection"},
-  {"id":"list-02","intent":"dedupe repeated list values while preserving deterministic order","primary":"list_dedupe","acceptable":[],"category":"list","kind":"selection"},
-  {"id":"path-01","intent":"normalize a path without touching the filesystem","primary":"path_normalize","acceptable":[],"category":"path","kind":"selection"},
-  {"id":"path-02","intent":"check whether a file target is inside an allowed workspace root","primary":"path_scope_check","acceptable":[],"category":"path","kind":"negative_selection"},
-  {"id":"path-03","intent":"match a path against a glob pattern","primary":"glob_match","acceptable":[],"category":"path","kind":"selection"},
-  {"id":"shell-01","intent":"split a shell command into argv without executing it","primary":"shell_split","acceptable":[],"category":"shell","kind":"negative_selection"},
-  {"id":"shell-02","intent":"safely quote argv tokens into a POSIX shell string","primary":"shell_quote_join","acceptable":[],"category":"shell","kind":"selection"},
-  {"id":"shell-03","intent":"compare two argv vectors for exact differences","primary":"argv_compare","acceptable":[],"category":"shell","kind":"selection"},
-  {"id":"edit-01","intent":"check whether a proposed edit can be applied exactly once","primary":"edit_preflight","acceptable":[],"category":"patch","kind":"selection"},
-  {"id":"edit-02","intent":"review a patch before applying it and classify safety","primary":"patch_apply_check","acceptable":[],"category":"patch","kind":"negative_selection"},
-  {"id":"patch-01","intent":"summarize unified patch diff statistics including files and hunks","primary":"patch_summary","acceptable":[],"category":"patch","kind":"selection"},
-  {"id":"patch-02","intent":"check whether a patch satisfies its declared contract","primary":"patch_contract_check","acceptable":[],"category":"patch","kind":"selection"},
-  {"id":"patch-03","intent":"classify the risk of changes in a diff","primary":"diff_risk_classify","acceptable":[],"category":"patch","kind":"selection"},
-  {"id":"command-01","intent":"preflight a command for destructive or risky behavior","primary":"command_preflight","acceptable":[],"category":"shell","kind":"selection"},
-  {"id":"config-01","intent":"preflight generated configuration text with format auto-detection","primary":"config_preflight","acceptable":[],"category":"config","kind":"selection"},
-  {"id":"config-02","intent":"inspect one config file for risky keys and secret-like values","primary":"config_file_inspect","acceptable":[],"category":"config","kind":"selection"},
-  {"id":"config-03","intent":"validate dotenv environment assignments","primary":"dotenv_validate","acceptable":[],"category":"config","kind":"selection"},
-  {"id":"config-04","intent":"validate an INI configuration document","primary":"ini_validate","acceptable":[],"category":"config","kind":"selection"},
-  {"id":"config-05","intent":"check TOML syntax and structure","primary":"validate_toml","acceptable":["toml_shape"],"category":"config","kind":"selection"},
-  {"id":"unicode-01","intent":"apply a Unicode security policy to text identifiers","primary":"unicode_policy_check","acceptable":[],"category":"unicode","kind":"negative_selection"},
-  {"id":"unicode-02","intent":"canonicalize Unicode text into NFC or another normalization form","primary":"canonicalize_text","acceptable":[],"category":"unicode","kind":"selection"},
-  {"id":"identifier-01","intent":"inspect identifiers for confusable collisions and mixed scripts","primary":"identifier_inspect","acceptable":[],"category":"identifier","kind":"selection"},
-  {"id":"identifier-02","intent":"compare names in two identifier tables","primary":"identifier_table_inspect","acceptable":[],"category":"identifier","kind":"selection"},
-  {"id":"version-01","intent":"compare two software version strings","primary":"version_compare","acceptable":[],"category":"version","kind":"selection"},
-  {"id":"version-02","intent":"check whether a version satisfies a constraint","primary":"version_constraint_check","acceptable":[],"category":"version","kind":"selection"},
-  {"id":"repo-01","intent":"tell me which languages this repository appears to use","primary":"repo_language_detect","acceptable":[],"category":"repo","kind":"selection"},
-  {"id":"repo-02","intent":"summarize the repository tree and file counts","primary":"repo_tree_summarize","acceptable":[],"category":"repo","kind":"selection"},
-  {"id":"repo-03","intent":"inspect repository manifests and identify its ecosystem","primary":"repo_manifest_inspect","acceptable":[],"category":"repo","kind":"selection"},
-  {"id":"repo-04","intent":"suggest the appropriate test command for this repository","primary":"test_command_suggest","acceptable":[],"category":"repo","kind":"selection"},
-  {"id":"dependency-01","intent":"preflight dependency changes including versions and sources","primary":"dependency_edit_preflight","acceptable":[],"category":"dependency","kind":"selection"},
-  {"id":"markdown-01","intent":"inspect markdown headings links and fenced blocks","primary":"markdown_structure","acceptable":[],"category":"markdown","kind":"selection"},
-  {"id":"markdown-02","intent":"extract fenced code blocks from Markdown with language labels","primary":"code_fence_extract","acceptable":[],"category":"markdown","kind":"selection"},
-  {"id":"network-01","intent":"inspect an IP address or hostname literal","primary":"ip_inspect","acceptable":[],"category":"network","kind":"selection"},
-  {"id":"network-02","intent":"check a CIDR network and address relationship","primary":"cidr_inspect","acceptable":[],"category":"network","kind":"selection"},
-  {"id":"encoding-01","intent":"convert encoded bytes among hex base64 UTF-8 codecs","primary":"codec_convert","acceptable":[],"category":"encoding","kind":"selection"},
-  {"id":"encoding-02","intent":"convert a signed integer between numeric bases","primary":"radix_convert","acceptable":[],"category":"encoding","kind":"selection"},
-  {"id":"temporal-01","intent":"convert a timestamp using an explicit fixed offset","primary":"datetime_convert","acceptable":[],"category":"temporal","kind":"selection"},
-  {"id":"temporal-02","intent":"inspect and evaluate a bounded five-field cron expression","primary":"cron_inspect","acceptable":[],"category":"temporal","kind":"selection"}
+  {
+    "id": "math-01",
+    "intent": "evaluate a bounded math arithmetic expression with units",
+    "primary": "math_eval",
+    "acceptable": [],
+    "category": "math",
+    "kind": "selection"
+  },
+  {
+    "id": "math-02",
+    "intent": "perform a unit conversion between compatible measurement units",
+    "primary": "unit_convert",
+    "acceptable": [],
+    "category": "math",
+    "kind": "selection"
+  },
+  {
+    "id": "text-01",
+    "intent": "compare two strings for exact equality",
+    "primary": "text_equal",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-02",
+    "intent": "explain the differences between two text values",
+    "primary": "text_diff_explain",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-03",
+    "intent": "screen text for security hygiene, invisible or confusable characters, and risky prompt patterns",
+    "primary": "text_security_inspect",
+    "acceptable": [],
+    "category": "security",
+    "kind": "selection"
+  },
+  {
+    "id": "text-04",
+    "intent": "calculate a stable hash or digest for exact text identity",
+    "primary": "text_hash",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-05",
+    "intent": "extract only a requested line range from a document",
+    "primary": "line_range_extract",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "json-01",
+    "intent": "compare JSON configuration while ignoring formatting and key order",
+    "primary": "json_compare",
+    "acceptable": [
+      "structured_data_compare"
+    ],
+    "category": "json",
+    "kind": "selection"
+  },
+  {
+    "id": "json-02",
+    "intent": "pull a value from a JSON document using a pointer path",
+    "primary": "json_extract",
+    "acceptable": [],
+    "category": "json",
+    "kind": "selection"
+  },
+  {
+    "id": "json-03",
+    "intent": "canonicalize JSON for a deterministic representation",
+    "primary": "json_canonicalize",
+    "acceptable": [],
+    "category": "json",
+    "kind": "selection"
+  },
+  {
+    "id": "json-04",
+    "intent": "inspect the shape and structure of nested JSON data",
+    "primary": "json_shape",
+    "acceptable": [
+      "structured_data_compare"
+    ],
+    "category": "json",
+    "kind": "selection"
+  },
+  {
+    "id": "validation-01",
+    "intent": "validate JSON syntax and report whether this payload is valid",
+    "primary": "validate_json",
+    "acceptable": [],
+    "category": "validation",
+    "kind": "selection"
+  },
+  {
+    "id": "validation-02",
+    "intent": "validate an input object against a lightweight schema",
+    "primary": "validate_schema_light",
+    "acceptable": [],
+    "category": "validation",
+    "kind": "selection"
+  },
+  {
+    "id": "regex-01",
+    "intent": "validate this regex pattern against sample strings",
+    "primary": "validate_regex",
+    "acceptable": [],
+    "category": "regex",
+    "kind": "selection"
+  },
+  {
+    "id": "regex-02",
+    "intent": "inspect regex safety and classify unsafe or unsupported constructs",
+    "primary": "regex_safety_check",
+    "acceptable": [],
+    "category": "regex",
+    "kind": "selection"
+  },
+  {
+    "id": "list-01",
+    "intent": "compare two list values as sets and report missing items",
+    "primary": "list_compare",
+    "acceptable": [],
+    "category": "list",
+    "kind": "selection"
+  },
+  {
+    "id": "list-02",
+    "intent": "dedupe repeated list values while preserving deterministic order",
+    "primary": "list_dedupe",
+    "acceptable": [],
+    "category": "list",
+    "kind": "selection"
+  },
+  {
+    "id": "path-01",
+    "intent": "normalize a path without touching the filesystem",
+    "primary": "path_normalize",
+    "acceptable": [],
+    "category": "path",
+    "kind": "selection"
+  },
+  {
+    "id": "path-02",
+    "intent": "check whether a file target is inside an allowed workspace root",
+    "primary": "path_scope_check",
+    "acceptable": [],
+    "category": "path",
+    "kind": "negative_selection"
+  },
+  {
+    "id": "path-03",
+    "intent": "match a path against a glob pattern",
+    "primary": "glob_match",
+    "acceptable": [],
+    "category": "path",
+    "kind": "selection"
+  },
+  {
+    "id": "shell-01",
+    "intent": "split a shell command into argv without executing it",
+    "primary": "shell_split",
+    "acceptable": [],
+    "category": "shell",
+    "kind": "negative_selection"
+  },
+  {
+    "id": "shell-02",
+    "intent": "safely quote argv tokens into a POSIX shell string",
+    "primary": "shell_quote_join",
+    "acceptable": [],
+    "category": "shell",
+    "kind": "selection"
+  },
+  {
+    "id": "shell-03",
+    "intent": "compare two argv vectors for exact differences",
+    "primary": "argv_compare",
+    "acceptable": [],
+    "category": "shell",
+    "kind": "selection"
+  },
+  {
+    "id": "edit-01",
+    "intent": "check whether a proposed edit can be applied exactly once",
+    "primary": "edit_preflight",
+    "acceptable": [],
+    "category": "patch",
+    "kind": "selection"
+  },
+  {
+    "id": "edit-02",
+    "intent": "review a patch before applying it and classify safety",
+    "primary": "patch_apply_check",
+    "acceptable": [],
+    "category": "patch",
+    "kind": "negative_selection"
+  },
+  {
+    "id": "patch-01",
+    "intent": "summarize unified patch diff statistics including files and hunks",
+    "primary": "patch_summary",
+    "acceptable": [],
+    "category": "patch",
+    "kind": "selection"
+  },
+  {
+    "id": "patch-02",
+    "intent": "check whether a patch satisfies its declared contract",
+    "primary": "patch_contract_check",
+    "acceptable": [],
+    "category": "patch",
+    "kind": "selection"
+  },
+  {
+    "id": "patch-03",
+    "intent": "classify the risk of changes in a diff",
+    "primary": "diff_risk_classify",
+    "acceptable": [],
+    "category": "patch",
+    "kind": "selection"
+  },
+  {
+    "id": "command-01",
+    "intent": "preflight a command for destructive or risky behavior",
+    "primary": "command_preflight",
+    "acceptable": [],
+    "category": "shell",
+    "kind": "selection"
+  },
+  {
+    "id": "config-01",
+    "intent": "preflight generated configuration text with format auto-detection",
+    "primary": "config_preflight",
+    "acceptable": [],
+    "category": "config",
+    "kind": "selection"
+  },
+  {
+    "id": "config-02",
+    "intent": "inspect one config file for risky keys and secret-like values",
+    "primary": "config_file_inspect",
+    "acceptable": [],
+    "category": "config",
+    "kind": "selection"
+  },
+  {
+    "id": "config-03",
+    "intent": "validate dotenv environment assignments",
+    "primary": "dotenv_validate",
+    "acceptable": [],
+    "category": "config",
+    "kind": "selection"
+  },
+  {
+    "id": "config-04",
+    "intent": "validate an INI configuration document",
+    "primary": "ini_validate",
+    "acceptable": [],
+    "category": "config",
+    "kind": "selection"
+  },
+  {
+    "id": "config-05",
+    "intent": "check TOML syntax and structure",
+    "primary": "validate_toml",
+    "acceptable": [
+      "toml_shape"
+    ],
+    "category": "config",
+    "kind": "selection"
+  },
+  {
+    "id": "unicode-01",
+    "intent": "apply a Unicode security policy to text identifiers",
+    "primary": "unicode_policy_check",
+    "acceptable": [],
+    "category": "unicode",
+    "kind": "negative_selection"
+  },
+  {
+    "id": "unicode-02",
+    "intent": "canonicalize Unicode text into NFC or another normalization form",
+    "primary": "canonicalize_text",
+    "acceptable": [],
+    "category": "unicode",
+    "kind": "selection"
+  },
+  {
+    "id": "identifier-01",
+    "intent": "inspect identifiers for confusable collisions and mixed scripts",
+    "primary": "identifier_inspect",
+    "acceptable": [],
+    "category": "identifier",
+    "kind": "selection"
+  },
+  {
+    "id": "identifier-02",
+    "intent": "compare names in two identifier tables",
+    "primary": "identifier_table_inspect",
+    "acceptable": [],
+    "category": "identifier",
+    "kind": "selection"
+  },
+  {
+    "id": "version-01",
+    "intent": "compare two software version strings",
+    "primary": "version_compare",
+    "acceptable": [],
+    "category": "version",
+    "kind": "selection"
+  },
+  {
+    "id": "version-02",
+    "intent": "check whether a version satisfies a constraint",
+    "primary": "version_constraint_check",
+    "acceptable": [],
+    "category": "version",
+    "kind": "selection"
+  },
+  {
+    "id": "repo-01",
+    "intent": "tell me which languages this repository appears to use",
+    "primary": "repo_language_detect",
+    "acceptable": [],
+    "category": "repo",
+    "kind": "selection"
+  },
+  {
+    "id": "repo-02",
+    "intent": "summarize the repository tree and file counts",
+    "primary": "repo_tree_summarize",
+    "acceptable": [],
+    "category": "repo",
+    "kind": "selection"
+  },
+  {
+    "id": "repo-03",
+    "intent": "inspect repository manifests and identify its ecosystem",
+    "primary": "repo_manifest_inspect",
+    "acceptable": [],
+    "category": "repo",
+    "kind": "selection"
+  },
+  {
+    "id": "repo-04",
+    "intent": "suggest the appropriate test command for this repository",
+    "primary": "test_command_suggest",
+    "acceptable": [],
+    "category": "repo",
+    "kind": "selection"
+  },
+  {
+    "id": "dependency-01",
+    "intent": "preflight dependency changes including versions and sources",
+    "primary": "dependency_edit_preflight",
+    "acceptable": [],
+    "category": "dependency",
+    "kind": "selection"
+  },
+  {
+    "id": "markdown-01",
+    "intent": "inspect markdown headings links and fenced blocks",
+    "primary": "markdown_structure",
+    "acceptable": [],
+    "category": "markdown",
+    "kind": "selection"
+  },
+  {
+    "id": "markdown-02",
+    "intent": "extract fenced code blocks from Markdown with language labels",
+    "primary": "code_fence_extract",
+    "acceptable": [],
+    "category": "markdown",
+    "kind": "selection"
+  },
+  {
+    "id": "network-01",
+    "intent": "inspect an IP address or hostname literal",
+    "primary": "ip_inspect",
+    "acceptable": [],
+    "category": "network",
+    "kind": "selection"
+  },
+  {
+    "id": "network-02",
+    "intent": "check a CIDR network and address relationship",
+    "primary": "cidr_inspect",
+    "acceptable": [],
+    "category": "network",
+    "kind": "selection"
+  },
+  {
+    "id": "encoding-01",
+    "intent": "convert encoded bytes among hex base64 UTF-8 codecs",
+    "primary": "codec_convert",
+    "acceptable": [],
+    "category": "encoding",
+    "kind": "selection"
+  },
+  {
+    "id": "encoding-02",
+    "intent": "convert a signed integer between numeric bases",
+    "primary": "radix_convert",
+    "acceptable": [],
+    "category": "encoding",
+    "kind": "selection"
+  },
+  {
+    "id": "temporal-01",
+    "intent": "convert a timestamp using an explicit fixed offset",
+    "primary": "datetime_convert",
+    "acceptable": [],
+    "category": "temporal",
+    "kind": "selection"
+  },
+  {
+    "id": "temporal-02",
+    "intent": "inspect and evaluate a bounded five-field cron expression",
+    "primary": "cron_inspect",
+    "acceptable": [],
+    "category": "temporal",
+    "kind": "selection"
+  },
+  {
+    "id": "cargo-01",
+    "intent": "examine cargo package metadata with workspace dependencies version path git forms",
+    "primary": "cargo_toml_inspect",
+    "acceptable": [],
+    "category": "cargo",
+    "kind": "selection"
+  },
+  {
+    "id": "analysis-01",
+    "intent": "extract import export module use statements from Rust Python JavaScript source",
+    "primary": "import_export_inspect",
+    "acceptable": [],
+    "category": "analysis",
+    "kind": "selection"
+  },
+  {
+    "id": "analysis-02",
+    "intent": "outline code block map with function class spans structure navigation for targeted changes",
+    "primary": "code_block_map",
+    "acceptable": [],
+    "category": "analysis",
+    "kind": "selection"
+  },
+  {
+    "id": "analysis-03",
+    "intent": "report added removed renamed top-level symbols comparing old and new source",
+    "primary": "symbol_name_diff",
+    "acceptable": [],
+    "category": "analysis",
+    "kind": "selection"
+  },
+  {
+    "id": "analysis-04",
+    "intent": "inspect lockfile for added removed updated packages and git path dependencies",
+    "primary": "lockfile_inspect",
+    "acceptable": [],
+    "category": "analysis",
+    "kind": "selection"
+  },
+  {
+    "id": "math-03",
+    "intent": "look up physical constant value and symbol for Planck Avogadro speed of light",
+    "primary": "constant_lookup",
+    "acceptable": [],
+    "category": "math",
+    "kind": "selection"
+  },
+  {
+    "id": "math-04",
+    "intent": "provide info information about units with math category and standard form details",
+    "primary": "unit_info",
+    "acceptable": [],
+    "category": "math",
+    "kind": "selection"
+  },
+  {
+    "id": "text-06",
+    "intent": "measure text properties including byte size word totals whitespace newline invisibles with unicode measurement metrics",
+    "primary": "text_measure",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-07",
+    "intent": "show hidden characters confusables mixed scripts display representation for inspection",
+    "primary": "text_inspect",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-08",
+    "intent": "count characters and build a frequency table with grapheme clusters and substring matches",
+    "primary": "text_count",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-09",
+    "intent": "shorten text to a number of grapheme clusters preserving emoji combining and flag sequences",
+    "primary": "text_truncate",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-10",
+    "intent": "transform text via casefold trim zero-width bidi removal into visible form",
+    "primary": "text_transform",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-11",
+    "intent": "translate byte offset codepoint index and UTF-16 position with unicode lsp details",
+    "primary": "text_position",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-12",
+    "intent": "apply escape sequences to plain text for protected output formats",
+    "primary": "escape_text",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-13",
+    "intent": "unescape encoded text back to plain form via decoding formats",
+    "primary": "unescape_text",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-14",
+    "intent": "show window with surrounding context and metrics for nearby text",
+    "primary": "text_window",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-15",
+    "intent": "compute fingerprint sha256 identity with canonicalization for equivalent texts",
+    "primary": "text_fingerprint",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-16",
+    "intent": "preview whether a single replace applies cleanly with ambiguity details",
+    "primary": "text_replace_check",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-17",
+    "intent": "compare line ranges from two inputs ignoring trailing whitespace and newline differences",
+    "primary": "line_range_compare",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "path-04",
+    "intent": "analyze path components extension hidden traversal with filesystem lexical details",
+    "primary": "path_analyze",
+    "acceptable": [],
+    "category": "path",
+    "kind": "selection"
+  },
+  {
+    "id": "path-05",
+    "intent": "compare paths for filesystem equivalence with comparison separator dot-segment and case-insensitive rules",
+    "primary": "path_compare",
+    "acceptable": [],
+    "category": "path",
+    "kind": "selection"
+  },
+  {
+    "id": "list-03",
+    "intent": "sort strings with order casefold and normalization for arranged output",
+    "primary": "list_sort",
+    "acceptable": [],
+    "category": "list",
+    "kind": "selection"
+  },
+  {
+    "id": "regex-03",
+    "intent": "use finditer to enumerate pattern hits with spans capture groups and location details",
+    "primary": "regex_finditer",
+    "acceptable": [],
+    "category": "regex",
+    "kind": "selection"
+  },
+  {
+    "id": "validation-03",
+    "intent": "report unmatched delimiters and balanced brackets with line column",
+    "primary": "validate_brackets",
+    "acceptable": [],
+    "category": "validation",
+    "kind": "selection"
+  },
+  {
+    "id": "identifier-03",
+    "intent": "classify naming conventions for identifiers across languages",
+    "primary": "identifier_analyze",
+    "acceptable": [],
+    "category": "identifier",
+    "kind": "selection"
+  },
+  {
+    "id": "json-05",
+    "intent": "compare structured config data with nested objects lists and verdict diffs",
+    "primary": "structured_data_compare",
+    "acceptable": [
+      "json_compare"
+    ],
+    "category": "json",
+    "kind": "selection"
+  },
+  {
+    "id": "config-06",
+    "intent": "describe toml shape with structure tables keys nesting hierarchy for outline",
+    "primary": "toml_shape",
+    "acceptable": [],
+    "category": "config",
+    "kind": "selection"
+  },
+  {
+    "id": "path-06",
+    "intent": "check many target paths against a workspace root at once",
+    "primary": "path_batch_scope_check",
+    "acceptable": [],
+    "category": "path",
+    "kind": "negative_selection"
+  },
+  {
+    "id": "prompt-01",
+    "intent": "inspect text for red flags that may influence agents unexpectedly",
+    "primary": "prompt_input_inspect",
+    "acceptable": [],
+    "category": "security",
+    "kind": "negative_selection"
+  },
+  {
+    "id": "diagnostics-01",
+    "intent": "report runtime diagnostics with in-flight and worker counts",
+    "primary": "runtime_diagnostics",
+    "acceptable": [],
+    "category": "diagnostics",
+    "kind": "negative_selection"
+  },
+  {
+    "id": "diagnostics-02",
+    "intent": "explain why a tool is unavailable for a profile and audience",
+    "primary": "tool_availability_explain",
+    "acceptable": [],
+    "category": "diagnostics",
+    "kind": "negative_selection"
+  },
+  {
+    "id": "diagnostics-03",
+    "intent": "inspect active profile configuration and tool counts",
+    "primary": "profile_inspect",
+    "acceptable": [],
+    "category": "diagnostics",
+    "kind": "negative_selection"
+  },
+  {
+    "id": "text-18",
+    "intent": "produce hash digests for exact identity verification without canonicalizing variants",
+    "primary": "text_hash",
+    "acceptable": [],
+    "category": "text",
+    "kind": "selection"
+  },
+  {
+    "id": "text-19",
+    "intent": "assess security prompt risks in untrusted input and return allow review block verdict",
+    "primary": "text_security_inspect",
+    "acceptable": [],
+    "category": "security",
+    "kind": "selection"
+  },
+  {
+    "id": "json-06",
+    "intent": "compare json with comparison for sameness ignoring key sequence formatting",
+    "primary": "json_compare",
+    "acceptable": [
+      "structured_data_compare"
+    ],
+    "category": "json",
+    "kind": "selection"
+  },
+  {
+    "id": "json-07",
+    "intent": "retrieve nested settings value via json pointer extraction",
+    "primary": "json_extract",
+    "acceptable": [],
+    "category": "json",
+    "kind": "selection"
+  },
+  {
+    "id": "edit-03",
+    "intent": "verify edit preflight for patch application occurring a single time",
+    "primary": "edit_preflight",
+    "acceptable": [],
+    "category": "patch",
+    "kind": "selection"
+  },
+  {
+    "id": "command-02",
+    "intent": "evaluate shell command with preflight policy for harmful operations",
+    "primary": "command_preflight",
+    "acceptable": [],
+    "category": "shell",
+    "kind": "selection"
+  },
+  {
+    "id": "path-07",
+    "intent": "collapse dot segments and normalize separators with filesystem rules",
+    "primary": "path_normalize",
+    "acceptable": [],
+    "category": "path",
+    "kind": "selection"
+  },
+  {
+    "id": "list-04",
+    "intent": "compare two collections with set comparison to find missing extra elements",
+    "primary": "list_compare",
+    "acceptable": [],
+    "category": "list",
+    "kind": "selection"
+  },
+  {
+    "id": "regex-04",
+    "intent": "confirm regex pattern validation with sample trials and error details",
+    "primary": "validate_regex",
+    "acceptable": [],
+    "category": "regex",
+    "kind": "selection"
+  },
+  {
+    "id": "repo-05",
+    "intent": "identify project ecosystem from manifest files with inspection hints",
+    "primary": "repo_manifest_inspect",
+    "acceptable": [],
+    "category": "repo",
+    "kind": "selection"
+  },
+  {
+    "id": "config-07",
+    "intent": "perform config preflight validation with auto-detection for json toml formats",
+    "primary": "config_preflight",
+    "acceptable": [],
+    "category": "config",
+    "kind": "selection"
+  },
+  {
+    "id": "math-05",
+    "intent": "change measurement value between compatible units using conversion factors",
+    "primary": "unit_convert",
+    "acceptable": [],
+    "category": "math",
+    "kind": "selection"
+  }
 ]
