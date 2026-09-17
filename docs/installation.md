@@ -85,6 +85,13 @@ matching GitHub Release asset and checksum. It validates the checksum and exact
 `eggsact X.Y.Z` candidate version before replacement. Unsupported hosts and
 asset 404s use a staged exact-version `cargo install`; all other failures stop.
 
+`eggsact update` is self-contained after install: it uses in-process HTTP/1 +
+TLS (`eggfetch-core` with native roots plus WebPKI fallback, strict HTTPS
+downgrade rejection, explicit environment proxy routing, 10s connect / 120s
+total timeouts, streamed binary downloads) and does not require external
+`curl`. Bootstrap installers still require `curl`/PowerShell because they run
+before Eggsact exists.
+
 Permission errors print an elevated retry command. Eggsact never kills or
 enumerates other processes. Unix replacement completes before `updated` is
 printed. Windows reports `update staged` because the running image must exit;

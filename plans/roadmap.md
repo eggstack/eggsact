@@ -122,50 +122,85 @@ on the release-preparation and corrective commits, including runs
 `33944382758`. The final binary workflow completed all target,
 installer, checksum, smoke, and draft-assembly jobs in `33944943782`.
 
-## Eggfetch self-update transport consolidation — planned
+## Eggfetch self-update transport consolidation — shipped
 
-A 2026-09-16 audit found that Eggsact does **not** currently carry `reqwest` or
-another in-process HTTP client. `eggsact update` instead owns a small transport
-wrapper around an external `curl` process. Consolidating that transport behind
-`eggfetch-core` can remove duplicated HTTP/TLS/subprocess maintenance and make
-the post-install updater self-contained, but it is expected to increase rather
-than decrease the linked binary/dependency footprint because HTTP/TLS moves
-inside the executable.
+A 2026-09-16 audit found that Eggsact did **not** carry `reqwest` or
+another in-process HTTP client. `eggsact update` owned a small transport
+wrapper around an external `curl` process. That transport is now consolidated
+behind `eggfetch-core` to remove duplicated HTTP/TLS/subprocess maintenance
+and make the post-install updater self-contained. This was always a
+maintenance/runtime-dependency consolidation, not a size optimization: HTTP/TLS
+moved inside the executable, so the binary/dependency footprint grew as
+expected.
 
-Two sequential P1 plans cover this line. Plan 01 is complete; Plan 02 is
-ready:
+- **Qualified eggfetch**: `eggfetch-core` **0.1.6** (crates.io, Rust 1.89;
+  upstream `eggstack/eggfetch` `181786de` + `2e988b5e`, CI `35184372773`).
+  Minimal features `http1,tls-rustls,tls-native-roots,proxy`. No HTTP/2/3,
+  compression, cookies, multipart, JSON, tracing (beyond
+  `hyper-rustls/logging`), or retries. Single `base64` 0.23 line; single TLS
+  backend (rustls 0.23.45 + ring via hyper-rustls 0.27).
+- **Implementation**: `src/update.rs` only (private adapter, single
+  configuration point). Policy preserved: crates.io authority, exact GitHub
+  asset, SHA-256 sidecar, candidate `--version`, 404 -> Cargo fallback, staged
+  Windows replacement. Transport: `eggsact-self-update` UA, HTTP/1 only,
+  `RedirectPolicy::strict` (HTTPS -> HTTP rejected before second-hop I/O),
+  native roots + WebPKI fallback with full verification, explicit
+  `ProxyEnvironment::from_env` (invalid proxy fails closed), 10s connect /
+  120s total via `Timeout::builder`, `automatic_decompression(false)`,
+  streamed binary downloads with partial-file removal, 1 MiB metadata /
+  64 KiB checksum bounds. `run()` builds a current-thread Tokio runtime and
+  blocks on `run_async()`; the CLI is otherwise still synchronous.
+- **Footprint (same host/toolchain/profile: x86_64-unknown-linux-gnu,
+  rustc 1.98.1, release stripsymbols/lto-thin/codegen-units-1)**:
 
-- **`eggfetch-01-transport-readiness.md`** — upstream prerequisite, complete
-  2026-09-17. `eggfetch-core` **0.1.6** is published on crates.io (Rust 1.89)
-  with the required generic APIs: `RedirectDowngradePolicy::Deny` rejects
-  HTTPS -> HTTP before second-hop I/O, and `ProxyEnvironment` provides
-  explicit opt-in environment proxy resolution while the native default stays
-  environment-independent. Minimal feature set
-  `http1,tls-rustls,tls-native-roots,proxy` verified (24 direct / 112
-  resolved runtime packages, single `base64` 0.23 line); avoidable `base64`
-  duplication removed. No Eggsact updater migration occurred in this plan.
-  Upstream commits `181786de` + `2e988b5e` (CI `35184372773`).
+```text
+metric                            before       after       delta
+stripped release bytes            9_860_864    13_692_696  +3_831_832 (+38.9%, +3.65 MiB)
+direct dependencies               19           21          +2 (eggfetch-core, futures-util)
+resolved packages (Cargo.lock)    74           172         +98 (HTTP/TLS graph + dev url)
+duplicate families                none         hashbrown x2, syn x2, webpki-roots x2*, windows-sys x2
+Tokio features                    rt,macros,io-std,io-util,sync,time  +fs,+net (fs: async staging writes; net: eggfetch/hyper)
+TLS/HTTP implementation           external curl  in-process hyper/rustls  intentional
+post-install curl requirement     yes          no          improvement
+```
 
-- **`eggfetch-02-eggsact-migration.md`** — ready (Plan 01 complete, `eggfetch-core`
-  0.1.6 qualified). Replace only
-  `src/update.rs` network transport with the qualified published
-  `eggfetch-core`; preserve 10s connect / 120s total timeouts, redirects,
-  environment proxies, `404 -> Cargo fallback`, SHA-256/candidate validation,
-  target mapping, and platform replacement. Stream release binaries to disk,
-  keep bootstrap installers separate, and add deterministic local transport
-  tests. Record exact before/after dependency and stripped-binary evidence; a
-  >=10% or >=1 MiB same-target binary increase is a maintainer-review trigger,
-  not an automatic rejection.
-
-This line is specifically a maintenance/runtime-dependency consolidation. Do
-not describe it as a binary-size optimization unless measurement proves one.
-Do not force the migration by rebuilding redirect/proxy policy inside Eggsact
-if the generic upstream prerequisites are declined. Once both plans ship, the
-roadmap should retain the qualified eggfetch version, implementation commit,
-feature graph, binary/dependency deltas, end-to-end updater evidence, and the
-fact that bootstrap installers may still use external download tooling while
-`eggsact update` itself no longer requires `curl`; the detailed plan files can
-then be pruned per convention.
+`*` `webpki-roots` 0.26 wraps 1.x data (inherent per Plan 01); `hashbrown`
+0.14 (dashmap) vs 0.17 (indexmap), `syn` 2 vs 3 (icu/displaydoc), and
+`windows-sys` 0.52 vs 0.61 are disjoint transitive requirements, not version
+drift. No unrelated lockfile upgrades (only additions).
+- **Size-review gate**: +38.9% / +3.65 MiB exceeds the >=10% / >=1 MiB
+  maintainer-review trigger. Reviewed: growth is the expected linked
+  hyper/rustls/ring/webpki/url/icu stack, not an accidental feature
+  (verified: no http2/http3/compression/cookies/multipart/json, no second TLS
+  backend, no duplicate base64). Accepted as the documented consolidation
+  tradeoff; do not describe as a size reduction.
+- **Tests**: 16 updater unit/integration tests in `src/update.rs`
+  (policy helpers unchanged + local-TCP status/redirect/streaming/timeout/
+  proxy-config/no-curl guards; TLS-downgrade transport proof reused from
+  eggfetch with an Eggsact strict-mode configuration assertion). Merge gate
+  passes locally (fmt, generate-docs --check, clippy -D warnings, full tests
+  --skip parity, doc tests). Release contract passes
+  (`check-release-contract.py` now also guards `src/update.rs` against
+  `Command::new("curl")` + requires `eggfetch-core` in `Cargo.toml`;
+  `bash -n`, release build, MCP smoke 77 tools pass). `cargo-deny` passes
+  after allowing the standard rustls trust-root licenses
+  (ISC, BSD-3-Clause, CDLA-Permissive-2.0). Controlled live smoke on this
+  Linux host: `target/release/eggsact update` against real crates.io reports
+  `1.2.5 already current`, proving metadata/TLS/redirect/proxy/timeout path
+  without a replacement. Cross-platform compilation needs
+  native runners (Windows/macOS `cargo check` cannot link ring/macos SDK from
+  this Linux host); the dependency's own cross-platform CI plus unchanged
+  platform replacement paths are the evidence, with scheduled
+  `maintenance.yml` as the gate.
+- **Docs**: `README`, `docs/installation.md`, `docs/cli.md`,
+  `architecture/cli-binaries.md`, `architecture/overview.md`, `AGENTS.md`,
+  `CHANGELOG (Unreleased)`, and `scripts/check-release-contract.py` updated
+  to state the self-contained updater vs bootstrap-installer distinction.
+  `docs/verification.md` / `docs/release.md` required no transport change.
+  Skills reviewed; no stale updater claims to prune.
+- **Result**: `eggsact update` no longer requires external `curl`;
+  bootstrap `packaging/install.*` still does. Detailed execution plans
+  pruned per convention; git history retains them.
 
 ## MCP surface modernization — evaluation closure pending
 

@@ -13,6 +13,11 @@ allow = [
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "Zlib",
+    # TLS stack via eggfetch-core (rustls/ring/webpki-roots): all OSI-approved
+    # or standard trust-root data licenses, required for in-process self-update.
+    "ISC",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 

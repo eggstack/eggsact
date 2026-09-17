@@ -34,6 +34,8 @@ the exact GitHub Release binary and SHA-256 sidecar for the host. It executes
 the candidate and requires exact `eggsact X.Y.Z` output before replacement.
 Unsupported hosts and genuine binary HTTP 404s use a staged exact-version Cargo
 fallback. Transport, checksum, and candidate-version failures are hard errors.
+The updater is self-contained (in-process HTTP/TLS, no external `curl`);
+bootstrap installers still use external download tooling.
 
 It never invokes `sudo`, kills MCP clients, or restarts sessions. Permission
 errors print the elevated retry command. Existing client-owned stdio sessions

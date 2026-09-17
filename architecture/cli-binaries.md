@@ -27,13 +27,20 @@ crates.io max_stable_version
   -> executable replacement
 ```
 
-Only stable `major.minor.patch` versions are accepted. Network access is kept
-out of the library dependency graph: the updater invokes the platform's
-`curl`, bounds requests to 120 seconds, caps candidate execution at 10 seconds,
-and uses the existing `sha2` dependency for hashing. A supported target with a
-genuine asset HTTP 404, or an unsupported host, uses a staged exact-version
-`cargo install` fallback. HTTP errors, TLS/DNS failures, missing checksums,
-checksum mismatches, and wrong candidate identities are hard failures.
+Only stable `major.minor.patch` versions are accepted. Network transport is
+in-process via `eggfetch-core` 0.1.6 (`http1,tls-rustls,tls-native-roots,proxy`):
+HTTP/1 only, redirects followed with strict HTTPS -> HTTP downgrade rejection,
+native roots with WebPKI fallback and full certificate/hostname verification,
+explicit environment proxy routing (invalid proxy fails closed), distinct
+10-second connect and 120-second total timeouts, no retries, streamed
+release-binary downloads (small metadata/checksum bodies bounded at 1 MiB /
+64 KiB), and a 10-second candidate `--version` execution cap. The updater uses
+the existing `sha2` dependency for hashing and
+requires no external `curl` after install. Bootstrap installers still use
+external download tooling because they run before Eggsact exists. A supported
+target with a genuine asset HTTP 404, or an unsupported host, uses a staged
+exact-version `cargo install` fallback. HTTP errors, TLS/DNS failures, missing
+checksums, checksum mismatches, and wrong candidate identities are hard failures.
 
 On Unix, the validated executable is copied beside the current binary and
 atomically renamed into place. On Windows, a detached PowerShell helper waits

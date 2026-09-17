@@ -57,6 +57,7 @@ Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_fai
 - Limits: text 100k, expr 10k, list 10k, regex samples 100, pattern 1k, request/output 1M each. Check `limits_applied`; truncation is automatic.
 - Env: `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (`Model` default, case-insensitive), `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`), `EGGSACT_MCP_SURFACE` (`direct`/`discovery`). `EGGCALC_NO_CONFIG=1` is for Python-`eggcalc` callers.
 - `eggsact update` / `eggsact integrate list|detect|<client>` are verified/read-only; they never install a daemon or edit client config.
+- Self-update transport is in-process `eggfetch-core` 0.1.6 (`http1,tls-rustls,tls-native-roots,proxy`; HTTP/1 only, strict HTTPS-downgrade rejection, explicit env proxy, 10s connect / 120s total, streamed binaries, no external `curl` after install). Bootstrap `packaging/install.*` still uses external download tooling. Do not add HTTP to the library/MCP API, retries, or extra eggfetch features without measurement. Binary/package growth vs the old curl subprocess is intentional consolidation, not a regression to hide.
 
 ## Skills
 

@@ -1,5 +1,27 @@
 //! Binary-first self-update support and deterministic release-contract helpers.
+//!
+//! Network transport is owned in-process by `eggfetch-core` 0.1.6 with the
+//! minimal feature set `http1,tls-rustls,tls-native-roots,proxy`. The updater
+//! keeps all release/update policy (version selection, asset naming, Cargo
+//! fallback, SHA-256 verification, candidate validation, replacement).
+//!
+//! Transport policy (single configuration point in `build_update_client_*`):
+//! - user agent `eggsact-self-update`;
+//! - HTTP/1 only (`HttpVersionPolicy::Http1Only`);
+//! - redirects followed with strict HTTPS -> HTTP downgrade rejection
+//!   (`RedirectPolicy::strict`, `DowngradePolicy::Deny` before second-hop I/O);
+//! - native roots with packaged WebPKI fallback (eggfetch default) and full
+//!   certificate/hostname verification;
+//! - explicit opt-in environment proxy routing (`ProxyEnvironment::from_env`);
+//!   invalid proxy configuration fails closed, never silently direct;
+//! - 10-second connect timeout + 120-second total wall-clock timeout
+//!   (distinct phases via `Timeout::builder`, never `from_secs(120)` alone);
+//! - no retry policy; no compression/cookies/multipart/JSON features;
+//! - release binaries stream to disk chunk-by-chunk, never buffered as one
+//!   `Vec<u8>` by updater code.
 
+use eggfetch_core::{Client, HttpVersionPolicy, ProxyEnvironment, RedirectPolicy, Timeout};
+use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use std::env;
 use std::fs::{self, File};
@@ -7,11 +29,29 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::io::AsyncWriteExt;
 
 pub const REPOSITORY: &str = "eggstack/eggsact";
 pub const CRATES_API: &str = "https://crates.io/api/v1/crates/eggsact";
 pub const USER_AGENT: &str = "eggsact-self-update";
+
+/// Distinct connect deadline preserved from the historical `curl`
+/// `--connect-timeout 10` contract.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Total wall-clock cap preserved from the historical `curl --max-time 120`
+/// contract. Enforced alongside (not instead of) [`CONNECT_TIMEOUT`].
+pub const TOTAL_TIMEOUT: Duration = Duration::from_secs(120);
+/// Bounded redirect following for GitHub asset chains (normally 1-2 hops).
+pub const MAX_REDIRECTS: usize = 10;
+/// Conservative bound for the small crates.io metadata document. The normal
+/// payload is a few kilobytes; 1 MiB is comfortably above it while preventing
+/// unbounded buffering from a malformed server/proxy response.
+pub const METADATA_MAX_BYTES: usize = 1_048_576;
+/// Conservative bound for the tiny SHA-256 sidecar (normally ~100 bytes:
+/// 64 hex digits plus whitespace/filename).
+pub const CHECKSUM_MAX_BYTES: usize = 65_536;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StableVersion {
@@ -188,6 +228,211 @@ pub fn classify_http_status(status: u16) -> DownloadStatus {
     }
 }
 
+// ── Updater transport adapter (private to self-update) ────────────────
+
+/// Distinct 10s connect + 120s total updater deadlines. Never collapse to a
+/// single `Timeout::from_secs(120)`.
+fn update_timeout() -> Timeout {
+    Timeout::builder()
+        .connect(CONNECT_TIMEOUT)
+        .total(TOTAL_TIMEOUT)
+        .build()
+}
+
+/// Follow redirects but reject HTTPS -> HTTP downgrades before second-hop I/O.
+fn update_redirect_policy() -> RedirectPolicy {
+    RedirectPolicy::strict(MAX_REDIRECTS)
+}
+
+fn redact_url_for_error(url: &str) -> String {
+    eggfetch_core::redact_url_string(url)
+}
+
+/// Map an eggfetch transport error into the updater's concise,
+/// credential-safe application message.
+fn map_transport_error(error: eggfetch_core::Error, url: &str, what: &str) -> String {
+    use eggfetch_core::Error as E;
+    let redacted = redact_url_for_error(url);
+    let detail = error.to_string();
+    match error {
+        E::Timeout { phase, elapsed } => format!(
+            "update request timed out ({phase} after {elapsed:?}) while fetching {what} from {redacted}"
+        ),
+        E::TransportIoTimeout { .. } => {
+            format!("update request timed out while fetching {what} from {redacted}: {detail}")
+        }
+        E::Tls(_)
+        | E::TlsConfig(_)
+        | E::CaBundle(_)
+        | E::ClientCert(_)
+        | E::PrivateKey(_)
+        | E::CertificateVerification(_)
+        | E::HostnameVerification(_) => {
+            format!("TLS/certificate failure while fetching {what} from {redacted}: {detail}")
+        }
+        E::InvalidProxyUrl(_)
+        | E::ProxyConnect(_)
+        | E::ProxyAuthRequired
+        | E::ProxyConnectRejected { .. }
+        | E::MalformedProxyResponse(_) => {
+            format!("proxy configuration/routing failure while fetching {what}: {detail}")
+        }
+        E::Connect(_) | E::Hyper(_) | E::HyperClient(_) | E::Pool(_) | E::CustomTransport(_) => {
+            format!("cannot resolve/connect to update endpoint {redacted} while fetching {what}: {detail}")
+        }
+        E::InvalidRedirectLocation(_)
+        | E::TooManyRedirects { .. }
+        | E::BodyNotReplayableForRedirect => {
+            format!("redirect failure while fetching {what} from {redacted}: {detail}")
+        }
+        E::InvalidUrl(_) | E::RequestBuild(_) | E::InvalidResolvedTarget(_) => {
+            format!("invalid update request for {what} from {redacted}: {detail}")
+        }
+        E::Body(_)
+        | E::DecodedBodyTooLarge
+        | E::Decompression(_)
+        | E::DecompressionRatioExceeded
+        | E::UnsupportedContentEncoding(_)
+        | E::Protocol(_)
+        | E::Io(_) => {
+            format!("failed while reading release asset ({what}) from {redacted}: {detail}")
+        }
+        _ => format!("failed to download {what} from {redacted}: {detail}"),
+    }
+}
+
+/// Single configuration point for TLS/redirect/timeout/proxy behavior.
+fn build_update_client_with_timeout_and_env(
+    timeout: Timeout,
+    env: &ProxyEnvironment,
+) -> Result<Client, String> {
+    let builder = Client::builder()
+        .user_agent(USER_AGENT)
+        .http_version_policy(HttpVersionPolicy::Http1Only)
+        .redirect_policy(update_redirect_policy())
+        .timeout(timeout)
+        .automatic_decompression(false);
+    let builder = builder
+        .proxy_environment(env)
+        .map_err(|error| format!("proxy configuration/routing failure: {error}"))?;
+    Ok(builder.build())
+}
+
+fn build_update_client_with_env(env: &ProxyEnvironment) -> Result<Client, String> {
+    build_update_client_with_timeout_and_env(update_timeout(), env)
+}
+
+fn build_update_client() -> Result<Client, String> {
+    build_update_client_with_env(&ProxyEnvironment::from_env())
+}
+
+/// Fetch a small text document (crates.io metadata, checksum sidecar) with an
+/// explicit byte bound. Small responses may be buffered; the bound prevents
+/// unbounded memory use from a malformed server/proxy response.
+async fn get_small_text(
+    client: &Client,
+    url: &str,
+    max_bytes: usize,
+    what: &str,
+) -> Result<String, String> {
+    let redacted = redact_url_for_error(url);
+    let mut response = client
+        .get(url)
+        .map_err(|error| map_transport_error(error, url, what))?
+        .send()
+        .await
+        .map_err(|error| map_transport_error(error, url, what))?;
+    let status = response.status().as_u16();
+    if !matches!(classify_http_status(status), DownloadStatus::Success) {
+        return Err(format!(
+            "HTTP {status} from {redacted} while fetching {what}"
+        ));
+    }
+    if let Some(declared) = response.content_length() {
+        if declared > max_bytes as u64 {
+            return Err(format!(
+                "{what} from {redacted} exceeds {max_bytes}-byte bound (declared {declared} bytes)"
+            ));
+        }
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| map_transport_error(error, url, what))?;
+    if bytes.len() > max_bytes {
+        return Err(format!(
+            "{what} from {redacted} exceeds {max_bytes}-byte bound (received {} bytes)",
+            bytes.len()
+        ));
+    }
+    String::from_utf8(bytes.to_vec())
+        .map_err(|error| format!("invalid UTF-8 in {what} from {redacted}: {error}"))
+}
+
+/// Stream a release binary to disk chunk-by-chunk. Never buffers the
+/// executable body into one `Vec<u8>`/`Bytes` allocation in updater code.
+/// On any body/read/write failure the partial destination is removed so
+/// `prepare_candidate` cannot accidentally consume it.
+async fn download_to(
+    client: &Client,
+    url: &str,
+    destination: &Path,
+) -> Result<DownloadStatus, String> {
+    let mut response = client
+        .get(url)
+        .map_err(|error| map_transport_error(error, url, "release asset"))?
+        .send()
+        .await
+        .map_err(|error| map_transport_error(error, url, "release asset"))?;
+    let status = response.status().as_u16();
+    match classify_http_status(status) {
+        DownloadStatus::NotFound => return Ok(DownloadStatus::NotFound),
+        DownloadStatus::HardFailure => {
+            let redacted = redact_url_for_error(url);
+            return Err(format!(
+                "HTTP {status} from {redacted} while fetching release asset"
+            ));
+        }
+        DownloadStatus::Success => {}
+    }
+    let mut file = tokio::fs::File::create(destination)
+        .await
+        .map_err(|error| {
+            format!(
+                "failed while writing staged release asset {}: {error}",
+                destination.display()
+            )
+        })?;
+    let mut stream = response
+        .bytes_stream()
+        .map_err(|error| map_transport_error(error, url, "release asset"))?;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| {
+            let _ = std::fs::remove_file(destination);
+            map_transport_error(error, url, "release asset")
+        })?;
+        if chunk.is_empty() {
+            continue;
+        }
+        file.write_all(&chunk).await.map_err(|error| {
+            let _ = std::fs::remove_file(destination);
+            format!(
+                "failed while writing staged release asset {}: {error}",
+                destination.display()
+            )
+        })?;
+    }
+    file.flush().await.map_err(|error| {
+        let _ = std::fs::remove_file(destination);
+        format!(
+            "failed while writing staged release asset {}: {error}",
+            destination.display()
+        )
+    })?;
+    drop(file);
+    Ok(DownloadStatus::Success)
+}
+
 fn unique_temp_dir(prefix: &str) -> Result<PathBuf, String> {
     let base = env::temp_dir();
     let now = SystemTime::now()
@@ -211,50 +456,6 @@ fn unique_temp_dir(prefix: &str) -> Result<PathBuf, String> {
         }
     }
     Err("could not create a unique temporary directory".into())
-}
-
-fn download(url: &str, destination: &Path) -> Result<DownloadStatus, String> {
-    let output = Command::new("curl")
-        .args([
-            "--proto",
-            "=https",
-            "--tlsv1.2",
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--connect-timeout",
-            "10",
-            "--max-time",
-            "120",
-            "--user-agent",
-            USER_AGENT,
-            "--output",
-        ])
-        .arg(destination)
-        .args(["--write-out", "%{http_code}", url])
-        .output()
-        .map_err(|error| format!("cannot run curl: {error}"))?;
-    let status = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<u16>()
-        .unwrap_or(0);
-    if output.status.success() {
-        return Ok(classify_http_status(status));
-    }
-    Ok(if status == 404 {
-        DownloadStatus::NotFound
-    } else {
-        DownloadStatus::HardFailure
-    })
-}
-
-fn download_required(url: &str, destination: &Path, what: &str) -> Result<(), String> {
-    match download(url, destination)? {
-        DownloadStatus::Success => Ok(()),
-        DownloadStatus::NotFound => Err(format!("{what} was not found at {url}")),
-        DownloadStatus::HardFailure => Err(format!("failed to download {what} from {url}")),
-    }
 }
 
 fn run_bounded(mut command: Command, timeout: Duration) -> Result<std::process::Output, String> {
@@ -303,27 +504,16 @@ fn sha256_file(path: &Path) -> Result<[u8; 32], String> {
     Ok(hasher.finalize().into())
 }
 
-fn crates_latest_version() -> Result<StableVersion, String> {
-    let staging = unique_temp_dir("eggsact-update-metadata")?;
-    let path = staging.join("crate.json");
-    let result = (|| {
-        download_required(CRATES_API, &path, "crates.io metadata")?;
-        let mut text = String::new();
-        File::open(&path)
-            .map_err(|error| format!("cannot open crates.io metadata: {error}"))?
-            .read_to_string(&mut text)
-            .map_err(|error| format!("cannot read crates.io metadata: {error}"))?;
-        let json: serde_json::Value = serde_json::from_str(&text)
-            .map_err(|error| format!("invalid crates.io metadata: {error}"))?;
-        let version = json
-            .get("crate")
-            .and_then(|value| value.get("max_stable_version"))
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| "crates.io metadata has no max_stable_version".to_string())?;
-        parse_stable_version(version)
-    })();
-    let _ = fs::remove_dir_all(staging);
-    result
+async fn crates_latest_version_async(client: &Client) -> Result<StableVersion, String> {
+    let text = get_small_text(client, CRATES_API, METADATA_MAX_BYTES, "crates.io metadata").await?;
+    let json: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|error| format!("invalid crates.io metadata: {error}"))?;
+    let version = json
+        .get("crate")
+        .and_then(|value| value.get("max_stable_version"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "crates.io metadata has no max_stable_version".to_string())?;
+    parse_stable_version(version)
 }
 
 fn cargo_candidate(staging: &Path, version: StableVersion) -> Result<PathBuf, String> {
@@ -350,29 +540,33 @@ fn cargo_candidate(staging: &Path, version: StableVersion) -> Result<PathBuf, St
     Ok(path)
 }
 
-fn prepare_candidate(
+async fn prepare_candidate_async(
+    client: &Client,
     staging: &Path,
     target: &ReleaseTarget,
     latest: StableVersion,
 ) -> Result<PathBuf, String> {
     let binary = staging.join(target.asset_name);
-    let checksum = staging.join("candidate.sha256");
     let binary_url = release_asset_url(&latest, target.rust_target);
-    match download(&binary_url, &binary)? {
+    match download_to(client, &binary_url, &binary).await? {
         DownloadStatus::NotFound => return cargo_candidate(staging, latest),
         DownloadStatus::HardFailure => {
             return Err(format!(
-                "failed to download release asset from {binary_url}"
+                "failed to download release asset from {}",
+                redact_url_for_error(&binary_url)
             ))
         }
         DownloadStatus::Success => {}
     }
-    download_required(&checksum_url(&binary_url), &checksum, "release checksum")?;
-    let mut checksum_text = String::new();
-    File::open(&checksum)
-        .map_err(|error| format!("cannot open checksum: {error}"))?
-        .read_to_string(&mut checksum_text)
-        .map_err(|error| format!("cannot read checksum: {error}"))?;
+    // A missing or failed checksum sidecar is fatal: do not Cargo-fallback
+    // after the binary itself was found.
+    let checksum_text = get_small_text(
+        client,
+        &checksum_url(&binary_url),
+        CHECKSUM_MAX_BYTES,
+        "release checksum",
+    )
+    .await?;
     let expected = parse_checksum(&checksum_text)?;
     let actual = sha256_file(&binary)?;
     if expected != actual {
@@ -456,18 +650,28 @@ pub fn retry_command(path: &Path) -> String {
 }
 
 pub fn run() -> Result<(), String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .thread_name("eggsact-update")
+        .build()
+        .map_err(|error| format!("cannot start update runtime: {error}"))?;
+    runtime.block_on(run_async())
+}
+
+async fn run_async() -> Result<(), String> {
     let current =
         env::current_exe().map_err(|error| format!("cannot locate current executable: {error}"))?;
     let current_version = parse_stable_version(env!("CARGO_PKG_VERSION"))?;
-    let latest = crates_latest_version()?;
+    let client = build_update_client()?;
+    let latest = crates_latest_version_async(&client).await?;
     if latest <= current_version {
         println!("eggsact {current_version} is already current (latest stable: {latest})");
         return Ok(());
     }
     let staging = unique_temp_dir("eggsact-update")?;
-    let result = (|| {
+    let result = async {
         let candidate = if let Some(target) = target_for_host(env::consts::OS, env::consts::ARCH) {
-            prepare_candidate(&staging, target, latest)?
+            prepare_candidate_async(&client, &staging, target, latest).await?
         } else {
             cargo_candidate(&staging, latest)?
         };
@@ -484,7 +688,8 @@ pub fn run() -> Result<(), String> {
         let replacement = replace_current(&candidate, &current)?;
         let _ = fs::remove_dir_all(&staging);
         Ok(replacement)
-    })();
+    }
+    .await;
     if result.is_err() {
         let _ = fs::remove_dir_all(&staging);
     }
@@ -504,6 +709,8 @@ pub fn run() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
+    use std::sync::Arc;
 
     #[test]
     fn target_mapping_is_explicit() {
@@ -570,5 +777,476 @@ mod tests {
         assert!(script.contains("Write-UpdateStatus(\"failed:"));
         assert!(!script.contains("Stop-Process"));
         assert!(!script.contains("taskkill"));
+    }
+
+    #[test]
+    fn updater_uses_distinct_connect_and_total_timeouts() {
+        let timeout = update_timeout();
+        assert_eq!(timeout.connect, Some(CONNECT_TIMEOUT));
+        assert_eq!(timeout.total, Some(TOTAL_TIMEOUT));
+        assert_eq!(timeout.connect, Some(Duration::from_secs(10)));
+        assert_eq!(timeout.total, Some(Duration::from_secs(120)));
+    }
+
+    #[test]
+    fn updater_selects_strict_redirect_policy() {
+        let policy = update_redirect_policy();
+        assert!(policy.follow);
+        assert_eq!(policy.max_redirects, MAX_REDIRECTS);
+        assert_eq!(
+            policy.downgrade,
+            eggfetch_core::RedirectDowngradePolicy::Deny
+        );
+        // Relative HTTPS-equivalent hops stay allowed under strict mode;
+        // only an explicit https -> http downgrade is rejected.
+        let from: url::Url = "https://example.com/a".parse().unwrap();
+        let same: url::Url = "https://example.com/b".parse().unwrap();
+        let down: url::Url = "http://example.com/b".parse().unwrap();
+        assert!(policy.check_downgrade(&from, &same).is_ok());
+        assert!(policy.check_downgrade(&from, &down).is_err());
+    }
+
+    #[test]
+    fn proxy_environment_selection_is_explicit_and_testable() {
+        use eggfetch_core::ProxyEnvironment;
+        let env = ProxyEnvironment::from_map([("HTTPS_PROXY", "http://proxy.example:8080")]);
+        let url: url::Url = "https://example.com/a".parse().unwrap();
+        assert!(env.resolve(&url).unwrap().is_some());
+        let bypass = ProxyEnvironment::from_map([
+            ("HTTPS_PROXY", "http://proxy.example:8080"),
+            ("NO_PROXY", "example.com"),
+        ]);
+        assert!(bypass.resolve(&url).unwrap().is_none());
+        // Production constructor opts into the same explicit snapshot path.
+        let client = build_update_client_with_env(&ProxyEnvironment::new());
+        assert!(client.is_ok());
+        let invalid = ProxyEnvironment::from_map([("HTTPS_PROXY", "http://user:bogus@[::1")]);
+        assert!(build_update_client_with_env(&invalid).is_err());
+    }
+
+    #[test]
+    fn updater_transport_never_spawns_curl() {
+        let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/update.rs"));
+        assert!(
+            !source.contains("Command::new(\"curl\")"),
+            "self-update transport must not spawn curl"
+        );
+        assert!(
+            !source.contains("\"curl\""),
+            "self-update transport must not reference a curl executable"
+        );
+    }
+
+    #[test]
+    fn updater_error_mapping_stays_concise_and_redacted() {
+        let secret_url = "https://user:s3cret@example.com/releases/asset";
+        let timeout = eggfetch_core::Error::Timeout {
+            phase: eggfetch_core::TimeoutPhase::Connect,
+            elapsed: Duration::from_secs(10),
+        };
+        let message = map_transport_error(timeout, secret_url, "release asset");
+        assert!(message.contains("update request timed out"));
+        assert!(!message.contains("s3cret"));
+
+        let tls = eggfetch_core::Error::CertificateVerification("bad chain".into());
+        let message = map_transport_error(tls, secret_url, "release asset");
+        assert!(message.contains("TLS/certificate failure"));
+        assert!(!message.contains("s3cret"));
+
+        let proxy = eggfetch_core::Error::InvalidProxyUrl("proxy <redacted>".into());
+        let message = map_transport_error(proxy, secret_url, "release asset");
+        assert!(message.contains("proxy configuration/routing failure"));
+
+        let connect = eggfetch_core::Error::Connect("refused".into());
+        let message = map_transport_error(connect, secret_url, "release asset");
+        assert!(message.contains("cannot resolve/connect to update endpoint"));
+    }
+
+    // ── Minimal local HTTP harness (no extra production dependencies) ──
+
+    /// Serve exactly one response per connection: `handler` receives the raw
+    /// request head and returns `(status, headers, body_chunks, abort_after_headers)`.
+    /// When `abort_after_headers` is true the connection is closed mid-body.
+    fn serve<F>(handler: F) -> (String, tokio::task::JoinHandle<()>)
+    where
+        F: Fn(String) -> (u16, Vec<(String, String)>, Vec<Vec<u8>>, bool) + Send + Sync + 'static,
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind local test server");
+        let addr = listener.local_addr().expect("local addr");
+        listener
+            .set_nonblocking(true)
+            .expect("test listener nonblocking");
+        let handler = Arc::new(handler);
+        let handle = tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::from_std(listener).expect("tokio listener");
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    break;
+                };
+                let handler = Arc::clone(&handler);
+                tokio::spawn(async move {
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                    let mut head = Vec::new();
+                    let mut byte = [0_u8; 1];
+                    // Read until end of headers.
+                    loop {
+                        match socket.read(&mut byte).await {
+                            Ok(0) => break,
+                            Ok(_) => {
+                                head.push(byte[0]);
+                                if head.len() > 16_384 {
+                                    break;
+                                }
+                                if head.ends_with(b"\r\n\r\n") {
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                    let request = String::from_utf8_lossy(&head).into_owned();
+                    let (status, headers, chunks, abort) = handler(request);
+                    let reason = match status {
+                        200 => "OK",
+                        204 => "No Content",
+                        301 => "Moved Permanently",
+                        302 => "Found",
+                        404 => "Not Found",
+                        500 => "Internal Server Error",
+                        503 => "Service Unavailable",
+                        _ => "Response",
+                    };
+                    let mut response =
+                        format!("HTTP/1.1 {status} {reason}\r\nConnection: close\r\n");
+                    for (name, value) in headers {
+                        response.push_str(&format!("{name}: {value}\r\n"));
+                    }
+                    response.push_str("\r\n");
+                    if socket.write_all(response.as_bytes()).await.is_err() {
+                        return;
+                    }
+                    if abort {
+                        return;
+                    }
+                    for chunk in chunks {
+                        if socket.write_all(&chunk).await.is_err() {
+                            return;
+                        }
+                    }
+                });
+            }
+        });
+        (format!("http://{addr}/"), handle)
+    }
+
+    fn test_client() -> Client {
+        build_update_client_with_env(&eggfetch_core::ProxyEnvironment::new())
+            .expect("test client builds without proxy environment")
+    }
+
+    fn temp_destination(name: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "eggsact-update-test-{}-{}-{name}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        path
+    }
+
+    #[tokio::test]
+    async fn download_status_classification_round_trips_local_server() {
+        // 200 with exact body.
+        let (base, handle) = serve(|_| {
+            (
+                200,
+                vec![("Content-Length".into(), "11".into())],
+                vec![b"hello world".to_vec()],
+                false,
+            )
+        });
+        let client = test_client();
+        let dest = temp_destination("ok");
+        let status = download_to(&client, &base, &dest)
+            .await
+            .expect("200 downloads");
+        assert_eq!(status, DownloadStatus::Success);
+        assert_eq!(std::fs::read(&dest).unwrap(), b"hello world");
+        let _ = std::fs::remove_file(&dest);
+        handle.abort();
+
+        // 204 empty success.
+        let (base, handle) = serve(|_| (204, vec![], vec![], false));
+        let dest = temp_destination("empty");
+        let status = download_to(&client, &base, &dest)
+            .await
+            .expect("204 downloads");
+        assert_eq!(status, DownloadStatus::Success);
+        assert_eq!(std::fs::read(&dest).unwrap(), b"");
+        let _ = std::fs::remove_file(&dest);
+        handle.abort();
+
+        // 404 maps to NotFound (Cargo fallback signal), no file created.
+        let (base, handle) = serve(|_| {
+            (
+                404,
+                vec![("Content-Length".into(), "9".into())],
+                vec![b"not found".to_vec()],
+                false,
+            )
+        });
+        let dest = temp_destination("missing");
+        let _ = std::fs::remove_file(&dest);
+        let status = download_to(&client, &base, &dest).await.expect("404 maps");
+        assert_eq!(status, DownloadStatus::NotFound);
+        assert!(!dest.exists());
+        handle.abort();
+
+        // 500/503 are hard failures with an HTTP status message, no fallback.
+        for code in [500_u16, 503] {
+            let (base, handle) = serve(move |_| {
+                (
+                    code,
+                    vec![("Content-Length".into(), "5".into())],
+                    vec![b"error".to_vec()],
+                    false,
+                )
+            });
+            let dest = temp_destination("hard");
+            let error = download_to(&client, &base, &dest)
+                .await
+                .expect_err("hard failure");
+            assert!(error.contains(&format!("HTTP {code}")), "got: {error}");
+            assert!(!dest.exists());
+            handle.abort();
+        }
+
+        // Body abort after headers is a hard failure with no consumable file.
+        let (base, handle) = serve(|_| {
+            (
+                200,
+                vec![("Content-Length".into(), "100".into())],
+                vec![b"partial".to_vec()],
+                true,
+            )
+        });
+        let dest = temp_destination("abort");
+        let error = download_to(&client, &base, &dest)
+            .await
+            .expect_err("abort fails");
+        assert!(
+            error.contains("failed while reading")
+                || error.contains("cannot resolve/connect")
+                || error.contains("failed to download"),
+            "got: {error}"
+        );
+        assert!(!dest.exists(), "partial file must be removed");
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn redirect_chain_completes_and_loop_is_bounded() {
+        // Final target.
+        let (final_base, final_handle) = serve(|_| {
+            (
+                200,
+                vec![("Content-Length".into(), "11".into())],
+                vec![b"redirect-ok".to_vec()],
+                false,
+            )
+        });
+        let final_url = final_base.clone();
+        // One-hop redirect.
+        let (redir_base, redir_handle) = serve(move |_| {
+            (
+                302,
+                vec![("Location".into(), final_url.clone())],
+                vec![],
+                false,
+            )
+        });
+        let client = test_client();
+        let dest = temp_destination("redir-ok");
+        let status = download_to(&client, &redir_base, &dest)
+            .await
+            .expect("redirect follows");
+        assert_eq!(status, DownloadStatus::Success);
+        assert_eq!(std::fs::read(&dest).unwrap(), b"redirect-ok");
+        let _ = std::fs::remove_file(&dest);
+        redir_handle.abort();
+        final_handle.abort();
+
+        // Self-loop is bounded by MAX_REDIRECTS.
+        let (loop_base, loop_handle) = serve(|req| {
+            let host = req
+                .lines()
+                .find_map(|line| {
+                    let lower = line.to_ascii_lowercase();
+                    lower
+                        .strip_prefix("host:")
+                        .map(|rest| rest.trim().to_owned())
+                })
+                .unwrap_or_else(|| "127.0.0.1".to_owned());
+            (
+                302,
+                vec![("Location".into(), format!("http://{host}/"))],
+                vec![],
+                false,
+            )
+        });
+        let dest = temp_destination("redir-loop");
+        let error = download_to(&client, &loop_base, &dest)
+            .await
+            .expect_err("loop bounded");
+        assert!(
+            error.contains("redirect") || error.contains("too many"),
+            "got: {error}"
+        );
+        assert!(!dest.exists());
+        loop_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn streaming_writes_chunks_in_order_and_surfaces_write_failures() {
+        let chunks: Vec<Vec<u8>> = (0..8).map(|i| vec![i; 8192]).collect();
+        let expected: Vec<u8> = chunks.concat();
+        let expected_len = expected.len();
+        let (base, handle) = serve(move |_| {
+            (
+                200,
+                vec![("Content-Length".into(), expected_len.to_string())],
+                chunks.clone(),
+                false,
+            )
+        });
+        let client = test_client();
+        let dest = temp_destination("multi-chunk");
+        let status = download_to(&client, &base, &dest)
+            .await
+            .expect("multi-chunk");
+        assert_eq!(status, DownloadStatus::Success);
+        assert_eq!(std::fs::read(&dest).unwrap(), {
+            let mut v = Vec::new();
+            for i in 0..8_u8 {
+                v.extend(std::iter::repeat_n(i, 8192));
+            }
+            v
+        });
+        let _ = std::fs::remove_file(&dest);
+        handle.abort();
+
+        // Destination write failure surfaces without panic.
+        let (base, handle) = serve(|_| {
+            (
+                200,
+                vec![("Content-Length".into(), "2".into())],
+                vec![b"ok".to_vec()],
+                false,
+            )
+        });
+        let dir = temp_destination("a-directory");
+        std::fs::create_dir_all(&dir).unwrap();
+        let error = download_to(&client, &base, &dir)
+            .await
+            .expect_err("write fails");
+        assert!(
+            error.contains("failed while writing staged release asset"),
+            "got: {error}"
+        );
+        // A directory destination must remain a directory, not a consumable file.
+        assert!(dir.is_dir());
+        let _ = std::fs::remove_dir_all(&dir);
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn small_text_respects_configured_body_bound() {
+        let big = vec![b'x'; METADATA_MAX_BYTES + 1024];
+        let len = big.len();
+        let (base, handle) = serve(move |_| {
+            (
+                200,
+                vec![("Content-Length".into(), len.to_string())],
+                vec![big.clone()],
+                false,
+            )
+        });
+        let client = test_client();
+        let error = get_small_text(&client, &base, METADATA_MAX_BYTES, "crates.io metadata")
+            .await
+            .expect_err("bound enforced");
+        assert!(error.contains("exceeds"), "got: {error}");
+        handle.abort();
+
+        let (base, handle) = serve(|_| {
+            (
+                200,
+                vec![("Content-Length".into(), "11".into())],
+                vec![b"hello world".to_vec()],
+                false,
+            )
+        });
+        let text = get_small_text(&client, &base, METADATA_MAX_BYTES, "crates.io metadata")
+            .await
+            .expect("small body passes");
+        assert_eq!(text, "hello world");
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn short_injected_timeouts_still_map_to_timeout_errors() {
+        use std::time::Duration;
+        let (base, handle) = serve(|_| {
+            // Deliberately slow headers: the short total deadline fires first.
+            std::thread::sleep(Duration::from_millis(300));
+            (
+                200,
+                vec![("Content-Length".into(), "2".into())],
+                vec![b"ok".to_vec()],
+                false,
+            )
+        });
+        let timeout = Timeout::builder()
+            .connect(Duration::from_secs(5))
+            .total(Duration::from_millis(50))
+            .build();
+        let client = build_update_client_with_timeout_and_env(
+            timeout,
+            &eggfetch_core::ProxyEnvironment::new(),
+        )
+        .expect("short-timeout client builds");
+        let dest = temp_destination("timeout");
+        let error = download_to(&client, &base, &dest)
+            .await
+            .expect_err("times out");
+        assert!(error.contains("update request timed out"), "got: {error}");
+        assert!(!dest.exists());
+        handle.abort();
+    }
+
+    #[test]
+    fn release_binary_path_streams_without_whole_body_buffer() {
+        // Structural guard: the binary path must use incremental
+        // `bytes_stream`, while only the small metadata/checksum path may use
+        // buffered `bytes()`. This keeps multi-megabyte executables off the heap.
+        let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/update.rs"));
+        let download_section = source
+            .split("async fn download_to")
+            .nth(1)
+            .expect("download_to exists")
+            .split("async fn ")
+            .next()
+            .unwrap_or_default();
+        assert!(
+            download_section.contains("bytes_stream"),
+            "binary must stream"
+        );
+        assert!(
+            !download_section.contains(".bytes().await"),
+            "binary must not buffer via bytes()"
+        );
     }
 }

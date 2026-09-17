@@ -474,7 +474,7 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 | `src/agent/mod.rs` | ~1820 | ToolRegistry, Profile, ExecutionContext |
 | `src/preflight/mod.rs` | ~3540 | Typed preflight wrappers |
 | `src/integrate.rs` | ~260 | Read-only per-client MCP setup renderers |
-| `src/update.rs` | ~570 | Binary-first self-update from crates.io/GitHub releases |
+| `src/update.rs` | ~1250 | Binary-first self-update from crates.io/GitHub releases (in-process eggfetch-core transport, no external curl) |
 
 ### Tests
 
@@ -496,7 +496,7 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 | `scripts/release-check.sh` | Canonical local release gate |
 | `data/confusables.rs` | Confusables data used by the generator script |
 | `deny.toml` | cargo-deny license/advisory checks |
-| `Cargo.toml` | Package manifest (19 dependencies) |
+| `Cargo.toml` | Package manifest (21 runtime dependencies + 1 dev-only `url` for updater tests) |
 
 ---
 
@@ -504,11 +504,12 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 
 | Category | Crates |
 |----------|--------|
-| Core | `serde`, `serde_json` (preserve_order), `tokio` (rt, macros, io-std, io-util, sync, time), `base64`, `time` |
+| Core | `serde`, `serde_json` (preserve_order), `tokio` (rt, macros, io-std, io-util, sync, time, fs, net), `base64`, `time` |
 | Regex | `fancy-regex`, `regex` |
 | Unicode | `unicode-normalization`, `unicode-segmentation`, `unicode_names2`, `unicode-general-category`, `caseless` |
 | Crypto | `sha2`, `sha1`, `md5`, `crc32fast` |
 | Data | `urlencoding`, `toml`, `toml_edit` |
+| Self-update HTTP/TLS (binary-only, not MCP/library API) | `eggfetch-core` 0.1.6 (`http1,tls-rustls,tls-native-roots,proxy`; hyper + rustls/ring in-process), `futures-util` (streaming) |
 
 ---
 

@@ -98,7 +98,10 @@ eggsact integrate codex    # zed, claude, cursor, vscode, or opencode
 
 Update an installed binary with `eggsact update`. It verifies the crates.io
 stable version, GitHub asset checksum, and candidate `--version` before
-replacement. Existing MCP sessions continue until their owning client
+replacement. The updater is self-contained (in-process HTTP/1 + TLS via
+`eggfetch-core`; no external `curl` required after install). Bootstrap
+installers still use `curl`/PowerShell because they run before Eggsact exists.
+Existing MCP sessions continue until their owning client
 reconnects. Eggsact does not install a daemon or edit client configuration.
 
 ### Library

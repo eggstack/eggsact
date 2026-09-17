@@ -16,6 +16,8 @@ installer = (ROOT / "packaging/install.sh").read_text()
 powershell = (ROOT / "packaging/install.ps1").read_text()
 readme = (ROOT / "README.md").read_text()
 installation = (ROOT / "docs/installation.md").read_text()
+update_rs = (ROOT / "src/update.rs").read_text()
+cargo_toml = (ROOT / "Cargo.toml").read_text()
 errors = []
 for target, asset in targets.items():
     if target not in workflow:
@@ -72,6 +74,12 @@ for document, name in [(readme, "README"), (installation, "installation docs")]:
             errors.append(f"{name} must advertise the published latest {installer_name} URL")
 if "v1.2.3/install.sh" in installation:
     errors.append("installation docs must not use the pre-binary v1.2.3 installer example")
+# Self-update must stay self-contained: no external curl process after install.
+# Narrow to the updater transport only; bootstrap installers/docs legitimately use curl.
+if 'Command::new("curl")' in update_rs:
+    errors.append("src/update.rs must not spawn curl for self-update networking")
+if "eggfetch-core" not in cargo_toml:
+    errors.append("Cargo.toml must declare the qualified eggfetch-core updater transport")
 if errors:
     print("release contract errors:", file=sys.stderr)
     print("\n".join(f"- {error}" for error in errors), file=sys.stderr)
