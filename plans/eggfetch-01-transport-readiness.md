@@ -1,6 +1,6 @@
 # Eggfetch Self-Update Transport Readiness
 
-Status: active — upstream prerequisite for Eggsact migration
+Status: complete — `eggfetch-core` 0.1.6 published 2026-09-17, ready for Plan 02
 Priority: P1
 Scope: qualify and, where necessary, minimally extend `eggfetch-core` so Eggsact can replace its bespoke `curl` subprocess transport without losing updater security or deployment behavior; no Eggsact updater migration in this plan
 
@@ -311,3 +311,52 @@ Known dependency/binary considerations: <summary>
 ```
 
 Then proceed with the Eggsact-side migration and measurement. Do not combine the upstream API change and Eggsact dependency migration into one opaque cross-repository change set.
+
+## Completion record (2026-09-17)
+
+Qualified `eggfetch-core` version: **0.1.6** ([crates.io](https://crates.io/crates/eggfetch-core/0.1.6)).
+Upstream commits: `181786de` (`feat(core)`) + `2e988b5e` (release 0.1.6) on
+`eggstack/eggfetch` main, rebased over `8176d577`; CI run `35184372773`
+passed before publication.
+
+- Strict redirect policy: `RedirectDowngradePolicy::{Allow, Deny}` on
+  `RedirectPolicy` (default `Allow`), `RedirectPolicy::strict()`,
+  `ClientBuilder::redirect_downgrade_policy()`, and
+  `build_redirect_request_with_redirect_policy()`. `Deny` rejects HTTPS ->
+  HTTP before second-hop I/O (`InvalidRedirectLocation`); relative and
+  scheme-relative locations resolve first. Unit + local HTTPS-origin
+  integration tests (downgrade target sees zero requests); compat behavior
+  unchanged when strict is not selected.
+- Opt-in environment proxy: `ProxyEnvironment::from_map()` (pure, for tests)
+  / `from_env()` (one-shot snapshot) with `resolve()` per URL and
+  `client_proxies()`, plus fallible `ClientBuilder::proxy_environment()`.
+  Native default stays environment-independent. Lowercase wins, `ALL_PROXY`
+  fallback per scheme, `NO_PROXY` via native parsing applied before dispatch,
+  invalid values fail closed with redacted errors. `Proxy::http_compat()` /
+  `https_compat()` added for credential-bearing environment URLs.
+- Minimal feature set verified: `http1,tls-rustls,tls-native-roots,proxy`
+  (see `docs/architecture/feature-flags.md` "H1 updater transport" in
+  eggfetch). Runtime graph: 24 direct deps, 112 resolved packages, single
+  `base64` 0.23.1 line; only duplicate is `webpki-roots` 0.26.11/1.0.8
+  (0.26 wraps 1.x data — inherent). No http2/http3/compression/cookies/
+  multipart/json; `tracing` present only via `hyper-rustls/logging` inside
+  `tls-rustls`. Tokio features: rt/net/time/sync/macros/io-util.
+- `base64` aligned 0.22 -> 0.23 (source-compatible `Engine` API; full
+  workspace suite passes). The remaining `base64` 0.21 line is dev-only
+  (`rcgen` -> `pem` test fixtures) and never enters the shipped graph.
+- Baseline confirmations (Part A): MSRV Rust 1.89 (verified with 1.89.0
+  toolchain), HTTP/1 + rustls, independent connect/total `Timeout` phases,
+  `Response::status()` before body, single-consumption `bytes_stream()`,
+  redirects disabled by default, no implicit env proxy, TLS 1.2 minimum with
+  native-roots + WebPKI fallback and hostname verification.
+- No Eggsact-specific release/update policy added to eggfetch; no updater
+  migration in this plan (that is Plan 02).
+
+## Handoff to Plan 02 (recorded)
+
+```text
+Qualified eggfetch-core version: 0.1.6
+Plan 01 completion commit/release: eggstack/eggfetch 2e988b5e / crates.io eggfetch-core 0.1.6
+Minimal features: http1,tls-rustls,tls-native-roots,proxy
+Known dependency/binary considerations: HTTP/TLS moves in-process; expect binary/package growth vs external curl. Runtime graph for the feature set: 24 direct / 112 resolved packages, single base64 0.23, rustls 0.23.45 + ring via hyper-rustls 0.27. Measure before/after stripped release bytes; >=10% or >=1 MiB growth triggers maintainer review.
+```

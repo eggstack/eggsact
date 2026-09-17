@@ -132,17 +132,22 @@ the post-install updater self-contained, but it is expected to increase rather
 than decrease the linked binary/dependency footprint because HTTP/TLS moves
 inside the executable.
 
-Two sequential P1 plans are active:
+Two sequential P1 plans cover this line. Plan 01 is complete; Plan 02 is
+ready:
 
-- **`eggfetch-01-transport-readiness.md`** — upstream prerequisite. Qualify the
-  minimal `eggfetch-core` feature graph and close two generic parity gaps before
-  Eggsact depends on it for executable updates: an explicit redirect policy
-  that permits normal HTTPS redirects while rejecting HTTPS -> HTTP downgrade
-  before second-hop I/O, and explicit opt-in environment-proxy resolution that
-  preserves native eggfetch's environment-independent default. Also evaluate
-  the avoidable `base64` 0.x duplicate and publish a normal crates.io patch
-  release. No Eggsact updater migration occurs in this plan.
-- **`eggfetch-02-eggsact-migration.md`** — blocked on Plan 01. Replace only
+- **`eggfetch-01-transport-readiness.md`** — upstream prerequisite, complete
+  2026-09-17. `eggfetch-core` **0.1.6** is published on crates.io (Rust 1.89)
+  with the required generic APIs: `RedirectDowngradePolicy::Deny` rejects
+  HTTPS -> HTTP before second-hop I/O, and `ProxyEnvironment` provides
+  explicit opt-in environment proxy resolution while the native default stays
+  environment-independent. Minimal feature set
+  `http1,tls-rustls,tls-native-roots,proxy` verified (24 direct / 112
+  resolved runtime packages, single `base64` 0.23 line); avoidable `base64`
+  duplication removed. No Eggsact updater migration occurred in this plan.
+  Upstream commits `181786de` + `2e988b5e` (CI `35184372773`).
+
+- **`eggfetch-02-eggsact-migration.md`** — ready (Plan 01 complete, `eggfetch-core`
+  0.1.6 qualified). Replace only
   `src/update.rs` network transport with the qualified published
   `eggfetch-core`; preserve 10s connect / 120s total timeouts, redirects,
   environment proxies, `404 -> Cargo fallback`, SHA-256/candidate validation,

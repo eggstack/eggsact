@@ -1,13 +1,13 @@
 # Eggsact Self-Update Migration to Eggfetch
 
-Status: blocked on `eggfetch-01-transport-readiness.md`
+Status: ready — Plan 01 complete (`eggfetch-core` 0.1.6 published 2026-09-17)
 Priority: P1
 Scope: replace only the self-updater's external `curl` transport with a minimal `eggfetch-core` dependency, preserve update semantics/security, measure binary/dependency impact, and qualify all shipped targets; no installer rewrite, no updater-policy redesign, no MCP/network-tool expansion
 
-Qualified eggfetch-core version: TBD after Plan 01
-Plan 01 completion commit/release: TBD
-Minimal features: expected `http1,tls-rustls,tls-native-roots,proxy`; confirm after Plan 01
-Known dependency/binary considerations: expected binary/dependency growth because HTTP/TLS moves in-process; must be measured before closure
+Qualified eggfetch-core version: 0.1.6 (published 2026-09-17, Rust 1.89; strict downgrade rejection + opt-in `ProxyEnvironment` per Plan 01 completion record)
+Plan 01 completion commit/release: eggstack/eggfetch 2e988b5e / crates.io eggfetch-core 0.1.6
+Minimal features: http1,tls-rustls,tls-native-roots,proxy
+Known dependency/binary considerations: HTTP/TLS moves in-process; expect binary/package growth vs external curl. Runtime graph for the feature set: 24 direct / 112 resolved packages, single base64 0.23, rustls 0.23.45 + ring via hyper-rustls 0.27. Measure before/after stripped release bytes; >=10% or >=1 MiB growth triggers maintainer review.
 
 ## Objective
 
