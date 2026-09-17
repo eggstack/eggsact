@@ -122,6 +122,46 @@ on the release-preparation and corrective commits, including runs
 `33944382758`. The final binary workflow completed all target,
 installer, checksum, smoke, and draft-assembly jobs in `33944943782`.
 
+## Eggfetch self-update transport consolidation — planned
+
+A 2026-09-16 audit found that Eggsact does **not** currently carry `reqwest` or
+another in-process HTTP client. `eggsact update` instead owns a small transport
+wrapper around an external `curl` process. Consolidating that transport behind
+`eggfetch-core` can remove duplicated HTTP/TLS/subprocess maintenance and make
+the post-install updater self-contained, but it is expected to increase rather
+than decrease the linked binary/dependency footprint because HTTP/TLS moves
+inside the executable.
+
+Two sequential P1 plans are active:
+
+- **`eggfetch-01-transport-readiness.md`** — upstream prerequisite. Qualify the
+  minimal `eggfetch-core` feature graph and close two generic parity gaps before
+  Eggsact depends on it for executable updates: an explicit redirect policy
+  that permits normal HTTPS redirects while rejecting HTTPS -> HTTP downgrade
+  before second-hop I/O, and explicit opt-in environment-proxy resolution that
+  preserves native eggfetch's environment-independent default. Also evaluate
+  the avoidable `base64` 0.x duplicate and publish a normal crates.io patch
+  release. No Eggsact updater migration occurs in this plan.
+- **`eggfetch-02-eggsact-migration.md`** — blocked on Plan 01. Replace only
+  `src/update.rs` network transport with the qualified published
+  `eggfetch-core`; preserve 10s connect / 120s total timeouts, redirects,
+  environment proxies, `404 -> Cargo fallback`, SHA-256/candidate validation,
+  target mapping, and platform replacement. Stream release binaries to disk,
+  keep bootstrap installers separate, and add deterministic local transport
+  tests. Record exact before/after dependency and stripped-binary evidence; a
+  >=10% or >=1 MiB same-target binary increase is a maintainer-review trigger,
+  not an automatic rejection.
+
+This line is specifically a maintenance/runtime-dependency consolidation. Do
+not describe it as a binary-size optimization unless measurement proves one.
+Do not force the migration by rebuilding redirect/proxy policy inside Eggsact
+if the generic upstream prerequisites are declined. Once both plans ship, the
+roadmap should retain the qualified eggfetch version, implementation commit,
+feature graph, binary/dependency deltas, end-to-end updater evidence, and the
+fact that bootstrap installers may still use external download tooling while
+`eggsact update` itself no longer requires `curl`; the detailed plan files can
+then be pruned per convention.
+
 ## MCP surface modernization — evaluation closure pending
 
 Research on 2026-09-10 found that eggsact's internal capability architecture is
