@@ -8,13 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Self-update transport is now in-process via `eggfetch-core` 0.1.6
+- Self-update transport is now in-process via `eggfetch-core` 0.1.7
   (`http1,tls-rustls,tls-native-roots,proxy`) instead of an external `curl`
   subprocess. Update policy is unchanged (crates.io authority, GitHub asset +
   SHA-256 + candidate `--version`, 404 -> Cargo fallback, staged Windows
   replacement). The updater keeps HTTP/1 only, strict HTTPS-downgrade
   rejection, explicit environment proxy routing, 10s connect / 120s total
-  timeouts, and streamed binary downloads. Bootstrap installers still use
+  timeouts (total enforced through response-body EOF), and streamed binary
+  downloads. Small metadata/checksum bodies (1 MiB / 64 KiB) are bounded by
+  eggfetch's request-local decoded-body limit, authoritative even when
+  `Content-Length` is absent or false. Bootstrap installers still use
   external download tooling. This is maintenance consolidation, not a size
   optimization: the linked HTTP/TLS stack grows the stripped release binary
   and dependency graph vs the old curl subprocess.

@@ -28,13 +28,16 @@ crates.io max_stable_version
 ```
 
 Only stable `major.minor.patch` versions are accepted. Network transport is
-in-process via `eggfetch-core` 0.1.6 (`http1,tls-rustls,tls-native-roots,proxy`):
+in-process via `eggfetch-core` 0.1.7 (`http1,tls-rustls,tls-native-roots,proxy`):
 HTTP/1 only, redirects followed with strict HTTPS -> HTTP downgrade rejection,
 native roots with WebPKI fallback and full certificate/hostname verification,
 explicit environment proxy routing (invalid proxy fails closed), distinct
-10-second connect and 120-second total timeouts, no retries, streamed
+10-second connect and 120-second total timeouts (total enforced through
+response-body EOF), no retries, streamed
 release-binary downloads (small metadata/checksum bodies bounded at 1 MiB /
-64 KiB), and a 10-second candidate `--version` execution cap. The updater uses
+64 KiB via request-local `max_decoded_body_size`, authoritative even when
+`Content-Length` is absent or false), and a 10-second candidate `--version`
+execution cap. The updater uses
 the existing `sha2` dependency for hashing and
 requires no external `curl` after install. Bootstrap installers still use
 external download tooling because they run before Eggsact exists. A supported

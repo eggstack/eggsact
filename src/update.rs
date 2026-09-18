@@ -1,6 +1,6 @@
 //! Binary-first self-update support and deterministic release-contract helpers.
 //!
-//! Network transport is owned in-process by `eggfetch-core` 0.1.6 with the
+//! Network transport is owned in-process by `eggfetch-core` 0.1.7 with the
 //! minimal feature set `http1,tls-rustls,tls-native-roots,proxy`. The updater
 //! keeps all release/update policy (version selection, asset naming, Cargo
 //! fallback, SHA-256 verification, candidate validation, replacement).
@@ -15,7 +15,10 @@
 //! - explicit opt-in environment proxy routing (`ProxyEnvironment::from_env`);
 //!   invalid proxy configuration fails closed, never silently direct;
 //! - 10-second connect timeout + 120-second total wall-clock timeout
-//!   (distinct phases via `Timeout::builder`, never `from_secs(120)` alone);
+//!   (distinct phases via `Timeout::builder`, never `from_secs(120)` alone;
+//!   total enforced through response-body EOF);
+//! - small metadata/checksum bodies bounded by request-local
+//!   `max_decoded_body_size` (authoritative; `Content-Length` advisory only);
 //! - no retry policy; no compression/cookies/multipart/JSON features;
 //! - release binaries stream to disk chunk-by-chunk, never buffered as one
 //!   `Vec<u8>` by updater code.
@@ -327,8 +330,11 @@ fn build_update_client() -> Result<Client, String> {
 }
 
 /// Fetch a small text document (crates.io metadata, checksum sidecar) with an
-/// explicit byte bound. Small responses may be buffered; the bound prevents
-/// unbounded memory use from a malformed server/proxy response.
+/// explicit byte bound. The request-local eggfetch `max_decoded_body_size`
+/// limit is the authoritative safety boundary: it caps the decoded body
+/// during streaming/buffering even when `Content-Length` is absent or false.
+/// The `Content-Length` check below is advisory/early only, and no
+/// caller-side post-buffer accumulation limit is maintained.
 async fn get_small_text(
     client: &Client,
     url: &str,
@@ -339,15 +345,18 @@ async fn get_small_text(
     let mut response = client
         .get(url)
         .map_err(|error| map_transport_error(error, url, what))?
+        .max_decoded_body_size(max_bytes)
         .send()
         .await
-        .map_err(|error| map_transport_error(error, url, what))?;
+        .map_err(|error| map_small_body_error(error, url, what, max_bytes))?;
     let status = response.status().as_u16();
     if !matches!(classify_http_status(status), DownloadStatus::Success) {
         return Err(format!(
             "HTTP {status} from {redacted} while fetching {what}"
         ));
     }
+    // Advisory early rejection only; the authoritative bound is enforced by
+    // eggfetch while the body streams, before unbounded caller buffering.
     if let Some(declared) = response.content_length() {
         if declared > max_bytes as u64 {
             return Err(format!(
@@ -358,15 +367,27 @@ async fn get_small_text(
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| map_transport_error(error, url, what))?;
-    if bytes.len() > max_bytes {
-        return Err(format!(
-            "{what} from {redacted} exceeds {max_bytes}-byte bound (received {} bytes)",
-            bytes.len()
-        ));
-    }
+        .map_err(|error| map_small_body_error(error, url, what, max_bytes))?;
     String::from_utf8(bytes.to_vec())
         .map_err(|error| format!("invalid UTF-8 in {what} from {redacted}: {error}"))
+}
+
+/// Map a small-metadata/checksum transport error, giving eggfetch's
+/// authoritative decoded-body limit a concise bound-identifying message.
+/// Credential-safe: only the redacted URL is embedded.
+fn map_small_body_error(
+    error: eggfetch_core::Error,
+    url: &str,
+    what: &str,
+    max_bytes: usize,
+) -> String {
+    if matches!(error, eggfetch_core::Error::DecodedBodyTooLarge) {
+        let redacted = redact_url_for_error(url);
+        return format!(
+            "{what} from {redacted} exceeds {max_bytes}-byte bound (decoded body too large: {error})"
+        );
+    }
+    map_transport_error(error, url, what)
 }
 
 /// Stream a release binary to disk chunk-by-chunk. Never buffers the
@@ -1193,6 +1214,184 @@ mod tests {
             .await
             .expect("small body passes");
         assert_eq!(text, "hello world");
+        handle.abort();
+    }
+
+    /// Serve one stalled body per connection: status + headers + `first_chunk`
+    /// arrive promptly, then the connection stalls `stall` before sending
+    /// `trailing` (or EOF). Client-side total deadlines must fire during the
+    /// stall, proving post-header body-consumption timeout behavior.
+    fn serve_stalled_body(
+        status: u16,
+        headers: Vec<(String, String)>,
+        first_chunk: Vec<u8>,
+        stall: Duration,
+        trailing_chunk: Vec<u8>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind stalled test server");
+        let addr = listener.local_addr().expect("local addr");
+        listener
+            .set_nonblocking(true)
+            .expect("test listener nonblocking");
+        let handle = tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::from_std(listener).expect("tokio listener");
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    break;
+                };
+                let headers = headers.clone();
+                let first_chunk = first_chunk.clone();
+                let trailing_chunk = trailing_chunk.clone();
+                tokio::spawn(async move {
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                    let mut head = Vec::new();
+                    let mut byte = [0_u8; 1];
+                    loop {
+                        match socket.read(&mut byte).await {
+                            Ok(0) => break,
+                            Ok(_) => {
+                                head.push(byte[0]);
+                                if head.len() > 16_384 {
+                                    break;
+                                }
+                                if head.ends_with(b"\r\n\r\n") {
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                    let reason = match status {
+                        200 => "OK",
+                        _ => "Response",
+                    };
+                    let mut response =
+                        format!("HTTP/1.1 {status} {reason}\r\nConnection: close\r\n");
+                    for (name, value) in headers {
+                        response.push_str(&format!("{name}: {value}\r\n"));
+                    }
+                    response.push_str("\r\n");
+                    if socket.write_all(response.as_bytes()).await.is_err() {
+                        return;
+                    }
+                    if !first_chunk.is_empty() && socket.write_all(&first_chunk).await.is_err() {
+                        return;
+                    }
+                    if socket.flush().await.is_err() {
+                        return;
+                    }
+                    tokio::time::sleep(stall).await;
+                    let _ = socket.write_all(&trailing_chunk).await;
+                    let _ = socket.flush().await;
+                });
+            }
+        });
+        (format!("http://{addr}/"), handle)
+    }
+
+    #[tokio::test]
+    async fn small_text_rejects_chunked_body_without_declared_length() {
+        // Preferred absent-length fixture: HTTP/1 chunked with no
+        // Content-Length, aggregate decoded size exceeding a small test bound.
+        // The request-local eggfetch decoded-body cap must reject this
+        // without unbounded caller-side buffering.
+        const BOUND: usize = 1024;
+        fn chunked_wire(payload: &[u8]) -> Vec<u8> {
+            let mut wire = format!("{:X}\r\n", payload.len()).into_bytes();
+            wire.extend_from_slice(payload);
+            wire.extend_from_slice(b"\r\n");
+            wire
+        }
+        let wire_chunks: Vec<Vec<u8>> = {
+            let mut framed = Vec::new();
+            for _ in 0..3 {
+                framed.push(chunked_wire(&vec![b'y'; 1024]));
+            }
+            framed.push(b"0\r\n\r\n".to_vec());
+            framed
+        };
+        let (base, handle) = serve(move |_| {
+            (
+                200,
+                vec![("Transfer-Encoding".into(), "chunked".into())],
+                wire_chunks.clone(),
+                false,
+            )
+        });
+        let client = test_client();
+        let error = get_small_text(&client, &base, BOUND, "crates.io metadata")
+            .await
+            .expect_err("chunked oversize without length is rejected");
+        assert!(error.contains("exceeds"), "got: {error}");
+        assert!(error.contains("1024"), "got: {error}");
+        assert!(
+            error.contains("decoded body too large") || error.contains("byte bound"),
+            "got: {error}"
+        );
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn buffered_body_stall_past_total_times_out() {
+        // Headers arrive promptly describing a successful 200; only a prefix
+        // is delivered, then the body stalls past the injected total.
+        // get_small_text must surface the existing timeout classification.
+        let (base, handle) = serve_stalled_body(
+            200,
+            vec![("Content-Length".into(), "65536".into())],
+            b"prefix-bytes".to_vec(),
+            Duration::from_millis(1500),
+            vec![b't'; 4096],
+        );
+        let timeout = Timeout::builder()
+            .connect(Duration::from_secs(5))
+            .total(Duration::from_millis(200))
+            .build();
+        let client = build_update_client_with_timeout_and_env(
+            timeout,
+            &eggfetch_core::ProxyEnvironment::new(),
+        )
+        .expect("stall-timeout client builds");
+        let started = std::time::Instant::now();
+        let error = get_small_text(&client, &base, METADATA_MAX_BYTES, "crates.io metadata")
+            .await
+            .expect_err("post-header body stall times out");
+        assert!(error.contains("update request timed out"), "got: {error}");
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "timeout must fire well before the outer bound"
+        );
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn streamed_binary_stall_past_total_times_out_and_cleans_up() {
+        // Same post-header stall on the streamed binary path: 200 headers
+        // promptly, one binary chunk, then stall past total. download_to must
+        // map the timeout and remove the partial destination.
+        let (base, handle) = serve_stalled_body(
+            200,
+            vec![("Content-Length".into(), "65536".into())],
+            vec![0x7f, b'E', b'L', b'F'],
+            Duration::from_millis(1500),
+            vec![0u8; 4096],
+        );
+        let timeout = Timeout::builder()
+            .connect(Duration::from_secs(5))
+            .total(Duration::from_millis(200))
+            .build();
+        let client = build_update_client_with_timeout_and_env(
+            timeout,
+            &eggfetch_core::ProxyEnvironment::new(),
+        )
+        .expect("stall-timeout client builds");
+        let dest = temp_destination("stalled-binary");
+        let _ = std::fs::remove_file(&dest);
+        let error = download_to(&client, &base, &dest)
+            .await
+            .expect_err("post-header binary stall times out");
+        assert!(error.contains("update request timed out"), "got: {error}");
+        assert!(!dest.exists(), "partial file must be removed");
         handle.abort();
     }
 

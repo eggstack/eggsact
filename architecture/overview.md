@@ -509,7 +509,7 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 | Unicode | `unicode-normalization`, `unicode-segmentation`, `unicode_names2`, `unicode-general-category`, `caseless` |
 | Crypto | `sha2`, `sha1`, `md5`, `crc32fast` |
 | Data | `urlencoding`, `toml`, `toml_edit` |
-| Self-update HTTP/TLS (binary-only, not MCP/library API) | `eggfetch-core` 0.1.6 (`http1,tls-rustls,tls-native-roots,proxy`; hyper + rustls/ring in-process), `futures-util` (streaming) |
+| Self-update HTTP/TLS (binary-only, not MCP/library API) | `eggfetch-core` 0.1.7 (`http1,tls-rustls,tls-native-roots,proxy`; hyper + rustls/ring in-process), `futures-util` (streaming) |
 
 ---
 
