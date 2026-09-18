@@ -202,6 +202,37 @@ drift. No unrelated lockfile upgrades (only additions).
   bootstrap `packaging/install.*` still does. Detailed execution plans
   pruned per convention; git history retains them.
 
+## Eggfetch 0.1.7 updater dependency correction — active
+
+Plan: `eggfetch-0.1.7-updater-dependency-bump.md`
+
+The original eggfetch self-update migration remains shipped and its 0.1.6
+footprint/qualification record above stays historical. A narrow follow-up is
+active because upstream `eggfetch-core 0.1.7` corrects
+`Timeout.total` through response-body EOF/trailers and preserves the public
+`ResponseBody` shape. Eggsact is still pinned to 0.1.6 at the planning
+baseline.
+
+The follow-up keeps the existing
+`http1,tls-rustls,tls-native-roots,proxy` feature set and updater policy
+unchanged. It also moves small crates.io/checksum responses onto eggfetch's
+existing request-local `max_decoded_body_size` enforcement so absent/false
+`Content-Length` cannot cause unbounded caller-side buffering. New local
+regressions must prove post-header total timeout on both buffered metadata and
+streamed binary paths, including partial-file cleanup.
+
+Because upstream 0.1.7 also contains the intervening feature/dependency split
+(`proxy` now owns `eggfetch-http-connect`), the handoff records a targeted
+lockfile and comparable stripped-binary delta rather than assuming a
+version-only graph change. This is not a new footprint program:
+`proxy` currently re-enables the compatibility `http1` bundle, so a
+`standard-http1` alias switch is explicitly out of scope.
+
+Closure requires the ordinary merge gate, release-contract smoke, Rust 1.89
+MSRV, cargo-deny, and Windows/macOS supported-platform compile checks. The plan
+does not publish a new Eggsact version; the corrected dependency reaches users
+with the next normal Eggsact release after this line closes.
+
 ## MCP surface modernization — evaluation closure pending
 
 Research on 2026-09-10 found that eggsact's internal capability architecture is
