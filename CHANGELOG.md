@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-09-19
+
 ### Changed
 - Self-update transport is now in-process via `eggfetch-core` 0.1.7
   (`http1,tls-rustls,tls-native-roots,proxy`) instead of an external `curl`

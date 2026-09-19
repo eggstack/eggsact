@@ -206,7 +206,7 @@ dependencies = [
 
 [[package]]
 name = "eggsact"
-version = "1.2.5"
+version = "1.2.6"
 dependencies = [
  "base64",
  "caseless",
