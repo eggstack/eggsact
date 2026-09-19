@@ -508,7 +508,12 @@ macOS compile: local aarch64-apple-darwin check clean (Tier 1 covers this).
 Latest-compatible: inspected in a detached worktree copy; `cargo update`
   resolves 7 unchanged-dependency updates with no eggfetch-core movement;
   unrelated to this plan.
-Remote CI: pending verification on c7b2968.
+Remote CI: passed on cbca5841
+  - CI (Linux correctness) on c7b29682: success (Tier 1 gate)
+  - CI (Linux correctness) on cbca5841: success
+  - Maintenance on cbca5841: MSRV 1.89.0 / cargo-deny / Check (windows-latest)
+    / Check (macos-latest) all success
+  - Latest Compatible Dependencies on cbca5841: success
 Optional live updater smoke: `./target/release/eggsact update` -> "eggsact
   1.2.5 is already current (latest stable: 1.2.5)" with exit 0 against
   real crates.io; no replacement triggered.
