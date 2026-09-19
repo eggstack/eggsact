@@ -2,7 +2,8 @@
 
 Planning baseline: `40959b704431430668e9ca2bfe959a8ef32495d8` (`main`, 2026-09-18)
 Upstream dependency target: `eggfetch-core 0.1.7`
-Status: active implementation handoff
+Implementation commit: `c7b296822f4534751ab7e2f002873a1594570bfa` (`main`, 2026-09-19)
+Status: landed on `main` pending remote CI verification
 
 ## Objective
 
@@ -433,52 +434,100 @@ The bump is ready for handoff only when:
 - [ ] Remote ordinary CI passes on the implementation commit.
 - [ ] No MCP/tool surface, public Eggsact library API, updater policy, unrelated dependency, or release automation change is introduced.
 
-## Closure record template
-
-Append before marking complete:
+## Closure record
 
 ```text
 Planning baseline: 40959b704431430668e9ca2bfe959a8ef32495d8
-Implementation commit:
+Implementation commit: c7b296822f4534751ab7e2f002873a1594570bfa
 Qualified eggfetch-core: 0.1.7
 Upstream release/freeze reference: 82f3f386 / 43c3b312 / v0.1.7
 
-Cargo.toml feature set:
-Lockfile eggfetch-core:
-Lockfile eggfetch-http-connect:
-Other lockfile delta:
+Cargo.toml feature set: http1,tls-rustls,tls-native-roots,proxy (unchanged)
+Lockfile eggfetch-core: 0.1.6 -> 0.1.7
+Lockfile eggfetch-http-connect: added 0.1.7 (now owned by `proxy`)
+Other lockfile delta: removed dashmap 6.2.1 subgraph (crossbeam-utils,
+  hashbrown 0.14.5, lock_api, parking_lot_core, redox_syscall, scopeguard)
+  deduplicated via the new eggfetch graph; 172 -> 166 resolved packages.
 
-get_small_text authoritative body limit:
-No-length oversize proof:
-Small-body proof:
+get_small_text authoritative body limit: per-request
+  `max_decoded_body_size(max_bytes)` set before `send()`; `Content-Length`
+  retained as advisory/early rejection only; caller post-buffer length
+  check removed; `Error::DecodedBodyTooLarge` mapped to bound-identifying
+  message via `map_small_body_error`.
+No-length oversize proof: `small_text_rejects_chunked_body_without_declared_length`
+  - HTTP/1 chunked with no Content-Length, BOUND 1024 vs 3 KiB decoded,
+    asserts bound + decoded-body wording, no panic, no success.
+Small-body proof: `get_small_text` happy-path tests remain green; small
+  valid metadata + checksum still succeed end-to-end.
 Post-header metadata total proof:
+  `buffered_body_stall_past_total_times_out` - 200 + headers + first chunk
+  then stall beyond a 250 ms total; asserts concise "update request timed out"
+  with redacted URL and timeout classification.
 Post-header binary-stream total proof:
-Partial-file cleanup:
-Slow-header timeout:
-Redirect/proxy/TLS policy regression:
-No-curl / streamed-binary structural guards:
+  `streamed_binary_stall_past_total_times_out_and_cleans_up` - 200 + binary
+  first chunk then stall beyond total; asserts download_to timeout error,
+  partial destination removed.
+Partial-file cleanup: enforced by the existing `download_to` body/error
+  cleanup path; the new streamed-binary test asserts destination absence.
+Slow-header timeout: existing slow-header regression retained.
+Redirect/proxy/TLS policy regression: existing strict-redirect / fail-closed
+  proxy / native-roots+WebPKI regressions retained.
+No-curl / streamed-binary structural guards: retained; `download_to` still
+  uses `bytes_stream()` and never buffered `bytes()`; bootstrap install
+  scripts remain external.
 
-Baseline stripped bytes:
-Candidate stripped bytes:
-Size delta:
-Resolved-package delta:
-Size-review disposition:
+Baseline stripped bytes: 11101984 (aarch64-apple-darwin, rustc 1.98.1,
+  eggsact 1.2.5)
+Candidate stripped bytes: 11101760 (same host/profile; eggsact 1.2.5)
+Size delta: -224 bytes (~0%)
+Resolved-package delta: 172 -> 166 (-6 packages)
+Size-review disposition: acceptable, below both >=1 MiB and >=10%
+  triggers; attributable to dashmap subgraph removal + hashbrown dedup.
 
-Tier 1:
-Release contract:
-Release build/MCP smoke:
-MSRV 1.89:
-cargo-deny:
-Windows compile:
-macOS compile:
-Latest-compatible:
-Remote CI:
-Optional live updater smoke:
+Tier 1: passed locally
+  - cargo fmt --all -- --check: clean
+  - generate-docs --check: clean
+  - cargo clippy --locked --all-targets --all-features -- -D warnings: clean
+  - cargo test --locked --all-features -- --skip parity --test-threads=4:
+    643 lib + 3005 integration + 51 isolation + 11 doc, 0 failed
+  - cargo test --locked --doc: 11 passed
+Release contract: passed
+  - scripts/check-release-contract.py: clean
+  - bash -n packaging/install.sh: clean; shellcheck: clean
+  - cargo build --locked --release: 1.2.5
+  - scripts/smoke-mcp-binary.py: 77 tools MCP smoke passed
+Release build/MCP smoke: passed (release eggsact 1.2.5 + MCP smoke passed)
+MSRV 1.89: cargo +1.89.0 check clean (pre-existing warnings only in
+  src/tools/list.rs); cargo +1.89.0 test --locked --all-features --lib
+  643 passed
+cargo-deny: advisories/bans/licenses/sources clean
+Windows compile: local cargo check --target x86_64-pc-windows-msvc fails
+  on ring v0.17.14 build (missing MSVC toolchain, not code regression);
+  requires Maintenance / platform-check on windows-latest via dispatch.
+macOS compile: local aarch64-apple-darwin check clean (Tier 1 covers this).
+Latest-compatible: inspected in a detached worktree copy; `cargo update`
+  resolves 7 unchanged-dependency updates with no eggfetch-core movement;
+  unrelated to this plan.
+Remote CI: pending verification on c7b2968.
+Optional live updater smoke: `./target/release/eggsact update` -> "eggsact
+  1.2.5 is already current (latest stable: 1.2.5)" with exit 0 against
+  real crates.io; no replacement triggered.
 
-Current-doc version references:
-Historical roadmap disposition:
+Current-doc version references: src/update.rs module doc, AGENTS.md
+  gotcha, architecture/cli-binaries.md, architecture/overview.md,
+  CHANGELOG.md Unreleased, plans/roadmap.md all advanced to 0.1.7.
+Historical roadmap disposition: original 0.1.6 migration/footprint record
+  retained verbatim as history; a follow-up note appended under
+  `Eggfetch 0.1.7 updater dependency correction - landed` references this
+  plan's closure record.
 Known limitations:
-Next-release handoff:
+  - Local Windows cross-check requires the Maintenance workflow on
+    windows-latest (no MSVC toolchain available in this environment).
+  - Live crates.io smoke is best-effort evidence, not a gating requirement.
+Next-release handoff: include c7b2968 in the next Eggsact release commit;
+  follow docs/release.md for crates.io-first publication, tag creation,
+  binary workflow, and installer verification. Do not auto-publish from
+  this plan.
 ```
 
 ## Exit criterion
