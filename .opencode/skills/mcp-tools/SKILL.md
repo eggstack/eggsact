@@ -133,9 +133,11 @@ See `architecture/machine-codes.md` for the full code table and design rationale
 The MCP boundary has a dependency-free performance evidence harness at
 `benches/performance.rs`. Boundary changes must preserve the single-lookup
 prepared-call path, one returned fallback serialization, counting-only size
-checks, and the writer's one-line/one-flush behavior. Compare with
-`cargo bench --locked --bench performance`; never add host-specific timing
-thresholds to ordinary tests.
+checks, and the writer's one-line/one-flush behavior. Its warm MCP scenario
+uses one persistent child and verifies each response id; its input-budget
+scenarios call `call_json_with_budget` and assert the production rejection
+path. Compare with `cargo bench --locked --bench performance`; never add
+host-specific timing thresholds to ordinary tests.
 
 `ToolRegistry` (`src/agent/mod.rs`) provides the core tool execution path. Both the MCP server (`src/mcp/server.rs`) and direct Rust callers use it for tool lookup, profile filtering, argument validation, and dispatch. Tool functions themselves live in `src/tools/*.rs` (by category); `ToolRegistry` orchestrates calling them.
 

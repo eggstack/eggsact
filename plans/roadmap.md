@@ -341,7 +341,7 @@ instructions A/B result, and the final integration/default decision. Only then
 is the MCP modernization/evaluation line closed and the `03c` plan eligible for
 pruning.
 
-## Performance optimization campaign — closure corrective active
+## Performance optimization campaign — closure corrective complete
 
 The sequential campaign planned at `23af42219ef1088ddeff080a2e07a3361e8468c3`
 is complete in implementation commit `85e10bf`. The changes preserve the
@@ -350,32 +350,15 @@ protocol behavior, discovery ranking, deterministic outputs, and bounded
 execution semantics. Generated documentation remained unchanged because no
 ToolSpec metadata changed.
 
-The implementation itself remains landed, but a post-closure audit reopened the
-campaign narrowly under **`performance-04-closure-corrective.md` — P1,
-planned**. The corrective does not revisit the broad optimization design. It
-closes five specific evidence/compatibility gaps:
-
-- differential-test `text_replace_check` line/column semantics for matches on
-  LF/CR/CRLF boundaries against the pre-campaign implementation and restore
-  compatibility if the indexed implementation drifted;
-- replace the current `mcp_stdio_warm_cheap_call` measurement, which spawns a
-  fresh server process for each iteration, with a true persistent-process
-  warm request/response benchmark (cold start may be recorded separately);
-- replace the current input-accounting proxy
-  (`serde_json::to_vec(...).len()`) with evidence that executes Eggsact's
-  actual serialized-input budget path;
-- remeasure `diff_spans` and `RepoFacts` with representative multi-span and
-  ~100/~1000-path workloads before deciding whether their small-case
-  regressions justify keep/revert;
-- benchmark repeated named captures and explicitly implement or decline
-  per-compiled-pattern capture-name metadata reuse.
-
-The patch correctness fix, response/list/search/JSON/text-replace hot-path
-changes, flat dependency count, and successful qualification recorded below
-remain valid evidence. Campaign closure is pending only the corrective gates
-above. The current closure documentation commit `cbb4047` has green push CI
-(run `35539441332`), but the corrective must itself pass local qualification
-and remote push CI before this line returns to complete status.
+The implementation itself remains landed, and the post-closure audit was
+resolved narrowly under **`performance-04-closure-corrective.md` — P1** in
+implementation commit `e8067ae`. The corrective did not revisit the broad
+optimization design. It closed the five evidence/compatibility gaps: newline
+position differential testing, persistent MCP warm measurement, production
+input-budget measurement, representative diff/repository workloads, and an
+explicit regex capture-name reuse decision. The patch correctness fix,
+response/list/search/JSON/text-replace hot-path changes, flat dependency count,
+and original qualification remain valid.
 
 ### Correctness evidence
 
@@ -387,13 +370,16 @@ lenient EOF truncation, and fingerprints requested without result text. The
 linear patch engine now uses original-source coordinates and emits the result
 once; overlapping or out-of-order hunks fail deterministically.
 
-### Same-host benchmark evidence
+### Historical pre-corrective benchmark evidence
 
-The dependency-free harness was run with 10 warmup and 50 measured iterations
+The original dependency-free harness was run with 10 warmup and 50 measured iterations
 on both the planning baseline and candidate using Rust 1.98.1,
 `aarch64-apple-darwin`, macOS on Apple M4 Pro, release optimizations. Values
 are arithmetic mean nanoseconds per operation from the stable `key=value`
-records; they are evidence, not CI thresholds.
+records; they are evidence, not CI thresholds. The input and MCP rows below
+are retained as historical evidence only: the former timed a JSON
+serialization proxy and the latter spawned a fresh process per iteration, so
+they are superseded by the corrective measurements that follow.
 
 | Scenario | Baseline | Candidate | Change |
 |---|---:|---:|---:|
@@ -422,14 +408,56 @@ accepted. Stripped release binary size was 11,101,696 bytes at baseline and
 11,101,504 bytes for the candidate (-192 bytes). `Cargo.lock` contained 166
 packages at both points.
 
+### Corrective compatibility and representative benchmark evidence
+
+The closure corrective used planning baseline `23af42219ef1088ddeff080a2e07a3361e8468c3`,
+candidate `e8067ae`, Rust 1.98.1, `aarch64-apple-darwin`, macOS on Apple M4
+Pro, and the same 10-warmup/50-repetition release-mode policy. Three
+independent batches were run for each corrected scenario; the table reports
+the median arithmetic mean in nanoseconds per operation.
+
+The detached-baseline differential matrix matched the candidate for every
+newline boundary. In particular, a match beginning on LF in `a\nb`, CR in
+`a\rb`, CR and LF in `a\r\nb`, and the codepoint after each newline reports
+the historical following-line position; `é\n😀` reports codepoint 2,
+bytes 3..7, line 2, column 1. Empty matches at every boundary in LF, CR, and
+CRLF inputs also match the baseline. The indexed implementation was corrected
+to retain those semantics and the matrix is now a regression test.
+
+| Corrected scenario | Baseline | Candidate | Change | Decision |
+|---|---:|---:|---:|---|
+| actual input-budget path, small | 1,519 | 1,105 | -27.3% | keep; production rejection path |
+| actual input-budget path, near-limit | 40,315 | 40,931 | +1.5% | keep; production rejection path |
+| `diff_spans` small Unicode | 560 | 783 | +39.8% | keep; +0.223 µs micro-case |
+| `diff_spans` 640-codepoint multi-span | 736,713 | 471,760 | -36.0% | keep indexed offsets |
+| `RepoFacts`, 100 mixed paths | 130,247 | 120,562 | -7.4% | keep one-pass analysis |
+| `RepoFacts`, 1,000 mixed paths | 1,247,034 | 1,220,030 | -2.2% | keep one-pass analysis |
+| named captures, 500 matches / 2 groups | 215,042 | 218,440 | +1.6% | decline metadata cache |
+| persistent MCP warm call | 68,521 | 68,038 | -0.7% | keep; one child, correlated ids |
+
+The warm MCP measurement now spawns one server outside timing, performs
+warmup outside timing, then times sequential request serialization/flush,
+server dispatch, response read, and JSON-RPC id correlation for each request.
+The input rows call `call_json_with_budget` and assert `input_too_large`; they
+no longer measure a duplicate `serde_json::to_vec` proxy. The multi-span and
+100/1,000-path workloads justify retaining the diff and repository changes.
+The repeated named-capture workload showed no material benefit from caching
+capture names, so per-pattern metadata reuse is explicitly declined; no
+public enum shape or regex behavior changes were needed.
+
 ### Qualification evidence
 
-The local merge/release checks passed: `cargo fmt --all -- --check`, generated
-docs `--check`, all-features clippy with `-D warnings`, the full non-parity
-test suite with four test threads, doc tests, release-contract validation,
-release build, cargo-deny advisories/bans/licenses/sources, and the release
-MCP smoke (77 model-visible tools). The performance harness remains
-non-gating and is documented in `architecture/performance.md`.
+The corrective passed the focused text, diff, repository, and regex suites
+(18, 144, 25, and 136 tests), then the required merge gate in order: fmt,
+generated docs `--check`, all-features clippy with `-D warnings`, the full
+non-parity suite (`3,764 passed, 1 ignored` with four test threads), and 11
+doc tests. Release-contract validation, the release build, and the release
+MCP smoke (77 tools) also passed. The dependency graph did not move, so the
+previous cargo-deny advisories/bans/licenses/sources qualification remains
+applicable. The corrected release binary is 11,101,504 bytes versus the
+11,101,696-byte planning baseline; `Cargo.lock` remains at 166 packages. The
+performance harness remains non-gating and is documented in
+`architecture/performance.md`.
 
 ## Future opportunities
 

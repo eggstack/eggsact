@@ -15,6 +15,17 @@ evidence, not a merge threshold. The matrix covers registry setup, legacy and
 modern listings, discovery, response serialization, input accounting, MCP
 stdio, patching, replacement, JSON, repo facts, diffs, and encodings.
 
+The MCP warm scenario is a sequential request/response measurement through one
+persistent `eggsact --mcp` child: process startup, protocol setup, and warmup
+are outside the timed loop; each measured operation writes and flushes one
+request, reads one complete response line, and verifies its JSON-RPC id. Any
+cold-start measurement must use an explicitly cold-start name. Input-budget
+scenarios call `ToolRegistry::call_json_with_budget` with a budget that forces
+the production `input_too_large` short circuit, rather than timing a duplicate
+JSON length calculation. Representative `diff_spans` and `RepoFacts` cases
+are retained alongside small micro-cases so scaling evidence is not inferred
+from tiny inputs.
+
 ## Boundary invariants
 
 - `python_json_dumps` keeps the established Python-style separators, ordering,
@@ -27,6 +38,10 @@ stdio, patching, replacement, JSON, repo facts, diffs, and encodings.
   The public `ToolCallOutcome` shape is unchanged.
 - The stdio writer owns reusable serialization storage and still emits one
   newline-terminated JSON object and flushes once per response.
+- `text_replace_check` position indexes preserve the historical contract that
+  a match beginning on CR, LF, or either codepoint of CRLF reports the start of
+  the following line. The index is built in one pass; boundary regressions are
+  pinned by differential tests.
 
 ## Patch contract
 

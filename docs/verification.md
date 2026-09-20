@@ -35,6 +35,10 @@ Run baseline and candidate on the same host/toolchain. Do not turn timing
 observations into flaky CI thresholds; correctness remains covered by Tier 1.
 The durable boundary and patch semantics are documented in
 [`architecture/performance.md`](../architecture/performance.md).
+The warm MCP row is a persistent-process, correlated per-request round trip,
+and the input-budget rows execute the real bounded registry path; the harness
+also includes representative multi-span diff and 100/1000-path repository
+workloads.
 
 | Check | Workflow | Cadence |
 |-------|----------|---------|
