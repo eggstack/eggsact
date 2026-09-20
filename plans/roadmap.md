@@ -341,7 +341,7 @@ instructions A/B result, and the final integration/default decision. Only then
 is the MCP modernization/evaluation line closed and the `03c` plan eligible for
 pruning.
 
-## Performance optimization campaign — complete
+## Performance optimization campaign — closure corrective active
 
 The sequential campaign planned at `23af42219ef1088ddeff080a2e07a3361e8468c3`
 is complete in implementation commit `85e10bf`. The changes preserve the
@@ -349,6 +349,33 @@ public Rust/MCP shapes, schemas, profile and audience policy, legacy/modern
 protocol behavior, discovery ranking, deterministic outputs, and bounded
 execution semantics. Generated documentation remained unchanged because no
 ToolSpec metadata changed.
+
+The implementation itself remains landed, but a post-closure audit reopened the
+campaign narrowly under **`performance-04-closure-corrective.md` — P1,
+planned**. The corrective does not revisit the broad optimization design. It
+closes five specific evidence/compatibility gaps:
+
+- differential-test `text_replace_check` line/column semantics for matches on
+  LF/CR/CRLF boundaries against the pre-campaign implementation and restore
+  compatibility if the indexed implementation drifted;
+- replace the current `mcp_stdio_warm_cheap_call` measurement, which spawns a
+  fresh server process for each iteration, with a true persistent-process
+  warm request/response benchmark (cold start may be recorded separately);
+- replace the current input-accounting proxy
+  (`serde_json::to_vec(...).len()`) with evidence that executes Eggsact's
+  actual serialized-input budget path;
+- remeasure `diff_spans` and `RepoFacts` with representative multi-span and
+  ~100/~1000-path workloads before deciding whether their small-case
+  regressions justify keep/revert;
+- benchmark repeated named captures and explicitly implement or decline
+  per-compiled-pattern capture-name metadata reuse.
+
+The patch correctness fix, response/list/search/JSON/text-replace hot-path
+changes, flat dependency count, and successful qualification recorded below
+remain valid evidence. Campaign closure is pending only the corrective gates
+above. The current closure documentation commit `cbb4047` has green push CI
+(run `35539441332`), but the corrective must itself pass local qualification
+and remote push CI before this line returns to complete status.
 
 ### Correctness evidence
 
