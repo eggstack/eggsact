@@ -457,7 +457,9 @@ previous cargo-deny advisories/bans/licenses/sources qualification remains
 applicable. The corrected release binary is 11,101,504 bytes versus the
 11,101,696-byte planning baseline; `Cargo.lock` remains at 166 packages. The
 performance harness remains non-gating and is documented in
-`architecture/performance.md`.
+`architecture/performance.md`. Remote push CI run `35542158872` passed on
+head `5fce6f345311ba194c915d811bcafd0426d46bfd` (10m1s; Linux correctness,
+including the full merge gate).
 
 ## Future opportunities
 
