@@ -341,78 +341,68 @@ instructions A/B result, and the final integration/default decision. Only then
 is the MCP modernization/evaluation line closed and the `03c` plan eligible for
 pruning.
 
-## Performance optimization campaign — active
+## Performance optimization campaign — complete
 
-A 2026-09-20 structural performance review at
-23af42219ef1088ddeff080a2e07a3361e8468c3 found that Eggsact's release
-configuration, bounded execution architecture, schema cache, and dependency
-shape are generally healthy. The material opportunities are concentrated in
-repeated serialization/ownership work at the MCP boundary and repeated
-whole-input work in several deterministic tools. The campaign is explicitly
-API/capability preserving: 86 tools, current schemas, profile/audience policy,
-legacy/modern protocol behavior, discovery semantics, public Rust APIs,
-timeouts/cancellation, and deterministic outputs stay intact.
+The sequential campaign planned at `23af42219ef1088ddeff080a2e07a3361e8468c3`
+is complete in implementation commit `85e10bf`. The changes preserve the
+public Rust/MCP shapes, schemas, profile and audience policy, legacy/modern
+protocol behavior, discovery ranking, deterministic outputs, and bounded
+execution semantics. Generated documentation remained unchanged because no
+ToolSpec metadata changed.
 
-The active handoff sequence is:
+### Correctness evidence
 
-- **performance-01-mcp-boundary-and-baseline.md — P1, planned.**
-  Add a lightweight release-mode benchmark path and establish comparable
-  baseline evidence, then remove duplicate ToolResponse serialization, the
-  second deep clone of tool-call arguments, repeated ToolSpec/profile work,
-  filter-after-materialization in tools/list, identified schema-validation
-  allocation, and response-sized writer String allocation. This plan does not
-  redesign spawn_blocking/semaphore execution, sync_pool transport, runtime
-  configuration locks, release profile, or dependencies without evidence.
-- **performance-02-patch-correctness-and-linear-apply.md — P1, planned after
-  Performance 01 baseline.** First reproduce or disprove the inspected
-  nonzero-hunk reconstruction defect in patch_apply_check: validation uses
-  hunk.old_start while apply_hunk currently begins its reconstruction cursor
-  at zero. Correctness regression coverage is mandatory before optimization.
-  Then replace per-hunk whole-file cloning/reconstruction with a single-pass or
-  equivalent linear application engine while preserving strict/non-strict,
-  newline, fingerprint, failure-evidence, and public result semantics.
-- **performance-03-tool-hotpaths-and-closure.md — P1, planned after the
-  baseline and patch corrective.** Use measured evidence to optimize
-  text_replace_check position/reconstruction indexing, json_compare unordered
-  array sort-key serialization, json_extract summary short-circuiting,
-  static discovery lexical metadata, RepoFacts repeated path analysis,
-  diff_spans UTF-8 offset lookup, regex capture-name metadata reuse, and hex/
-  codec primitives. list near-match bucketing, calculator normalization fast
-  paths, runtime locks, and sync-pool changes remain benchmark-gated optional
-  work rather than assumed improvements.
+The baseline nonzero-hunk fixture was reproduced in a detached baseline
+worktree. The old implementation returned `B\nb\nc` for a hunk targeting line
+2, while the expected result was `a\nB\nc`. The candidate adds focused
+regressions for nonzero hunks, line-count-changing separated hunks, CRLF,
+lenient EOF truncation, and fingerprints requested without result text. The
+linear patch engine now uses original-source coordinates and emits the result
+once; overlapping or out-of-order hunks fail deterministically.
 
-Initial inspected hotspots that justify the campaign:
+### Same-host benchmark evidence
 
-- successful MCP calls may serialize the same ToolResponse multiple times
-  before the outer JSON-RPC serialization;
-- handle_tools_call_shared deep-clones already-owned arguments before bounded
-  execution;
-- ToolRegistry preparation performs repeated linear registry scans plus a
-  profile Vec allocation;
-- legacy tools/list builds owned schemas/definitions before narrowing filters;
-- text_replace_check can rescan a 100k-character source for every match to
-  derive byte/line positions and again while reconstructing replacements;
-- unordered JSON-array comparison serializes Values inside the O(n log n)
-  sorting comparator;
-- json_extract detail=summary currently builds preview/full-detail data that is
-  immediately discarded;
-- tool_search retokenizes process-static ToolSpec metadata on every search;
-- patch application currently rebuilds a full line vector per successful hunk;
-- repo facts repeat normalization/classification passes over the same paths;
-- diff span extraction rescans UTF-8 character prefixes for emitted spans.
+The dependency-free harness was run with 10 warmup and 50 measured iterations
+on both the planning baseline and candidate using Rust 1.98.1,
+`aarch64-apple-darwin`, macOS on Apple M4 Pro, release optimizations. Values
+are arithmetic mean nanoseconds per operation from the stable `key=value`
+records; they are evidence, not CI thresholds.
 
-No wall-clock percentage is promised before the baseline exists. Each landed
-optimization must preserve behavior under focused regression tests and carry
-same-host/toolchain before/after evidence. Optional complexity that does not
-measure is to be declined/reverted, not retained because it appears faster by
-inspection.
+| Scenario | Baseline | Candidate | Change |
+|---|---:|---:|---:|
+| registry prepare/call | 3,014 | 2,598 | -13.8% |
+| schema validation simple/nested | 532 / 597 | 244 / 215 | -54.1% / -64.0% |
+| tools/list legacy/modern/compact | 301,845 / 388,136 / 775,545 | 306,870 / 379,924 / 650,073 | +1.7% / -2.1% / -16.2% |
+| tools/list narrow name | 301,733 | 5,623 | -98.1% |
+| discovery listing | 32,414 | 33,077 | +2.0% |
+| response small/large/non-ASCII | 255 / 55,893 / 455 | 196 / 22,453 / 399 | -23.1% / -59.8% / -12.3% |
+| response structured modern | 1,250 | 1,268 | +1.4% |
+| input small/near-limit | 36 / 18,670 | 40 / 20,045 | +11.1% / +7.4% |
+| text replace many matches | 291,154,474 | 1,375,555 | -99.5% |
+| unordered JSON compare | 3,218 | 2,273 | -29.4% |
+| JSON extract summary | 2,624 | 1,329 | -49.4% |
+| patch late / 10 hunks / 100 hunks | 1,074,535 / 4,565,072 / 34,545,644 | 806,359 / 621,884 / 621,550 | -25.0% / -86.4% / -98.2% |
+| tool search | 151,422 | 43,487 | -71.3% |
+| repo facts | 3,465 | 3,664 | +5.7% |
+| Unicode diff spans | 630 | 753 | +19.5% |
+| named regex captures | 165 | 174 | +5.5% |
+| codec hex | 1,801 | 1,078 | -40.1% |
+| MCP stdio cheap call | 341,221,781 | 381,181,519 | +11.7% |
 
-At campaign closure, record the benchmark environment and before/after results,
-stripped release-size and lockfile package-count deltas, patch correctness
-evidence, full AGENTS.md merge-gate status, release-contract/MCP smoke status,
-and any explicitly rejected optional optimization. Then prune the three active
-performance plans per the normal planning convention; git history retains the
-execution detail.
+The neutral or slower rows are retained as honest evidence; no speculative
+runtime-lock, calculator, near-match, transport, or dependency redesign was
+accepted. Stripped release binary size was 11,101,696 bytes at baseline and
+11,101,504 bytes for the candidate (-192 bytes). `Cargo.lock` contained 166
+packages at both points.
+
+### Qualification evidence
+
+The local merge/release checks passed: `cargo fmt --all -- --check`, generated
+docs `--check`, all-features clippy with `-D warnings`, the full non-parity
+test suite with four test threads, doc tests, release-contract validation,
+release build, cargo-deny advisories/bans/licenses/sources, and the release
+MCP smoke (77 model-visible tools). The performance harness remains
+non-gating and is documented in `architecture/performance.md`.
 
 ## Future opportunities
 

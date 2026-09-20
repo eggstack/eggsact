@@ -43,7 +43,7 @@ materialized only when requested or when a fingerprint is requested, and
 fingerprints describe the applied result even when `return_result_text` is
 false. CRLF source lines retain CRLF style for emitted additions.
 
-The three performance plans are execution records until their benchmark,
-focused-test, merge-gate, and release-contract evidence is captured in
-`plans/roadmap.md`. Plan files are pruned only after that record is complete;
-git history retains the detailed implementation discussion.
+The three performance plans were execution records until their benchmark,
+focused-test, merge-gate, and release-contract evidence was captured in
+`plans/roadmap.md`; they were then pruned. Git history retains the detailed
+implementation discussion.
