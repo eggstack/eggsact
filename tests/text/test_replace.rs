@@ -233,3 +233,65 @@ fn test_replace_check_normalize_crlf_policy() {
     assert_eq!(result.newline_style_after, "CRLF");
     assert_eq!(result.preview_after, "hello\r\nrust");
 }
+
+#[test]
+fn test_replace_check_preserves_historical_newline_positions() {
+    let cases = [
+        ("lf", "a\nb", "\n", (1, 1, 2, 1, 2)),
+        ("cr", "a\rb", "\r", (1, 1, 2, 1, 2)),
+        ("crlf_cr", "a\r\nb", "\r", (1, 1, 2, 1, 2)),
+        ("crlf_lf", "a\r\nb", "\n", (2, 2, 2, 1, 3)),
+        ("after_lf", "a\nb", "b", (2, 2, 2, 1, 3)),
+        ("after_cr", "a\rb", "b", (2, 2, 2, 1, 3)),
+        ("after_crlf", "a\r\nb", "b", (3, 3, 2, 1, 4)),
+        ("unicode_after_lf", "é\n😀", "😀", (2, 3, 2, 1, 7)),
+    ];
+
+    for (name, text, old, (codepoint_index, byte_start, line, column, byte_end)) in cases {
+        let result =
+            text_replace_check(text, old, "X", "exact", None, true, "preserve", false, 0).unwrap();
+        assert_eq!(result.positions.len(), 1, "{name}");
+        let position = &result.positions[0];
+        assert_eq!(
+            (
+                position.codepoint_index,
+                position.byte_start,
+                position.line,
+                position.column,
+                position.byte_end,
+            ),
+            (codepoint_index, byte_start, line, column, byte_end),
+            "{name}",
+        );
+    }
+
+    for (text, expected) in [
+        (
+            "a\nb",
+            vec![(0, 0, 1, 1), (1, 1, 2, 1), (2, 2, 2, 1), (3, 3, 2, 2)],
+        ),
+        (
+            "a\rb",
+            vec![(0, 0, 1, 1), (1, 1, 2, 1), (2, 2, 2, 1), (3, 3, 2, 2)],
+        ),
+        (
+            "a\r\nb",
+            vec![
+                (0, 0, 1, 1),
+                (1, 1, 2, 1),
+                (2, 2, 2, 1),
+                (3, 3, 2, 1),
+                (4, 4, 2, 2),
+            ],
+        ),
+    ] {
+        let result =
+            text_replace_check(text, "", "X", "exact", None, true, "preserve", false, 0).unwrap();
+        let positions: Vec<_> = result
+            .positions
+            .iter()
+            .map(|p| (p.codepoint_index, p.byte_start, p.line, p.column))
+            .collect();
+        assert_eq!(positions, expected, "empty matches in {text:?}");
+    }
+}

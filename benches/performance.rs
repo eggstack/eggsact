@@ -9,7 +9,8 @@ use eggsact::mcp::registry::{self, ToolListAudience, ToolListOptions};
 use eggsact::mcp::response::{python_json_dumps, ToolResponse};
 use serde_json::json;
 use std::hint::black_box;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -87,6 +88,106 @@ fn list_options(detail: &'static str) -> ToolListOptions<'static> {
     }
 }
 
+fn release_binary() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent()?.parent().map(|dir| dir.join("eggsact")))
+}
+
+fn mcp_request(
+    stdin: &mut std::process::ChildStdin,
+    stdout: &mut BufReader<std::process::ChildStdout>,
+    id: u64,
+) {
+    let request = json!({
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "id": id,
+        "params": {
+            "name": "text_equal",
+            "arguments": {"a": "hello", "b": "hello"},
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {}
+            }
+        }
+    });
+    writeln!(stdin, "{request}").expect("write MCP request");
+    stdin.flush().expect("flush MCP request");
+
+    let mut line = String::new();
+    let bytes = stdout.read_line(&mut line).expect("read MCP response");
+    assert!(bytes > 0, "MCP server exited before replying");
+    let response: serde_json::Value =
+        serde_json::from_str(&line).expect("MCP response must be JSON");
+    assert_eq!(
+        response.get("id").and_then(serde_json::Value::as_u64),
+        Some(id)
+    );
+}
+
+fn measure_mcp_stdio_warm(binary: PathBuf) {
+    let mut child = Command::new(binary)
+        .arg("--mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn MCP server");
+    let mut stdin = child.stdin.take().expect("MCP stdin");
+    let stdout = child.stdout.take().expect("MCP stdout");
+    let mut stdout = BufReader::new(stdout);
+
+    // Protocol selection and all warmup requests happen before timing. Each
+    // measured operation is one sequential write/flush/read round trip.
+    for id in 0..WARMUP as u64 {
+        mcp_request(&mut stdin, &mut stdout, id);
+    }
+    let started = Instant::now();
+    for id in WARMUP as u64..(WARMUP + REPETITIONS) as u64 {
+        mcp_request(&mut stdin, &mut stdout, id);
+    }
+    let elapsed = started.elapsed();
+    let ns = elapsed.as_nanos() / REPETITIONS as u128;
+    println!("scenario=mcp_stdio_warm_cheap_call repetitions={REPETITIONS} ns_per_op={ns}");
+
+    drop(stdin);
+    let status = child.wait().expect("reap MCP server");
+    assert!(
+        status.success(),
+        "MCP server exited unsuccessfully: {status}"
+    );
+}
+
+fn representative_repo_paths(count: usize) -> Vec<String> {
+    (0..count)
+        .map(|index| match index % 10 {
+            0 => format!("src/module_{index}.rs"),
+            1 => format!("tests/test_{index}.py"),
+            2 => format!("web/component_{index}.js"),
+            3 => format!("config/service_{index}.yaml"),
+            4 => format!(".github/workflows/check-{index}.yml"),
+            5 => format!("docs/guide_{index}.md"),
+            6 => format!("manifests/package_{index}.json"),
+            7 => format!("locks/dependency_{index}.lock"),
+            8 => format!("hidden/.env_{index}"),
+            _ => format!("scripts/tool_{index}.sh"),
+        })
+        .collect()
+}
+
+fn representative_diff_inputs() -> (String, String) {
+    let mut a = String::new();
+    let mut b = String::new();
+    for index in 0..320 {
+        let marker = char::from_u32(0x1000 + index as u32).expect("valid benchmark marker");
+        a.push(marker);
+        a.push('A');
+        b.push(marker);
+        b.push('B');
+    }
+    (a, b)
+}
+
 fn main() {
     environment();
     let registry = ToolRegistry::default();
@@ -153,15 +254,27 @@ fn main() {
             &small_response,
         ));
     });
-    measure("input_accounting_small", || {
-        black_box(serde_json::to_vec(&cheap_args).unwrap().len());
+    let small_input_budget = eggsact::mcp::budget::ToolBudget::CHEAP.with_max_input_bytes(1);
+    measure("input_budget_path_small", || {
+        let response = registry
+            .call_json_with_budget("text_equal", cheap_args.clone(), Some(small_input_budget))
+            .unwrap();
+        assert_eq!(response.error_type.as_deref(), Some("input_too_large"));
+        black_box(response);
     });
-    measure("input_accounting_near_limit", || {
-        black_box(
-            serde_json::to_vec(&json!({"text": &large_text}))
-                .unwrap()
-                .len(),
-        );
+    let near_limit_args = json!({"a": &large_text, "b": &large_text});
+    let near_limit_budget =
+        eggsact::mcp::budget::ToolBudget::CHEAP.with_max_input_bytes(large_text.len());
+    measure("input_budget_path_near_limit", || {
+        let response = registry
+            .call_json_with_budget(
+                "text_equal",
+                near_limit_args.clone(),
+                Some(near_limit_budget),
+            )
+            .unwrap();
+        assert_eq!(response.error_type.as_deref(), Some("input_too_large"));
+        black_box(response);
     });
 
     let many_matches = "needle ".repeat(5000);
@@ -258,21 +371,47 @@ fn main() {
         let specs = registry::tools_for_profile_audience("full", ToolListAudience::Model);
         black_box(eggsact::mcp::discovery::search_filtered(&specs, &params));
     });
-    measure("repo_facts", || {
-        black_box(eggsact::services::repo::repo_facts(&[
-            "Cargo.toml".to_string(),
-            "src/main.rs".to_string(),
-            ".github/workflows/ci.yml".to_string(),
-            "tests/test_main.rs".to_string(),
-        ]));
+    let repo_paths_100 = representative_repo_paths(100);
+    let repo_paths_1000 = representative_repo_paths(1000);
+    measure("repo_facts_100_paths", || {
+        black_box(eggsact::services::repo::repo_facts(&repo_paths_100));
+    });
+    measure("repo_facts_1000_paths", || {
+        black_box(eggsact::services::repo::repo_facts(&repo_paths_1000));
     });
     measure("diff_spans_unicode", || {
         black_box(eggsact::text::diff_spans("αβγ hello", "αβγ goodbye", 50));
+    });
+    let (diff_a_representative, diff_b_representative) = representative_diff_inputs();
+    let representative_span_count =
+        eggsact::text::diff_spans(&diff_a_representative, &diff_b_representative, 500).len();
+    assert!(representative_span_count > 100);
+    measure("diff_spans_representative_multispan", || {
+        let spans = eggsact::text::diff_spans(&diff_a_representative, &diff_b_representative, 500);
+        assert_eq!(spans.len(), representative_span_count);
+        black_box(spans);
     });
     let named_capture =
         eggsact::text::compile_regex(r"(?P<word>[A-Za-z]+)", None, false, false, false).unwrap();
     measure("regex_named_captures", || {
         black_box(named_capture.captures("hello world").unwrap());
+    });
+    let named_capture_many_pattern = r"(?P<word>[A-Za-z]+)=(?P<number>[0-9]+)";
+    let named_capture_many_text = (0..500)
+        .map(|index| format!("word={index}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    measure("regex_named_captures_500_matches", || {
+        let result = eggsact::text::regex_finditer(
+            named_capture_many_pattern,
+            &named_capture_many_text,
+            None,
+            500,
+            false,
+            true,
+        );
+        assert_eq!(result.match_count, 500);
+        black_box(result);
     });
     measure("codec_hex", || {
         let _ = black_box(registry.call_json(
@@ -281,38 +420,9 @@ fn main() {
         ));
     });
 
-    measure("mcp_stdio_warm_cheap_call", || {
-        let binary = std::env::current_exe()
-            .ok()
-            .and_then(|path| path.parent()?.parent().map(|dir| dir.join("eggsact")));
-        let Some(binary) = binary else { return };
-        let request = json!({
-            "jsonrpc": "2.0",
-            "method": "tools/call",
-            "id": 1,
-            "params": {
-                "name": "text_equal",
-                "arguments": {"a": "hello", "b": "hello"},
-                "_meta": {
-                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
-                    "io.modelcontextprotocol/clientCapabilities": {}
-                }
-            }
-        });
-        let mut child = Command::new(binary)
-            .arg("--mcp")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(format!("{}\n", request).as_bytes())
-            .unwrap();
-        let _ = child.wait_with_output().unwrap();
-    });
+    if let Some(binary) = release_binary() {
+        measure_mcp_stdio_warm(binary);
+    }
 
     // Keep Duration referenced in this std-only harness so future maintainers
     // can add an explicit cold-start wall-clock sample without new crates.

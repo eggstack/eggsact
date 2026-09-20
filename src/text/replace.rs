@@ -218,9 +218,19 @@ impl SourceIndex {
                     after_cr = false;
                 }
                 _ => {
-                    column += 1;
                     after_cr = false;
                 }
+            }
+            // Historical position semantics identify a newline itself with
+            // the beginning of the following line.  Keep that behavior for
+            // CR, LF, and both codepoints of CRLF while still building the
+            // complete index in one pass.
+            if matches!(ch, '\r' | '\n') {
+                if let Some(position) = positions.last_mut() {
+                    *position = (line, column);
+                }
+            } else {
+                column += 1;
             }
             byte_offsets.push(byte + ch.len_utf8());
             positions.push((line, column));
