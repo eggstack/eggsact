@@ -130,6 +130,13 @@ See `architecture/machine-codes.md` for the full code table and design rationale
 
 ## In-Process Execution Path
 
+The MCP boundary has a dependency-free performance evidence harness at
+`benches/performance.rs`. Boundary changes must preserve the single-lookup
+prepared-call path, one returned fallback serialization, counting-only size
+checks, and the writer's one-line/one-flush behavior. Compare with
+`cargo bench --locked --bench performance`; never add host-specific timing
+thresholds to ordinary tests.
+
 `ToolRegistry` (`src/agent/mod.rs`) provides the core tool execution path. Both the MCP server (`src/mcp/server.rs`) and direct Rust callers use it for tool lookup, profile filtering, argument validation, and dispatch. Tool functions themselves live in `src/tools/*.rs` (by category); `ToolRegistry` orchestrates calling them.
 
 **Execution routing:** Budget-aware APIs (`call_json_with_budget`, `call_json_with_context`, `call_json_with_execution_context`) route through the `SyncExecutionPool` (8 workers, 32-slot queue) in `src/mcp/sync_pool.rs`, which enforces elapsed-time budgets and provides bounded concurrency. `call_json` dispatches directly without a pool. The MCP server path is unaffected — it uses Tokio `spawn_blocking`.

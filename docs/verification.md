@@ -22,6 +22,20 @@ cargo test --locked --doc
 
 Run weekly (Monday) and via `workflow_dispatch`. Do not block ordinary merges. Answers: "Are external dependencies drifting?"
 
+## Maintainer performance evidence
+
+Performance comparisons are intentionally outside merge CI. The dependency-free
+release-mode harness records the environment and a broad before/after matrix:
+
+```bash
+EGGSACT_BENCH_SHA=$(git rev-parse HEAD) cargo bench --locked --bench performance
+```
+
+Run baseline and candidate on the same host/toolchain. Do not turn timing
+observations into flaky CI thresholds; correctness remains covered by Tier 1.
+The durable boundary and patch semantics are documented in
+[`architecture/performance.md`](../architecture/performance.md).
+
 | Check | Workflow | Cadence |
 |-------|----------|---------|
 | MSRV compilation and library tests | `maintenance.yml` | Weekly |

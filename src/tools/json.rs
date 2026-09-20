@@ -162,6 +162,17 @@ pub fn json_extract(args: &Value) -> ToolResponse {
     }
 
     if pointer.is_empty() {
+        if detail == "summary" {
+            return ToolResponse::success(
+                serde_json::json!({
+                    "valid_json": true,
+                    "found": true,
+                    "summary": build_extract_summary(&parsed),
+                }),
+                Some("json_extract"),
+            )
+            .with_tool("json_extract");
+        }
         let full_preview = match &parsed {
             serde_json::Value::String(s) => s.clone(),
             other => serde_json::to_string(other).unwrap_or_default(),
@@ -193,13 +204,6 @@ pub fn json_extract(args: &Value) -> ToolResponse {
         });
         if let serde_json::Value::Array(ref arr) = parsed {
             result["array_length"] = serde_json::json!(arr.len());
-        }
-        if detail == "summary" {
-            result = serde_json::json!({
-                "valid_json": true,
-                "found": true,
-                "summary": summary,
-            });
         }
         return ToolResponse::success(result, Some("json_extract")).with_tool("json_extract");
     }
@@ -301,6 +305,18 @@ pub fn json_extract(args: &Value) -> ToolResponse {
         }
     }
 
+    if detail == "summary" {
+        return ToolResponse::success(
+            serde_json::json!({
+                "valid_json": true,
+                "found": true,
+                "summary": build_extract_summary(current),
+            }),
+            Some("json_extract"),
+        )
+        .with_tool("json_extract");
+    }
+
     let full_preview = match current {
         serde_json::Value::String(s) => s.clone(),
         other => serde_json::to_string(other).unwrap_or_default(),
@@ -333,13 +349,6 @@ pub fn json_extract(args: &Value) -> ToolResponse {
     });
     if let serde_json::Value::Array(arr) = current {
         result["array_length"] = serde_json::json!(arr.len());
-    }
-    if detail == "summary" {
-        result = serde_json::json!({
-            "valid_json": true,
-            "found": true,
-            "summary": summary,
-        });
     }
     ToolResponse::success(result, Some("json_extract")).with_tool("json_extract")
 }

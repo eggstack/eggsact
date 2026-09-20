@@ -361,8 +361,8 @@ This allows callers to override the registry's stored profile/audience/compat on
 
 **Four-step pipeline:**
 
-1. `registry::tool_handler_for(name)` — look up the handler function
-2. `registry::tools_for_profile(self.profile.as_str())` — check profile membership
+1. `registry::get_tool(name)` — look up the `ToolSpec` once (including handler and cost)
+2. `ToolSpec.profiles` / full-profile hidden filtering — check profile membership without materializing a profile vector
 3. `self.audience.can_execute_exposure(spec.exposure)` — check audience/exposure compatibility
 4. `schema_validation::validate_arguments(name, args, self.compat_mode)` — validate arguments against the tool's input schema
 
@@ -385,7 +385,9 @@ This allows callers to override the registry's stored profile/audience/compat on
 
 **Audience-awareness:** `get_tool` and `has_tool` now check audience/exposure in addition to profile membership. Use `get_tool_unfiltered` and `has_registered_tool` for administrative use that bypasses these checks.
 
-All listing methods delegate to `registry::tools_for_profile()` or `registry::tools_for_profile_audience()` from `src/mcp/registry/listing.rs`.
+All public listing methods delegate to the profile helpers in
+`src/mcp/registry/listing.rs`. MCP `tools/list` filters borrowed `ToolSpec`
+references before materializing owned definitions and schemas.
 
 ---
 

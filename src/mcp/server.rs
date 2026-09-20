@@ -1,4 +1,4 @@
-use crate::agent::{Profile, ToolAudience, ToolCallError, ToolCallOutcome, ToolRegistry};
+use crate::agent::{Profile, ToolAudience, ToolCallError, ToolRegistry};
 use crate::mcp::budget::budget_for_tool;
 use crate::mcp::compat::CompatibilityMode;
 use crate::mcp::execution;
@@ -192,11 +192,12 @@ fn string_from_utf8_lossy(bytes: &[u8]) -> String {
         .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned())
 }
 
-fn write_json_line(value: &Value) -> std::io::Result<()> {
-    let output = serde_json::to_string(value).map_err(std::io::Error::other)?;
+fn write_json_line(value: &Value, scratch: &mut Vec<u8>) -> std::io::Result<()> {
+    scratch.clear();
+    serde_json::to_writer(&mut *scratch, value).map_err(std::io::Error::other)?;
+    scratch.push(b'\n');
     let mut stdout = std::io::stdout().lock();
-    stdout.write_all(output.as_bytes())?;
-    stdout.write_all(b"\n")?;
+    stdout.write_all(scratch)?;
     stdout.flush()
 }
 
@@ -584,16 +585,21 @@ async fn handle_tool_invoke_facade(
     let target_args = invoke.arguments;
     let profile =
         Profile::from_str_opt(active_profile).unwrap_or_else(|| Profile::custom(active_profile));
-    let tool_registry = ToolRegistry::with_profile_and_audience(profile, active_audience)
+    let tool_registry = ToolRegistry::with_profile_and_audience(profile.clone(), active_audience)
         .with_compat_mode(CompatibilityMode::EggcalcPython);
-    let handler = match tool_registry.prepare_tool_call(&target, &target_args) {
-        ToolCallOutcome::Ready { handler } => handler,
-        ToolCallOutcome::PreExecutionError(e) => {
+    let prepared = match tool_registry.prepare_tool_call_internal(
+        &target,
+        &target_args,
+        &profile,
+        active_audience,
+        CompatibilityMode::EggcalcPython,
+    ) {
+        Ok(prepared) => prepared,
+        Err(e) => {
             return match e {
                 ToolCallError::UnknownTool(tool_name) => {
                     let tool_names = registry::tool_names();
-                    let tool_name_refs: Vec<&str> = tool_names.to_vec();
-                    let msg = match registry::find_close_match(&tool_name, &tool_name_refs) {
+                    let msg = match registry::find_close_match(&tool_name, &tool_names) {
                         Some(m) => format!("Unknown tool: {}. Did you mean: {}?", tool_name, m),
                         None => format!("Unknown tool: {}", tool_name),
                     };
@@ -630,9 +636,8 @@ async fn handle_tool_invoke_facade(
         }
     };
     let sem = tool_semaphore.clone();
-    let tool_budget = registry::get_tool(&target)
-        .map(|spec| budget_for_tool(&target, spec.cost))
-        .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
+    let handler = prepared.handler;
+    let tool_budget = budget_for_tool(&target, prepared.cost);
     let outcome = execution::execute_tool_bounded(
         handler,
         target_args,
@@ -734,8 +739,7 @@ async fn handle_tools_call_shared(
     if crate::mcp::discovery::is_discovery_facade(name) {
         if surface != crate::mcp::discovery::McpSurface::Discovery {
             let tool_names = registry::tool_names();
-            let tool_name_refs: Vec<&str> = tool_names.to_vec();
-            let msg = match registry::find_close_match(name, &tool_name_refs) {
+            let msg = match registry::find_close_match(name, &tool_names) {
                 Some(m) => format!(
                     "Unknown tool: {}. Did you mean: {}? (discovery facades require EGGSACT_MCP_SURFACE=discovery or --mcp-surface discovery)",
                     name, m
@@ -770,16 +774,21 @@ async fn handle_tools_call_shared(
             .await;
         }
     }
-    let tool_registry = ToolRegistry::with_profile_and_audience(profile, active_audience)
+    let tool_registry = ToolRegistry::with_profile_and_audience(profile.clone(), active_audience)
         .with_compat_mode(CompatibilityMode::EggcalcPython);
-    let handler = match tool_registry.prepare_tool_call(name, &arguments_val) {
-        ToolCallOutcome::Ready { handler } => handler,
-        ToolCallOutcome::PreExecutionError(e) => {
+    let prepared = match tool_registry.prepare_tool_call_internal(
+        name,
+        &arguments_val,
+        &profile,
+        active_audience,
+        CompatibilityMode::EggcalcPython,
+    ) {
+        Ok(prepared) => prepared,
+        Err(e) => {
             return match e {
                 ToolCallError::UnknownTool(tool_name) => {
                     let tool_names = registry::tool_names();
-                    let tool_name_refs: Vec<&str> = tool_names.to_vec();
-                    let msg = match registry::find_close_match(&tool_name, &tool_name_refs) {
+                    let msg = match registry::find_close_match(&tool_name, &tool_names) {
                         Some(m) => format!("Unknown tool: {}. Did you mean: {}?", tool_name, m),
                         None => format!("Unknown tool: {}", tool_name),
                     };
@@ -817,14 +826,12 @@ async fn handle_tools_call_shared(
     };
 
     let name_owned = name.to_string();
-    let args_clone = arguments_val.clone();
     let sem = tool_semaphore.clone();
-    let tool_budget = registry::get_tool(name)
-        .map(|spec| budget_for_tool(name, spec.cost))
-        .unwrap_or(crate::mcp::budget::ToolBudget::MODERATE);
+    let handler = prepared.handler;
+    let tool_budget = budget_for_tool(name, prepared.cost);
     let outcome = execution::execute_tool_bounded(
         handler,
-        args_clone,
+        arguments_val,
         name_owned.clone(),
         tool_budget,
         cancel_flag.clone(),
@@ -1162,8 +1169,9 @@ pub async fn main() -> ! {
     let writer_failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let writer_failed_task = writer_failed.clone();
     let writer_handle = tokio::spawn(async move {
+        let mut scratch = Vec::new();
         while let Some(response) = rx.recv().await {
-            if write_json_line(&response).is_err() {
+            if write_json_line(&response, &mut scratch).is_err() {
                 writer_failed_task.store(true, Ordering::Release);
                 break;
             }

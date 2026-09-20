@@ -855,7 +855,7 @@ pub(crate) fn build_tool_response(
                     Some(tool_name),
                 ))
             } else {
-                crate::mcp::response::wrap_tool_response(&response)
+                crate::mcp::response::wrap_tool_response_with_text(&response, output)
             }
         }
         Err(join_err) => crate::mcp::protocol::json_rpc_error(
@@ -911,7 +911,7 @@ pub(crate) fn build_tool_response_modern(
                     Some(tool_name),
                 ))
             } else {
-                wrap_tool_response_modern(&response)
+                crate::mcp::response::wrap_tool_response_modern_with_text(&response, output)
             }
         }
         Err(join_err) => crate::mcp::protocol::json_rpc_error(

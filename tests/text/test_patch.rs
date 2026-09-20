@@ -108,3 +108,58 @@ fn test_zero_line_destination_ranges_remain_ordered() {
     assert_eq!(ranges[0].start, 2);
     assert_eq!(ranges[0].end, 2);
 }
+
+#[test]
+fn nonzero_hunk_replaces_only_its_source_line() {
+    let patch = "--- a/file.txt\n+++ b/file.txt\n@@ -2,1 +2,1 @@\n-b\n+B\n";
+    let result = patch_apply_check("a\nb\nc", patch, true, true, true);
+    assert!(result.applies);
+    assert_eq!(result.result_text.as_deref(), Some("a\nB\nc"));
+}
+
+#[test]
+fn insertion_and_deletion_after_nonzero_prefix_preserve_prefix_and_suffix() {
+    let insert = "--- a/file.txt\n+++ b/file.txt\n@@ -1,2 +1,3 @@\n a\n+X\n b\n";
+    let inserted = patch_apply_check("a\nb\nc", insert, true, false, true);
+    assert_eq!(inserted.result_text.as_deref(), Some("a\nX\nb\nc"));
+
+    let delete = "--- a/file.txt\n+++ b/file.txt\n@@ -2,1 +2,0 @@\n-b\n";
+    let deleted = patch_apply_check("a\nb\nc", delete, true, false, true);
+    assert_eq!(deleted.result_text.as_deref(), Some("a\nc"));
+}
+
+#[test]
+fn separated_hunks_use_original_line_numbers_after_line_count_change() {
+    let patch =
+        "--- a/file.txt\n+++ b/file.txt\n@@ -2,1 +2,2 @@\n b\n+X\n@@ -4,1 +5,1 @@\n-d\n+D\n";
+    let result = patch_apply_check("a\nb\nc\nd\ne", patch, true, true, true);
+    assert!(result.applies);
+    assert_eq!(result.result_text.as_deref(), Some("a\nb\nX\nc\nD\ne"));
+}
+
+#[test]
+fn crlf_output_and_fingerprint_follow_the_applied_result() {
+    let patch = "--- a/file.txt\r\n+++ b/file.txt\r\n@@ -2,1 +2,1 @@\r\n-b\r\n+B\r\n";
+    let result = patch_apply_check("a\r\nb\r\nc\r\n", patch, true, true, true);
+    assert!(result.applies);
+    assert_eq!(result.newline_style_before, "CRLF");
+    assert_eq!(result.newline_style_after, "CRLF");
+    assert_eq!(result.result_text.as_deref(), Some("a\r\nB\r\nc"));
+    assert!(!result.result_fingerprint.is_empty());
+}
+
+#[test]
+fn fingerprint_is_computed_from_applied_text_without_returning_text() {
+    let original = "a\nb\nc";
+    let patch = "--- a/file.txt\n+++ b/file.txt\n@@ -2,1 +2,1 @@\n-b\n+B\n";
+    let without_text = patch_apply_check(original, patch, true, true, false);
+    let with_text = patch_apply_check(original, patch, true, true, true);
+
+    assert!(without_text.applies);
+    assert!(without_text.result_text.is_none());
+    assert_eq!(
+        without_text.result_fingerprint,
+        with_text.result_fingerprint
+    );
+    assert_ne!(without_text.result_fingerprint, "");
+}

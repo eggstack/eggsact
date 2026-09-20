@@ -725,15 +725,36 @@ pub struct RepoFacts {
     pub is_mixed: bool,
 }
 
+struct PathFact {
+    original: String,
+    normalized: String,
+    bucket: String,
+}
+
 /// Compute [`RepoFacts`] for explicit input paths.
 ///
 /// Pure, deterministic, no filesystem access. Callers enforce
 /// `max_paths`/length bounds before calling.
 pub fn repo_facts(paths: &[String]) -> RepoFacts {
-    let normalized_paths: Vec<String> = paths.iter().map(|p| p.replace('\\', "/")).collect();
+    let path_facts: Vec<PathFact> = paths
+        .iter()
+        .map(|path| PathFact {
+            original: path.clone(),
+            normalized: path.replace('\\', "/"),
+            bucket: classify_path(path).0,
+        })
+        .collect();
+    let normalized_paths: Vec<String> = path_facts
+        .iter()
+        .map(|fact| fact.normalized.clone())
+        .collect();
 
     let project_types = detect_project_types(paths);
-    let ecosystems = detect_ecosystems(paths);
+    let ecosystems = project_types
+        .iter()
+        .filter(|t| t.as_str() != "unknown" && t.as_str() != "mixed")
+        .cloned()
+        .collect();
     let is_unknown = project_types.iter().any(|t| t == "unknown");
     let is_mixed = project_types.iter().any(|t| t == "mixed");
 
@@ -758,8 +779,10 @@ pub fn repo_facts(paths: &[String]) -> RepoFacts {
     let mut high_leverage_paths = Vec::new();
     let mut tool_hints = Vec::new();
 
-    for (original, normalized) in paths.iter().zip(normalized_paths.iter()) {
-        let (bucket, _hidden, _dotfile) = classify_path(original);
+    for fact in &path_facts {
+        let original = &fact.original;
+        let normalized = &fact.normalized;
+        let bucket = &fact.bucket;
         buckets
             .entry(bucket.clone())
             .or_default()

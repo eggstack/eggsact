@@ -820,7 +820,7 @@ Unified diff parsing, application checking, and summary generation.
 
 ### `patch_apply_check(original_text, patch_text, strict, return_result_fingerprint, return_result_text)`
 
-Applies hunks sequentially, tracking which succeed/fail. In `strict` mode, verifies exact context match before applying each hunk.
+Applies hunks in patch order using original-source line coordinates, tracking which succeed/fail. In `strict` mode, verifies exact context match before applying each hunk. Successful application walks unchanged source ranges once; prior insertions/deletions affect destination line numbers but not later hunk source coordinates. Overlapping or out-of-order hunks fail deterministically.
 
 Returns `PatchApplyCheckResult`:
 - `applies`: all hunks applied successfully
@@ -831,6 +831,9 @@ Returns `PatchApplyCheckResult`:
 - Newline style before/after
 - In lenient mode, a hunk whose context extends past EOF is applied to the
   available lines and reports a context-truncation finding.
+- When `return_result_fingerprint` is true, the fingerprint covers the applied
+  result even if `return_result_text` is false. CRLF input preserves CRLF for
+  emitted additions.
 
 ### `patch_summary(patch_text)`
 

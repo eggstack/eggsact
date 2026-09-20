@@ -23,6 +23,17 @@ cargo test --locked --test lib <filter>  # e.g. text, mcp, calc, property
 cargo build && cargo test --locked --test lib parity  # requires eggcalc at ../eggcalc
 ```
 
+Performance evidence is maintainer-run and non-gating:
+
+```bash
+cargo bench --locked --bench performance
+```
+
+Set `EGGSACT_BENCH_SHA` to label a candidate. Compare the stable text output
+with the same host and toolchain; never add host-specific timing thresholds to
+ordinary tests. See `architecture/performance.md` for the boundary and patch
+contracts.
+
 Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_failures.txt` / `docs/parity.md`. Only failures NOT in that list are regressions.
 
 ## Structure

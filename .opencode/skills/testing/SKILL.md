@@ -14,6 +14,7 @@ cargo test --locked --all-features --test lib parity  # parity tests only
 cargo test --locked --all-features --test lib text    # text tests only
 cargo test --locked --doc                         # doc tests
 cargo package --locked --verbose                  # package verification
+cargo bench --locked --bench performance          # non-gating same-host evidence
 ```
 
 Progressive-discovery verification is part of the ordinary MCP suite:

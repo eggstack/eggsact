@@ -790,7 +790,7 @@ pub(crate) fn compare_json_values(
 
         match (a, b) {
             (serde_json::Value::Object(obj_a), serde_json::Value::Object(obj_b)) => {
-                if options.ignore_object_order {
+                if options.ignore_object_order && options.casefold_keys {
                     let mut keys_a_map: std::collections::HashMap<String, String> =
                         std::collections::HashMap::new();
                     let mut keys_b_map: std::collections::HashMap<String, String> =
@@ -904,6 +904,66 @@ pub(crate) fn compare_json_values(
                             state,
                         );
                     }
+                } else if options.ignore_object_order {
+                    let mut only_a: Vec<&String> = obj_a
+                        .keys()
+                        .filter(|key| !obj_b.contains_key(*key))
+                        .collect();
+                    only_a.sort();
+                    for orig_key in only_a {
+                        let new_path = if path.is_empty() {
+                            format!("/{}", orig_key)
+                        } else {
+                            format!("{}/{}", path, orig_key)
+                        };
+                        let a_val = &obj_a[orig_key];
+                        state.not_equal = true;
+                        state.diffs.push(JsonDiff {
+                            path: new_path,
+                            kind: "key_missing_in_b".to_string(),
+                            a_type: Some(get_json_type(a_val).to_string()),
+                            b_type: None,
+                            a_preview: Some(json_value_preview(a_val)),
+                            b_preview: None,
+                        });
+                    }
+
+                    let mut only_b: Vec<&String> = obj_b
+                        .keys()
+                        .filter(|key| !obj_a.contains_key(*key))
+                        .collect();
+                    only_b.sort();
+                    for orig_key in only_b {
+                        let new_path = if path.is_empty() {
+                            format!("/{}", orig_key)
+                        } else {
+                            format!("{}/{}", path, orig_key)
+                        };
+                        let b_val = &obj_b[orig_key];
+                        state.not_equal = true;
+                        state.diffs.push(JsonDiff {
+                            path: new_path,
+                            kind: "key_missing_in_a".to_string(),
+                            a_type: None,
+                            b_type: Some(get_json_type(b_val).to_string()),
+                            a_preview: None,
+                            b_preview: Some(json_value_preview(b_val)),
+                        });
+                    }
+
+                    let mut common: Vec<&String> = obj_a
+                        .keys()
+                        .filter(|key| obj_b.contains_key(*key))
+                        .collect();
+                    common.sort();
+                    for key in common {
+                        let new_path = if path.is_empty() {
+                            format!("/{}", key)
+                        } else {
+                            format!("{}/{}", path, key)
+                        };
+                        compare_rec(&obj_a[key], &obj_b[key], &new_path, options, state);
+                    }
                 } else {
                     let a_key_order: Vec<String> = obj_a
                         .keys()
@@ -1007,17 +1067,22 @@ pub(crate) fn compare_json_values(
                 }
 
                 if options.ignore_array_order {
-                    let mut a_sorted: Vec<_> = arr_a.iter().collect();
-                    let mut b_sorted: Vec<_> = arr_b.iter().collect();
-                    let cmp = |a: &&serde_json::Value, b: &&serde_json::Value| {
-                        serde_json::to_string(*a)
-                            .unwrap_or_default()
-                            .cmp(&serde_json::to_string(*b).unwrap_or_default())
+                    let mut a_sorted: Vec<(String, &serde_json::Value)> = arr_a
+                        .iter()
+                        .map(|value| (serde_json::to_string(value).unwrap_or_default(), value))
+                        .collect();
+                    let mut b_sorted: Vec<(String, &serde_json::Value)> = arr_b
+                        .iter()
+                        .map(|value| (serde_json::to_string(value).unwrap_or_default(), value))
+                        .collect();
+                    let cmp = |a: &(String, &serde_json::Value),
+                               b: &(String, &serde_json::Value)| {
+                        a.0.cmp(&b.0)
                     };
                     a_sorted.sort_by(cmp);
                     b_sorted.sort_by(cmp);
                     for (i, (va, vb)) in a_sorted.iter().zip(b_sorted.iter()).enumerate() {
-                        compare_rec(va, vb, &format!("{}/{}", path, i), options, state);
+                        compare_rec(va.1, vb.1, &format!("{}/{}", path, i), options, state);
                     }
                 } else {
                     for (i, (va, vb)) in arr_a.iter().zip(arr_b.iter()).enumerate() {

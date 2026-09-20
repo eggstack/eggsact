@@ -60,12 +60,27 @@ pub fn python_json_dumps<T: Serialize>(value: &T) -> String {
             return String::new();
         }
     }
-    let serialized = String::from_utf8(buf).unwrap_or_default();
-    escape_ascii_json(&serialized)
+    // serde_json emits UTF-8 directly for non-ASCII strings.  The common MCP
+    // case is already ASCII, so avoid converting to a String and walking the
+    // whole result a second time.  Keep the Python-compatible escaping path
+    // byte-for-byte identical for Unicode output.
+    if buf.is_ascii() {
+        String::from_utf8(buf).unwrap_or_default()
+    } else {
+        let serialized = String::from_utf8(buf).unwrap_or_default();
+        escape_ascii_json(&serialized)
+    }
 }
 
 pub fn wrap_tool_response(tool_response: &ToolResponse) -> serde_json::Value {
     let text = python_json_dumps(tool_response);
+    wrap_tool_response_with_text(tool_response, text)
+}
+
+pub(crate) fn wrap_tool_response_with_text(
+    tool_response: &ToolResponse,
+    text: String,
+) -> serde_json::Value {
     if tool_response.ok {
         serde_json::json!({
             "content": [{"type": "text", "text": text}],
@@ -89,6 +104,13 @@ pub fn wrap_tool_response(tool_response: &ToolResponse) -> serde_json::Value {
 /// workflow) and reserved `_meta` server identity.
 pub fn wrap_tool_response_modern(tool_response: &ToolResponse) -> serde_json::Value {
     let text = python_json_dumps(tool_response);
+    wrap_tool_response_modern_with_text(tool_response, text)
+}
+
+pub(crate) fn wrap_tool_response_modern_with_text(
+    tool_response: &ToolResponse,
+    text: String,
+) -> serde_json::Value {
     let meta = crate::mcp::protocol::server_info_meta();
     if tool_response.ok {
         match &tool_response.result {
@@ -619,9 +641,8 @@ pub fn truncate_response(response: &mut ToolResponse, budget: &crate::mcp::budge
     // still route on the response. The existing user-supplied `summary`
     // field is kept; only if absent do we emit a default placeholder.
     if let Some(ref mut result) = response.result {
-        let result_str = serde_json::to_string(result).unwrap_or_default();
-        if result_str.len() > budget.max_output_bytes {
-            let original_len = result_str.len();
+        let original_len = serialized_size(result);
+        if original_len > budget.max_output_bytes {
             // Build a small summary and use it as the new result.
             let summary = serde_json::json!({
                 "truncated": true,
@@ -662,6 +683,26 @@ pub fn truncate_response(response: &mut ToolResponse, budget: &crate::mcp::budge
         all_limits.extend(limits);
         response.limits_applied = Some(all_limits);
     }
+}
+
+/// Count serialized JSON bytes without allocating the serialized payload.
+fn serialized_size<T: Serialize>(value: &T) -> usize {
+    struct Counter(usize);
+    impl std::io::Write for Counter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self.0.saturating_add(bytes.len());
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut counter = Counter(0);
+    serde_json::to_writer(&mut counter, value)
+        .map(|_| counter.0)
+        .unwrap_or(0)
 }
 
 #[derive(Serialize, Debug, Default, Clone)]

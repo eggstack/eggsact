@@ -239,6 +239,7 @@ Each major component has a dedicated architecture doc. The table below serves as
 | **Testing** | [testing.md](testing.md) | Test structure (70+ files across 5 suites), parity test framework (Python/Rust comparison), CI pipeline, how to add tests, fixture-backed route contract tests | `tests/` |
 | **CLI & Binaries** | [cli-binaries.md](cli-binaries.md) | `main.rs` CLI modes, `generate-docs` binary (registry facts/profile/tool-card generation), `--diagnostics` flag | `src/main.rs`, `src/bin/generate_docs.rs` |
 | **Generated Assets** | [generated-assets.md](generated-assets.md) | Doc generation pipeline, confusables data, diagnostics, verification, profile tool cards | `src/bin/generate_docs.rs`, `scripts/generate_confusables.py` |
+| **Performance** | [performance.md](performance.md) | Non-gating release-mode evidence harness, boundary serialization, patch and hot-path contracts | `benches/performance.rs`, `src/mcp/response.rs`, `src/text/patch.rs` |
 | **Coding-Agent Integration** | [coding-agent-integration.md](coding-agent-integration.md) | MCP stdio vs in-process transport, profile selection, audience selection, concurrency, budget tuning, integration examples | `src/agent/`, `src/mcp/server.rs` |
 
 ---

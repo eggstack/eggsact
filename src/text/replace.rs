@@ -187,102 +187,80 @@ fn normalize_newlines_to_lf(text: &str) -> String {
     normalized
 }
 
-fn codepoint_index_to_line_column(
-    text: &str,
-    codepoint_index: usize,
-    line_base: usize,
-    column_base: usize,
-) -> (usize, usize) {
-    let mut current_pos = 0;
-    let mut current_line = line_base;
-    let chars: Vec<char> = text.chars().collect();
-    let len = chars.len();
-    let mut i = 0;
+struct SourceIndex {
+    byte_offsets: Vec<usize>,
+    positions: Vec<(usize, usize)>,
+}
 
-    while i < len {
-        if chars[i] == '\r' {
-            // Count \r\n as a single line ending
-            let line_len = i - current_pos;
-            if current_pos + line_len > codepoint_index {
-                let offset_in_line = codepoint_index - current_pos;
-                let prefix: String = chars[current_pos..current_pos + offset_in_line]
-                    .iter()
-                    .collect();
-                let current_col = column_base + prefix.chars().count();
-                return (current_line, current_col);
+impl SourceIndex {
+    fn new(text: &str) -> Self {
+        let mut byte_offsets = Vec::with_capacity(text.chars().count() + 1);
+        let mut positions = Vec::with_capacity(byte_offsets.capacity());
+        let mut line = 1;
+        let mut column = 1;
+        let mut after_cr = false;
+        byte_offsets.push(0);
+        positions.push((line, column));
+
+        for (byte, ch) in text.char_indices() {
+            debug_assert_eq!(byte_offsets.last().copied(), Some(byte));
+            match ch {
+                '\r' => {
+                    line += 1;
+                    column = 1;
+                    after_cr = true;
+                }
+                '\n' => {
+                    if !after_cr {
+                        line += 1;
+                    }
+                    column = 1;
+                    after_cr = false;
+                }
+                _ => {
+                    column += 1;
+                    after_cr = false;
+                }
             }
-            current_line += 1;
-            i += 1;
-            // Skip \n after \r (treat \r\n as single line ending)
-            if i < len && chars[i] == '\n' {
-                i += 1;
-            }
-            current_pos = i;
-        } else if chars[i] == '\n' {
-            let line_len = i - current_pos;
-            if current_pos + line_len > codepoint_index {
-                let offset_in_line = codepoint_index - current_pos;
-                let prefix: String = chars[current_pos..current_pos + offset_in_line]
-                    .iter()
-                    .collect();
-                let current_col = column_base + prefix.chars().count();
-                return (current_line, current_col);
-            }
-            current_line += 1;
-            i += 1;
-            current_pos = i;
-        } else {
-            i += 1;
+            byte_offsets.push(byte + ch.len_utf8());
+            positions.push((line, column));
+        }
+
+        Self {
+            byte_offsets,
+            positions,
         }
     }
 
-    // Handle remaining text after last line ending
-    if current_pos <= codepoint_index && codepoint_index <= len {
-        let offset_in_line = codepoint_index - current_pos;
-        let prefix: String = chars[current_pos..current_pos + offset_in_line]
-            .iter()
-            .collect();
-        let current_col = column_base + prefix.chars().count();
-        return (current_line, current_col);
+    fn byte_offset(&self, codepoint_index: usize) -> usize {
+        self.byte_offsets
+            .get(codepoint_index)
+            .copied()
+            .unwrap_or_else(|| *self.byte_offsets.last().unwrap_or(&0))
     }
 
-    (current_line, column_base)
-}
-
-fn byte_offset_for_codepoint(text: &str, codepoint_index: usize) -> usize {
-    text.char_indices()
-        .nth(codepoint_index)
-        .map(|(byte_offset, _)| byte_offset)
-        .unwrap_or_else(|| text.len())
-}
-
-fn build_position(text: &str, codepoint_index: usize, match_len: usize) -> PositionInfo {
-    let byte_start = byte_offset_for_codepoint(text, codepoint_index);
-    let byte_end = byte_offset_for_codepoint(text, codepoint_index + match_len);
-    let (line, column) = codepoint_index_to_line_column(text, codepoint_index, 1, 1);
-
-    PositionInfo {
-        codepoint_index,
-        byte_start,
-        byte_end,
-        line,
-        column,
+    fn codepoint_index_at_byte(&self, byte_offset: usize) -> usize {
+        self.byte_offsets
+            .partition_point(|offset| *offset <= byte_offset)
+            .saturating_sub(1)
     }
-}
 
-fn get_text_at_codepoint_range(text: &str, start_cp: usize, end_cp: usize) -> String {
-    let text_chars = text.chars().count();
-    if start_cp >= text_chars {
-        return String::new();
+    fn position(&self, codepoint_index: usize) -> (usize, usize) {
+        self.positions
+            .get(codepoint_index)
+            .copied()
+            .unwrap_or_else(|| *self.positions.last().unwrap_or(&(1, 1)))
     }
-    let actual_end = end_cp.min(text_chars);
-    if actual_end <= start_cp {
-        return String::new();
+
+    fn build_position(&self, codepoint_index: usize, match_len: usize) -> PositionInfo {
+        PositionInfo {
+            codepoint_index,
+            byte_start: self.byte_offset(codepoint_index),
+            byte_end: self.byte_offset(codepoint_index.saturating_add(match_len)),
+            line: self.position(codepoint_index).0,
+            column: self.position(codepoint_index).1,
+        }
     }
-    text.chars()
-        .skip(start_cp)
-        .take(actual_end - start_cp)
-        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -327,7 +305,8 @@ pub fn text_replace_check_with_options(
         max_preview_chars,
     } = options;
 
-    let text_length = text.chars().count();
+    let source_index = SourceIndex::new(text);
+    let text_length = source_index.positions.len().saturating_sub(1);
     if text_length > MAX_TEXT_LENGTH {
         return Err(format!(
             "Input length {} exceeds MAX_TEXT_LENGTH {}",
@@ -365,8 +344,8 @@ pub fn text_replace_check_with_options(
     let mut search_start = 0;
 
     if old.is_empty() {
-        for cp_idx in 0..=text.chars().count() {
-            positions.push(build_position(text, cp_idx, 0));
+        for cp_idx in 0..=text_length {
+            positions.push(source_index.build_position(cp_idx, 0));
             match_ranges.push((cp_idx, cp_idx));
         }
     } else if mode == "exact" {
@@ -375,8 +354,8 @@ pub fn text_replace_check_with_options(
             let search_from = search_start.min(text.len());
             if let Some(idx) = text[search_from..].find(old) {
                 let byte_idx = search_from + idx;
-                let cp_idx = text[..byte_idx].chars().count();
-                positions.push(build_position(text, cp_idx, old_chars));
+                let cp_idx = source_index.codepoint_index_at_byte(byte_idx);
+                positions.push(source_index.build_position(cp_idx, old_chars));
                 match_ranges.push((cp_idx, cp_idx + old_chars));
                 search_start = byte_idx + old.len();
             } else {
@@ -394,7 +373,7 @@ pub fn text_replace_check_with_options(
                 let cp_start = original_index_for_normalized_boundary(&normalized_chunks, byte_idx);
                 let cp_end =
                     original_index_for_normalized_boundary(&normalized_chunks, normalized_end);
-                positions.push(build_position(text, cp_start, cp_end - cp_start));
+                positions.push(source_index.build_position(cp_start, cp_end - cp_start));
                 match_ranges.push((cp_start, cp_end));
                 search_start = byte_idx + old_norm.len();
             } else {
@@ -447,20 +426,20 @@ pub fn text_replace_check_with_options(
     }
 
     let replaced_text = if would_change {
-        let mut parts: Vec<String> = Vec::new();
-        let mut last_cp = 0;
+        let mut replaced = String::with_capacity(
+            text.len()
+                .saturating_add(match_count.saturating_mul(new.len().saturating_sub(old.len()))),
+        );
+        let mut last_byte = 0;
         for (pos, &(_, match_end)) in positions.iter().zip(match_ranges.iter()) {
-            let mid_text = get_text_at_codepoint_range(text, last_cp, pos.codepoint_index);
-            parts.push(mid_text);
-            parts.push(new.to_string());
-            last_cp = match_end;
+            let match_start_byte = source_index.byte_offset(pos.codepoint_index);
+            let match_end_byte = source_index.byte_offset(match_end);
+            replaced.push_str(&text[last_byte..match_start_byte]);
+            replaced.push_str(new);
+            last_byte = match_end_byte;
         }
-        parts.push(get_text_at_codepoint_range(
-            text,
-            last_cp,
-            text.chars().count(),
-        ));
-        parts.join("")
+        replaced.push_str(&text[last_byte..]);
+        replaced
     } else {
         text.to_string()
     };

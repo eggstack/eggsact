@@ -276,34 +276,25 @@ fn strip_diff_path_prefix(path: &str) -> String {
     trimmed.to_string()
 }
 
-fn text_to_lines(text: &str) -> Vec<String> {
-    let mut result = text.to_string();
-    if result.ends_with('\n') {
-        result.pop();
-    }
-    if result.ends_with('\r') {
-        result.pop();
-    }
-    result.split('\n').map(|s| s.to_string()).collect()
+fn text_to_lines(text: &str) -> Vec<&str> {
+    let end = text.strip_suffix('\n').unwrap_or(text);
+    let end = end.strip_suffix('\r').unwrap_or(end);
+    end.split('\n').collect()
 }
 
-fn lines_to_text(lines: &[String]) -> String {
-    lines.join("\n")
+fn normalize_line(line: &str) -> &str {
+    line.trim_end_matches('\r')
 }
 
-fn normalize_line(line: &str) -> String {
-    line.trim_end_matches('\r').to_string()
-}
-
-fn strip_line_prefix(line: &str) -> String {
+fn strip_line_prefix(line: &str) -> &str {
     if let Some(stripped) = line
         .strip_prefix('+')
         .or_else(|| line.strip_prefix('-'))
         .or_else(|| line.strip_prefix(' '))
     {
-        stripped.to_string()
+        stripped
     } else {
-        line.to_string()
+        line
     }
 }
 
@@ -313,56 +304,51 @@ fn fingerprint(text: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn apply_hunk(
-    original_lines: &[String],
+fn expected_hunk_context(hunk: &PatchHunk) -> Vec<String> {
+    hunk.lines
+        .iter()
+        .map(|line| normalize_line(line))
+        .filter(|line| line.starts_with(' ') || line.starts_with('-'))
+        .map(|line| strip_line_prefix(line).to_string())
+        .collect()
+}
+
+fn validate_hunk(
+    original_lines: &[&str],
     hunk: &PatchHunk,
     strict: bool,
-) -> (Option<Vec<String>>, Option<String>) {
+) -> Result<(usize, usize), String> {
     let old_start = hunk.old_start.saturating_sub(1);
     let old_count = hunk.old_count;
 
     if old_start > original_lines.len() {
-        return (
-            None,
-            Some(format!("Invalid hunk start: {}", hunk.old_start)),
-        );
+        return Err(format!("Invalid hunk start: {}", hunk.old_start));
     }
 
-    let mut expected_context: Vec<String> = vec![];
-    for hline in &hunk.lines {
-        let normalized = normalize_line(hline);
-        if normalized.starts_with(' ') || normalized.starts_with('-') {
-            expected_context.push(strip_line_prefix(&normalized));
-        }
-    }
+    let expected_context = expected_hunk_context(hunk);
 
     let actual_end = old_start.saturating_add(old_count);
-    let actual_context: Vec<String> = if actual_end > original_lines.len() {
+    let actual_end = if actual_end > original_lines.len() {
         if strict {
-            return (
-                None,
-                Some(format!(
-                    "Hunk references lines {}-{} but original has only {} lines",
-                    hunk.old_start,
-                    hunk.old_start.saturating_add(old_count).saturating_sub(1),
-                    original_lines.len()
-                )),
-            );
+            return Err(format!(
+                "Hunk references lines {}-{} but original has only {} lines",
+                hunk.old_start,
+                hunk.old_start.saturating_add(old_count).saturating_sub(1),
+                original_lines.len()
+            ));
         }
-        original_lines[old_start..].to_vec()
+        original_lines.len()
     } else {
-        original_lines[old_start..actual_end].to_vec()
+        actual_end
     };
+    let actual_context = &original_lines[old_start..actual_end];
 
     if strict && expected_context.len() != actual_context.len() {
-        return (
-            None,
-            Some(format!(
-                "Context length mismatch: hunk expects {} lines, actual has {} lines",
-                expected_context.len(),
-                actual_context.len()
-            )),
-        );
+        return Err(format!(
+            "Context length mismatch: hunk expects {} lines, actual has {} lines",
+            expected_context.len(),
+            actual_context.len()
+        ));
     }
 
     if strict {
@@ -372,50 +358,27 @@ fn apply_hunk(
             .enumerate()
         {
             if normalize_line(expected) != normalize_line(actual) {
-                return (
-                    None,
-                    Some(format!(
-                        "Context mismatch at line {}: expected {:?}, got {:?}",
-                        hunk.old_start + idx,
-                        normalize_line(expected),
-                        normalize_line(actual)
-                    )),
-                );
+                return Err(format!(
+                    "Context mismatch at line {}: expected {:?}, got {:?}",
+                    hunk.old_start + idx,
+                    normalize_line(expected),
+                    normalize_line(actual)
+                ));
             }
         }
     }
+    Ok((old_start, actual_end))
+}
 
-    let mut new_lines: Vec<String> = vec![];
-    let mut new_idx = 0;
-    let mut hunk_idx = 0;
-
-    while hunk_idx < hunk.lines.len() {
-        let hline = normalize_line(&hunk.lines[hunk_idx]);
-        if hline.starts_with(' ') {
-            if new_idx < original_lines.len() {
-                new_lines.push(original_lines[new_idx].clone());
-            } else {
-                new_lines.push(strip_line_prefix(&hline));
-            }
-            new_idx += 1;
-            hunk_idx += 1;
-        } else if hline.starts_with('-') {
-            new_idx += 1;
-            hunk_idx += 1;
-        } else if hline.starts_with('+') {
-            new_lines.push(strip_line_prefix(&hline));
-            hunk_idx += 1;
-        } else {
-            hunk_idx += 1;
-        }
+fn append_line(output: &mut String, has_line: &mut bool, line: &str, add_cr: bool) {
+    if *has_line {
+        output.push('\n');
     }
-
-    while new_idx < original_lines.len() {
-        new_lines.push(original_lines[new_idx].clone());
-        new_idx += 1;
+    output.push_str(line);
+    if add_cr {
+        output.push('\r');
     }
-
-    (Some(new_lines), None)
+    *has_line = true;
 }
 
 pub fn patch_apply_check(
@@ -526,66 +489,123 @@ pub fn patch_apply_check(
         };
     }
 
-    let mut current_lines = original_lines.clone();
+    let build_result = return_result_text || return_result_fingerprint;
+    let preserve_crlf = newline_before == "CRLF";
+    let mut result_text_builder = if build_result {
+        Some(String::with_capacity(
+            original_text.len().saturating_add(patch_text.len()),
+        ))
+    } else {
+        None
+    };
+    let mut has_output_line = false;
+    let mut source_cursor = 0usize;
     let mut hunks_applied = 0;
     let mut hunks_failed = 0;
 
     for (hunk_idx, hunk) in all_hunks.iter().enumerate() {
         let old_start = hunk.old_start.saturating_sub(1);
         let actual_end = old_start.saturating_add(hunk.old_count);
-        if !strict && old_start <= current_lines.len() && actual_end > current_lines.len() {
+        if !strict && old_start <= original_lines.len() && actual_end > original_lines.len() {
             findings.push(format!(
                 "Hunk {} context truncated at end of original text",
                 hunk_idx
             ));
         }
-        let (result, error) = apply_hunk(&current_lines, hunk, strict);
-        if let Some(new_lines) = result {
-            current_lines = new_lines;
-            hunks_applied += 1;
-            affected_line_ranges.push(line_range(hunk.new_start, hunk.new_count));
-        } else {
-            hunks_failed += 1;
-            let expected_ctx: Vec<String> = hunk
-                .lines
-                .iter()
-                .filter(|line| {
-                    let normalized = normalize_line(line);
-                    normalized.starts_with(' ') || normalized.starts_with('-')
-                })
-                .map(|line| strip_line_prefix(&normalize_line(line)))
-                .collect();
-            let actual_end = std::cmp::min(
-                hunk.old_start
-                    .saturating_sub(1)
-                    .saturating_add(hunk.old_count),
-                current_lines.len(),
-            );
-            let actual_ctx: Vec<String> = if hunk.old_start.saturating_sub(1) < current_lines.len()
-            {
-                current_lines[hunk.old_start.saturating_sub(1)..actual_end].to_vec()
-            } else {
-                vec![]
-            };
 
-            failed_hunks.push(FailedHunk {
-                hunk_index: hunk_idx,
-                old_start: hunk.old_start,
-                old_count: hunk.old_count,
-                expected_context: expected_ctx,
-                actual_context: actual_ctx,
-                reason: error.unwrap_or_else(|| "Unknown error".to_string()),
-            });
+        let result = if old_start < source_cursor {
+            Err(format!(
+                "Hunk starts before the previous hunk: {}",
+                hunk.old_start
+            ))
+        } else {
+            validate_hunk(&original_lines, hunk, strict)
+        };
+        match result {
+            Ok((hunk_start, hunk_end)) => {
+                if let Some(output) = result_text_builder.as_mut() {
+                    for line in &original_lines[source_cursor..hunk_start] {
+                        append_line(output, &mut has_output_line, line, false);
+                    }
+                }
+
+                let mut source_index = hunk_start;
+                for raw_line in &hunk.lines {
+                    let line = normalize_line(raw_line);
+                    if line.starts_with(' ') {
+                        if let Some(output) = result_text_builder.as_mut() {
+                            let source_line = original_lines
+                                .get(source_index)
+                                .copied()
+                                .unwrap_or_else(|| strip_line_prefix(line));
+                            append_line(output, &mut has_output_line, source_line, false);
+                        }
+                        source_index = source_index.saturating_add(1);
+                    } else if line.starts_with('-') {
+                        source_index = source_index.saturating_add(1);
+                    } else if line.starts_with('+') {
+                        if let Some(output) = result_text_builder.as_mut() {
+                            append_line(
+                                output,
+                                &mut has_output_line,
+                                strip_line_prefix(line),
+                                preserve_crlf,
+                            );
+                        }
+                    }
+                }
+                source_cursor = hunk_end;
+                hunks_applied += 1;
+                affected_line_ranges.push(line_range(hunk.new_start, hunk.new_count));
+            }
+            Err(error) => {
+                hunks_failed += 1;
+                let expected_ctx = expected_hunk_context(hunk);
+                let actual_end = std::cmp::min(
+                    hunk.old_start
+                        .saturating_sub(1)
+                        .saturating_add(hunk.old_count),
+                    original_lines.len(),
+                );
+                let actual_ctx: Vec<String> =
+                    if hunk.old_start.saturating_sub(1) < original_lines.len() {
+                        original_lines[hunk.old_start.saturating_sub(1)..actual_end]
+                            .iter()
+                            .map(|line| (*line).to_string())
+                            .collect()
+                    } else {
+                        vec![]
+                    };
+
+                failed_hunks.push(FailedHunk {
+                    hunk_index: hunk_idx,
+                    old_start: hunk.old_start,
+                    old_count: hunk.old_count,
+                    expected_context: expected_ctx,
+                    actual_context: actual_ctx,
+                    reason: error,
+                });
+            }
         }
     }
 
+    if let Some(output) = result_text_builder.as_mut() {
+        for line in &original_lines[source_cursor..] {
+            append_line(output, &mut has_output_line, line, false);
+        }
+    }
     let applies = hunks_failed == 0;
+    let built_result = result_text_builder;
     let result_text = if return_result_text {
-        Some(lines_to_text(&current_lines))
+        Some(built_result.as_deref().unwrap_or_default().to_string())
     } else {
         None
     };
-    let result_text_ref = result_text.as_deref().unwrap_or(original_text);
+    let result_text_ref = if hunks_applied == 0 && !return_result_text {
+        original_text
+    } else {
+        built_result.as_deref().unwrap_or(original_text)
+    };
     let newline_after = detect_newline_style(result_text_ref);
 
     if hunks_failed > 0 {

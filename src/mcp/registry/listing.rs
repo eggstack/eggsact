@@ -4,7 +4,7 @@ use crate::text::levenshtein_distance;
 use serde_json::Value;
 
 use super::all_tools::{all_tools as all_tools_slice, PROFILE_NAMES};
-use super::types::{ToolExposure, ToolStability};
+use super::types::{ToolExposure, ToolSpec, ToolStability};
 
 // ---------------------------------------------------------------------------
 // Basic helpers
@@ -127,11 +127,8 @@ pub struct ToolListOptions<'a> {
 /// This is the core listing logic that was previously in server.rs.
 /// It returns a `Vec<ToolDefinition>` ready for MCP serialization.
 pub fn list_tool_definitions(options: ToolListOptions<'_>) -> Vec<super::types::ToolDefinition> {
-    let profile_tools = match options.audience {
-        Some(aud) => tools_for_profile_audience(options.profile, aud),
-        None => tools_for_profile(options.profile),
-    };
-    let mut tools: Vec<super::types::ToolDefinition> = profile_tools
+    let specs = filtered_specs(&options);
+    let mut tools: Vec<super::types::ToolDefinition> = specs
         .into_iter()
         .map(|spec| {
             let deprecated = if spec.stability == ToolStability::Deprecated {
@@ -190,8 +187,8 @@ pub fn list_tool_definitions(options: ToolListOptions<'_>) -> Vec<super::types::
             // Compact input schema: strip defaults, truncate property descriptions
             tool.input_schema = compact_input_schema(&tool.input_schema);
             // Compact output schema: keep top-level keys/types only
-            if let Some(ref output) = tool.output_schema.clone() {
-                tool.output_schema = Some(compact_output_schema(output));
+            if let Some(output) = tool.output_schema.take() {
+                tool.output_schema = Some(compact_output_schema(&output));
             }
             // Python compact mode: drops tier and tags, keeps category/llm_exposure/cost
             tool.tier = None;
@@ -214,26 +211,8 @@ pub fn list_tool_definitions(options: ToolListOptions<'_>) -> Vec<super::types::
 /// `annotations` and a namespaced `_meta` object instead of nonstandard
 /// top-level registry keys. Legacy serialization is untouched.
 pub fn list_modern_tool_values(options: ToolListOptions<'_>) -> Vec<Value> {
-    let profile_tools = match options.audience {
-        Some(aud) => tools_for_profile_audience(options.profile, aud),
-        None => tools_for_profile(options.profile),
-    };
+    let specs = filtered_specs(&options);
     let compact = options.schema_detail == "compact";
-
-    // Apply names/tier/tags filters on specs before serialization so modern
-    // and legacy listings agree on membership.
-    let mut specs: Vec<&&'static super::types::ToolSpec> = profile_tools.iter().collect();
-    if let Some(names) = options.names {
-        let name_set: HashSet<&str> = names.iter().map(|s| s.as_str()).collect();
-        specs.retain(|s| name_set.contains(s.name));
-    }
-    if let Some(tier) = options.tier {
-        specs.retain(|s| s.tier == tier);
-    }
-    if let Some(tags) = options.tags {
-        let tag_set: HashSet<&str> = tags.iter().map(|s| s.as_str()).collect();
-        specs.retain(|s| tag_set.iter().all(|tag| s.tags.contains(tag)));
-    }
 
     specs
         .into_iter()
@@ -250,11 +229,44 @@ pub fn list_modern_tool_values(options: ToolListOptions<'_>) -> Vec<Value> {
             }
             let mut output_schema = Some((spec.output_schema)());
             if compact {
-                if let Some(ref output) = output_schema.clone() {
-                    output_schema = Some(compact_output_schema(output));
+                if let Some(output) = output_schema.take() {
+                    output_schema = Some(compact_output_schema(&output));
                 }
             }
             super::types::modern_tool_value(spec, description, input_schema, output_schema, compact)
+        })
+        .collect()
+}
+
+fn filtered_specs(options: &ToolListOptions<'_>) -> Vec<&'static ToolSpec> {
+    let name_set: Option<HashSet<&str>> = options
+        .names
+        .map(|names| names.iter().map(String::as_str).collect());
+    let tag_set: Option<HashSet<&str>> = options
+        .tags
+        .map(|tags| tags.iter().map(String::as_str).collect());
+
+    all_tools_slice()
+        .iter()
+        .filter(|spec| {
+            let in_profile = if options.profile == "full" {
+                spec.exposure != ToolExposure::Hidden
+            } else {
+                spec.profiles.contains(&options.profile)
+            };
+            let in_audience = match options.audience {
+                None | Some(ToolListAudience::Debug) => true,
+                Some(ToolListAudience::Model) => spec.exposure != ToolExposure::HarnessOnly,
+                Some(ToolListAudience::Harness) => spec.exposure != ToolExposure::Hidden,
+            };
+            let name_matches = name_set
+                .as_ref()
+                .is_none_or(|names| names.contains(spec.name));
+            let tier_matches = options.tier.is_none_or(|tier| spec.tier == tier);
+            let tags_match = tag_set
+                .as_ref()
+                .is_none_or(|tags| tags.iter().all(|tag| spec.tags.iter().any(|t| t == tag)));
+            in_profile && in_audience && name_matches && tier_matches && tags_match
         })
         .collect()
 }

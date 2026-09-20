@@ -19,6 +19,8 @@
 
 use crate::mcp::registry::{ToolSpec, ToolStability};
 use serde_json::Value;
+use std::collections::HashSet;
+use std::sync::LazyLock;
 
 // ── Surface mode ─────────────────────────────────────────────────────────
 
@@ -375,40 +377,71 @@ fn query_tokens(query: &str) -> Vec<String> {
         .collect()
 }
 
+struct SearchIndexEntry {
+    spec: &'static ToolSpec,
+    name_lower: String,
+    aliases_lower: Vec<String>,
+    name_tokens: Vec<String>,
+    tag_tokens: Vec<String>,
+    description_tokens: Vec<String>,
+}
+
+static SEARCH_INDEX: LazyLock<Vec<SearchIndexEntry>> = LazyLock::new(|| {
+    crate::mcp::registry::all_tools_vec()
+        .iter()
+        .map(|spec| SearchIndexEntry {
+            spec,
+            name_lower: spec.name.to_lowercase(),
+            aliases_lower: spec
+                .aliases
+                .iter()
+                .map(|alias| alias.to_lowercase())
+                .collect(),
+            name_tokens: tokenize(spec.name),
+            tag_tokens: spec
+                .tags
+                .iter()
+                .flat_map(|tag| tokenize(tag))
+                .chain(tokenize(spec.category))
+                .collect(),
+            description_tokens: query_tokens(spec.description),
+        })
+        .collect()
+});
+
 /// Score one spec against the query tokens.
 ///
 /// Relevance classes (lower is better):
 /// 0 = exact canonical-name match, 1 = exact alias match,
 /// 2 = canonical-name token/prefix match, 3 = tag/category overlap,
 /// 4 = description overlap, 5 = Levenshtein close-match recovery.
-fn score_spec(
-    spec: &ToolSpec,
+fn score_index(
+    entry: &SearchIndexEntry,
     query_lower: &str,
     qtokens: &[String],
     include_deprecated: bool,
 ) -> Option<(u8, usize, &'static str)> {
+    let spec = entry.spec;
     let is_deprecated = spec.stability == ToolStability::Deprecated;
-    let name_lower = spec.name.to_lowercase();
     // Deprecated tools are hidden unless exactly named or explicitly included.
-    if is_deprecated && !include_deprecated && name_lower != query_lower {
+    if is_deprecated && !include_deprecated && entry.name_lower != query_lower {
         return None;
     }
     // 0. exact canonical-name match (deprecated included by exact name).
-    if name_lower == query_lower {
+    if entry.name_lower == query_lower {
         return Some((0, usize::MAX, "exact_name"));
     }
     // 1. exact alias match.
-    for alias in spec.aliases {
-        if alias.to_lowercase() == query_lower {
+    for alias in &entry.aliases_lower {
+        if alias == query_lower {
             return Some((1, usize::MAX, "alias"));
         }
     }
     // 2. canonical-name token/prefix match.
-    let name_tokens = tokenize(spec.name);
     let name_matches = qtokens
         .iter()
         .filter(|qt| {
-            name_tokens.iter().any(|nt| {
+            entry.name_tokens.iter().any(|nt| {
                 useful_name_token(nt)
                     && (nt.as_str() == qt.as_str()
                         || (qt.len() >= 3 && nt.starts_with(qt.as_str()))
@@ -418,11 +451,11 @@ fn score_spec(
             })
         })
         .count();
-    let mut tag_tokens: Vec<String> = spec.tags.iter().flat_map(|t| tokenize(t)).collect();
-    tag_tokens.extend(tokenize(spec.category));
     let tag_matches = qtokens
         .iter()
-        .filter(|qt| useful_tag_token(qt) && tag_tokens.iter().any(|t| t.as_str() == qt.as_str()))
+        .filter(|qt| {
+            useful_tag_token(qt) && entry.tag_tokens.iter().any(|t| t.as_str() == qt.as_str())
+        })
         .count();
     if name_matches > 0 {
         return Some((2, name_matches + tag_matches * 2, "name_token"));
@@ -431,7 +464,7 @@ fn score_spec(
     // short generic prefixes such as "text" and "check".
     if qtokens
         .iter()
-        .any(|qt| qt.len() >= 5 && name_lower.starts_with(qt.as_str()))
+        .any(|qt| qt.len() >= 5 && entry.name_lower.starts_with(qt.as_str()))
     {
         return Some((2, 1, "name_token"));
     }
@@ -440,26 +473,33 @@ fn score_spec(
         return Some((3, tag_matches, "tag"));
     }
     // 4. description token overlap.
-    let desc_tokens = query_tokens(spec.description);
     let description_matches = qtokens
         .iter()
-        .filter(|qt| desc_tokens.iter().any(|t| t.as_str() == qt.as_str()))
+        .filter(|qt| {
+            entry
+                .description_tokens
+                .iter()
+                .any(|t| t.as_str() == qt.as_str())
+        })
         .count();
     if description_matches > 0 {
         return Some((4, description_matches, "description"));
     }
     // 5. bounded Levenshtein recovery for typo-like queries.
     if query_lower.len() <= 200 {
-        let dist = crate::text::levenshtein_distance(query_lower, &name_lower);
-        let threshold = query_lower.chars().count().min(name_lower.chars().count()) / 2;
+        let dist = crate::text::levenshtein_distance(query_lower, &entry.name_lower);
+        let threshold = query_lower
+            .chars()
+            .count()
+            .min(entry.name_lower.chars().count())
+            / 2;
         if dist <= threshold {
             return Some((5, 1, "close_match"));
         }
         // Also try aliases with Levenshtein.
-        for alias in spec.aliases {
-            let a = alias.to_lowercase();
-            let d = crate::text::levenshtein_distance(query_lower, &a);
-            let th = query_lower.chars().count().min(a.chars().count()) / 2;
+        for alias in &entry.aliases_lower {
+            let d = crate::text::levenshtein_distance(query_lower, alias);
+            let th = query_lower.chars().count().min(alias.chars().count()) / 2;
             if d <= th {
                 return Some((5, 1, "close_match"));
             }
@@ -501,10 +541,14 @@ pub fn search_filtered<'a>(
 ) -> Vec<(&'a ToolSpec, &'static str)> {
     let query_lower = params.query.to_lowercase();
     let qtokens = query_tokens(&params.query);
+    let allowed: HashSet<&str> = specs.iter().map(|spec| spec.name).collect();
     let mut hits: Vec<(ScoredHit, &'static str)> = Vec::new();
-    for (index, spec) in specs.iter().enumerate() {
+    for (index, entry) in SEARCH_INDEX.iter().enumerate() {
+        if !allowed.contains(entry.spec.name) {
+            continue;
+        }
         if let Some((relevance, matched_tokens, reason)) =
-            score_spec(spec, &query_lower, &qtokens, params.include_deprecated)
+            score_index(entry, &query_lower, &qtokens, params.include_deprecated)
         {
             hits.push((
                 ScoredHit {
@@ -525,7 +569,7 @@ pub fn search_filtered<'a>(
     });
     hits.truncate(params.limit);
     hits.into_iter()
-        .map(|(h, reason)| (specs[h.index], reason))
+        .map(|(h, reason)| (SEARCH_INDEX[h.index].spec, reason))
         .collect()
 }
 

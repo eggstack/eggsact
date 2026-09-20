@@ -77,7 +77,13 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
 }
 
 fn encode_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len().saturating_mul(2));
+    for &byte in bytes {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
 }
 
 fn padded_base64(value: &str, url_safe: bool) -> Result<String, String> {
@@ -135,13 +141,17 @@ fn decode_codec(value: &str, format: &str) -> Result<Vec<u8>, String> {
     }
 }
 
-fn encode_codec(bytes: &[u8], format: &str) -> Result<String, String> {
+fn encode_codec(bytes: Vec<u8>, format: &str) -> Result<String, String> {
+    if format == "hex" && bytes.len() > MAX_TEXT_LENGTH / 2 {
+        return Err(format!("encoded output exceeds {} bytes", MAX_TEXT_LENGTH));
+    }
     let result = match format {
-        "utf8" => String::from_utf8(bytes.to_vec())
-            .map_err(|_| "decoded bytes are not valid UTF-8".to_string())?,
-        "hex" => encode_hex(bytes),
-        "base64" => STANDARD.encode(bytes),
-        "base64url" => URL_SAFE.encode(bytes).trim_end_matches('=').to_string(),
+        "utf8" => {
+            String::from_utf8(bytes).map_err(|_| "decoded bytes are not valid UTF-8".to_string())?
+        }
+        "hex" => encode_hex(&bytes),
+        "base64" => STANDARD.encode(&bytes),
+        "base64url" => URL_SAFE.encode(&bytes).trim_end_matches('=').to_string(),
         _ => unreachable!("format validated at the handler boundary"),
     };
     if result.len() > MAX_TEXT_LENGTH {
@@ -176,7 +186,8 @@ pub fn codec_convert(args: &Value) -> ToolResponse {
         }
         Err(error) => return invalid(error, "codec_convert"),
     };
-    let converted = match encode_codec(&bytes, to) {
+    let byte_length = bytes.len();
+    let converted = match encode_codec(bytes, to) {
         Ok(value) => value,
         Err(error) if error.starts_with("encoded output exceeds") => {
             return ToolResponse::error_with_code(
@@ -190,7 +201,7 @@ pub fn codec_convert(args: &Value) -> ToolResponse {
         Err(error) => return invalid(error, "codec_convert"),
     };
     ToolResponse::success(
-        serde_json::json!({"value": converted, "from": from, "to": to, "byte_length": bytes.len()}),
+        serde_json::json!({"value": converted, "from": from, "to": to, "byte_length": byte_length}),
         Some("codec_convert"),
     )
     .with_tool("codec_convert")

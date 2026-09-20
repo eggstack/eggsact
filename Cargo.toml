@@ -63,6 +63,10 @@ required-features = ["dev-tools"]
 name = "lib"
 path = "tests/lib.rs"
 
+[[bench]]
+name = "performance"
+harness = false
+
 [profile.release]
 strip = "symbols"
 lto = "thin"

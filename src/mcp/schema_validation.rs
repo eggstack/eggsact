@@ -86,9 +86,17 @@ pub(crate) fn validate_property_inner(
 
     let expected_type = obj.get("type")?;
 
-    let type_options: Vec<&str> = match expected_type {
-        Value::String(s) => vec![s.as_str()],
-        Value::Array(arr) => arr.iter().filter_map(|v| v.as_str()).collect(),
+    let mut single_type_slot = [""];
+    let mut many_types = Vec::new();
+    let type_options: &[&str] = match expected_type {
+        Value::String(s) => {
+            single_type_slot[0] = s.as_str();
+            &single_type_slot
+        }
+        Value::Array(arr) => {
+            many_types.extend(arr.iter().filter_map(|v| v.as_str()));
+            &many_types
+        }
         _ => {
             return Some(format!(
                 "Argument '{}' has unsupported 'type' (must be a string or list of strings)",
@@ -272,7 +280,7 @@ pub(crate) fn validate_property_inner(
         let sub_required = obj.get("required").and_then(|v| v.as_array());
         let sub_additional_raw = obj.get("additionalProperties");
         let sub_additional_bool = sub_additional_raw.and_then(|v| v.as_bool());
-        let sub_additional_schema = sub_additional_raw.and_then(|v| v.as_object());
+        let sub_additional_schema = sub_additional_raw.filter(|v| v.is_object());
 
         let has_sub_schema =
             sub_props.is_some_and(|p| !p.is_empty()) || sub_required.is_some_and(|r| !r.is_empty());
@@ -332,7 +340,7 @@ pub(crate) fn validate_property_inner(
                         let sub_path = format!("{}.{}", path, sub_key);
                         if let Some(err) = validate_property_inner(
                             sub_val,
-                            &Value::Object(additional_schema.clone()),
+                            additional_schema,
                             &sub_path,
                             max_depth - 1,
                             compat,

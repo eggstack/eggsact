@@ -552,41 +552,57 @@ impl ToolRegistry {
         effective_audience: ToolAudience,
         effective_compat: CompatibilityMode,
     ) -> ToolCallOutcome {
-        let handler = match registry::tool_handler_for(name) {
-            Some(h) => h,
-            None => {
-                return ToolCallOutcome::PreExecutionError(ToolCallError::UnknownTool(
-                    name.to_string(),
-                ))
-            }
-        };
+        match self.prepare_tool_call_internal(
+            name,
+            args,
+            effective_profile,
+            effective_audience,
+            effective_compat,
+        ) {
+            Ok(prepared) => ToolCallOutcome::Ready {
+                handler: prepared.handler,
+            },
+            Err(error) => ToolCallOutcome::PreExecutionError(error),
+        }
+    }
 
-        let profile_tools = registry::tools_for_profile(effective_profile.as_str());
-        if !profile_tools.iter().any(|s| s.name == name) {
-            return ToolCallOutcome::PreExecutionError(ToolCallError::ToolUnavailable {
+    /// Internal preparation projection used by the MCP boundary. It retains
+    /// the one registry lookup's cost metadata so the server does not perform
+    /// a second scan solely to resolve the execution budget.
+    pub(crate) fn prepare_tool_call_internal(
+        &self,
+        name: &str,
+        args: &Value,
+        effective_profile: &Profile,
+        effective_audience: ToolAudience,
+        effective_compat: CompatibilityMode,
+    ) -> Result<PreparedToolCall, ToolCallError> {
+        let spec =
+            registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
+        let in_profile = effective_profile.as_str() == "full"
+            && spec.exposure != ToolExposure::Hidden
+            || spec.profiles.contains(&effective_profile.as_str());
+        if !in_profile {
+            return Err(ToolCallError::ToolUnavailable {
                 tool: name.to_string(),
                 profile: effective_profile.to_string(),
             });
         }
-
-        if let Some(spec) = registry::get_tool(name) {
-            if !effective_audience.can_execute_exposure(spec.exposure) {
-                return ToolCallOutcome::PreExecutionError(
-                    ToolCallError::ToolNotAllowedForAudience {
-                        tool: name.to_string(),
-                        profile: effective_profile.to_string(),
-                        audience: format!("{:?}", effective_audience),
-                        exposure: spec.exposure.as_str().to_string(),
-                    },
-                );
-            }
+        if !effective_audience.can_execute_exposure(spec.exposure) {
+            return Err(ToolCallError::ToolNotAllowedForAudience {
+                tool: name.to_string(),
+                profile: effective_profile.to_string(),
+                audience: format!("{:?}", effective_audience),
+                exposure: spec.exposure.as_str().to_string(),
+            });
         }
-
         if let Some(msg) = schema_validation::validate_arguments(name, args, effective_compat) {
-            return ToolCallOutcome::PreExecutionError(ToolCallError::InvalidArguments(msg));
+            return Err(ToolCallError::InvalidArguments(msg));
         }
-
-        ToolCallOutcome::Ready { handler }
+        Ok(PreparedToolCall {
+            handler: spec.handler,
+            cost: spec.cost,
+        })
     }
 
     /// Call a tool by name with JSON arguments, returning the full `ToolResponse`.
@@ -843,7 +859,21 @@ impl ToolRegistry {
     /// Returns `Some(response)` if the check fails (caller should return it),
     /// or `None` if args are within budget.
     fn check_input_size(args: &Value, budget: &ToolBudget, name: &str) -> Option<ToolResponse> {
-        let serialized_len = serde_json::to_string(args).map(|s| s.len()).unwrap_or(0);
+        struct Counter(usize);
+        impl std::io::Write for Counter {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0 = self.0.saturating_add(bytes.len());
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut counter = Counter(0);
+        let serialized_len = serde_json::to_writer(&mut counter, args)
+            .map(|_| counter.0)
+            .unwrap_or(0);
         if serialized_len > budget.max_input_bytes {
             Some(ToolResponse::error_with_code(
                 "input_too_large",
@@ -886,13 +916,12 @@ impl ToolRegistry {
         name: &str,
     ) -> Result<ToolResponse, ToolCallError> {
         let timeout = Duration::from_millis(budget.max_elapsed_ms);
-        let args_clone = args.clone();
         let handler_cancel = cancel_flag.clone();
         let result = crate::mcp::sync_pool::sync_pool().submit_cancellable(
             move || {
                 budget::with_cancel_flag(Some(handler_cancel), || {
                     let mut eval_ctx = eval_ctx;
-                    crate::mcp::budget::with_eval_context(&mut eval_ctx, || handler(&args_clone))
+                    crate::mcp::budget::with_eval_context(&mut eval_ctx, || handler(&args))
                 })
             },
             timeout,
@@ -917,6 +946,11 @@ pub enum ToolCallOutcome {
     Ready { handler: registry::ToolHandler },
     /// Pre-execution error (unknown tool, profile mismatch, invalid args).
     PreExecutionError(ToolCallError),
+}
+
+pub(crate) struct PreparedToolCall {
+    pub(crate) handler: registry::ToolHandler,
+    pub(crate) cost: crate::mcp::registry::ToolCost,
 }
 
 impl Default for ToolRegistry {

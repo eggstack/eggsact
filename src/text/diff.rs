@@ -85,12 +85,18 @@ pub struct DiffSpan {
     pub b_text: String,
 }
 
-fn char_slice(s: &str, chars: &[char], start: usize, end: usize) -> String {
+fn char_offsets(s: &str) -> Vec<usize> {
+    let mut offsets: Vec<usize> = s.char_indices().map(|(offset, _)| offset).collect();
+    offsets.push(s.len());
+    offsets
+}
+
+fn char_slice(s: &str, offsets: &[usize], start: usize, end: usize) -> String {
     if start >= end {
         return String::new();
     }
-    let byte_start = chars[..start].iter().map(|c| c.len_utf8()).sum::<usize>();
-    let byte_end = chars[..end].iter().map(|c| c.len_utf8()).sum::<usize>();
+    let byte_start = offsets.get(start).copied().unwrap_or(s.len());
+    let byte_end = offsets.get(end).copied().unwrap_or(s.len());
     s[byte_start..byte_end].to_string()
 }
 
@@ -111,6 +117,8 @@ pub fn diff_spans(a: &str, b: &str, max_diffs: usize) -> Vec<DiffSpan> {
 
     let a_chars: Vec<char> = a.chars().collect();
     let b_chars: Vec<char> = b.chars().collect();
+    let a_offsets = char_offsets(a);
+    let b_offsets = char_offsets(b);
     let a_len = a_chars.len();
     let b_len = b_chars.len();
 
@@ -195,8 +203,8 @@ pub fn diff_spans(a: &str, b: &str, max_diffs: usize) -> Vec<DiffSpan> {
                 b_start: prev_b_end,
                 b_end: *b_start,
                 kind: kind.to_string(),
-                a_text: char_slice(a, &a_chars, prev_a_end, *a_start),
-                b_text: char_slice(b, &b_chars, prev_b_end, *b_start),
+                a_text: char_slice(a, &a_offsets, prev_a_end, *a_start),
+                b_text: char_slice(b, &b_offsets, prev_b_end, *b_start),
             });
             if spans.len() >= max_diffs {
                 break;
@@ -221,8 +229,8 @@ pub fn diff_spans(a: &str, b: &str, max_diffs: usize) -> Vec<DiffSpan> {
             b_start: prev_b_end,
             b_end: b_len,
             kind: kind.to_string(),
-            a_text: char_slice(a, &a_chars, prev_a_end, a_len),
-            b_text: char_slice(b, &b_chars, prev_b_end, b_len),
+            a_text: char_slice(a, &a_offsets, prev_a_end, a_len),
+            b_text: char_slice(b, &b_offsets, prev_b_end, b_len),
         });
     }
 
@@ -244,6 +252,8 @@ fn coarse_diff_spans(
     }
     let a_len = a_chars.len();
     let b_len = b_chars.len();
+    let a_offsets = char_offsets(a);
+    let b_offsets = char_offsets(b);
     let min_len = a_len.min(b_len);
 
     let mut prefix = 0;
@@ -278,8 +288,8 @@ fn coarse_diff_spans(
         b_start: b_mid.start,
         b_end: b_mid.end,
         kind: kind.to_string(),
-        a_text: char_slice(a, a_chars, a_mid.start, a_mid.end),
-        b_text: char_slice(b, b_chars, b_mid.start, b_mid.end),
+        a_text: char_slice(a, &a_offsets, a_mid.start, a_mid.end),
+        b_text: char_slice(b, &b_offsets, b_mid.start, b_mid.end),
     }]
 }
 

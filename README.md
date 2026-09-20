@@ -34,6 +34,12 @@ cargo install eggsact
 See [Installation](docs/installation.md) for the target matrix, fallback, and
 validation contract.
 
+Maintainers can reproduce the release-mode performance evidence matrix with
+`cargo bench --locked --bench performance`; it is non-gating and intended for
+same-host baseline/candidate comparisons. See
+[Performance](architecture/performance.md) for the measured contracts and
+hot-path invariants.
+
 Or from source:
 
 ```bash
@@ -179,6 +185,7 @@ See [docs/library-api.md](docs/library-api.md) for the full hierarchy.
 | Profiles and audiences | [architecture/registry-profiles.md](architecture/registry-profiles.md) |
 | Text processing library | [architecture/text-library.md](architecture/text-library.md) |
 | Budget and concurrency | [architecture/budget-concurrency.md](architecture/budget-concurrency.md) |
+| Performance evidence | [architecture/performance.md](architecture/performance.md) |
 | Compatibility policy | [docs/compatibility-policy.md](docs/compatibility-policy.md) |
 | Verification doctrine | [docs/verification.md](docs/verification.md) |
 | Testing patterns | [architecture/testing.md](architecture/testing.md) |
