@@ -341,14 +341,86 @@ instructions A/B result, and the final integration/default decision. Only then
 is the MCP modernization/evaluation line closed and the `03c` plan eligible for
 pruning.
 
+## Performance optimization campaign — active
+
+A 2026-09-20 structural performance review at
+23af42219ef1088ddeff080a2e07a3361e8468c3 found that Eggsact's release
+configuration, bounded execution architecture, schema cache, and dependency
+shape are generally healthy. The material opportunities are concentrated in
+repeated serialization/ownership work at the MCP boundary and repeated
+whole-input work in several deterministic tools. The campaign is explicitly
+API/capability preserving: 86 tools, current schemas, profile/audience policy,
+legacy/modern protocol behavior, discovery semantics, public Rust APIs,
+timeouts/cancellation, and deterministic outputs stay intact.
+
+The active handoff sequence is:
+
+- **performance-01-mcp-boundary-and-baseline.md — P1, planned.**
+  Add a lightweight release-mode benchmark path and establish comparable
+  baseline evidence, then remove duplicate ToolResponse serialization, the
+  second deep clone of tool-call arguments, repeated ToolSpec/profile work,
+  filter-after-materialization in tools/list, identified schema-validation
+  allocation, and response-sized writer String allocation. This plan does not
+  redesign spawn_blocking/semaphore execution, sync_pool transport, runtime
+  configuration locks, release profile, or dependencies without evidence.
+- **performance-02-patch-correctness-and-linear-apply.md — P1, planned after
+  Performance 01 baseline.** First reproduce or disprove the inspected
+  nonzero-hunk reconstruction defect in patch_apply_check: validation uses
+  hunk.old_start while apply_hunk currently begins its reconstruction cursor
+  at zero. Correctness regression coverage is mandatory before optimization.
+  Then replace per-hunk whole-file cloning/reconstruction with a single-pass or
+  equivalent linear application engine while preserving strict/non-strict,
+  newline, fingerprint, failure-evidence, and public result semantics.
+- **performance-03-tool-hotpaths-and-closure.md — P1, planned after the
+  baseline and patch corrective.** Use measured evidence to optimize
+  text_replace_check position/reconstruction indexing, json_compare unordered
+  array sort-key serialization, json_extract summary short-circuiting,
+  static discovery lexical metadata, RepoFacts repeated path analysis,
+  diff_spans UTF-8 offset lookup, regex capture-name metadata reuse, and hex/
+  codec primitives. list near-match bucketing, calculator normalization fast
+  paths, runtime locks, and sync-pool changes remain benchmark-gated optional
+  work rather than assumed improvements.
+
+Initial inspected hotspots that justify the campaign:
+
+- successful MCP calls may serialize the same ToolResponse multiple times
+  before the outer JSON-RPC serialization;
+- handle_tools_call_shared deep-clones already-owned arguments before bounded
+  execution;
+- ToolRegistry preparation performs repeated linear registry scans plus a
+  profile Vec allocation;
+- legacy tools/list builds owned schemas/definitions before narrowing filters;
+- text_replace_check can rescan a 100k-character source for every match to
+  derive byte/line positions and again while reconstructing replacements;
+- unordered JSON-array comparison serializes Values inside the O(n log n)
+  sorting comparator;
+- json_extract detail=summary currently builds preview/full-detail data that is
+  immediately discarded;
+- tool_search retokenizes process-static ToolSpec metadata on every search;
+- patch application currently rebuilds a full line vector per successful hunk;
+- repo facts repeat normalization/classification passes over the same paths;
+- diff span extraction rescans UTF-8 character prefixes for emitted spans.
+
+No wall-clock percentage is promised before the baseline exists. Each landed
+optimization must preserve behavior under focused regression tests and carry
+same-host/toolchain before/after evidence. Optional complexity that does not
+measure is to be declined/reverted, not retained because it appears faster by
+inspection.
+
+At campaign closure, record the benchmark environment and before/after results,
+stripped release-size and lockfile package-count deltas, patch correctness
+evidence, full AGENTS.md merge-gate status, release-contract/MCP smoke status,
+and any explicitly rejected optional optimization. Then prune the three active
+performance plans per the normal planning convention; git history retains the
+execution detail.
+
 ## Future opportunities
 
 1. Evaluate MCP Bundle/official MCP Registry distribution after the raw-binary
    release proves the deployment path; keep it non-blocking.
-2. Measure high-frequency tool latency only if profiling shows a real need.
-3. Consider first-class YAML only when a concrete workflow justifies its
+2. Consider first-class YAML only when a concrete workflow justifies its
    dependency and semantic surface.
-4. Consider an explicit stateful `ToolRegistry` calculator session only if a
+3. Consider an explicit stateful `ToolRegistry` calculator session only if a
    real consumer needs persistent PRNG/memory/variable state; do not change
    isolated `ExecutionContext` semantics by default.
 
