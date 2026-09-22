@@ -44,11 +44,14 @@ caseless = "0.2"
 toml = "0.8"
 toml_edit = "0.22"
 tokio = { version = "1", features = ["rt", "macros", "io-std", "io-util", "sync", "time", "fs", "net"] }
-eggfetch-core = { version = "0.2.0", default-features = false, features = ["http1", "tls-rustls", "tls-native-roots", "proxy"] }
-futures-util = "0.3"
+eggup-acquisition = "0.1.0"
+eggup-core = "0.1.0"
+eggup-eggfetch = "0.1.0"
 
 [dev-dependencies]
 url = "2"
+eggfetch-core = { version = "0.2.0", default-features = false, features = ["http1", "tls-rustls", "tls-native-roots", "proxy"] }
+futures-util = "0.3"
 
 [features]
 default = []

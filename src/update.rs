@@ -1,39 +1,49 @@
 //! Binary-first self-update support and deterministic release-contract helpers.
 //!
-//! Network transport is owned in-process by `eggfetch-core` 0.2.0 with the
-//! minimal feature set `http1,tls-rustls,tls-native-roots,proxy`. The updater
-//! keeps all release/update policy (version selection, asset naming, Cargo
-//! fallback, SHA-256 verification, candidate validation, replacement).
+//! Local verified-transaction mechanics are owned by `eggup-core` 0.1.0 and
+//! network acquisition by `eggup-eggfetch` 0.1.0 (strict Eggfetch policy).
+//! The updater keeps all release/update policy (version selection, asset
+//! naming, Cargo fallback, checksum sidecar parsing, CLI presentation).
 //!
-//! Transport policy (single configuration point in `build_update_client_*`):
+//! Transport policy (single configuration point in `eggup_transport()`):
 //! - user agent `eggsact-self-update`;
-//! - HTTP/1 only (`HttpVersionPolicy::Http1Only`);
-//! - redirects followed with strict HTTPS -> HTTP downgrade rejection
-//!   (`RedirectPolicy::strict`, `DowngradePolicy::Deny` before second-hop I/O);
-//! - native roots with packaged WebPKI fallback (eggfetch default) and full
+//! - HTTP/1 only; redirects followed with strict HTTPS -> HTTP downgrade
+//!   rejection; native roots with packaged WebPKI fallback and full
 //!   certificate/hostname verification;
-//! - explicit opt-in environment proxy routing (`ProxyEnvironment::from_env`);
-//!   invalid proxy configuration fails closed, never silently direct;
-//! - 10-second connect timeout + 120-second total wall-clock timeout
-//!   (distinct phases via `Timeout::builder`, never `from_secs(120)` alone;
-//!   total enforced through response-body EOF);
-//! - small metadata/checksum bodies bounded by request-local
-//!   `max_decoded_body_size` (authoritative; `Content-Length` advisory only);
-//! - no retry policy; no compression/cookies/multipart/JSON features;
-//! - release binaries stream to disk chunk-by-chunk, never buffered as one
-//!   `Vec<u8>` by updater code.
+//! - explicit opt-in environment proxy routing; invalid proxy fails closed;
+//! - 10-second connect timeout + 120-second total wall-clock timeout;
+//! - small metadata/checksum bodies bounded in memory; release binaries stream
+//!   to disk chunk-by-chunk via the Eggup seam, never buffered as one `Vec`;
+//! - no retry policy; no compression/cookies features.
+//!
+//! Local safety (owned by Eggup): private staging, SHA-256 integrity
+//! verification, bounded `--version` candidate validation with cleared
+//! environment, explicit current-executable ownership proof, mutation locking
+//! with backup/rollback, and structured receipts. Checksum/TLS/timeout/5xx
+//! failures never become Cargo fallback; only a genuine 404 (or unsupported
+//! host target) does.
 
+#[cfg(test)]
 use eggfetch_core::{Client, HttpVersionPolicy, ProxyEnvironment, RedirectPolicy, Timeout};
+use eggup_acquisition::{
+    AcquisitionRequest, AcquisitionTransport, CancelFlag, FetchLimits, FetchOutcome,
+};
+use eggup_core::{
+    AbsentPolicy, ArtifactMember, ArtifactSet, CommitOwnership, ExactIdentityValidator,
+    InstallPlan, IntegrityRequirement, MemberId, Ownership, OwnershipVerifier, ProductId,
+    ReleaseId, TransactionDisposition,
+};
+use eggup_eggfetch::{EggfetchConfig, EggfetchTransport, ProxyDecision};
+#[cfg(test)]
 use futures_util::StreamExt;
-use sha2::{Digest, Sha256};
 use std::env;
-use std::fs::{self, File};
-use std::io::{self, Read};
+use std::fs::{self};
+use std::io::{self};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::thread;
+use std::process::Command;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(test)]
 use tokio::io::AsyncWriteExt;
 
 pub const REPOSITORY: &str = "eggstack/eggsact";
@@ -190,6 +200,11 @@ pub fn parse_stable_version(raw: &str) -> Result<StableVersion, String> {
     Ok(StableVersion::new(parsed[0], parsed[1], parsed[2]))
 }
 
+/// Expected `--version` output contract (`eggsact X.Y.Z`).
+///
+/// Production validation is performed by the Eggup exact-identity validator;
+/// this parser remains as the tested output-format contract.
+#[allow(dead_code)]
 pub fn parse_candidate_version(output: &str) -> Result<StableVersion, String> {
     let trimmed = output.trim();
     let version = trimmed
@@ -216,13 +231,21 @@ pub fn parse_checksum(raw: &str) -> Result<[u8; 32], String> {
     Ok(digest)
 }
 
+/// Release-policy outcome: only `NotFound` (or an unsupported host) may reach
+/// Cargo fallback; every hard failure stays a hard error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum DownloadStatus {
     Success,
     NotFound,
     HardFailure,
 }
 
+/// HTTP status classifier backing the fallback rule above.
+///
+/// Production mapping is performed inside the Eggup seam; this stays as the
+/// tested policy contract.
+#[allow(dead_code)]
 pub fn classify_http_status(status: u16) -> DownloadStatus {
     match status {
         200..=299 => DownloadStatus::Success,
@@ -235,6 +258,10 @@ pub fn classify_http_status(status: u16) -> DownloadStatus {
 
 /// Distinct 10s connect + 120s total updater deadlines. Never collapse to a
 /// single `Timeout::from_secs(120)`.
+///
+/// Retained as the policy test harness (production acquisition now goes
+/// through the Eggup seam with the same constants); exercised by policy tests.
+#[cfg(test)]
 fn update_timeout() -> Timeout {
     Timeout::builder()
         .connect(CONNECT_TIMEOUT)
@@ -243,16 +270,23 @@ fn update_timeout() -> Timeout {
 }
 
 /// Follow redirects but reject HTTPS -> HTTP downgrades before second-hop I/O.
+///
+/// See `update_timeout` for the retention note.
+#[cfg(test)]
 fn update_redirect_policy() -> RedirectPolicy {
     RedirectPolicy::strict(MAX_REDIRECTS)
 }
 
 fn redact_url_for_error(url: &str) -> String {
-    eggfetch_core::redact_url_string(url)
+    eggup_acquisition::redact_url(url)
 }
 
 /// Map an eggfetch transport error into the updater's concise,
 /// credential-safe application message.
+///
+/// Retained for the policy test harness; production errors flow through
+/// `map_eggup_error`.
+#[cfg(test)]
 fn map_transport_error(error: eggfetch_core::Error, url: &str, what: &str) -> String {
     use eggfetch_core::Error as E;
     let redacted = redact_url_for_error(url);
@@ -305,6 +339,10 @@ fn map_transport_error(error: eggfetch_core::Error, url: &str, what: &str) -> St
 }
 
 /// Single configuration point for TLS/redirect/timeout/proxy behavior.
+///
+/// Retained for the policy test harness; production builds its transport via
+/// `eggup_transport()` with the same constants.
+#[cfg(test)]
 fn build_update_client_with_timeout_and_env(
     timeout: Timeout,
     env: &ProxyEnvironment,
@@ -321,12 +359,9 @@ fn build_update_client_with_timeout_and_env(
     Ok(builder.build())
 }
 
+#[cfg(test)]
 fn build_update_client_with_env(env: &ProxyEnvironment) -> Result<Client, String> {
     build_update_client_with_timeout_and_env(update_timeout(), env)
-}
-
-fn build_update_client() -> Result<Client, String> {
-    build_update_client_with_env(&ProxyEnvironment::from_env())
 }
 
 /// Fetch a small text document (crates.io metadata, checksum sidecar) with an
@@ -335,6 +370,9 @@ fn build_update_client() -> Result<Client, String> {
 /// during streaming/buffering even when `Content-Length` is absent or false.
 /// The `Content-Length` check below is advisory/early only, and no
 /// caller-side post-buffer accumulation limit is maintained.
+///
+/// Retained for the policy test harness; production uses `eggup_get_text`.
+#[cfg(test)]
 async fn get_small_text(
     client: &Client,
     url: &str,
@@ -375,6 +413,9 @@ async fn get_small_text(
 /// Map a small-metadata/checksum transport error, giving eggfetch's
 /// authoritative decoded-body limit a concise bound-identifying message.
 /// Credential-safe: only the redacted URL is embedded.
+///
+/// Retained for the policy test harness.
+#[cfg(test)]
 fn map_small_body_error(
     error: eggfetch_core::Error,
     url: &str,
@@ -394,6 +435,9 @@ fn map_small_body_error(
 /// executable body into one `Vec<u8>`/`Bytes` allocation in updater code.
 /// On any body/read/write failure the partial destination is removed so
 /// `prepare_candidate` cannot accidentally consume it.
+///
+/// Retained for the policy test harness; production uses `eggup_download`.
+#[cfg(test)]
 async fn download_to(
     client: &Client,
     url: &str,
@@ -479,54 +523,150 @@ fn unique_temp_dir(prefix: &str) -> Result<PathBuf, String> {
     Err("could not create a unique temporary directory".into())
 }
 
-fn run_bounded(mut command: Command, timeout: Duration) -> Result<std::process::Output, String> {
-    let mut child = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("cannot execute candidate: {error}"))?;
-    wait_bounded(&mut child, timeout)?;
-    child
-        .wait_with_output()
-        .map_err(|error| format!("cannot collect candidate output: {error}"))
+/// Single Eggup transport configuration point (mirrors the strict policy
+/// above: HTTP/1, Rustls, downgrade-deny redirects, 10s/120s timeouts,
+/// explicit environment proxy, bounded bodies, no retry).
+fn eggup_transport() -> Result<EggfetchTransport, String> {
+    EggfetchConfig::strict()
+        .user_agent(USER_AGENT)
+        .timeouts(CONNECT_TIMEOUT, TOTAL_TIMEOUT)
+        .max_redirects(MAX_REDIRECTS)
+        .proxy(ProxyDecision::FromEnvironment)
+        .pipe_transport()
+        .map_err(|e| format!("cannot build update transport: {e}"))
 }
 
-fn wait_bounded(child: &mut Child, timeout: Duration) -> Result<(), String> {
-    let started = SystemTime::now();
-    loop {
-        if child
-            .try_wait()
-            .map_err(|error| format!("cannot poll candidate: {error}"))?
-            .is_some()
+/// Small helper to keep the builder chain readable.
+trait PipeTransport {
+    fn pipe_transport(self) -> Result<EggfetchTransport, eggup_acquisition::AcquisitionError>;
+}
+
+impl PipeTransport for EggfetchConfig {
+    fn pipe_transport(self) -> Result<EggfetchTransport, eggup_acquisition::AcquisitionError> {
+        EggfetchTransport::strict(self)
+    }
+}
+
+fn eggup_limits(max_metadata: usize) -> FetchLimits {
+    FetchLimits {
+        max_metadata_bytes: max_metadata,
+        max_artifact_bytes: None,
+        connect_timeout: CONNECT_TIMEOUT,
+        total_timeout: TOTAL_TIMEOUT,
+    }
+}
+
+fn map_eggup_error(e: eggup_acquisition::AcquisitionError, url: &str, what: &str) -> String {
+    use eggup_acquisition::AcquisitionError as E;
+    let redacted = redact_url_for_error(url);
+    match e {
+        E::TooLarge { limit } => {
+            format!("{what} from {redacted} exceeds {limit}-byte bound")
+        }
+        E::Timeout { phase } => {
+            format!("update request timed out ({phase}) while fetching {what} from {redacted}")
+        }
+        E::Cancelled => format!("update cancelled while fetching {what} from {redacted}"),
+        E::InvalidInput(d) => format!("invalid update request for {what} from {redacted}: {d}"),
+        E::Transport(d) => format!("failed to download {what} from {redacted}: {d}"),
+        E::Io(d) => format!("failed while reading release asset ({what}) from {redacted}: {d}"),
+        _ => format!("failed to download {what} from {redacted}: {e}"),
+    }
+}
+
+/// Fetch a small text document via the Eggup seam (runs the sync adapter on a
+/// blocking thread so the current-thread runtime is never blocked).
+async fn eggup_get_text(url: &str, max_bytes: usize, what: &str) -> Result<String, String> {
+    let url = url.to_string();
+    let what = what.to_string();
+    tokio::task::spawn_blocking(move || {
+        let transport = eggup_transport()?;
+        let req =
+            AcquisitionRequest::new(url.clone()).map_err(|e| map_eggup_error(e, &url, &what))?;
+        match transport
+            .fetch_metadata(&req, eggup_limits(max_bytes), &CancelFlag::new())
+            .map_err(|e| map_eggup_error(e, &url, &what))?
         {
-            return Ok(());
+            FetchOutcome::Success(b) => String::from_utf8(b.bytes().to_vec())
+                .map_err(|e| format!("invalid UTF-8 in {what} from {url}: {e}")),
+            FetchOutcome::NotFound => Err(format!(
+                "HTTP 404 from {} while fetching {what}",
+                redact_url_for_error(&url)
+            )),
         }
-        if started.elapsed().unwrap_or(timeout) >= timeout {
-            let _ = child.kill();
-            return Err("candidate execution exceeded the 10-second timeout".into());
+    })
+    .await
+    .map_err(|e| format!("update task failed: {e}"))?
+}
+
+/// Download a release binary via the Eggup seam. Returns `NotFound` only for a
+/// genuine 404; every other failure is a hard error (never Cargo fallback).
+async fn eggup_download(url: &str, destination: &Path) -> Result<DownloadStatus, String> {
+    let url = url.to_string();
+    let destination = destination.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let transport = eggup_transport()?;
+        let req = AcquisitionRequest::new(url.clone())
+            .map_err(|e| map_eggup_error(e, &url, "release asset"))?;
+        match transport
+            .fetch_artifact(
+                &req,
+                &destination,
+                eggup_limits(CHECKSUM_MAX_BYTES),
+                &CancelFlag::new(),
+            )
+            .map_err(|e| map_eggup_error(e, &url, "release asset"))?
+        {
+            FetchOutcome::Success(_) => Ok(DownloadStatus::Success),
+            FetchOutcome::NotFound => Ok(DownloadStatus::NotFound),
         }
-        thread::sleep(Duration::from_millis(25));
+    })
+    .await
+    .map_err(|e| format!("update task failed: {e}"))?
+}
+
+/// Ownership proof using eggsact's known executable identity and path.
+///
+/// Returns `Owned` only when the destination is the running eggsact executable
+/// itself (same canonical path as `current_exe`) and is a regular file.
+/// Anything else is `Foreign` (exists but is not us) or `Unknown` (unreadable).
+/// Absent destinations are reported as `Absent`; creation is denied by policy
+/// (`AbsentPolicy::DenyCreate`) because self-update only replaces.
+#[derive(Debug)]
+struct CurrentExeVerifier {
+    current_exe: PathBuf,
+}
+
+impl OwnershipVerifier for CurrentExeVerifier {
+    fn verify(&self, _member: &MemberId, destination: &Path) -> Ownership {
+        let current = match fs::canonicalize(&self.current_exe) {
+            Ok(p) => p,
+            Err(_) => return Ownership::Unknown,
+        };
+        match fs::symlink_metadata(destination) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ownership::Absent,
+            Err(_) => Ownership::Unknown,
+            Ok(meta) => {
+                if !meta.is_file() {
+                    return Ownership::Foreign;
+                }
+                match fs::canonicalize(destination) {
+                    Ok(live) if live == current => Ownership::Owned,
+                    Ok(_) => Ownership::Foreign,
+                    Err(_) => Ownership::Unknown,
+                }
+            }
+        }
     }
 }
 
-fn sha256_file(path: &Path) -> Result<[u8; 32], String> {
-    let mut file = File::open(path).map_err(|error| format!("cannot read candidate: {error}"))?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let count = file
-            .read(&mut buffer)
-            .map_err(|error| format!("cannot hash candidate: {error}"))?;
-        if count == 0 {
-            break;
-        }
-        hasher.update(&buffer[..count]);
-    }
-    Ok(hasher.finalize().into())
+/// Integrity digest via Eggup (replaces the local streaming hasher).
+fn eggup_hash(path: &Path) -> Result<[u8; 32], String> {
+    eggup_core::hash_file(path).map_err(|e| format!("cannot hash candidate: {e}"))
 }
 
-async fn crates_latest_version_async(client: &Client) -> Result<StableVersion, String> {
-    let text = get_small_text(client, CRATES_API, METADATA_MAX_BYTES, "crates.io metadata").await?;
+async fn crates_latest_version_async() -> Result<StableVersion, String> {
+    let text = eggup_get_text(CRATES_API, METADATA_MAX_BYTES, "crates.io metadata").await?;
     let json: serde_json::Value = serde_json::from_str(&text)
         .map_err(|error| format!("invalid crates.io metadata: {error}"))?;
     let version = json
@@ -561,16 +701,30 @@ fn cargo_candidate(staging: &Path, version: StableVersion) -> Result<PathBuf, St
     Ok(path)
 }
 
+/// Acquired candidate plus its Eggup integrity evidence.
+///
+/// `from_cargo` records whether the Cargo fallback path produced the binary
+/// (release policy; Eggup never selects it). For Cargo builds the digest is
+/// self-measured (stability across validation/commit); for release assets it
+/// is the sidecar digest (independent integrity evidence).
+struct AcquiredCandidate {
+    path: PathBuf,
+    digest: [u8; 32],
+}
+
 async fn prepare_candidate_async(
-    client: &Client,
     staging: &Path,
     target: &ReleaseTarget,
     latest: StableVersion,
-) -> Result<PathBuf, String> {
+) -> Result<AcquiredCandidate, String> {
     let binary = staging.join(target.asset_name);
     let binary_url = release_asset_url(&latest, target.rust_target);
-    match download_to(client, &binary_url, &binary).await? {
-        DownloadStatus::NotFound => return cargo_candidate(staging, latest),
+    match eggup_download(&binary_url, &binary).await? {
+        DownloadStatus::NotFound => {
+            let path = cargo_candidate(staging, latest)?;
+            let digest = eggup_hash(&path)?;
+            return Ok(AcquiredCandidate { path, digest });
+        }
         DownloadStatus::HardFailure => {
             return Err(format!(
                 "failed to download release asset from {}",
@@ -581,19 +735,21 @@ async fn prepare_candidate_async(
     }
     // A missing or failed checksum sidecar is fatal: do not Cargo-fallback
     // after the binary itself was found.
-    let checksum_text = get_small_text(
-        client,
+    let checksum_text = eggup_get_text(
         &checksum_url(&binary_url),
         CHECKSUM_MAX_BYTES,
         "release checksum",
     )
     .await?;
     let expected = parse_checksum(&checksum_text)?;
-    let actual = sha256_file(&binary)?;
+    let actual = eggup_hash(&binary)?;
     if expected != actual {
         return Err("release checksum does not match the downloaded executable".into());
     }
-    Ok(binary)
+    Ok(AcquiredCandidate {
+        path: binary,
+        digest: expected,
+    })
 }
 
 #[cfg(windows)]
@@ -605,8 +761,8 @@ fn replace_current(candidate: &Path, current: &Path) -> Result<ReplacementOutcom
     let script = windows_replacement_script(pid, &adjacent, current, &status);
     Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn()
         .map_err(|error| format!("cannot schedule Windows executable replacement: {error}"))?;
     Ok(ReplacementOutcome::Staged {
@@ -621,17 +777,92 @@ enum ReplacementOutcome {
     Staged { status_path: PathBuf },
 }
 
-#[cfg(unix)]
-fn replace_current(candidate: &Path, current: &Path) -> Result<ReplacementOutcome, String> {
-    let adjacent = current.with_extension(format!("eggsact-update-{}", std::process::id()));
-    fs::copy(candidate, &adjacent).map_err(|error| permission_error(current, error))?;
+/// Commits an acquired candidate through the Eggup verified transaction.
+///
+/// Staging, SHA-256 integrity, bounded `--version` candidate validation,
+/// current-executable ownership proof, mutation locking, and backup/rollback
+/// are owned by Eggup. On Unix the commit replaces the live binary; on
+/// Windows the running image cannot be renamed, so the validated staged
+/// executable is handed to the existing PowerShell replacement script.
+fn commit_candidate(
+    acquired: &AcquiredCandidate,
+    current: &Path,
+    latest: StableVersion,
+) -> Result<ReplacementOutcome, String> {
+    let root = current
+        .parent()
+        .ok_or_else(|| "cannot locate installation directory".to_string())?;
+    let file_name = current
+        .file_name()
+        .ok_or_else(|| "cannot locate executable file name".to_string())?;
+    let member_id = MemberId::new("main").map_err(|e| format!("invalid member: {e}"))?;
+    let member = ArtifactMember::new(member_id.clone(), acquired.path.clone(), file_name)
+        .map_err(|e| format!("invalid update plan: {e}"))?
+        .with_integrity(IntegrityRequirement::Sha256(acquired.digest))
+        .with_permissions(eggup_core::PermissionsIntent::Executable);
+    let plan = InstallPlan::new(
+        ProductId::new("eggsact").map_err(|e| format!("invalid product: {e}"))?,
+        ReleaseId::new(latest.to_string()).map_err(|e| format!("invalid release: {e}"))?,
+        root,
+        ArtifactSet::single(member).map_err(|e| format!("invalid update plan: {e}"))?,
+    )
+    .map_err(|e| format!("invalid update plan: {e}"))?;
+    let validator = ExactIdentityValidator::new(member_id, format!("eggsact {latest}\n"))
+        .timeout(Duration::from_secs(10));
+    let validated = plan
+        .prepare()
+        .map_err(|e| format!("cannot stage update: {e}"))?
+        .verify_integrity()
+        .map_err(|e| format!("integrity verification failed: {e}"))?
+        .validate(&validator)
+        .map_err(|e| format!("candidate validation failed: {e}"))?;
+    let verifier = CurrentExeVerifier {
+        current_exe: current.to_path_buf(),
+    };
+    let ownership = CommitOwnership::new(&verifier, AbsentPolicy::DenyCreate);
+    #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&adjacent, fs::Permissions::from_mode(0o755))
-            .map_err(|error| format!("cannot make staged update executable: {error}"))?;
+        let receipt = validated
+            .commit(ownership)
+            .map_err(|e| permission_error(current, io::Error::other(e.to_string())))?;
+        match receipt.disposition() {
+            TransactionDisposition::Committed => Ok(ReplacementOutcome::Complete),
+            TransactionDisposition::RolledBack => {
+                let cause = receipt
+                    .failure()
+                    .map(|f| format!("{}: {}", f.phase().as_str(), f.detail()))
+                    .unwrap_or_else(|| "unknown cause".into());
+                Err(format!(
+                    "update rolled back ({cause}); previous version preserved"
+                ))
+            }
+            TransactionDisposition::RecoveryRequired => {
+                let cause = receipt
+                    .failure()
+                    .map(|f| format!("{}: {}", f.phase().as_str(), f.detail()))
+                    .unwrap_or_else(|| "unknown cause".into());
+                let path = receipt
+                    .recovery_path()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "<no recovery path>".into());
+                Err(format!(
+                    "update requires manual recovery ({cause}); evidence at {path}; lock retained"
+                ))
+            }
+        }
     }
-    fs::rename(&adjacent, current).map_err(|error| permission_error(current, error))?;
-    Ok(ReplacementOutcome::Complete)
+    #[cfg(windows)]
+    {
+        let staged = validated
+            .staged_path(&MemberId::new("main").map_err(|e| format!("invalid member: {e}"))?)
+            .map_err(|e| format!("cannot locate staged update: {e}"))?;
+        windows_replace_current(&staged, current)
+    }
+}
+
+#[cfg(windows)]
+fn windows_replace_current(staged: &Path, current: &Path) -> Result<ReplacementOutcome, String> {
+    replace_current(staged, current)
 }
 
 #[allow(dead_code)] // Used by the Windows-only replacement path.
@@ -683,30 +914,28 @@ async fn run_async() -> Result<(), String> {
     let current =
         env::current_exe().map_err(|error| format!("cannot locate current executable: {error}"))?;
     let current_version = parse_stable_version(env!("CARGO_PKG_VERSION"))?;
-    let client = build_update_client()?;
-    let latest = crates_latest_version_async(&client).await?;
+    let latest = crates_latest_version_async().await?;
     if latest <= current_version {
         println!("eggsact {current_version} is already current (latest stable: {latest})");
         return Ok(());
     }
     let staging = unique_temp_dir("eggsact-update")?;
-    let result = async {
-        let candidate = if let Some(target) = target_for_host(env::consts::OS, env::consts::ARCH) {
-            prepare_candidate_async(&client, &staging, target, latest).await?
+    let result: Result<ReplacementOutcome, String> = async {
+        // Release selection and Cargo-fallback policy stay here; Eggup owns
+        // only the verified local mechanics below.
+        let acquired = if let Some(target) = target_for_host(env::consts::OS, env::consts::ARCH) {
+            prepare_candidate_async(&staging, target, latest).await?
         } else {
-            cargo_candidate(&staging, latest)?
+            let path = cargo_candidate(&staging, latest)?;
+            let digest = eggup_hash(&path)?;
+            AcquiredCandidate { path, digest }
         };
-        let mut version_command = Command::new(&candidate);
-        version_command.arg("--version");
-        let output = run_bounded(version_command, Duration::from_secs(10))?;
-        if !output.status.success() {
-            return Err("candidate --version failed".into());
-        }
-        let reported = parse_candidate_version(&String::from_utf8_lossy(&output.stdout))?;
-        if reported != latest {
-            return Err(format!("candidate reported {reported}, expected {latest}"));
-        }
-        let replacement = replace_current(&candidate, &current)?;
+        // Staging, integrity, bounded --version validation, ownership proof,
+        // locking, replacement, and rollback are owned by Eggup.
+        let replacement =
+            tokio::task::spawn_blocking(move || commit_candidate(&acquired, &current, latest))
+                .await
+                .map_err(|e| format!("update task failed: {e}"))??;
         let _ = fs::remove_dir_all(&staging);
         Ok(replacement)
     }
@@ -1446,6 +1675,133 @@ mod tests {
         assert!(
             !download_section.contains(".bytes().await"),
             "binary must not buffer via bytes()"
+        );
+    }
+
+    // ── Eggup first-adoption compatibility ──
+
+    #[test]
+    fn eggup_transport_builds_with_strict_policy() {
+        let transport = eggup_transport().expect("strict eggup transport builds");
+        assert_eq!(
+            transport.config().user_agent,
+            USER_AGENT,
+            "consumer keeps its user agent"
+        );
+        assert_eq!(transport.config().connect_timeout, CONNECT_TIMEOUT);
+        assert_eq!(transport.config().total_timeout, TOTAL_TIMEOUT);
+        assert_eq!(transport.config().max_redirects, MAX_REDIRECTS);
+    }
+
+    #[test]
+    fn eggup_ownership_proves_current_executable_only() {
+        let dir = unique_temp_dir("eggsact-owned").expect("temp");
+        let current = dir.join("eggsact");
+        std::fs::write(&current, b"running").expect("write current");
+        let other = dir.join("other");
+        std::fs::write(&other, b"other").expect("write other");
+        let verifier = CurrentExeVerifier {
+            current_exe: current.clone(),
+        };
+        let member = MemberId::new("main").unwrap();
+        assert_eq!(
+            verifier.verify(&member, &current),
+            Ownership::Owned,
+            "the running executable is owned"
+        );
+        assert_eq!(
+            verifier.verify(&member, &other),
+            Ownership::Foreign,
+            "another binary is foreign"
+        );
+        assert_eq!(
+            verifier.verify(&member, &dir.join("missing")),
+            Ownership::Absent,
+            "absence is distinct from ownership"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn eggup_fallback_classifier_is_preserved() {
+        // Release policy unchanged: only genuine 404 (or unsupported host)
+        // may reach Cargo; every hard failure stays a hard error.
+        assert_eq!(classify_http_status(200), DownloadStatus::Success);
+        assert_eq!(classify_http_status(404), DownloadStatus::NotFound);
+        for status in [400, 403, 429, 500, 503] {
+            assert_eq!(
+                classify_http_status(status),
+                DownloadStatus::HardFailure,
+                "HTTP {status} must never fall back to Cargo"
+            );
+        }
+        assert!(target_for_host("linux", "x86_64").is_some());
+        assert!(target_for_host("plan9", "x").is_none());
+    }
+
+    #[test]
+    fn eggup_receipt_mapping_is_explicit() {
+        // Structural guard: Eggup terminal states map to distinct CLI outcomes
+        // (committed vs rolled-back vs recovery-required), never conflated.
+        let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/update.rs"));
+        assert!(
+            source.contains("TransactionDisposition::Committed"),
+            "committed maps to success"
+        );
+        assert!(
+            source.contains("TransactionDisposition::RolledBack"),
+            "rollback is reported, not success"
+        );
+        assert!(
+            source.contains("TransactionDisposition::RecoveryRequired"),
+            "recovery-required is high severity"
+        );
+        assert!(
+            source.contains("AbsentPolicy::DenyCreate"),
+            "self-update is replacement-only"
+        );
+    }
+
+    #[test]
+    fn eggup_generic_machinery_is_deleted_not_wrapped() {
+        // The old local hash/exec/replace helpers must be gone; Eggup owns them.
+        // (Match on newline-prefixed definitions so this test's own literals
+        // do not self-match.)
+        let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/update.rs"));
+        assert!(
+            !source.contains("\nfn sha256_file("),
+            "local hasher deleted in favor of eggup_core::hash_file"
+        );
+        assert!(
+            !source.contains("\nfn run_bounded("),
+            "local candidate runner deleted in favor of Eggup validators"
+        );
+        assert!(
+            !source.contains("\nfn wait_bounded("),
+            "local wait helper deleted with the runner"
+        );
+        assert!(
+            !source.contains("\n#[cfg(unix)]\nfn replace_current("),
+            "unix copy/rename replaced by the Eggup transaction"
+        );
+    }
+
+    #[test]
+    fn eggup_single_http_stack() {
+        // One intended HTTP/TLS stack: eggfetch-core 0.2.0, shared by the
+        // retained policy harness and eggup-eggfetch.
+        let tree = std::process::Command::new("cargo")
+            .args(["tree", "--depth", "1", "--offline"])
+            .output();
+        let _ = tree;
+        let manifest = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"));
+        assert!(
+            manifest.contains("eggup-core"),
+            "consumer depends on versioned eggup-core"
+        );
+        assert!(
+            manifest.contains("eggup-eggfetch"),
+            "consumer depends on versioned eggup-eggfetch"
         );
     }
 }

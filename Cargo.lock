@@ -212,6 +212,9 @@ dependencies = [
  "caseless",
  "crc32fast",
  "eggfetch-core",
+ "eggup-acquisition",
+ "eggup-core",
+ "eggup-eggfetch",
  "fancy-regex",
  "futures-util",
  "md5",
@@ -230,6 +233,33 @@ dependencies = [
  "unicode_names2",
  "url",
  "urlencoding",
+]
+
+[[package]]
+name = "eggup-acquisition"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb6431e5d35945b78b3c1d0b84da4c356dbea66e9f2d470abf841f23f11f3ac1"
+
+[[package]]
+name = "eggup-core"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f9a966f9adb3c1683531471d00a4901bc3b9ef25b8e6d395e40ba9b6f329fbe"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
+name = "eggup-eggfetch"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b7e9cb745e6a99d54faec36f6d1164fdc59b71a950507329cc1bbcd879fddec"
+dependencies = [
+ "eggfetch-core",
+ "eggup-acquisition",
+ "futures-util",
+ "tokio",
 ]
 
 [[package]]
