@@ -635,7 +635,7 @@ agent-facing surface.
 
 ```text
 Planning baseline: 074f71cbbf99290b3c2bc8e022976642d9128a64
-Implementation commit: <filled at commit time>
+Implementation commit: bfe12d760554f053dcc6028f32fb3e41dff58a5f
 Qualified eggfetch-core: 0.2.0
 Upstream release commit: 8959ca890ee34f4cf456aed648315322f1e83ef7
 Upstream v0.2.0 tag: v0.2.0 (published 2026-09-22; only 0.2.x on crates.io at adoption)
@@ -703,7 +703,9 @@ Latest-compatible: green in scratch worktree at b38dccf (2026-09-22):
   (34+14 passed), and `--tests -- --skip parity --test-threads=4`
   (3011 integration passed) all green. Caret range does not invalidate
   the updater API contract.
-Remote CI: <recorded after push>
+Remote CI: green — CI run 35734609288 (workflow_dispatch on bfe12d7
+  after a ref-lock race swallowed the push event; head SHA verified
+  bfe12d7) completed success 2026-09-22
 Optional live updater smoke: not run (no disposable staged newer version;
   not a unit/CI requirement)
 
