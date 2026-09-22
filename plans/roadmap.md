@@ -266,12 +266,13 @@ timeout regressions. Lockfile movement is limited to `eggfetch-core` /
 `eggfetch-http-connect 0.1.7 -> 0.2.0` (resolved packages 166 -> 166).
 Comparable stripped release builds (aarch64-apple-darwin, rustc 1.98.1,
 strip/lto-thin/cgu-1): 11_101_504 -> 11_101_552 bytes (+48 bytes, ~0%),
-below the >=1 MiB / >=10% review trigger. Qualification was the ordinary
-merge gate, release-contract smoke, Rust 1.89 MSRV, cargo-deny, Windows/macOS
-supported-platform compile checks, and the latest-compatible lane. No Eggsact
-release was published by the plan; the dependency reaches users in the next
-normal Eggsact release after closure. The 0.1.6/0.1.7 migration records above
-remain historical.
+below the >=1 MiB / >=10% review trigger. Implementation qualification includes the ordinary merge gate,
+release-contract smoke, local Rust 1.89/cargo-deny, native macOS, the
+latest-compatible lane, and ordinary remote Linux CI. Native Windows evidence
+was deferred to the remote Maintenance workflow and remains the closure gap
+tracked immediately below. No Eggsact release was published by the plan; the
+dependency reaches users in the next normal Eggsact release after closure. The
+0.1.6/0.1.7 migration records above remain historical.
 
 ## Eggfetch 0.2.0 adoption closeout corrective — active
 
