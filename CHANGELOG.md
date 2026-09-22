@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Self-update transport now uses `eggfetch-core` 0.2.0
+  (`http1,tls-rustls,tls-native-roots,proxy`) instead of 0.1.7. Updater policy
+  is unchanged: HTTP/1 only, strict HTTPS-downgrade rejection, explicit
+  environment proxy routing, 10s connect / 120s total timeouts enforced
+  through response-body EOF, request-local decoded-body bounds on small
+  metadata/checksum bodies, streamed binary downloads, no external `curl`
+  after install. No `compression-*` features are enabled and no MCP/library
+  networking API is added. The 0.2.0 release contains only API-preserving
+  upstream maintenance (including the streaming-decompression chunk-boundary
+  fix on a decoder path the updater never enables). Footprint delta is
+  negligible: +48 stripped release bytes on the measured host with 166
+  resolved packages before and after.
+
 ## [1.2.6] - 2026-09-19
 
 ### Changed

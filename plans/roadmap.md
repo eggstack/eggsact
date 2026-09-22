@@ -242,35 +242,36 @@ MSRV, cargo-deny, and Windows/macOS supported-platform compile checks. No new
 Eggsact version was published from the bump; the corrected dependency reaches
 users with the next normal Eggsact release after this line closed.
 
-## Eggfetch 0.2.0 updater adoption — active
+## Eggfetch 0.2.0 updater adoption — landed
 
-Plan: `eggfetch-0.2.0-updater-adoption.md`
+Plan: `eggfetch-0.2.0-updater-adoption.md` (closure record appended to
+the plan file)
 
-The self-update transport is currently qualified on `eggfetch-core 0.1.7`.
-Upstream published synchronized `0.2.0` on 2026-09-22. Its changelog records
-no intentional breaking Rust API, feature-graph/default, MSRV, or dependency-
-policy changes from 0.1.7; the release also contains the issue #24 streaming
-decompression chunk-boundary correction and the intervening API-preserving
-private decomposition work.
+The self-update transport was qualified on `eggfetch-core 0.1.7` and is now
+adopted on synchronized upstream `0.2.0`, whose changelog records no
+intentional breaking Rust API, feature-graph/default, MSRV, or dependency-
+policy changes from 0.1.7. The release also contains the issue #24 streaming
+decompression chunk-boundary correction on a decoder path Eggsact never
+enables: the updater enables no `compression-*` features and keeps
+`.automatic_decompression(false)`.
 
-Eggsact does **not** use the issue #24 decoder path: the updater enables no
-`compression-*` features and explicitly configures
-`.automatic_decompression(false)`. Adoption therefore must not enable
-compression or otherwise alter updater policy. The existing
-`http1,tls-rustls,tls-native-roots,proxy` feature set, strict redirect policy,
-environment proxy behavior, 10s connect / 120s total deadlines, authoritative
-small-body bounds, no-retry policy, and streamed binary downloads remain the
-contract.
-
-The handoff treats the pre-1.0 `0.1.7 -> 0.2.0` jump as a downstream
-requalification despite upstream's compatibility guarantee. It requires a
-targeted lockfile update to matching `eggfetch-core` /
-`eggfetch-http-connect 0.2.0`, exact updater-facing API compilation, focused
-timeout/proxy/redirect/chunked-body/error regressions, feature-graph proof that
-compression remains disabled, comparable dependency/stripped-binary footprint
-measurement, Tier 1/release-contract validation, Rust 1.89/cargo-deny, and
-Windows/macOS supported-platform checks. No Eggsact release is published by the
-plan; the dependency reaches users in the next normal release after closure.
+The adoption kept the existing
+`http1,tls-rustls,tls-native-roots,proxy` feature set and updater policy
+unchanged (strict redirect policy, environment proxy behavior, 10s connect /
+120s total deadlines, authoritative small-body bounds, no-retry policy,
+streamed binary downloads). `src/update.rs` compiled against 0.2.0 with no
+source changes beyond the version reference; all 19 updater tests pass,
+including the chunked no-length small-body bound and both post-header total-
+timeout regressions. Lockfile movement is limited to `eggfetch-core` /
+`eggfetch-http-connect 0.1.7 -> 0.2.0` (resolved packages 166 -> 166).
+Comparable stripped release builds (aarch64-apple-darwin, rustc 1.98.1,
+strip/lto-thin/cgu-1): 11_101_504 -> 11_101_552 bytes (+48 bytes, ~0%),
+below the >=1 MiB / >=10% review trigger. Qualification was the ordinary
+merge gate, release-contract smoke, Rust 1.89 MSRV, cargo-deny, Windows/macOS
+supported-platform compile checks, and the latest-compatible lane. No Eggsact
+release was published by the plan; the dependency reaches users in the next
+normal Eggsact release after closure. The 0.1.6/0.1.7 migration records above
+remain historical.
 
 ## MCP surface modernization — evaluation closure pending
 

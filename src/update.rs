@@ -1,6 +1,6 @@
 //! Binary-first self-update support and deterministic release-contract helpers.
 //!
-//! Network transport is owned in-process by `eggfetch-core` 0.1.7 with the
+//! Network transport is owned in-process by `eggfetch-core` 0.2.0 with the
 //! minimal feature set `http1,tls-rustls,tls-native-roots,proxy`. The updater
 //! keeps all release/update policy (version selection, asset naming, Cargo
 //! fallback, SHA-256 verification, candidate validation, replacement).

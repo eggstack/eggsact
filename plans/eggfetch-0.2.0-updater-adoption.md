@@ -630,3 +630,95 @@ release, the feature set remains deliberately compression-free, the dependency
 and binary-footprint deltas are measured and explained, and Linux/MSRV/policy/
 Windows/macOS qualification is green without expanding Eggsact's public or
 agent-facing surface.
+
+## Closure record
+
+```text
+Planning baseline: 074f71cbbf99290b3c2bc8e022976642d9128a64
+Implementation commit: <filled at commit time>
+Qualified eggfetch-core: 0.2.0
+Upstream release commit: 8959ca890ee34f4cf456aed648315322f1e83ef7
+Upstream v0.2.0 tag: v0.2.0 (published 2026-09-22; only 0.2.x on crates.io at adoption)
+Issue #24 fix reference: 37ab02b3873a4f0ce7018bd716e326bcf0595230
+
+Cargo.toml feature set: http1,tls-rustls,tls-native-roots,proxy (unchanged)
+Compression features: none enabled (cargo tree confirms no compression-*
+  in the resolved graph; enabled eggfetch features are
+  advanced-routing,basic-auth,high-level-url,http1,hyper-rustls,
+  logical-retry,native-http1,proxy,redirects,standard-route,
+  tls-native-roots,tls-rustls,transport-http1)
+automatic_decompression: false (unchanged, src/update.rs)
+Lockfile eggfetch-core: 0.1.7 -> 0.2.0
+Lockfile eggfetch-http-connect: 0.1.7 -> 0.2.0
+Other lockfile delta: none (only 2 version + 2 checksum lines changed)
+Resolved packages before/after: 166 -> 166
+Duplicate-version families: unchanged (getrandom x2, rand_core/phf,
+  syn 2/3, webpki-roots, windows-sys same as baseline)
+
+Updater API source changes: none (src/update.rs compiles unchanged
+  except the 0.1.7 -> 0.2.0 module-doc version reference; all 17
+  plan-listed API items source-compatible, no shims, typed error
+  match arms intact)
+Timeout contract: green (distinct 10s connect / 120s total asserted;
+  buffered + streamed post-header total-timeout regressions pass)
+Redirect contract: green (strict, downgrade-denied, loop bounded)
+Proxy contract: green (explicit env selection, invalid config fails closed)
+Small-body limit contract: green (declared-oversize + chunked no-length
+  bound via max_decoded_body_size)
+Error mapping contract: green (timeout/TLS/proxy/connect variants mapped,
+  DecodedBodyTooLarge bound message, URLs redacted)
+Chunked no-length regression: green
+Metadata post-header total regression: green
+Binary post-header total regression: green (incl. partial-file cleanup)
+Partial-file cleanup: green
+No-curl guard: green (structural + release-contract)
+Streaming guard: green (bytes_stream chunk order, write-failure cleanup)
+
+Baseline stripped bytes: 11_101_504 (aarch64-apple-darwin, rustc 1.98.1,
+  release strip/lto-thin/cgu-1, HEAD 146a2f2 before bump)
+Candidate stripped bytes: 11_101_552 (same host/toolchain/profile)
+Size delta: +48 bytes (~0.0004%)
+Size-review disposition: accepted, far below the >=1 MiB / >=10% trigger;
+  no curl->in-process relitigation, no proxy-graph redesign.
+
+Tier 1: green locally in order (fmt, generate-docs --check, clippy
+  -D warnings, full non-parity suite 643+34+14+3011+51 lib/bin/integration
+  + 11 doc tests with 0 failures, then doc tests)
+Release contract: green (check-release-contract.py, bash -n, shellcheck,
+  release build, eggsact --version 1.2.6, MCP smoke 77 tools)
+Release build/MCP smoke: green
+MSRV 1.89: green (cargo +1.89.0 check --locked --all-targets --all-features
+  and --all-features --lib: 643 passed; 2 pre-existing unused-variable
+  warnings in src/tools/list.rs, unrelated to this bump)
+cargo-deny: green (advisories/bans/licenses/sources ok)
+Windows compile: local cross-check from macOS blocked by ring 0.17.14
+  needing an MSVC C compiler (identical on the 0.1.7 baseline; ring
+  version untouched by this bump) — deferred to remote maintenance.yml
+  platform-check on windows-latest
+macOS compile: green (native cargo check --locked --all-targets --all-features)
+Latest-compatible: green in scratch worktree at b38dccf (2026-09-22):
+  `cargo update` keeps eggfetch-core/http-connect at 0.2.0 (no newer 0.2.x
+  published) with 29 unrelated patch bumps; `cargo check --all-targets
+  --all-features`, `--all-features --lib` (643 passed), `--bins`
+  (34+14 passed), and `--tests -- --skip parity --test-threads=4`
+  (3011 integration passed) all green. Caret range does not invalidate
+  the updater API contract.
+Remote CI: <recorded after push>
+Optional live updater smoke: not run (no disposable staged newer version;
+  not a unit/CI requirement)
+
+Current-doc version references: src/update.rs, AGENTS.md,
+  architecture/cli-binaries.md, architecture/overview.md, CHANGELOG
+  Unreleased all identify eggfetch-core 0.2.0; README/docs/installation.md/
+  docs/cli.md untouched (no version numbers, no behavioral change);
+  skills reviewed (no eggfetch claims); check-release-contract.py
+  version-agnostic (no change)
+Historical roadmap disposition: 0.1.6 footprint record and 0.1.7 correction
+  record preserved verbatim; 0.2.0 section flipped active -> landed
+Known limitations: local Windows cross-check impossible without an MSVC
+  toolchain (pre-existing, baseline-identical); live crates.io smoke
+  optional and not run
+Next-release handoff: 0.2.0 bump rides the next normal Eggsact release;
+  run Tier 4 release check from a clean worktree per docs/release.md;
+  do not publish from this plan
+```

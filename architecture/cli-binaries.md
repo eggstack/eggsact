@@ -28,7 +28,7 @@ crates.io max_stable_version
 ```
 
 Only stable `major.minor.patch` versions are accepted. Network transport is
-in-process via `eggfetch-core` 0.1.7 (`http1,tls-rustls,tls-native-roots,proxy`):
+in-process via `eggfetch-core` 0.2.0 (`http1,tls-rustls,tls-native-roots,proxy`):
 HTTP/1 only, redirects followed with strict HTTPS -> HTTP downgrade rejection,
 native roots with WebPKI fallback and full certificate/hostname verification,
 explicit environment proxy routing (invalid proxy fails closed), distinct
