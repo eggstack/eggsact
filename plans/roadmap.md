@@ -242,6 +242,36 @@ MSRV, cargo-deny, and Windows/macOS supported-platform compile checks. No new
 Eggsact version was published from the bump; the corrected dependency reaches
 users with the next normal Eggsact release after this line closed.
 
+## Eggfetch 0.2.0 updater adoption — active
+
+Plan: `eggfetch-0.2.0-updater-adoption.md`
+
+The self-update transport is currently qualified on `eggfetch-core 0.1.7`.
+Upstream published synchronized `0.2.0` on 2026-09-22. Its changelog records
+no intentional breaking Rust API, feature-graph/default, MSRV, or dependency-
+policy changes from 0.1.7; the release also contains the issue #24 streaming
+decompression chunk-boundary correction and the intervening API-preserving
+private decomposition work.
+
+Eggsact does **not** use the issue #24 decoder path: the updater enables no
+`compression-*` features and explicitly configures
+`.automatic_decompression(false)`. Adoption therefore must not enable
+compression or otherwise alter updater policy. The existing
+`http1,tls-rustls,tls-native-roots,proxy` feature set, strict redirect policy,
+environment proxy behavior, 10s connect / 120s total deadlines, authoritative
+small-body bounds, no-retry policy, and streamed binary downloads remain the
+contract.
+
+The handoff treats the pre-1.0 `0.1.7 -> 0.2.0` jump as a downstream
+requalification despite upstream's compatibility guarantee. It requires a
+targeted lockfile update to matching `eggfetch-core` /
+`eggfetch-http-connect 0.2.0`, exact updater-facing API compilation, focused
+timeout/proxy/redirect/chunked-body/error regressions, feature-graph proof that
+compression remains disabled, comparable dependency/stripped-binary footprint
+measurement, Tier 1/release-contract validation, Rust 1.89/cargo-deny, and
+Windows/macOS supported-platform checks. No Eggsact release is published by the
+plan; the dependency reaches users in the next normal release after closure.
+
 ## MCP surface modernization — evaluation closure pending
 
 Research on 2026-09-10 found that eggsact's internal capability architecture is
