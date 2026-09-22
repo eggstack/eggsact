@@ -242,7 +242,7 @@ MSRV, cargo-deny, and Windows/macOS supported-platform compile checks. No new
 Eggsact version was published from the bump; the corrected dependency reaches
 users with the next normal Eggsact release after this line closed.
 
-## Eggfetch 0.2.0 updater adoption — landed
+## Eggfetch 0.2.0 updater adoption — implementation landed; closure corrective active
 
 Plan: `eggfetch-0.2.0-updater-adoption.md` (closure record appended to
 the plan file)
@@ -272,6 +272,28 @@ supported-platform compile checks, and the latest-compatible lane. No Eggsact
 release was published by the plan; the dependency reaches users in the next
 normal Eggsact release after closure. The 0.1.6/0.1.7 migration records above
 remain historical.
+
+## Eggfetch 0.2.0 adoption closeout corrective — active
+
+Plan: `eggfetch-0.2.0-adoption-closeout-corrective.md`
+
+Implementation commit `bfe12d7` and ordinary Linux CI run `35734609288`
+are green, but the adoption closure record explicitly deferred native Windows
+qualification to `maintenance.yml`. The recorded ordinary CI workflow has
+only the Linux correctness job, so it does not satisfy the adoption plan's
+Windows supported-platform completion criterion. The original adoption plan
+also still carries an active status and unchecked completion checklist despite
+its appended closure record.
+
+The corrective is evidence/state-only unless qualification exposes a real
+defect. It must run and record the existing remote Maintenance workflow on the
+accepted/current head, with green Rust 1.89 MSRV, cargo-deny, native
+`windows-latest`, and native `macos-latest` jobs. After that evidence exists,
+normalize the original adoption plan status/checklist/closure record and this
+roadmap. Do not change updater behavior, eggfetch features, dependency policy,
+or CI gates merely to close the paperwork; any reproducible platform failure
+reopens only the narrow implementation scope needed to fix it and requires
+requalification.
 
 ## MCP surface modernization — evaluation closure pending
 
