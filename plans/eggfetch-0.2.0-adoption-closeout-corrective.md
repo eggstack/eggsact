@@ -3,7 +3,7 @@
 Planning baseline: `d7e51d0a7b6ada3730b6c9f560fe8f7da7b097b5` (`main`, 2026-09-22)
 Implementation commit: `bfe12d760554f053dcc6028f32fb3e41dff58a5f`
 Prior adoption plan: `eggfetch-0.2.0-updater-adoption.md`
-Status: active corrective handoff
+Status: closed
 
 ## Objective
 
@@ -282,25 +282,25 @@ Do not use this closeout to:
 
 This corrective is complete only when:
 
-- [ ] Current main is confirmed to retain the accepted eggfetch 0.2.0 adoption
+- [x] Current main is confirmed to retain the accepted eggfetch 0.2.0 adoption
   state or any intervening relevant changes are explicitly requalified.
-- [ ] A remote `maintenance.yml` run is recorded with its head SHA and URL.
-- [ ] Remote Rust 1.89 MSRV job passes.
-- [ ] Remote cargo-deny job passes.
-- [ ] Native `windows-latest` platform check passes.
-- [ ] Native `macos-latest` platform check passes.
-- [ ] No maintenance gate was weakened to obtain green evidence.
-- [ ] Any transient rerun is documented with both run IDs.
-- [ ] Any discovered implementation defect is fixed narrowly and the full
+- [x] A remote `maintenance.yml` run is recorded with its head SHA and URL.
+- [x] Remote Rust 1.89 MSRV job passes.
+- [x] Remote cargo-deny job passes.
+- [x] Native `windows-latest` platform check passes.
+- [x] Native `macos-latest` platform check passes.
+- [x] No maintenance gate was weakened to obtain green evidence.
+- [x] Any transient rerun is documented with both run IDs.
+- [x] Any discovered implementation defect is fixed narrowly and the full
   required qualification is rerun.
-- [ ] The original adoption plan status no longer says active.
-- [ ] The original adoption completion checklist matches the actual evidence.
-- [ ] The original closure record includes the native Windows evidence.
-- [ ] The roadmap qualification statement matches the actual workflow evidence.
-- [ ] Documentation-sensitive local checks pass after state normalization.
-- [ ] No unrelated implementation, dependency, MCP, release, or workflow
+- [x] The original adoption plan status no longer says active.
+- [x] The original adoption completion checklist matches the actual evidence.
+- [x] The original closure record includes the native Windows evidence.
+- [x] The roadmap qualification statement matches the actual workflow evidence.
+- [x] Documentation-sensitive local checks pass after state normalization.
+- [x] No unrelated implementation, dependency, MCP, release, or workflow
   changes are introduced.
-- [ ] No release is published by this corrective.
+- [x] No release is published by this corrective.
 
 ## Closure record template
 
@@ -346,3 +346,56 @@ implementation/current head and the adoption plan plus roadmap accurately
 reflect that evidence. If the maintenance workflow is green without code
 changes, this corrective should remain a documentation/evidence closeout and
 end there.
+
+## Closure record
+
+```text
+Corrective baseline: d7e51d0a7b6ada3730b6c9f560fe8f7da7b097b5
+Eggfetch implementation: bfe12d760554f053dcc6028f32fb3e41dff58a5f
+Corrective implementation/docs commit: docs-only closeout on top of 0c30b1d
+  (see git log; no code/dependency/workflow changes)
+Qualified head SHA: 0c30b1d552f067f8eb5661124d4833fa52fd2611
+
+Ordinary Linux CI: 35734609288 — green
+Maintenance run: 35740940881
+Maintenance URL: https://github.com/eggstack/eggsact/actions/runs/35740940881
+Maintenance event: workflow_dispatch
+Maintenance head SHA: 0c30b1d552f067f8eb5661124d4833fa52fd2611
+MSRV 1.89: success (MSRV job)
+cargo-deny: success (cargo-deny job)
+Windows native: success (Check windows-latest, cargo check --locked
+  --all-targets --all-features)
+macOS native: success (Check macos-latest, cargo check --locked
+  --all-targets --all-features)
+Rerun(s), if any: none (first dispatch green)
+
+Relevant code/dependency diff since bfe12d7: none in Cargo.toml, Cargo.lock,
+  src/update.rs, or .github/workflows/maintenance.yml (verified via
+  git diff bfe12d7..HEAD -- Cargo.toml Cargo.lock src/update.rs
+  .github/workflows/maintenance.yml, empty). Intervening commits are
+  planning/docs only (corrective plan addition, roadmap qualification-state
+  correction).
+Updater/dependency changes required by corrective: none
+Focused updater/Tier 1/release-contract rerun required?: no (no implementation/
+  dependency change; documentation-sensitive local gate suffices per Part F)
+Documentation-sensitive local gate: green (cargo fmt --check, generate-docs
+  --check, check-release-contract.py, git diff --check; plus full merge gate
+  green locally: clippy -D warnings, cargo test --skip parity, cargo test --doc)
+
+Original adoption plan status: closed (was "active implementation handoff")
+Original completion checklist: all checked (Windows/macOS/MSRV/cargo-deny now
+  evidenced by Maintenance 35740940881)
+Original closure Windows evidence: native windows-latest success via
+  Maintenance 35740940881 (URL above); local MSVC-blocked cross-check retained
+  as historical context only, no longer the qualification boundary
+Roadmap state/evidence: 0.2.0 adoption section back to "landed" with native
+  Maintenance evidence cited (not Linux CI); closeout corrective section marked
+  "closed" with run IDs
+
+Known limitations: local Windows cross-check from macOS still requires an MSVC
+  toolchain (historical only); live crates.io updater smoke remains optional
+  and not run
+Release performed: no
+Final disposition: evidence/state-only closeout; adoption fully closed with no
+  implementation change
+```

@@ -4,7 +4,7 @@ Planning baseline: `074f71cbbf99290b3c2bc8e022976642d9128a64` (`main`, 2026-09-2
 Upstream dependency target: published `eggfetch-core 0.2.0`
 Upstream release commit: `8959ca890ee34f4cf456aed648315322f1e83ef7`
 Upstream issue #24 fix: `37ab02b3873a4f0ce7018bd716e326bcf0595230`
-Status: active implementation handoff
+Status: closed
 
 ## Objective
 
@@ -529,42 +529,42 @@ Do not expand this adoption into:
 
 The adoption is complete only when:
 
-- [ ] `Cargo.toml` requires `eggfetch-core 0.2.0`.
-- [ ] The feature list remains exactly
+- [x] `Cargo.toml` requires `eggfetch-core 0.2.0`.
+- [x] The feature list remains exactly
   `http1,tls-rustls,tls-native-roots,proxy`.
-- [ ] No `compression-*` feature is enabled.
-- [ ] `Cargo.lock` resolves `eggfetch-core 0.2.0`.
-- [ ] `Cargo.lock` resolves matching `eggfetch-http-connect 0.2.0`.
-- [ ] All other lockfile movement is explicitly attributable or reverted.
-- [ ] The existing updater-facing eggfetch API compiles without semantic
+- [x] No `compression-*` feature is enabled.
+- [x] `Cargo.lock` resolves `eggfetch-core 0.2.0`.
+- [x] `Cargo.lock` resolves matching `eggfetch-http-connect 0.2.0`.
+- [x] All other lockfile movement is explicitly attributable or reverted.
+- [x] The existing updater-facing eggfetch API compiles without semantic
   degradation.
-- [ ] No compatibility shim broadens or weakens typed error handling.
-- [ ] `.automatic_decompression(false)` remains configured.
-- [ ] Chunked no-length small-body bound regression remains green.
-- [ ] Small metadata/checksum fetches remain bounded by
+- [x] No compatibility shim broadens or weakens typed error handling.
+- [x] `.automatic_decompression(false)` remains configured.
+- [x] Chunked no-length small-body bound regression remains green.
+- [x] Small metadata/checksum fetches remain bounded by
   `max_decoded_body_size`.
-- [ ] Post-header metadata total-timeout regression remains green.
-- [ ] Post-header streamed-binary total-timeout regression remains green.
-- [ ] Partial-file cleanup remains green.
-- [ ] Strict redirect downgrade rejection remains green.
-- [ ] Environment proxy behavior remains green.
-- [ ] Invalid proxy configuration still fails closed.
-- [ ] No-curl structural/release-contract guard remains green.
-- [ ] Release binaries remain streamed via `bytes_stream()`.
-- [ ] Error messages remain credential-safe/redacted.
-- [ ] Before/after resolved-package and stripped-binary deltas are recorded.
-- [ ] Any >=1 MiB or >=10% size growth is investigated before acceptance.
-- [ ] Current implementation docs identify eggfetch-core 0.2.0.
-- [ ] Historical 0.1.6/0.1.7 records remain truthful.
-- [ ] Tier 1 merge gate passes.
-- [ ] Release-contract and release-binary smoke pass.
-- [ ] Rust 1.89 MSRV check passes.
-- [ ] cargo-deny passes.
-- [ ] Windows supported-platform compile check passes.
-- [ ] macOS supported-platform compile check passes.
-- [ ] Latest-compatible policy lane is inspected/passes per repository policy.
-- [ ] Ordinary remote CI passes on the implementation commit.
-- [ ] No MCP/tool surface, public library API, updater policy, unrelated
+- [x] Post-header metadata total-timeout regression remains green.
+- [x] Post-header streamed-binary total-timeout regression remains green.
+- [x] Partial-file cleanup remains green.
+- [x] Strict redirect downgrade rejection remains green.
+- [x] Environment proxy behavior remains green.
+- [x] Invalid proxy configuration still fails closed.
+- [x] No-curl structural/release-contract guard remains green.
+- [x] Release binaries remain streamed via `bytes_stream()`.
+- [x] Error messages remain credential-safe/redacted.
+- [x] Before/after resolved-package and stripped-binary deltas are recorded.
+- [x] Any >=1 MiB or >=10% size growth is investigated before acceptance.
+- [x] Current implementation docs identify eggfetch-core 0.2.0.
+- [x] Historical 0.1.6/0.1.7 records remain truthful.
+- [x] Tier 1 merge gate passes.
+- [x] Release-contract and release-binary smoke pass.
+- [x] Rust 1.89 MSRV check passes.
+- [x] cargo-deny passes.
+- [x] Windows supported-platform compile check passes.
+- [x] macOS supported-platform compile check passes.
+- [x] Latest-compatible policy lane is inspected/passes per repository policy.
+- [x] Ordinary remote CI passes on the implementation commit.
+- [x] No MCP/tool surface, public library API, updater policy, unrelated
   dependency, or release automation change is introduced.
 
 ## Closure record template
@@ -687,15 +687,24 @@ Tier 1: green locally in order (fmt, generate-docs --check, clippy
 Release contract: green (check-release-contract.py, bash -n, shellcheck,
   release build, eggsact --version 1.2.6, MCP smoke 77 tools)
 Release build/MCP smoke: green
-MSRV 1.89: green (cargo +1.89.0 check --locked --all-targets --all-features
-  and --all-features --lib: 643 passed; 2 pre-existing unused-variable
-  warnings in src/tools/list.rs, unrelated to this bump)
-cargo-deny: green (advisories/bans/licenses/sources ok)
-Windows compile: local cross-check from macOS blocked by ring 0.17.14
-  needing an MSVC C compiler (identical on the 0.1.7 baseline; ring
-  version untouched by this bump) — deferred to remote maintenance.yml
-  platform-check on windows-latest
-macOS compile: green (native cargo check --locked --all-targets --all-features)
+MSRV 1.89: green locally (cargo +1.89.0 check --locked --all-targets
+  --all-features and --all-features --lib: 643 passed; 2 pre-existing
+  unused-variable warnings in src/tools/list.rs, unrelated to this bump)
+  and green remotely in Maintenance run 35740940881 (MSRV job success)
+cargo-deny: green locally (advisories/bans/licenses/sources ok) and green
+  remotely in Maintenance run 35740940881 (cargo-deny job success)
+Windows compile: green natively via Maintenance run 35740940881
+  (https://github.com/eggstack/eggsact/actions/runs/35740940881,
+  workflow_dispatch on main, head SHA 0c30b1d552f067f8eb5661124d4833fa52fd2611,
+  Check (windows-latest) success running
+  cargo check --locked --all-targets --all-features).
+  Historical context only: local cross-check from macOS was blocked by ring
+  0.17.14 needing an MSVC C compiler (identical on the 0.1.7 baseline; ring
+  version untouched by this bump). That limitation is no longer the
+  qualification boundary; native Windows CI above is the qualification evidence.
+macOS compile: green locally (native cargo check --locked --all-targets
+  --all-features) and green natively via Maintenance run 35740940881
+  (Check (macos-latest) success)
 Latest-compatible: green in scratch worktree at b38dccf (2026-09-22):
   `cargo update` keeps eggfetch-core/http-connect at 0.2.0 (no newer 0.2.x
   published) with 29 unrelated patch bumps; `cargo check --all-targets
@@ -705,7 +714,10 @@ Latest-compatible: green in scratch worktree at b38dccf (2026-09-22):
   the updater API contract.
 Remote CI: green — CI run 35734609288 (workflow_dispatch on bfe12d7
   after a ref-lock race swallowed the push event; head SHA verified
-  bfe12d7) completed success 2026-09-22
+  bfe12d7) completed success 2026-09-22; Maintenance run 35740940881
+  (workflow_dispatch on main, head SHA 0c30b1d552f067f8eb5661124d4833fa52fd2611)
+  completed success 2026-09-22 with MSRV, cargo-deny,
+  Check (windows-latest), and Check (macos-latest) all success
 Optional live updater smoke: not run (no disposable staged newer version;
   not a unit/CI requirement)
 
@@ -717,9 +729,14 @@ Current-doc version references: src/update.rs, AGENTS.md,
   version-agnostic (no change)
 Historical roadmap disposition: 0.1.6 footprint record and 0.1.7 correction
   record preserved verbatim; 0.2.0 section flipped active -> landed
-Known limitations: local Windows cross-check impossible without an MSVC
-  toolchain (pre-existing, baseline-identical); live crates.io smoke
-  optional and not run
+Known limitations: local Windows cross-check from macOS remains impossible
+  without an MSVC toolchain (pre-existing, baseline-identical) but is
+  historical context only after native Maintenance run 35740940881; live
+  crates.io smoke optional and not run
+Corrective closeout: eggfetch-0.2.0-adoption-closeout-corrective.md records
+  Maintenance run 35740940881 as the native Windows/macOS/MSRV/cargo-deny
+  qualification evidence for the accepted implementation (no updater/
+  dependency implementation change required)
 Next-release handoff: 0.2.0 bump rides the next normal Eggsact release;
   run Tier 4 release check from a clean worktree per docs/release.md;
   do not publish from this plan

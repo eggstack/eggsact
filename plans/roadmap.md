@@ -242,10 +242,10 @@ MSRV, cargo-deny, and Windows/macOS supported-platform compile checks. No new
 Eggsact version was published from the bump; the corrected dependency reaches
 users with the next normal Eggsact release after this line closed.
 
-## Eggfetch 0.2.0 updater adoption — implementation landed; closure corrective active
+## Eggfetch 0.2.0 updater adoption — landed
 
 Plan: `eggfetch-0.2.0-updater-adoption.md` (closure record appended to
-the plan file)
+the plan file; status closed, completion checklist checked)
 
 The self-update transport was qualified on `eggfetch-core 0.1.7` and is now
 adopted on synchronized upstream `0.2.0`, whose changelog records no
@@ -268,33 +268,39 @@ Comparable stripped release builds (aarch64-apple-darwin, rustc 1.98.1,
 strip/lto-thin/cgu-1): 11_101_504 -> 11_101_552 bytes (+48 bytes, ~0%),
 below the >=1 MiB / >=10% review trigger. Implementation qualification includes the ordinary merge gate,
 release-contract smoke, local Rust 1.89/cargo-deny, native macOS, the
-latest-compatible lane, and ordinary remote Linux CI. Native Windows evidence
-was deferred to the remote Maintenance workflow and remains the closure gap
-tracked immediately below. No Eggsact release was published by the plan; the
+latest-compatible lane, and ordinary remote Linux CI run `35734609288`
+(Linux correctness only). Supported-platform qualification is supplied by
+remote Maintenance run `35740940881`
+(https://github.com/eggstack/eggsact/actions/runs/35740940881,
+workflow_dispatch on main, head SHA `0c30b1d552f067f8eb5661124d4833fa52fd2611`):
+MSRV 1.89 success, cargo-deny success, native `windows-latest`
+`cargo check --locked --all-targets --all-features` success, and native
+`macos-latest` success. No Eggsact release was published by the plan; the
 dependency reaches users in the next normal Eggsact release after closure. The
 0.1.6/0.1.7 migration records above remain historical.
 
-## Eggfetch 0.2.0 adoption closeout corrective — active
+Corrective closeout: implementation commit `bfe12d7`; ordinary Linux CI run
+`35734609288` green; Maintenance run `35740940881` green (MSRV, cargo-deny,
+native Windows, native macOS); no updater/dependency implementation change was
+needed. See `eggfetch-0.2.0-adoption-closeout-corrective.md` (closed) and the
+updated closure record in `eggfetch-0.2.0-updater-adoption.md`.
 
-Plan: `eggfetch-0.2.0-adoption-closeout-corrective.md`
+## Eggfetch 0.2.0 adoption closeout corrective — closed
 
-Implementation commit `bfe12d7` and ordinary Linux CI run `35734609288`
-are green, but the adoption closure record explicitly deferred native Windows
-qualification to `maintenance.yml`. The recorded ordinary CI workflow has
-only the Linux correctness job, so it does not satisfy the adoption plan's
-Windows supported-platform completion criterion. The original adoption plan
-also still carries an active status and unchecked completion checklist despite
-its appended closure record.
+Plan: `eggfetch-0.2.0-adoption-closeout-corrective.md` (closure record appended
+below; completion checklist checked)
 
-The corrective is evidence/state-only unless qualification exposes a real
-defect. It must run and record the existing remote Maintenance workflow on the
-accepted/current head, with green Rust 1.89 MSRV, cargo-deny, native
-`windows-latest`, and native `macos-latest` jobs. After that evidence exists,
-normalize the original adoption plan status/checklist/closure record and this
-roadmap. Do not change updater behavior, eggfetch features, dependency policy,
-or CI gates merely to close the paperwork; any reproducible platform failure
-reopens only the narrow implementation scope needed to fix it and requires
-requalification.
+Implementation commit `bfe12d7` and ordinary Linux CI run `35734609288` were
+green, but the adoption closure record had deferred native Windows
+qualification to `maintenance.yml`, and ordinary CI covers Linux correctness
+only. Maintenance run `35740940881`
+(https://github.com/eggstack/eggsact/actions/runs/35740940881,
+workflow_dispatch on main, head SHA `0c30b1d552f067f8eb5661124d4833fa52fd2611`)
+is now green with MSRV 1.89 success, cargo-deny success, native
+`windows-latest` success, and native `macos-latest` success. The original
+adoption plan status/checklist/closure record above were normalized to match
+that evidence. No updater behavior, eggfetch features, dependency policy, or
+CI gates were changed to close the paperwork.
 
 ## MCP surface modernization — evaluation closure pending
 
