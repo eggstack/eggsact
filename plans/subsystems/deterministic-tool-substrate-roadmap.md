@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Roadmap
 
-Status: active (Milestone 003 closed; Milestone 004 ready)
+Status: active (guard; Milestones 003 and 004 closed)
 
 Long-term references:
 
@@ -75,12 +75,12 @@ convention with evidence in git history. The performance campaign
 newline differential matrix as a regression test.
 
 A September 2026 Unicode/confusables audit reopened this guard workstream for
-correctness hardening. The current generated UTS #39 table is reproducibly
-pinned to Unicode 17.0.0, but whole-string confusable collision semantics,
-bidi classification, script-property consistency, Rust Unicode identifier
-validity, and Unicode fuzz/property coverage require correction before a data
-epoch refresh. Milestone 003 owns those semantic fixes; Milestone 004 owns the
-subsequent Unicode 18 data qualification.
+correctness hardening. Milestone 003 completed those semantic fixes
+(skeletons, typed bidi hazards, authoritative script source, Rust XID
+validity, repaired fuzz/property coverage, fail-closed generator) and
+Milestone 004 advanced the generated UTS #39 table to reproducibly pinned
+Unicode 18.0.0 (6,712 entries) with an inventoried mixed-provider data
+graph. Both are closed (see §12); the workstream is back to guard status.
 
 ## 5. Target architecture
 
@@ -263,4 +263,4 @@ via `closure/` records; the performance line is already closed.
 | Shared analysis anti-drift | closed | — (legacy consolidation-02, pruned; history in git) | — | — |
 | Performance campaign + corrective | closed | — (commits `85e10bf` + `e8067ae`) | — (detail in `plans/archive/roadmap.md`) | — |
 | 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | `plans/closure/deterministic-tool-substrate/003-status.md` (`3d67807`) | — |
-| 004 Unicode 18 security data qualification | ready | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | — | 003 closure satisfied 2026-09-25 |
+| 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | `plans/closure/deterministic-tool-substrate/004-status.md` (`2e3860c`) | — |

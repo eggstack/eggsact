@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Milestone 004 — Unicode 18 Security Data Qualification
 
-Status: ready for handoff (unblocked by 003 closure `plans/closure/deterministic-tool-substrate/003-status.md`; rebase onto post-003 HEAD before implementing)
+Status: closed (implemented in `2e3860c`; see `plans/closure/deterministic-tool-substrate/004-status.md`)
 
 Repository baseline: `43971e7c1af7f936acfd876f9bff246e72866f2d` (planning baseline; implementation must rebase after Milestone 003 closure)
 
