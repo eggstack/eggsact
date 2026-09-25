@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Roadmap
 
-Status: active (guard only; no open milestone)
+Status: active (Milestone 003 ready; Milestone 004 blocked on 003)
 
 Long-term references:
 
@@ -74,6 +74,14 @@ convention with evidence in git history. The performance campaign
 (`85e10bf`) plus closure corrective (`e8067ae`) is closed with the
 newline differential matrix as a regression test.
 
+A September 2026 Unicode/confusables audit reopened this guard workstream for
+correctness hardening. The current generated UTS #39 table is reproducibly
+pinned to Unicode 17.0.0, but whole-string confusable collision semantics,
+bidi classification, script-property consistency, Rust Unicode identifier
+validity, and Unicode fuzz/property coverage require correction before a data
+epoch refresh. Milestone 003 owns those semantic fixes; Milestone 004 owns the
+subsequent Unicode 18 data qualification.
+
 ## 5. Target architecture
 
 Unchanged end state: the same substrate with registry-sync, typed
@@ -88,11 +96,16 @@ Registry integrity (continuous guard)
     |
     +--> Shared analysis anti-drift (closed)
     |
-    `--> Hot-path evidence (closed; future patches are corrective-only)
+    +--> Hot-path evidence (closed; future patches are corrective-only)
+    |
+    `--> Unicode security semantic hardening (003, ready)
+             |
+             `--> Unicode 18 data qualification (004, blocked on 003)
 ```
 
-All dependencies are closed. New substrate work requires a corrective
-plan against this roadmap.
+Milestone 003 has no open hard dependency. Milestone 004 has a hard dependency
+on 003 closure so algorithmic corrections and versioned-data changes remain
+independently reviewable.
 
 ## 7. Milestones
 
@@ -132,6 +145,62 @@ Exit conditions: closed (historical consolidation-02).
 
 Deferred work: none.
 
+
+### Milestone 3 — Unicode security semantic correctness hardening
+
+Class: invariant
+
+Objective: make confusable collision, bidi/invisible classification, script
+analysis, identifier validity, normalization diagnostics, and Unicode
+verification conform to their documented standards while preserving the 1.x
+surface and Unicode 17 data epoch.
+
+Dependencies: registry/typed-first guards (continuous; already satisfied).
+
+Deliverable boundary: whole-string version-pinned confusable skeletons,
+typed/non-presentation bidi classification, one authoritative script-property
+path, Unicode-correct Rust XID validity, repaired property/fuzz coverage, and a
+fail-closed generated-data checker. No Unicode data-version bump.
+
+User or operator value: materially fewer false-positive/false-negative Unicode
+security findings and trustworthy regression/fuzz evidence without losing any
+existing tool.
+
+Exit conditions: implementation plan
+`plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md`
+is implemented and closed with focused Unicode evidence plus the ordinary merge
+gate.
+
+Deferred work: Unicode 18 source-data refresh (Milestone 004).
+
+### Milestone 4 — Unicode 18 security data qualification
+
+Class: infrastructure
+
+Objective: after Milestone 003 closes, advance the pinned UTS #39
+confusables/security data to Unicode 18.0.0 with auditable provenance and
+qualified Unicode-data dependency epochs.
+
+Dependencies: Milestone 003 (hard).
+
+Deliverable boundary: Unicode 18 confusables source/checksum, regenerated
+static assets, provider-version inventory, changed-mapping regressions, and
+accurate documentation of mixed Unicode data epochs if any. No algorithm,
+ToolSpec, profile, or protocol redesign.
+
+User or operator value: current Unicode security mappings with reproducible
+provenance and no ambiguity about which Unicode version each security-relevant
+provider implements.
+
+Exit conditions: implementation plan
+`plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md`
+is implemented after 003 closure, generated assets reproduce exactly, relevant
+Unicode differences are reviewed, and the ordinary merge/release qualification
+gates are green.
+
+Deferred work: IDNA/UTS #46 and any broader restriction-level product policy
+remain out of scope.
+
 ## 8. Cross-cutting requirements
 
 ### Determinism and bounded execution
@@ -165,8 +234,20 @@ with `--test-threads=4` for integration tests.
 
 ## 10. Risks and decision points
 
-No open decisions. A new utility category or composition-layer change
-requires an ADR before a milestone plan.
+Milestone 003 may need a small standards-backed Script/Script_Extensions
+dependency. This is an internal reversible implementation choice if it preserves
+MSRV, licensing, footprint, determinism, and the public surface; otherwise use a
+pinned generated property table. A new public Unicode restriction-level, IDNA,
+or policy contract would require a separate decision and is out of scope.
+
+Milestone 004 must not overclaim a single Unicode epoch when normalization,
+casefold, script, identifier, or diagnostic providers ship different Unicode
+data versions. If security-semantic dependencies cannot support a coherent
+Unicode 18 implementation without disproportionate machinery, keep Unicode 17
+pinned and record the blocker.
+
+A new utility category or composition-layer change still requires an ADR before
+a milestone plan.
 
 ## 11. Completion definition
 
@@ -181,3 +262,5 @@ via `closure/` records; the performance line is already closed.
 | Typed-first composition guard | closed (continuous guard) | — (legacy consolidation-01, pruned; history in git) | — | — |
 | Shared analysis anti-drift | closed | — (legacy consolidation-02, pruned; history in git) | — | — |
 | Performance campaign + corrective | closed | — (commits `85e10bf` + `e8067ae`) | — (detail in `plans/archive/roadmap.md`) | — |
+| 003 Unicode security semantic correctness hardening | ready | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | — | — |
+| 004 Unicode 18 security data qualification | blocked | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | — | Milestone 003 closure |
