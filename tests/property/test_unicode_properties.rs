@@ -111,7 +111,7 @@ fn canonicalize_seeded_security_corpus() {
         "аpple",
         "日本語テスト漢字",
         "ß",
-        "\u{2FA1D}",
+        "\u{2C09B}",
         "a\u{FE0F}b",
     ];
     for seed in &seeds {
@@ -128,7 +128,7 @@ fn canonicalize_seeded_security_corpus() {
 
 #[test]
 fn confusable_skeleton_determinism_and_idempotence() {
-    let inputs = ["hello", "apple", "аpple", "Æ", "ß", "", "café", "\u{2FA1D}"];
+    let inputs = ["hello", "apple", "аpple", "Æ", "ß", "", "café", "\u{2C09B}"];
     for input in &inputs {
         assert_eq!(confusable_skeleton(input), confusable_skeleton(input));
         let once = confusable_skeleton(input);

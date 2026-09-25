@@ -8,9 +8,12 @@
 //! The table is intentionally conservative and standards-shaped (Script-like
 //! values with `Common`/`Inherited` handling), not a full
 //! Script_Extensions implementation. Ranges follow the Unicode 17.0.0 code
-//! charts for the scripts eggsact classifies. Characters outside the known
-//! ranges report `"Other"` (tools) — policy layers map unknown/non-spacing
-//! marks to `Unknown`/`Inherited` as before, preserving their wire behavior.
+//! charts for the scripts eggsact classifies; assignments new in Unicode 18
+//! surface as `"Other"` (filtered from spoof analysis — the safe direction,
+//! never a false spoof flag). Characters outside the known ranges report
+//! `"Other"` (tools) — policy layers map unknown/non-spacing marks to
+//! `Unknown`/`Inherited` as before, preserving their wire behavior. See the
+//! provider epoch inventory in `architecture/generated-assets.md`.
 //!
 //! Mixed-script legitimacy: Japanese text legitimately mixes Han, Hiragana,
 //! and Katakana; Korean text legitimately mixes Hangul, Han, and Latin.

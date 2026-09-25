@@ -161,7 +161,7 @@ Natural-language math pipeline: `normalize.rs` turns English ("thirty miles per 
 
 ### Text library (`src/text/`)
 
-Leaf deterministic cores — 25 modules (measure, diff, validate, transform, position, regex engine/safety, shell tokenizer, path, identifier, markdown, patch, Unicode policy/tools, confusables, prompt inspection, …) plus auto-generated `confusables_generated.rs` (Unicode 17.0.0, never hand-edit). Pure functions with no dependency on agent/mcp/tools; the recommended Rust import surface below `calc`. Deep dive → [text-library.md](text-library.md).
+Leaf deterministic cores — 26 modules (measure, diff, validate, transform, position, regex engine/safety, shell tokenizer, path, identifier, markdown, patch, Unicode policy/tools, confusables, script, prompt inspection, …) plus auto-generated `confusables_generated.rs` (confusables data: Unicode 18.0.0 — see [generated-assets.md](generated-assets.md) for the per-provider epoch inventory; never hand-edit). Pure functions with no dependency on agent/mcp/tools; the recommended Rust import surface below `calc`. Deep dive → [text-library.md](text-library.md).
 
 ### Temporal core (`src/temporal/`, `pub(crate)`)
 

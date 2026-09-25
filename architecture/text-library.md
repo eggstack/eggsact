@@ -605,10 +605,21 @@ pub static CONFUSABLES: &[(u32, &str)]
 ```
 
 Source data: `src/text/confusables_generated.rs` (auto-generated from
-`https://www.unicode.org/Public/17.0.0/security/confusables.txt` by
-`scripts/generate_confusables.py`). Contains 6,565 entries mapping Unicode
+`https://www.unicode.org/Public/18.0.0/security/confusables.txt` by
+`scripts/generate_confusables.py`). Contains 6,712 entries mapping Unicode
 codepoints to their confusable equivalents. Pinned to Unicode Security
-version 17.0.0 with SHA-256 checksum verification.
+version 18.0.0 with SHA-256 checksum verification.
+
+> Mixed provider epochs: only the confusables asset is Unicode 18. Other
+> Unicode-data providers ship their own epochs — normalization 17.0
+> (`unicode-normalization` 0.1.25), casefold 16.0 (`caseless` 0.2.2),
+> general-category 16.0 (`unicode-general-category` 1.1.0), names 17.0
+> (`unicode_names2` 3.1.0), segmentation 17.0 (`unicode-segmentation`
+> 1.13.3), XID 18.0 (`unicode-ident` 1.0.26), script ranges 17.0-shaped
+> (`script.rs`). Never claim "all Unicode processing: 18.0.0"; the
+> accurate statement is "confusables data: Unicode 18.0.0". Canonical
+> (NFD/NFC) mappings are stability-guaranteed, so the skeleton relation is
+> unaffected by the epoch skew; see `architecture/generated-assets.md`.
 
 | Function | Description |
 |----------|-------------|

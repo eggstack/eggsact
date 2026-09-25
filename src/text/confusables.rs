@@ -22,14 +22,14 @@ pub static CONFUSABLES: &[(u32, &str)] = &include!("confusables_generated.rs");
 /// Single source of truth for provenance. Must match the
 /// `// Unicode version:` header in `confusables_generated.rs` and the pin
 /// in `scripts/generate_confusables.py`.
-pub const CONFUSABLES_UNICODE_VERSION: &str = "17.0.0";
+pub const CONFUSABLES_UNICODE_VERSION: &str = "18.0.0";
 
 /// SHA-256 of the pinned `confusables.txt` source bytes.
 pub const CONFUSABLES_SOURCE_SHA256: &str =
-    "091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a";
+    "6ed3ee967c9dfdf6677d563c9985182fbc50a2efb7d6059cd57b2e2ce18f5b92";
 
 /// Number of checked-in confusable mappings at this data epoch.
-pub const CONFUSABLES_ENTRY_COUNT: usize = 6565;
+pub const CONFUSABLES_ENTRY_COUNT: usize = 6712;
 
 /// Look up the confusable substitution for a single character.
 pub fn lookup(c: char) -> Option<&'static str> {
@@ -72,7 +72,7 @@ fn expand_substitution(sub: &str) -> Vec<char> {
 
 /// Whole-string UTS #39 confusable skeleton for the pinned data epoch.
 ///
-/// Algorithm (compatible with the pinned UTS #39 / Unicode 17 security
+/// Algorithm (compatible with the pinned UTS #39 / Unicode 18 security
 /// data): NFD-normalize the input, replace each character by its confusable
 /// mapping target characters when the table contains one, then NFD-normalize
 /// the result so the skeleton is idempotent.
@@ -160,7 +160,7 @@ mod tests {
             generated.contains(CONFUSABLES_SOURCE_SHA256),
             "generated header checksum must match CONFUSABLES_SOURCE_SHA256"
         );
-        assert_eq!(CONFUSABLES_UNICODE_VERSION, "17.0.0");
+        assert_eq!(CONFUSABLES_UNICODE_VERSION, "18.0.0");
     }
 
     #[test]
@@ -216,8 +216,8 @@ mod tests {
         assert_eq!(lookup('µ'), Some("U+03BC"));
         // Cyrillic
         assert_eq!(lookup('А'), Some("U+0041"));
-        // Supplementary plane
-        assert_eq!(lookup('\u{2FA1D}'), Some("U+2A600"));
+        // Supplementary plane (Unicode 18 epoch)
+        assert_eq!(lookup('\u{2C09B}'), Some("U+5341"));
         // Multi-code-point substitution
         assert_eq!(lookup('Æ'), Some("U+0041 U+0045"));
     }

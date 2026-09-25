@@ -34,9 +34,9 @@ import urllib.request
 from pathlib import Path
 
 # Pinned source — update these values intentionally when upgrading Unicode.
-UNICODE_SECURITY_VERSION = "17.0.0"
-CONFUSABLES_URL = "https://www.unicode.org/Public/17.0.0/security/confusables.txt"
-EXPECTED_SHA256 = "091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a"
+UNICODE_SECURITY_VERSION = "18.0.0"
+CONFUSABLES_URL = "https://www.unicode.org/Public/18.0.0/security/confusables.txt"
+EXPECTED_SHA256 = "6ed3ee967c9dfdf6677d563c9985182fbc50a2efb7d6059cd57b2e2ce18f5b92"
 
 OUTPUT_FILE = Path(__file__).parent.parent / "src" / "text" / "confusables_generated.rs"
 DATA_OUTPUT = Path(__file__).parent.parent / "data" / "confusables.rs"

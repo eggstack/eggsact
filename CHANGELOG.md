@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (Unicode 18 data qualification)
+- Confusables/security data advanced from Unicode 17.0.0 to authoritative
+  Unicode 18.0.0 bytes (`confusables.txt` 2026-08-06, SHA-256
+  `6ed3ee96…f5b92`, 6,565 → 6,712 entries) through the hardened generator;
+  both checked-in assets reproduce exactly under `--check`. No algorithm,
+  ToolSpec, profile, audience, schema, or machine-code change: all
+  Milestone 003 skeleton/collision/property suites pass unmodified against
+  the new data, and parity shows zero regressions. Upstream 18.0.0 adds
+  1,216 mappings, removes 1,069 (mostly NFD-redundant entries such as
+  `Ç`, whose skeleton equality is preserved by normalization), and changes
+  241 (e.g. `%` now skeletons through `°`, `¡`/`º` newly map). The shipped
+  claim is "confusables data: Unicode 18.0.0" — normalization (17.0),
+  casefold (16.0), general-category (16.0), names/segmentation (17.0), and
+  script ranges (17.0-shaped) keep their own epochs per the inventory in
+  `architecture/generated-assets.md`; no dependency was bumped because no
+  newer security-semantic provider release exists.
+
 ### Added
 - Whole-string UTS #39 confusable skeleton API (`confusable_skeleton`,
   `are_confusable`) over the pinned Unicode 17 security data: NFD, mapping

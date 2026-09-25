@@ -56,7 +56,7 @@ fn seeded_corpus() -> Vec<String> {
         "日本語テスト漢字".to_string(),              // legitimate Japanese mixture
         "한글한자".to_string(),                      // legitimate Korean mixture
         "ß".to_string(),                          // one-to-many casefold (ß -> ss)
-        "\u{2FA1D}".to_string(),                 // supplementary-plane confusable
+        "\u{2C09B}".to_string(),                 // supplementary-plane confusable
         "a\u{FE0F}b".to_string(),                // variation selector sequence
         "\u{200b}\u{200c}\u{200d}".to_string(),  // zero-width controls
     ]

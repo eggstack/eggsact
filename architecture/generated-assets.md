@@ -110,8 +110,8 @@ python3 scripts/generate_confusables.py
 
 The script:
 
-1. Fetches `confusables.txt` from the version-specific Unicode 17.0.0 source
-   `https://www.unicode.org/Public/17.0.0/security/confusables.txt`
+1. Fetches `confusables.txt` from the version-specific Unicode 18.0.0 source
+   `https://www.unicode.org/Public/18.0.0/security/confusables.txt`
 2. Verifies downloaded bytes against a pinned SHA-256 checksum
 3. Verifies the file header reports the pinned Unicode Security version
 4. Strict-parses hex code point mappings (source → substitution), failing
@@ -137,14 +137,36 @@ miniature fixtures. `--check` requires network access to the pinned
 unicode.org URL, so it is a maintainer/release check — ordinary merge CI
 must not depend on unicode.org availability and does not run it.
 
-Provenance single source of truth in code: `CONFUSABLES_UNICODE_VERSION`,
-`CONFUSABLES_SOURCE_SHA256`, and `CONFUSABLES_ENTRY_COUNT` in
-`src/text/confusables.rs` (checked against the generated header and exact
-table length by unit tests). The semantic layer above the data distinguishes
-per-character source mappings (`lookup`, `has_confusables`,
+Provenance single source of truth in code: `CONFUSABLES_UNICODE_VERSION`
+(`"18.0.0"`), `CONFUSABLES_SOURCE_SHA256`, and `CONFUSABLES_ENTRY_COUNT`
+(6712) in `src/text/confusables.rs` (checked against the generated header
+and exact table length by unit tests). The semantic layer above the data
+distinguishes per-character source mappings (`lookup`, `has_confusables`,
 `find_confusables`) from the whole-string UTS #39 skeleton relation
 (`confusable_skeleton`, `are_confusable`); collision detection must use the
 skeleton relation.
+
+### Provider epoch inventory (Unicode 18 qualification)
+
+Only the confusables asset advances per milestone; independent providers
+keep their own epochs (verified from authoritative crate/project metadata
+2026-09-25):
+
+| Provider | Crate / source | Unicode-data epoch | Role in security results |
+|---|---|---|---|
+| Confusables table | generated (`confusables.txt` 18.0.0, SHA-256 pinned) | 18.0.0 | security-semantic (skeleton mapping) |
+| Normalization (NFD/NFC/NFKC/NFKD) | `unicode-normalization` 0.1.25 | 17.0 (upstream 18 update unreleased) | security-semantic (skeleton NFD); canonical mappings are stability-guaranteed, so epoch skew cannot alter existing skeletons |
+| Case folding | `caseless` 0.2.2 (`UNICODE_VERSION = (16, 0, 0)`) | 16.0 (no newer release) | security-semantic (canonicalize, casefold collisions) |
+| General category | `unicode-general-category` 1.1.0 (Unicode 16.0 badge) | 16.0 (no newer release) | support (combining-mark / control classification) |
+| Character names | `unicode_names2` 3.1.0 | 17.0 | diagnostic-only (display names) |
+| Segmentation | `unicode-segmentation` 1.13.3 | 17.0 | diagnostic (grapheme counts) |
+| Rust XID | `unicode-ident` 1.0.26 (`UNICODE_VERSION = (18, 0, 0)`) | 18.0 | security-semantic (Rust validity) |
+| Script ranges | `src/text/script.rs` hand table | 17.0-shaped; unlisted assignments surface as `Other`/filtered (safe direction) | security-semantic (spoof mixtures) |
+
+The accurate shipped claim is "confusables data: Unicode 18.0.0" — never
+"all Unicode processing: 18.0.0". No dependency was bumped for this
+milestone: no newer security-semantic provider release exists that would
+change results, and adopting unreleased git revisions is out of scope.
 
 ### Build Impact
 

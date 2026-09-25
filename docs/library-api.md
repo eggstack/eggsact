@@ -339,7 +339,7 @@ use eggsact::text::{CONFUSABLES, CONFUSABLES_UNICODE_VERSION};
 
 `lookup()`, `has_confusables()`, and `find_confusables()` report per-character
 source mappings. Whole-string collision verdicts must use `confusable_skeleton()`
-/ `are_confusable()`. Data provenance: `CONFUSABLES_UNICODE_VERSION` (`"17.0.0"`),
+/ `are_confusable()`. Data provenance: `CONFUSABLES_UNICODE_VERSION` (`"18.0.0"`),
 `CONFUSABLES_SOURCE_SHA256`, `CONFUSABLES_ENTRY_COUNT`.
 
 ### Position and Line Ranges
