@@ -46,16 +46,16 @@ The mapping is implemented in `json_type_name()` (`src/mcp/schema_validation.rs:
 
 | Consumer | Mode | File | Reason |
 |----------|------|------|--------|
-| MCP `tools/call` handler | `EggcalcPython` | `src/mcp/server.rs:588` | Preserves Python-parity error messages for existing MCP clients |
+| MCP `tools/call` handler | `EggcalcPython` | `src/mcp/server.rs:589` | Preserves Python-parity error messages for existing MCP clients |
 | `ToolRegistry::new()` | `StrictNative` | `src/agent/mod.rs:346-352` | Rust-native consumers expect standard JSON Schema names |
 | `ToolRegistry::with_profile()` | `StrictNative` | `src/agent/mod.rs:357-363` | Same |
 | `ToolRegistry::with_profile_and_audience()` | `StrictNative` | `src/agent/mod.rs:368-374` | Same |
 | `ToolRegistry::with_compat_mode()` | explicit | `src/agent/mod.rs:387-391` | Override the default per-registry |
-| `ExecutionContext::mcp_default()` | `EggcalcPython` | `src/agent/mod.rs:1029-1040` | MCP dispatch contexts |
-| `ExecutionContext::agent_default()` | `StrictNative` | `src/agent/mod.rs:1043-1054` | In-process agent contexts |
-| `ExecutionContext::library_default()` | `StrictNative` | `src/agent/mod.rs:1015-1026` | Library API contexts |
-| `ExecutionContext::cli_default()` | `StrictNative` (default) | `src/agent/mod.rs:1001-1012` | CLI contexts |
-| Preflight wrappers | `StrictNative` | `src/preflight/mod.rs` — `EditPreflight` uses the shared `DEFAULT_REGISTRY` (`LazyLock<ToolRegistry>` of `ToolRegistry::default()`); `CommandPreflight` (:1156), `ConfigPreflight` (:1309) and `TextSecurityInspect` (:1559) each construct `ToolRegistry::default()`; `PatchApplyCheck` (:1416) constructs `with_profile_and_audience(Profile::Full, ToolAudience::Harness)` | Rust-native consumers with fail-closed contract enforcement |
+| `ExecutionContext::mcp_default()` | `EggcalcPython` | `src/agent/mod.rs:1079-1091` | MCP dispatch contexts |
+| `ExecutionContext::agent_default()` | `StrictNative` | `src/agent/mod.rs:1093-1105` | In-process agent contexts |
+| `ExecutionContext::library_default()` | `StrictNative` | `src/agent/mod.rs:1065-1077` | Library API contexts |
+| `ExecutionContext::cli_default()` | `StrictNative` (default) | `src/agent/mod.rs:1051-1063` | CLI contexts |
+| Preflight wrappers | `StrictNative` | `src/preflight/mod.rs` — `EditPreflight`, `CommandPreflight` (`:1156`), `ConfigPreflight` (`:1308`) and `TextSecurityInspect` (`:1564`) each run through the shared `DEFAULT_REGISTRY` (`LazyLock<ToolRegistry>` of `ToolRegistry::default()`, `:949`); `PatchApplyCheck` (`:1414`) constructs `with_profile_and_audience(Profile::Full, ToolAudience::Harness)` | Rust-native consumers with fail-closed contract enforcement |
 
 ## Behavioral Differences
 
@@ -84,7 +84,7 @@ StrictNative:   Argument 'count' must be integer, got boolean
 
 ### Bool Handling
 
-JSON booleans are **always rejected** for numeric schema fields (`integer`, `number`) in both modes. This is intentional — MCP model-generated booleans for number fields are commonly mistakes. The rejection logic in `validate_property_inner()` (`src/mcp/schema_validation.rs:118-134`) fires after the initial type check, specifically handling the case where `value_matches_type()` would pass a boolean for a numeric schema (since `bool` matches `"number"` in the basic type check).
+JSON booleans are **always rejected** for numeric schema fields (`integer`, `number`) in both modes. This is intentional — MCP model-generated booleans for number fields are commonly mistakes. The rejection logic in `validate_property_inner()` (`src/mcp/schema_validation.rs:126-144`) fires after the initial type check, specifically handling the case where `value_matches_type()` would pass a boolean for a numeric schema (since `bool` matches `"number"` in the basic type check).
 
 ### What Validation the Mode Affects
 
@@ -95,7 +95,7 @@ The `compat` parameter threads through these functions:
 | `json_type_name(value, compat)` | `schema_validation.rs:29` | Returns the type name string for error messages |
 | `validate_property(value, schema, path, compat)` | `schema_validation.rs:62` | Per-property validation, passes compat to inner |
 | `validate_property_inner(value, schema, path, max_depth, compat)` | `schema_validation.rs:71` | Recursive validation with compat-aware error messages |
-| `validate_arguments(name, arguments, compat)` | `schema_validation.rs:420` | Top-level argument validation, delegates to validate_property |
+| `validate_arguments(name, arguments, compat)` | `schema_validation.rs:428` | Top-level argument validation, delegates to validate_property |
 
 The mode propagates recursively through nested object/array validation — every level of `validate_property_inner` receives and forwards the compat parameter.
 
@@ -115,7 +115,7 @@ The mode propagates recursively through nested object/array validation — every
 ## Propagation Through the System
 
 ```
-MCP Server (server.rs:588)
+MCP Server (server.rs:589, direct tools/call; server.rs:778, tool_invoke routing)
   └─ ToolRegistry::with_profile_and_audience(profile, audience)
        └─ .with_compat_mode(CompatibilityMode::EggcalcPython)
             └─ prepare_tool_call(name, args)
@@ -143,7 +143,7 @@ ExecutionContext::agent_default(profile, audience)
             └─ validate_arguments(name, args, ctx.compatibility_mode)
 ```
 
-The MCP server overrides the mode at `server.rs:588`:
+The MCP server applies the mode at both dispatch sites (`server.rs:589` for direct `tools/call`, `server.rs:778` for `tool_invoke` routing):
 
 ```rust
 let registry = ToolRegistry::with_profile_and_audience(profile, get_active_audience())
@@ -230,7 +230,7 @@ let err = compat.call_json("math_eval", args).unwrap_err();
 
 ### Unit Tests
 
-The `schema_validation::tests` module (`src/mcp/schema_validation.rs:478-743`) contains comprehensive tests for both modes:
+The `schema_validation::tests` module (`src/mcp/schema_validation.rs:486-751`) contains comprehensive tests for both modes:
 
 | Test | Mode | What It Verifies |
 |------|------|-----------------|
@@ -248,7 +248,7 @@ The `schema_validation::tests` module (`src/mcp/schema_validation.rs:478-743`) c
 
 ### Integration Tests
 
-The MCP server handler tests (the `#[cfg(test)] mod tests` in `src/mcp/server.rs`, starting line 1052) exercise the full `ToolRegistry::call_json()` path with `EggcalcPython` mode (matching the MCP server default):
+The MCP server handler tests (the `#[cfg(test)] mod tests` in `src/mcp/server.rs`, starting line 1576) exercise the full `ToolRegistry::call_json()` path with `EggcalcPython` mode (matching the MCP server default):
 
 | Test | What It Verifies |
 |------|-----------------|
@@ -313,5 +313,5 @@ No other changes are required — the mode only affects validation error message
 
 - **Both modes reject bools for numeric fields** — this is not configurable via compat mode.
 - **The mode is per-registry or per-context** — there is no global static. Each `ToolRegistry` or `ExecutionContext` carries its own mode.
-- **The MCP server always uses EggcalcPython** — this is hardcoded at `server.rs:588` and is not configurable via environment variable.
+- **The MCP server always uses EggcalcPython** — this is hardcoded at both dispatch sites (`server.rs:589` for direct `tools/call`, `server.rs:778` for `tool_invoke` routing) and is not configurable via environment variable.
 - **Preflight wrappers always use StrictNative** — they construct `ToolRegistry::default()` internally, which uses the default mode.

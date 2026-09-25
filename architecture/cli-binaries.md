@@ -8,11 +8,15 @@ edit arbitrary client configuration files.
 ## Commands
 
 ```text
-eggsact [--mcp | --diagnostics [--format json|text] | update | integrate <client> | expression]
+eggsact [--mcp [--mcp-surface direct|discovery] | --diagnostics [--format json|text] | update | integrate [list | detect | <client> [--discovery]] | expression]
 ```
 
 `update` and `integrate` are reserved top-level commands. Everything else that
 is not a recognized flag remains calculator input and is joined with spaces.
+Bare `integrate` prints usage plus the supported-client list; `integrate
+list` lists clients, `integrate detect` reports PATH presence per client, and
+`integrate <client> [--discovery]` renders a setup instruction without
+mutating any files.
 
 ### `update`
 
@@ -27,27 +31,38 @@ crates.io max_stable_version
   -> executable replacement
 ```
 
-Only stable `major.minor.patch` versions are accepted. Network transport is
-in-process via `eggfetch-core` 0.2.0 (`http1,tls-rustls,tls-native-roots,proxy`):
+Only stable `major.minor.patch` versions are accepted. Local
+verified-transaction mechanics are owned by `eggup-core` 0.1.0 and network
+acquisition by `eggup-eggfetch` 0.1.0 over `eggfetch-core` 0.2.0
+(`http1,tls-rustls,tls-native-roots,proxy`); direct `eggfetch-core` use remains
+only in the policy test harness. `src/update.rs` keeps release/update policy
+(version selection, asset naming, Cargo fallback, checksum sidecar parsing, CLI
+presentation). Transport policy (single configuration point):
 HTTP/1 only, redirects followed with strict HTTPS -> HTTP downgrade rejection,
-native roots with WebPKI fallback and full certificate/hostname verification,
-explicit environment proxy routing (invalid proxy fails closed), distinct
-10-second connect and 120-second total timeouts (total enforced through
-response-body EOF), no retries, streamed
-release-binary downloads (small metadata/checksum bodies bounded at 1 MiB /
-64 KiB via request-local `max_decoded_body_size`, authoritative even when
-`Content-Length` is absent or false), and a 10-second candidate `--version`
-execution cap. The updater uses
-the existing `sha2` dependency for hashing and
-requires no external `curl` after install. Bootstrap installers still use
-external download tooling because they run before Eggsact exists. A supported
-target with a genuine asset HTTP 404, or an unsupported host, uses a staged
-exact-version `cargo install` fallback. HTTP errors, TLS/DNS failures, missing
-checksums, checksum mismatches, and wrong candidate identities are hard failures.
+native roots with packaged WebPKI fallback and full certificate/hostname
+verification, explicit opt-in environment proxy routing (invalid proxy fails
+closed), distinct 10-second connect and 120-second total wall-clock timeouts,
+no retries, and streamed release-binary downloads (small metadata/checksum
+bodies bounded at 1 MiB / 64 KiB, authoritative even when `Content-Length` is
+absent or false). Staging, SHA-256 integrity verification, bounded 10-second
+candidate `--version` validation with cleared environment and exact
+`eggsact X.Y.Z` identity, current-executable ownership proof, mutation locking
+with backup/rollback, and structured receipts are owned by Eggup. No external
+`curl` is required after install. Bootstrap installers (`packaging/install.*`)
+still use external download tooling because they run before Eggsact exists. A
+supported target with a genuine asset HTTP 404, or an unsupported host, uses a
+staged exact-version `cargo install` fallback. Checksum/TLS/timeout/5xx
+failures never fall back; HTTP errors, TLS/DNS failures, missing checksums,
+checksum mismatches, and wrong candidate identities are hard failures.
 
-On Unix, the validated executable is copied beside the current binary and
-atomically renamed into place. On Windows, a detached PowerShell helper waits
-for the updater image to exit and retries the replacement for a bounded period.
+On Unix, the validated candidate is committed through the Eggup verified
+transaction (prepare/verify/validate/commit with ownership proof and locking):
+`Committed` replaces the live binary, `RolledBack` preserves the previous
+version, and `RecoveryRequired` leaves evidence at a reported path with the
+lock retained. On Windows, the running image cannot be renamed, so the
+validated staged executable is handed to the existing detached PowerShell
+helper, which waits for the updater image to exit and retries the replacement
+for a bounded period.
 The CLI reports `update staged` rather than `updated`; the helper removes its
 success marker after replacement and leaves a status file containing an
 actionable failure if the move cannot complete. The message names that file
@@ -111,4 +126,6 @@ The separate `generate-docs` binary remains the registry documentation
 generator. It is not involved in release binary assembly. It accepts
 `--check` (fail if generated blocks are stale, for CI) and `--output-dir
 <dir>` (rewrite paths relative to `<dir>` instead of the current directory,
-used by release tooling).
+used by release tooling). The canonical invocations (always `--locked`) are
+`cargo run --locked --features dev-tools --bin generate-docs` to regenerate
+and the same command with `-- --check` as the CI freshness gate.

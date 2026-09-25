@@ -144,6 +144,10 @@ Walks every tool's input schema recursively and collects violations. This preven
 | `test_analysis_tools.rs` | Import/export, code blocks, symbol diff, lockfile |
 | `test_schema_boundaries.rs` | Schema keyword enforcement |
 | `test_comprehensive_parity.rs` | Comprehensive parity with Python eggcalc |
+| `test_discovery.rs` | Discovery surface: advertised-count cap, byte savings, search/invoke profile+audience enforcement, facade recursion rejection |
+| `test_era_pinning.rs` | Single-process protocol-era pinning (legacy vs `2026-07-28`), cross-era rejection, generic-invoke output contract |
+| `test_modern_protocol.rs` | Modern-protocol handshake, `server/discover`, `_meta`/cache hints, `structuredContent`, cross-era semantic parity |
+| `test_shared_analysis.rs` | Shared repo/patch analysis consolidation: classification drift guards across repo and patch tools |
 
 ## Text Tests (`tests/text/`)
 
@@ -298,6 +302,10 @@ GitHub Actions CI runs on push/PR to `main` (plus manual `workflow_dispatch`):
 MSRV, cargo-deny, parity, latest-compatible, and fuzz/sanitizer checks are scheduled/manual (not merge-blocking). See `docs/verification.md`.
 
 Parity tests are excluded from CI because Python `eggcalc` is not available in the CI environment. Run locally with `cargo test --locked --test lib parity`.
+
+`--test-threads=4` is required for the integration suites: without the cap,
+short-lived MCP subprocess tests starve the Tokio blocking pool. It is not a
+product performance budget, and `--lib`/doc tests do not need it.
 
 CI mirrors the release verification gates but does **not** publish to crates.io. The maintainer publishes manually per `docs/release.md`.
 

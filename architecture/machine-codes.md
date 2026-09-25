@@ -1,6 +1,6 @@
 # Machine Codes Reference
 
-Machine-readable response codes for tool results. Every non-OK `ToolResponse` carries a `machine_code` field so that harnesses, orchestrators, and downstream tooling can route, classify, and act on results without parsing human-readable messages. There are ~145 codes organized by category.
+Machine-readable response codes for tool results. Every non-OK `ToolResponse` carries a `machine_code` field so that harnesses, orchestrators, and downstream tooling can route, classify, and act on results without parsing human-readable messages. There are 145 named constants in `machine_codes.rs`: 129 machine codes enumerated in `ALL` (113 unique wire values — 16 are wire-compatible aliases sharing a value with their original) plus 16 severity/disposition/verdict value constants, which are not machine codes and are excluded from `ALL`.
 
 ## Source of Truth
 

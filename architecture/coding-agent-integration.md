@@ -21,6 +21,7 @@ HTTP transport. The client owns process lifetime and reconnects after updates.
 ## CLI surface
 
 ```text
+eggsact integrate
 eggsact integrate list
 eggsact integrate detect
 eggsact integrate zed
@@ -31,17 +32,19 @@ eggsact integrate vscode
 eggsact integrate opencode
 ```
 
-`list` describes the supported adapters. `detect` only checks known command
+Bare `integrate` prints usage plus the supported-client list. `list`
+describes the supported adapters. `detect` only checks known command
 names on `PATH` (with two renames: `vscode` → `code`, `cursor` →
 `cursor-agent`); it does not recursively scan the filesystem or read unrelated
 configuration. A client name renders an instruction and never mutates files.
+Append `--discovery` to a client name to render discovery-mode startup args.
 
 ## Rendered formats
 
 | Client | Output |
 |---|---|
 | Zed | `context_servers.eggsact` JSON settings block |
-| Codex | `mcp_servers.eggsact` TOML block and the current `codex mcp add` shape |
+| Codex | `mcp_servers.eggsact` TOML block (the config shape `codex mcp add` consumes) |
 | Claude Code | `claude mcp add eggsact -- <path> --mcp` |
 | Cursor | `mcpServers.eggsact` JSON block |
 | VS Code / Copilot | `code --add-mcp` JSON command |

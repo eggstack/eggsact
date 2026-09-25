@@ -1,15 +1,15 @@
 # Calculator Core
 
-The `src/calc/` module is the mathematical brain of eggsact. It accepts natural language expressions like *"what is the speed of light in miles per hour"* and returns precise, typed results. The module is organized into four files with a clear layered architecture.
+The `src/calc/` module is the mathematical brain of eggsact. It accepts natural language expressions like *"what is the speed of light in miles per hour"* and returns precise, typed results. The module is organized into four content files plus `mod.rs` (re-exports) with a clear layered architecture.
 
 ## Module Overview
 
 | File | Lines | Purpose |
 |------|-------|---------|
 | `context.rs` | 82 | Per-evaluation mutable state (`EvalContext`) for PRNG, memory registers, user variables, and function permissions |
-| `normalize.rs` | ~2270 | Natural language pipeline: NL→math tokenization, 32-stage `normalize()`, unit preprocessing, `split_at_operators()`, `run()`/`run_with_context()` orchestration |
-| `evaluator.rs` | ~3800 | AST-based expression evaluator: tokenizer, recursive-descent parser, ~90 functions, big-integer arithmetic, helper algorithms |
-| `units.rs` | ~2310 | Unit system: definitions, 500+ aliases, conversion factors, physical constants metadata, temperature conversion algorithm |
+| `normalize.rs` | 2272 | Natural language pipeline: NL→math tokenization, 32-stage `normalize()`, unit preprocessing, `split_at_operators()`, `run()`/`run_with_context()` orchestration |
+| `evaluator.rs` | 3797 | AST-based expression evaluator: tokenizer, recursive-descent parser, ~90 functions (~118 alias spellings), big-integer arithmetic, helper algorithms |
+| `units.rs` | 2310 | Unit system: 153 canonical units in 17 categories, 508 aliases, conversion factors, physical constants metadata, temperature conversion algorithm |
 
 ```
                  ┌──────────────────────────────────────────────┐
@@ -27,10 +27,10 @@ The `src/calc/` module is the mathematical brain of eggsact. It accepts natural 
                  └──────────────────┬───────────────────────────┘
                                     │
                  ┌──────────────────▼───────────────────────────┐
-                 │          evaluator.rs                          │
-                 │  1. tokenize() — hex/octal/binary/scientific  │
-                 │  2. parse_bit_or → ... → parse_unary → parse_power → parse_primary │
-                  │  3. evaluate_function() — ~90 functions       │
+                  │          evaluator.rs                          │
+                  │  1. tokenize() — hex/octal/binary/scientific  │
+                  │  2. parse_bit_or → ... → parse_multiplicative → parse_unary ⇄ parse_power → parse_primary │
+                   │  3. evaluate_function() — ~90 functions       │
                  │  4. format_result() — int/float/str dispatch   │
                  └──────────────────┬───────────────────────────┘
                                     │
@@ -44,7 +44,7 @@ The `src/calc/` module is the mathematical brain of eggsact. It accepts natural 
 
 ## Public API
 
-The module re-exports from `lib.rs`:
+`src/calc/mod.rs` declares the public surface; `src/lib.rs` re-exports it at the crate root (`run`, `evaluate`, `evaluate_with_context`, `run_with_context`, `split_at_operators`, `EvalContext`):
 
 ```rust
 // Full pipeline: NL normalization + math evaluation + unit detection
@@ -58,14 +58,17 @@ pub fn evaluate_with_context(expr: &str, ctx: &mut EvalContext) -> Result<(Strin
 // Tokenizer used by normalize pipeline and MCP pre-checks
 pub fn split_at_operators(expr: &str) -> Vec<String>
 
-// MCP-safe mode control (legacy, idempotent one-shot) — deprecated
-pub fn set_mcp_mode() // deprecated: use EvalContext::mcp_mode() instead
-pub fn is_mcp_mode() -> bool // deprecated
+// MCP-safe mode control (legacy, idempotent one-shot)
+#[deprecated(note = "use EvalContext::mcp_mode() instead")]
+pub fn set_mcp_mode() // deprecated; is_mcp_mode() below is NOT deprecated
+pub fn is_mcp_mode() -> bool
 
 // Type aliases
 pub type EvaluateResult = (String, String); // (value, type)
 pub type RunResult = (String, String);      // (value, type)
 ```
+
+Note: `normalize::warm_calculator_regex_cache()` is `pub` in `normalize.rs` but is **not** re-exported through `calc/mod.rs`, so it is not part of the documented `calc` surface above.
 
 Return tuple: `(value_string, type_string)` where `type_string` is one of `"int"`, `"float"`, or `"str"`.
 
@@ -102,7 +105,7 @@ pub struct EvalContext {
 | `allow_side_effects` | `bool` | Gates `store()`, `recall()`, `m()`, `mplus()`, `mminus()`, `mc()`, `mr()`, `setvar()`, `getvar()`, `delvar()`, `listvars()`, `clearvars()` |
 | `prng_state` | `u64` | xorshift64 PRNG seed (default: `123456789`) |
 | `gauss_spare` | `Option<f64>` | Box-Muller spare value for `randn()`/`gauss()` |
-| `memory_registers` | `HashMap<String, f64>` | Calculator memory slots (`M`, `R0`–`R9`) |
+| `memory_registers` | `HashMap<String, f64>` | Calculator memory slots (`M` plus `R<n>` for any integer register id: `store(v)` → `M`, `store(v, n)` → `R<n>`) |
 | `user_variables` | `HashMap<String, f64>` | User-defined variables (`v0`, `v1`, …) capped at 1000 |
 
 ### Constructors and Builder Methods
@@ -396,7 +399,7 @@ The tokenizer handles:
 
 ### Parser Precedence (9 Levels)
 
-The parser is a recursive-descent implementation of standard operator precedence. Each level is implemented as a pair of functions: one for global statics (legacy), one context-aware.
+The parser is a recursive-descent implementation of standard operator precedence. Each level is implemented as a pair of functions: one for global statics (legacy), one context-aware. Call order is `parse_expression` (paren-depth guard + tokenize) → `parse_bit_or` → `parse_bit_xor` → `parse_bit_and` → `parse_shift` → `parse_additive` → `parse_multiplicative` → `parse_unary ⇄ parse_power` → `parse_primary` (parenthesized groups recurse to `parse_bit_or`).
 
 | Precedence | Level | Operators | Associativity | Parse Function |
 |------------|-------|-----------|---------------|----------------|
@@ -406,15 +409,19 @@ The parser is a recursive-descent implementation of standard operator precedence
 | 3 | Shift | `<<`, `>>` | Left | `parse_shift()` |
 | 4 | Additive | `+`, `-` | Left | `parse_additive()` |
 | 5 | Multiplicative | `*`, `/`, `//`, `%` | Left | `parse_multiplicative()` |
-| 6 | Power | `**` | **Right** | `parse_power()` |
-| 7 | Unary | `-`, `+`, `~` | Right | `parse_unary()` |
+| 6 | Unary | `-`, `+`, `~` | Right | `parse_unary()` |
+| 7 | Power | `**` | **Right** | `parse_power()` |
 | 8 (highest) | Primary | numbers, identifiers, `(expr)` | — | `parse_primary()` |
+
+**Unary/power mutual recursion**: `parse_unary` delegates `-`/`+` to `parse_power`, while `parse_power` parses its exponent via `parse_unary` (and `~` recurses to `parse_unary`). This gives Python-like semantics: `-2 ** 2` = `-(2 ** 2)` = `-4`, while the exponent side binds tightly (`2 ** -2` = `0.25`).
 
 **Important**: `^` is XOR, **not** exponentiation. Use `**` for power. This matches Python's `^` = XOR behavior.
 
 **Right-associative power**: `2 ** 3 ** 2` = `2 ** (3 ** 2)` = `2 ** 9` = `512`, not `(2**3)**2` = `64`.
 
 ### All Functions by Category
+
+The dispatcher (`evaluate_function` / `evaluate_function_with`) matches ~90 canonical functions under ~118 alias spellings (e.g. `ln`→`log`, `m+`/`madd`→`mplus`, `npr`→`perm`, `power`→`pow`, `rand`→`random`, `normal`→`gauss`, `fact`→`factorial`, `average`→`mean`, `stddev`/`stds`→`std`, `var`/`vars`→`variance`, `is_prime`→`isprime`, `arg`/`argument`→`phase`, `conjugate`→`conj`, `imaginary`→`imag`, `as_percent`/`percent_of` variants).
 
 #### Trigonometric (radians)
 
@@ -967,7 +974,7 @@ Uses `AtomicBool` flags (`ALLOW_RANDOM`, `ALLOW_SIDE_EFFECTS`) checked at dispat
 
 ### `UNIT_ALIASES` Overview
 
-`UNIT_ALIASES` is a `LazyLock<HashMap<&str, &str>>` containing 500+ entries mapping every recognized unit name (including plurals, abbreviations, case variations, Unicode variants like `μm`/`um`, and alternative spellings like `litre`/`liter`) to its canonical form in `UNIT_BASE`.
+`UNIT_ALIASES` is a `LazyLock<HashMap<&str, &str>>` containing 508 entries mapping every recognized unit name (including plurals, abbreviations, case variations, Unicode variants like `μm`/`um`, and alternative spellings like `litre`/`liter`) to one of 153 canonical forms in `UNIT_BASE` (17 categories: length, time, mass, volume, data, data_rate, pressure, energy, power, force, voltage, current, angle, speed, temperature, area, frequency).
 
 Key design decisions:
 - **Case-insensitive fallback**: `is_unit()` tries exact match, then lowercase, uppercase, title case, and capital-case
@@ -1010,7 +1017,7 @@ input → Celsius → target
 
 ### Physical Constants Metadata Table
 
-`PHYSICAL_CONSTANTS` provides display metadata (symbol, display name) for the calculator's constants, used by `constant_lookup` MCP tool:
+`PHYSICAL_CONSTANTS` provides display metadata (symbol, display name) for the calculator's constants, used by `constant_lookup` MCP tool. It holds 54 lookup keys (alias spellings share entries, e.g. `na`/`avogadro`/`avogadros`). The evaluator's numeric `CONSTANTS` table holds 55 keys; neither contains a bare `g` or `gravity` key — only `standardgravity` (the NL pipeline maps the English word `gravity` → `standardgravity` via `CONSTANT_WORDS`):
 
 | Constant | Symbol | Display Name | Value |
 |----------|--------|-------------|-------|
@@ -1082,7 +1089,7 @@ This matches Python's operator semantics. The NL pipeline converts English power
 
 ### `g` Means Gram
 
-In unit expressions, `g` resolves to `UNIT_ALIASES["g"]` = `"gram"` = 0.001 kg. To reference the standard gravity constant, use `gravity` or `standardgravity`. The evaluator checks `UNIT_ALIASES` before `CONSTANTS`, so `g` is always gram.
+In unit expressions, `g` resolves via `UNIT_ALIASES["g"]` = `"g"` → gram = 0.001 kg. The evaluator's `CONSTANTS` table has no bare `g` or `gravity` key, so to reference standard gravity use `standardgravity` in direct `evaluate()` calls; in NL `run()` calls the English phrases `gravity` / `standard gravity` / `earth gravity` are mapped to `standardgravity` by `CONSTANT_WORDS` before evaluation.
 
 ### Temperature Is Special
 

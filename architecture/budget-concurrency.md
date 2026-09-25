@@ -243,7 +243,7 @@ all workers are busy, admission delay consumes part of the caller's timeout
 window, so a call can return `Timeout` before its handler ever starts.
 (Cancellation remains cooperative — an un-started handler observes the flag
 and exits early; the abandoned job keeps occupying its worker until reaped,
-tracked by the stuck-workers gauge.)
+tracked by the pool-health `stuck` gauge — `stuck: Arc<AtomicUsize>` per pool.)
 
 ---
 

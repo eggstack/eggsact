@@ -6,9 +6,9 @@ Maintainer reference for generated files, doc generation, confusables data, pari
 
 | File | Source | Generator Command | Purpose |
 |------|--------|-------------------|---------|
-| `architecture/mcp-server.md` profile reference | `ToolSpec` registry + `available_profiles()` | `cargo run --features dev-tools --bin generate-docs` | Per-profile model/harness tool counts and harness-only listings |
-| `generated/tool-cards.md` | `ToolSpec` registry | `cargo run --features dev-tools --bin generate-docs` | Per-codegg-profile tool cards with required args, aliases, composite flags |
-| `architecture/overview.md` registry facts | `ToolSpec` registry + profiles + discovery policy | `cargo run --features dev-tools --bin generate-docs` | Underlying/category/profile counts and discovery advertised count |
+| `architecture/mcp-server.md` profile reference | `ToolSpec` registry + `available_profiles()` | `cargo run --locked --features dev-tools --bin generate-docs` | Per-profile model/harness tool counts and harness-only listings |
+| `generated/tool-cards.md` | `ToolSpec` registry | `cargo run --locked --features dev-tools --bin generate-docs` | Per-codegg-profile tool cards with required args, aliases, composite flags |
+| `architecture/overview.md` registry facts | `ToolSpec` registry + profiles + discovery policy | `cargo run --locked --features dev-tools --bin generate-docs` | Underlying/category/profile counts and discovery advertised count |
 | `src/text/confusables_generated.rs` | Unicode UTS #39 `confusables.txt` | `python3 scripts/generate_confusables.py` | Sorted static table of Unicode codepoints to confusable alternatives (binary-search key lookup) |
 
 These files are **never hand-edited**. Edit the source of truth and re-run the generator.
@@ -73,7 +73,7 @@ The generator uses HTML comment markers for targeted insertion into existing fil
 ### Check Mode
 
 ```bash
-cargo run --features dev-tools --bin generate-docs -- --check
+cargo run --locked --features dev-tools --bin generate-docs -- --check
 ```
 
 Compares current generated output against file contents without writing. Exit code 1 means files are stale. CI runs this as part of the verification pipeline.
@@ -186,13 +186,13 @@ cargo test --locked --all-features -- --skip parity --test-threads=4
 ls ../eggcalc/mcp/server.py
 
 # Build the Rust binary
-cargo build
+cargo build --locked
 
 # Run parity tests only
-cargo test --test lib parity
+cargo test --locked --test lib parity
 
 # Run all tests including parity
-cargo test --all-features
+cargo test --locked --all-features
 ```
 
 ### Known Failures
@@ -274,7 +274,7 @@ The `runtime_diagnostics` tool returns a JSON object:
       "sync_pool_stuck_workers": 0
     }
   },
-  "known_env_vars": ["EGGCALC_NO_CONFIG", "EGGCALC_MCP_PROFILE", "EGGCALC_MCP_AUDIENCE", "EGGCALC_MCP_SCHEMA_DETAIL"]
+  "known_env_vars": ["EGGCALC_NO_CONFIG", "EGGCALC_MCP_PROFILE", "EGGCALC_MCP_AUDIENCE", "EGGCALC_MCP_SCHEMA_DETAIL", "EGGSACT_MCP_SURFACE"]
 }
 ```
 
@@ -291,33 +291,35 @@ Two companion tools provide deeper introspection:
 
 | Change | Regenerate |
 |--------|------------|
-| Add/remove/rename tool in `src/mcp/specs/` | `cargo run --features dev-tools --bin generate-docs` |
-| Change tool metadata (tier, cost, exposure, profiles) | `cargo run --features dev-tools --bin generate-docs` |
+| Add/remove/rename tool in `src/mcp/specs/` | `cargo run --locked --features dev-tools --bin generate-docs` |
+| Change tool metadata (tier, cost, exposure, profiles) | `cargo run --locked --features dev-tools --bin generate-docs` |
 | New Unicode version with updated confusables | `python3 scripts/generate_confusables.py` |
-| Change `CATEGORY_ORDER` or `CODEGG_PROFILES` | `cargo run --features dev-tools --bin generate-docs` |
+| Change `CATEGORY_ORDER` or `CODEGG_PROFILES` | `cargo run --locked --features dev-tools --bin generate-docs` |
 
 ### Verification Steps
 
 ```bash
 # 1. Regenerate docs
-cargo run --features dev-tools --bin generate-docs
+cargo run --locked --features dev-tools --bin generate-docs
 
 # 2. Check for unexpected changes
 git diff README.md architecture/mcp-server.md generated/tool-cards.md
 
 # 3. Verify generated docs are current
-cargo run --features dev-tools --bin generate-docs -- --check
+cargo run --locked --features dev-tools --bin generate-docs -- --check
 
-# 4. Or run individual gates in order (see AGENTS.md for the canonical list)
+# 4. Or run the merge gate in order (see AGENTS.md for the canonical list)
 cargo fmt --all -- --check
 cargo run --locked --features dev-tools --bin generate-docs -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-features --lib
-cargo test --locked --all-features --bins
 cargo test --locked --all-features -- --skip parity --test-threads=4
 cargo test --locked --doc
-cargo deny check advisories bans licenses sources
 ```
+
+`--test-threads=4` is required for the integration suites (Tokio
+blocking-pool starvation); `--lib`/doc tests do not need it. `cargo-deny`
+and the full local gate (clean tree required) live in
+`scripts/release-check.sh`, which never publishes or tags.
 
 ### CI Enforcement
 

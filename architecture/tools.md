@@ -13,7 +13,7 @@ See also: [MCP Server](mcp-server.md), [Text Library](text-library.md), [Machine
 
 ## Module Overview
 
-23 source files implement 86 tools across 23 categories. Every handler follows the same signature:
+22 dedicated category files (+ `helpers.rs`/`mod.rs`) implement 86 tools across 23 categories — the `toml` category has no `tools/toml.rs`; its single `toml_shape` handler (`toml_shape_tool`) lives in `tools/config.rs`. Every handler follows the same signature:
 
 ```rust
 pub fn tool_name(args: &Value) -> ToolResponse
@@ -48,15 +48,25 @@ Typed deterministic core (`text/`, `calc/`)
 
 `preflight/` wrappers remain registry-based intentionally: they exercise full dispatch policy (lookup, profile/audience, schema validation) via `ToolRegistry::call_json`, so their `ToolCall`/`ToolRejected`/`ContractViolation` taxonomy stays meaningful for downstream harnesses.
 
-### Deliberate Remaining JSON Composition
+### Dependency rules
 
-Three same-module handler-to-handler calls remain, each commented at the call site. None crosses category boundaries and none requires registry dispatch; they are intra-module reuses deferred to follow-up typed extraction:
+- `services/*` never touch `ToolResponse`, the MCP registry, profile/audience policy, or JSON-schema validation (only `serde`/`BTreeMap`/typed cores + `super::repo` for patch roles). Verified: no such imports in `src/services/*.rs`.
+- `tools/*` adapters parse/validate their own input, call typed cores/services, and build the response once. Never call a sibling `tools::*` handler for an internal result — except the four intra-module reuses listed below.
+- Orchestration pattern (confirmed by the `patch.rs` module header): each patch-family tool projects a different answer from one `PatchAnalysis` — `patch_summary` neutral presentation, `patch_contract_check` contract policy, `diff_risk_classify` review-routing policy — with path roles from the canonical repository classifier so bucket facts cannot drift. Same shape holds for repo tools over `RepoFacts` and `edit_preflight` over fingerprint/newline/security facts.
+
+### Deliberate Remaining Handler-to-Handler Reuse
+
+Four same-module handler-to-handler calls remain, each intra-module with no
+registry dispatch; three are commented at the call site, one (`command_preflight`
+→ `shell_split`) is an uncommented pipeline step. None crosses category
+boundaries. They are intra-module reuses deferred to follow-up typed extraction:
 
 | Call site | Reuse | Why it remains |
 |-----------|-------|----------------|
 | `structured_data_compare` → `json_compare` | Same-file `json.rs` handler | Shares diff formatting/options handling; extracting a shared typed comparator is follow-up |
 | `structured_data_compare` → `json_shape_tool` | Same-file `json.rs` handler | `TYPE_MISMATCH` from `json_shape` is dead code preserved for parity (BUG-006); `json_shape` has no `"type"` field so the check never fires in Python or Rust |
 | `config_preflight` → `toml_shape_tool` | Same-module `config.rs` handler | Shares TOML shape diagnostics; typed extraction is follow-up |
+| `command_preflight` → `shell_split` | Same-file `shell.rs` handler (`shell.rs:909`) | Reuses the `shell_split` envelope for the parse stage (`subresults["shell_split"]`); the typed `text::shell_split` core is used elsewhere in the same file — extracting a shared typed parse step is follow-up |
 
 Every other former adapter-to-adapter call now goes through `text/` cores or `services/` (fingerprint/newline/security, JSON/TOML/schema/cargo/dotenv/ini validation, replace/line-range/patch checks, path scope, regex safety, unicode/identifier/prompt inspection).
 
@@ -86,7 +96,7 @@ Public serialized map fields use `BTreeMap` for stable lexicographic key orderin
 | `cargo.rs` | cargo | 1 | Cargo.toml inspection and verdict logic |
 | `dependency.rs` | dependency | 1 | Dependency edit preflight with ecosystem detection |
 | `diagnostics.rs` | diagnostics | 3 | Runtime diagnostics, profile inspection, tool availability |
-| `repo.rs` | repo | 5 | Manifest inspection, config file inspection, tree summary, language detect |
+| `repo.rs` | repo | 5 | Manifest inspection, config file inspection, tree summary, language detect, test-command suggest |
 | `analysis.rs` | analysis | 4 | Import/export, code block map, symbol name diff, lockfile inspect |
 | `network.rs` | network | 2 | Deterministic IPv4/IPv6 classification and CIDR arithmetic |
 | `encoding.rs` | encoding | 2 | Strict UTF-8/hex/Base64/Base64URL and radix conversion |
@@ -124,6 +134,12 @@ randomness.
 | `MAX_SCHEMA_ELEMENTS` | 10,000 | Max schema elements traversed |
 | `MAX_METADATA_FIELD_LENGTH` | 1,000 | Max metadata field length for edit_preflight |
 | `MAX_EXPRESSION_LENGTH` | 10,000 | Max math expression length |
+
+Request/output envelope caps live one layer up in `mcp::budget::ToolBudget`
+(not `helpers.rs`): `max_input_bytes` / `max_output_bytes` are 1M each on
+`CHEAP`/`MODERATE`; `HEAVY` keeps 1M input but 2M output. Text/list/regex
+caps mirror the helpers constants (`max_text_bytes` 100k, `max_list_items`
+10k, `max_regex_pattern_chars` 1k, `max_regex_samples` 100).
 
 ### Utility Functions
 
@@ -231,6 +247,9 @@ ToolResponse::error_with_code(
 
 ## Composite Tools
 
+`composite: true` in `src/mcp/specs/` marks 7 tools: `edit_preflight`,
+`command_preflight`, `config_preflight`, `text_security_inspect`,
+`structured_data_compare`, `dependency_edit_preflight`, `config_file_inspect`.
 Tools marked `composite: true` orchestrate other tools internally. All emit a `verdict` field via `.with_verdict()` and use `finding()` helpers with canonical severity/disposition constants. They collect sub-results in a `subresults` map and findings in a vector.
 
 ### edit_preflight
@@ -549,21 +568,34 @@ Route-critical tools **must** always emit `machine_code` and `verdict` in their 
 
 ## Budget Integration
 
-High-risk handlers create a `BudgetContext` at the start:
+Only the handlers below create a `BudgetContext` at the start:
 
 ```rust
 let budget_ctx = crate::mcp::budget::for_handler(crate::mcp::budget::ToolBudget::HEAVY);
 ```
 
-Budget tiers:
+Budget tiers (elapsed: `CHEAP` 10s, `MODERATE`/`HEAVY` 30s; caps: text 100k
+bytes, list 10k, pattern 1k chars, samples 100, request 1M, output 1M except
+`HEAVY` 2M):
 
-| Tier | Used By | Max Elapsed |
-|------|---------|-------------|
-| `CHEAP` | repo_language_detect, test_command_suggest, import_export_inspect, code_block_map, symbol_name_diff | Short |
-| `MODERATE` | patch_apply_check, patch_summary, patch_contract_check, dependency_edit_preflight, identifier_table_inspect, text_diff_explain, lockfile_inspect, regex_finditer, repo_tree_summarize | Medium |
-| `HEAVY` | edit_preflight, command_preflight, config_preflight, text_security_inspect, structured_data_compare, config_file_inspect | Long |
+| Tier | Handlers with `BudgetContext` | Max Elapsed |
+|------|-------------------------------|-------------|
+| `CHEAP` | repo_language_detect, test_command_suggest, import_export_inspect, code_block_map, symbol_name_diff | 10s |
+| `MODERATE` | patch_apply_check, patch_summary, patch_contract_check, dependency_edit_preflight, identifier_table_inspect, text_diff_explain, lockfile_inspect, regex_finditer, repo_tree_summarize | 30s |
+| `HEAVY` | edit_preflight, command_preflight, config_preflight, text_security_inspect, structured_data_compare, config_file_inspect | 30s |
+
+No `BudgetContext`: `repo_manifest_inspect` and `diff_risk_classify` (pure
+`services/` projections), plus leaf utilities without a tier (math, list,
+path, encoding, network, temporal, unicode, version, cargo, markdown,
+diagnostics, and most text/json/validation/config handlers).
 
 Handlers call `budget_ctx.should_stop()` at key pipeline stages. If it returns true, they return `budget_ctx.check_should_stop("tool_name").unwrap_err()` which produces a timeout error response with the appropriate machine code.
+
+Cancellation list: budgeted handlers poll `budget_ctx.should_stop()`; typed
+services never take a `BudgetContext` — `inspect_text_security()` takes a
+lightweight `should_stop: &dyn Fn() -> bool` view (checked at four pipeline
+stages, `Err(SecurityInspectionCancelled)` on cancel), and `edit_preflight`
+passes `|| budget_ctx.should_stop()` through (`patch.rs:1032`).
 
 The MCP server creates an `Arc<AtomicBool>` cancel flag and attaches it via `with_cancellation()` before dispatch. On timeout, the flag is set but blocking work may continue (cooperative, not forceful).
 

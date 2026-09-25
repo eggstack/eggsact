@@ -9,9 +9,10 @@ cargo bench --locked --bench performance
 
 The harness prints stable `key=value` records for the source label,
 toolchain, target, operating system, architecture, CPU, warmup policy, and
-scenario measurements. Set `EGGSACT_BENCH_SHA` when recording a candidate SHA.
+scenario measurements. Set `EGGSACT_BENCH_SHA` to label a candidate SHA.
 Compare baseline and candidate output on the same host/toolchain; timing is
-evidence, not a merge threshold. The matrix covers registry setup, legacy and
+evidence, not a merge threshold, and the harness is maintainer-run and
+non-gating. Never add host-specific timing thresholds to ordinary tests. The matrix covers registry setup, legacy and
 modern listings, discovery, response serialization, input accounting, MCP
 stdio, patching, replacement, JSON, repo facts, diffs, and encodings.
 

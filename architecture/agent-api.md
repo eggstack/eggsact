@@ -197,7 +197,7 @@ pub enum ToolCallOutcome {
 
 ## Dispatch Methods
 
-`ToolRegistry` provides five dispatch methods at increasing levels of sophistication, plus the shared `prepare_tool_call` core. All methods perform the same four-step pipeline:
+`ToolRegistry` provides four dispatch levels at increasing sophistication — plus `call_json_with_execution_template`, an explicit immutable alias for the fourth level — alongside the shared `prepare_tool_call` core. All methods perform the same four-step pipeline:
 
 1. **Tool lookup** — find the handler by name in the registry
 2. **Profile check** — verify the tool is in the current profile
@@ -229,7 +229,7 @@ pub fn call_json_with_budget(
 ```
 
 **Behavior:**
-1. Resolves the tool's default budget from its declared `ToolCost` (via `budget_for_tool`)
+1. Resolves the tool's default budget from its declared `ToolCost` (via the private `resolve_budget` helper)
 2. Merges with any explicit `budget` override
 3. Pre-checks serialized input size against `budget.max_input_bytes` — returns `INPUT_TOO_LARGE` machine code on failure
 4. Executes the handler via `call_json`

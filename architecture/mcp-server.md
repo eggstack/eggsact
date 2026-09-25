@@ -328,7 +328,7 @@ profile at construction time via `with_profile_and_audience`.
 ### How tools/list and tools/call work
 
 - `tools/list`: Validates MCP parameters in `server.rs`, builds a `ToolListOptions`, and delegates to `registry::list_tool_definitions()` in `registry/listing.rs`. The registry handles profile filtering, name/tier/tag filtering, schema compaction, and deprecated-field normalization. MCP retains parameter validation and profile resolution.
-- `tools/call`: Resolves the active profile from `get_active_profile()` and creates a `ToolRegistry` with `Model` audience and `EggcalcPython` compatibility mode (Python-parity error messages). Delegates tool lookup, profile checking, audience/exposure checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API. The in-process agent API defaults to `StrictNative` mode (standard JSON Schema error messages). For budget-aware in-process APIs (`call_json_with_budget`, `call_json_with_context`, `call_json_with_execution_context`), the handler is dispatched through the `SyncExecutionPool` rather than directly.
+- `tools/call`: Resolves the active profile from `get_active_profile()` and creates a `ToolRegistry` with `Model` audience and `EggcalcPython` compatibility mode (Python-parity error messages) — both at the direct `tools/call` dispatch site (`src/mcp/server.rs:589`) and the `tool_invoke` routing site (`src/mcp/server.rs:778`). Delegates tool lookup, profile checking, audience/exposure checking, and argument validation to `ToolRegistry::prepare_tool_call` (shared with the in-process agent API in `src/agent/`). MCP retains its own async dispatch layer (timeout, semaphore, cancellation) around the core handler execution. This avoids duplicating lookup/validation logic between the MCP server and the agent API. The in-process agent API defaults to `StrictNative` mode (standard JSON Schema error messages). For budget-aware in-process APIs (`call_json_with_budget`, `call_json_with_context`, `call_json_with_execution_context`), the handler is dispatched through the `SyncExecutionPool` rather than directly.
 
 ### Direct vs Discovery Surface (`src/mcp/discovery.rs`)
 
@@ -491,7 +491,7 @@ after client-facing timeouts. All handlers execute directly inside the
 `spawn_blocking` closure with `catch_unwind` safety — there are no nested OS
 threads. The outer tokio semaphore provides the sole concurrency bound.
 
-**Read loop stages:** The read loop processes each incoming line through seven
+**Read loop stages:** The read loop processes each incoming line through eight
 stages in order:
 
 1. Bounded frame-size check (rejects lines exceeding `MAX_REQUEST_BYTES`

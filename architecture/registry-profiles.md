@@ -113,7 +113,7 @@ specs/encoding.rs → ENCODING_TOOLS (2)
 specs/temporal.rs → TEMPORAL_TOOLS (2)
 ```
 
-A test (`tool_registration_tables_are_in_sync`) verifies that `ALL_TOOLS_VEC.len()` matches the sum of all category slice lengths. Adding a tool requires only one `ToolSpec` entry — no manual registration.
+A test (`tool_registration_tables_are_in_sync` in `src/mcp/server.rs`) verifies bidirectional coverage: definition names are unique, every registry tool has a definition and a handler (`tool_handler_for`), every definition has a registry entry, and `mcp_tool_count() == registry::tool_count()`. Adding a tool requires only one `ToolSpec` entry — no manual registration.
 
 ---
 
@@ -200,8 +200,8 @@ flow) and `coding-agent-integration.md` (when to choose each surface).
 | `tools_for_profile_audience(profile, audience)` | Tools filtered by profile + audience exposure |
 | `list_tool_definitions(...)` | Full filtering by profile/names/tier/tags/schema_detail |
 | `list_modern_tool_values(...)` | Same filtering, modern-era `Value` encoding (adds `resultType`, `_meta`, annotations) |
-| `compact_input_schema(schema)` | Truncate descriptions to 120 chars, strip defaults |
-| `compact_output_schema(schema)` | Same compaction for response schemas |
+| `compact_input_schema(schema)` | Keep `type`/`enum`/`required`/`items`/numeric+length constraints; truncate property descriptions to 80 chars; strip `default` and everything else |
+| `compact_output_schema(schema)` | Keep only top-level `type` plus per-property `type`/`enum` |
 | `find_close_match(name)` | Levenshtein-based tool name suggestions |
 
 Registry-check helpers live on `ToolRegistry` in `src/agent/mod.rs`: `has_tool(name)` (existence with profile/audience filtering), `get_tool_unfiltered(name)` (administrative lookup bypassing audience/exposure), and `has_registered_tool(name)` (existence without filtering).
@@ -214,7 +214,7 @@ Registry-check helpers live on `ToolRegistry` in `src/agent/mod.rs`: `has_tool(n
 |-------|----------|
 | `full` (default) | Full JSON Schema with descriptions and defaults; deprecated field always emitted |
 | `normal` | Accepted value, currently identical output to `full` |
-| `compact` | Descriptions truncated to 120 chars, defaults stripped, schemas compacted, tier/tags dropped |
+| `compact` | Tool descriptions truncated to 120 chars, property descriptions to 80 chars, defaults stripped, tier/tags dropped (`category`/`llm_exposure`/`cost` kept) |
 
 ---
 
@@ -240,7 +240,7 @@ Adding a new tool requires exactly one step:
 
 1. Add a `ToolSpec` entry to `src/mcp/specs/<category>.rs`
 
-No manual registration, no config file, no build step. The `tool_registration_tables_are_in_sync` test catches drift between the spec count and `ALL_TOOLS_VEC`.
+No manual registration, no config file, no build step. The `tool_registration_tables_are_in_sync` test (in `src/mcp/server.rs`) catches drift by asserting bidirectional coverage between the registry, tool definitions, and handlers.
 
 ### Adding a New Category
 
