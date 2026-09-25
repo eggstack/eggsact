@@ -40,10 +40,11 @@ Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_fai
 
 - `src/main.rs` → CLI; `--mcp` → `mcp/server.rs` stdio loop; expression args → `calc/`
 - `src/lib.rs` → `run()`/`evaluate()` re-exports
-- `src/mcp/specs/` + `src/mcp/schemas/` → `ToolSpec` declarations + JSON schemas (23 files each); aggregated in `mcp/registry/all_tools.rs`
+- `src/mcp/specs/` + `src/mcp/schemas/` → `ToolSpec` declarations + JSON schemas (23 category files each, plus `mod.rs`); aggregated in `mcp/registry/all_tools.rs`
 - `src/tools/` → JSON adapters (parse input, call core/service, build response once). Never call one handler from another.
 - `src/services/` → typed composites (`RepoFacts`, `PatchAnalysis`, `SecurityInspection`, `FingerprintFacts`, `NewlineFacts`). Call these, not sibling handlers.
 - `src/text/` → leaf deterministic cores; `src/calc/` → math; `src/agent/` → `ToolRegistry`; `src/preflight/` → typed wrappers; `src/temporal/` → fixed-offset datetime/cron.
+- `tests/` → single `lib` test crate (`calc`/`mcp`/`parity`/`text`/`property`) + standalone context isolation. See `architecture/testing.md`.
 - Start at `architecture/overview.md`; full API hierarchy in `docs/library-api.md`.
 
 ## Adding / changing a tool
@@ -68,7 +69,7 @@ Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_fai
 - Limits: text 100k, expr 10k, list 10k, regex samples 100, pattern 1k, request/output 1M each. Check `limits_applied`; truncation is automatic.
 - Env: `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (`Model` default, case-insensitive), `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`), `EGGSACT_MCP_SURFACE` (`direct`/`discovery`). `EGGCALC_NO_CONFIG=1` is for Python-`eggcalc` callers.
 - `eggsact update` / `eggsact integrate list|detect|<client>` are verified/read-only; they never install a daemon or edit client config.
-- Self-update transport is `eggup-core`/`eggup-eggfetch`/`eggup-acquisition` 0.1.0 over `eggfetch-core` (HTTP/1 + TLS, strict HTTPS-downgrade rejection, explicit env proxy, 10s connect / 120s total, request-local decoded-body caps on small metadata/checksum bodies, streamed binaries, no external `curl` after install). Bootstrap `packaging/install.*` still uses external download tooling. Do not add HTTP to the library/MCP API, retries, or extra fetch features without measurement.
+- Self-update transport is `eggup-core`/`eggup-eggfetch`/`eggup-acquisition` 0.1.0 over `eggfetch-core` (in-process HTTP/1 + TLS, strict HTTPS-downgrade rejection, explicit env proxy, no external `curl` after install). Bootstrap `packaging/install.*` still uses external download tooling. Do not add HTTP to the library/MCP API, retries, or extra fetch features without measurement.
 
 ## Planning
 

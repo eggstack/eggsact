@@ -11,9 +11,9 @@ tests/
   lib.rs                          # single test crate root, declares 5 modules
   test_context_isolation.rs       # context isolation integration tests (2143 lines)
   calc/                           # calculator tests (4 files + shared mod.rs)
-  mcp/                            # MCP protocol + tool tests (32 files)
-  text/                           # text processing tests (24 files)
-  parity/                         # Python/Rust parity tests (11 files)
+  mcp/                            # MCP protocol + tool tests (32 files + mod.rs + support.rs)
+  text/                           # text processing tests (24 files + mod.rs)
+  parity/                         # Python/Rust parity tests (11 files + mod.rs)
   property/                       # property-based tests (11 files + mod.rs, 61 tests)
   fixtures/
     accepted_parity_failures.txt  # 37 accepted parity failures for regression detection

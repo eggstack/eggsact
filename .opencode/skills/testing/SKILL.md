@@ -93,6 +93,8 @@ tests/
     test_analysis_tools.rs
     test_execution_safety.rs
     test_schema_boundaries.rs
+    test_discovery.rs        # discovery surface gate: advertised counts, byte budgets, containment, retrieval
+    test_era_pinning.rs      # single-process protocol-era pinning, cross-era rejection
   parity/
     mod.rs                   # ParityTestResult, run_python_request, run_rust_tool helpers
     test_tools_core.rs       # core tool parity with Python
@@ -121,6 +123,7 @@ tests/
     test_serialization_determinism.rs
     test_shell_properties.rs
     test_unicode_properties.rs
+    test_utility_properties.rs  # network/codec/radix/datetime/cron invariants
 ```
 
 Agent module unit tests (`src/agent/mod.rs` inline `#[cfg(test)]`) cover `ToolRegistry` profile filtering, unknown tool errors, argument validation, and `call_json` success paths.
