@@ -1002,12 +1002,14 @@ fn test_text_inspect_bidi_heavy() {
         serde_json::json!({"text": "hello\u{202A} \u{202E}world\u{202C}"}),
     );
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
-    // Bidi controls appear in invisibles array, not necessarily bidi_controls
-    let invisibles = r["result"]["invisibles"].as_array().unwrap();
-    assert!(
-        invisibles.len() >= 2,
-        "Should detect multiple bidi/invisible controls, got {}",
-        invisibles.len()
+    // LRE, RLO, and PDF are bidirectional controls: typed membership puts
+    // all three in bidi_controls, not in the generic invisibles array.
+    let bidi = r["result"]["bidi_controls"].as_array().unwrap();
+    assert_eq!(
+        bidi.len(),
+        3,
+        "Should detect LRE/RLO/PDF in bidi_controls, got {:?}",
+        r["result"]["bidi_controls"]
     );
 }
 

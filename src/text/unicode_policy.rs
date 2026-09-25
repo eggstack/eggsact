@@ -62,10 +62,10 @@ const WINDOWS_RESERVED: &[&str] = &[
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
-const BIDI_CHARS: &[char] = &[
-    '\u{200e}', '\u{200f}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}',
-    '\u{2067}', '\u{2068}', '\u{2069}',
-];
+/// Bidirectional controls, delegated to the authoritative typed classifier in
+/// `unicode_tools` so policy code never maintains its own bidi table.
+/// (Previously a duplicated hand-maintained list.)
+use crate::text::unicode_tools::BIDI_CONTROLS as BIDI_CHARS;
 
 const ZERO_WIDTH_CHARS: &[char] = &['\u{200b}', '\u{200c}', '\u{200d}', '\u{2060}'];
 
@@ -128,53 +128,19 @@ fn find_invisibles(text: &str) -> Vec<char> {
         .collect()
 }
 
+/// Script identity with the policy-layer `"Unknown"` spelling.
+///
+/// Delegates to the authoritative [`crate::text::script`] source; emoji
+/// (which the old table mapped to `"Common"`) now surface as `"Unknown"`
+/// via [`crate::text::script::policy_script_of`] and are filtered by the
+/// caller exactly as before, so wire behavior is preserved.
 fn get_script(cp: u32) -> &'static str {
-    if (0x0041..=0x005A).contains(&cp) || (0x0061..=0x007A).contains(&cp) {
-        return "Latin";
-    }
-    if (0x0030..=0x0039).contains(&cp) {
-        return "Common";
-    }
-    if (0x0400..=0x04FF).contains(&cp) {
-        return "Cyrillic";
-    }
-    if (0x0530..=0x058F).contains(&cp) {
-        return "Armenian";
-    }
-    if (0x0600..=0x06FF).contains(&cp) {
-        return "Arabic";
-    }
-    if (0x0900..=0x097F).contains(&cp) {
-        return "Devanagari";
-    }
-    if (0x3040..=0x309F).contains(&cp) {
-        return "Hiragana";
-    }
-    if (0x30A0..=0x30FF).contains(&cp) {
-        return "Katakana";
-    }
-    if (0x4E00..=0x9FFF).contains(&cp) || (0x3400..=0x4DBF).contains(&cp) {
-        return "Han";
-    }
-    if (0xAC00..=0xD7AF).contains(&cp) {
-        return "Hangul";
-    }
-    if (0x1F300..=0x1F9FF).contains(&cp) || (0x1F600..=0x1F64F).contains(&cp) {
-        return "Common";
-    }
-    if cp == 0x200C || cp == 0x200D {
-        return "Inherited";
-    }
-    if (0x0300..=0x036F).contains(&cp) {
-        return "Inherited";
-    }
-    "Unknown"
+    crate::text::script::policy_script_of(cp)
 }
 
 fn detect_mixed_scripts(text: &str) -> (bool, Vec<String>) {
     let mut scripts: HashSet<&'static str> = HashSet::new();
     for c in text.chars() {
-        let cp = c as u32;
         if c.is_whitespace() || c == '\u{200b}' || c == '\u{200c}' || c == '\u{200d}' {
             continue;
         }
@@ -182,16 +148,19 @@ fn detect_mixed_scripts(text: &str) -> (bool, Vec<String>) {
         if cat.starts_with('M') || cat == "Cf" {
             continue;
         }
-        let script = get_script(cp);
+        let script = get_script(c as u32);
         if matches!(script, "Unknown" | "Common" | "Inherited" | "Other") {
             continue;
         }
         scripts.insert(script);
     }
 
-    let has_multiple = scripts.len() > 1;
-    let mut script_list: Vec<String> = scripts.into_iter().map(String::from).collect();
+    let mut script_list: Vec<String> = scripts.iter().map(|s| s.to_string()).collect();
     script_list.sort();
+    // Legitimate writing-system mixtures (Japanese, Korean) are not spoof
+    // mixtures: report them as non-mixed while keeping the observed list.
+    let refs: std::collections::BTreeSet<&str> = scripts.into_iter().collect();
+    let has_multiple = refs.len() > 1 && !crate::text::script::is_legitimate_mixture(&refs);
     (has_multiple, script_list)
 }
 
@@ -306,7 +275,7 @@ pub fn unicode_policy_check(
     }
 }
 
-fn check_identifier_strict(_text: &str, normalized: &str) -> Vec<PolicyFinding> {
+fn check_identifier_strict(text: &str, normalized: &str) -> Vec<PolicyFinding> {
     let mut findings: Vec<PolicyFinding> = Vec::new();
 
     let (mixed, scripts) = detect_mixed_scripts(normalized);
@@ -349,17 +318,27 @@ fn check_identifier_strict(_text: &str, normalized: &str) -> Vec<PolicyFinding> 
         });
     }
 
-    // Normalization instability (NFC != NFD form)
-    // `normalized` is already NFC-normalized at this point.
-    // Check if the NFD form differs — meaning the text contains precomposed
-    // characters that have decomposed equivalents.
-    {
-        let nfd_form: String = normalized.nfd().collect();
-        if nfd_form != *normalized {
+    // Normalization instability: warn only for an actual input/profile
+    // normalization change (or a further compatibility change), never merely
+    // because a precomposed character has an NFD decomposition. Ordinary
+    // NFC-stable input such as "caf\u{e9}" must not warn: NFC and NFD forms
+    // of any non-empty string almost always differ, so NFC-vs-NFD inequality
+    // is not instability.
+    if text != normalized {
+        findings.push(PolicyFinding {
+            rule: "normalization_instability".to_string(),
+            severity: "warning".to_string(),
+            message: "Input changed under profile normalization; identifier may compare unequal across normalization forms".to_string(),
+        });
+    } else {
+        let nfkc_form: String = normalized.nfkc().collect();
+        if nfkc_form != *normalized {
             findings.push(PolicyFinding {
                 rule: "normalization_instability".to_string(),
                 severity: "warning".to_string(),
-                message: "Text has different forms under NFC vs NFD normalization".to_string(),
+                message:
+                    "Text changes under compatibility (NFKC) folding despite profile normalization"
+                        .to_string(),
             });
         }
     }
@@ -697,26 +676,147 @@ pub fn canonicalize_text(
     }
 }
 
+/// Character-level mapping between `original` and `canonical`.
+///
+/// `position` is a code-point position in `original`. The previous
+/// implementation zipped both strings by raw index, so one one-to-many
+/// transform (e.g. `ß -> ss` casefolding) shifted every later diagnostic
+/// mapping. This implementation uses a bounded greedy alignment (lookahead
+/// window of 16 code points): equal code points align with no entry, a
+/// local expansion/contraction emits exactly one entry for the affected
+/// span, and only truly unalignable tails fall back to positional pairing.
+/// Later positions therefore stay aligned after a local expansion.
 fn build_char_mapping(original: &str, canonical: &str) -> Vec<CharMapping> {
-    let mut mapping: Vec<CharMapping> = Vec::new();
-    let max_len = original.chars().count().max(canonical.chars().count());
+    const LOOKAHEAD: usize = 16;
+
+    fn codepoints(chars: &[char]) -> Option<String> {
+        if chars.is_empty() {
+            None
+        } else {
+            Some(
+                chars
+                    .iter()
+                    .map(|c| format!("U+{:04X}", *c as u32))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            )
+        }
+    }
+
+    fn text(chars: &[char]) -> Option<String> {
+        if chars.is_empty() {
+            None
+        } else {
+            Some(chars.iter().collect())
+        }
+    }
 
     let orig_chars: Vec<char> = original.chars().collect();
     let canon_chars: Vec<char> = canonical.chars().collect();
+    let mut mapping: Vec<CharMapping> = Vec::new();
+    let (mut i, mut j) = (0usize, 0usize);
 
-    for i in 0..max_len {
-        let orig_char = orig_chars.get(i).copied();
-        let canon_char = canon_chars.get(i).copied();
-
-        if orig_char != canon_char {
-            let entry = CharMapping {
-                position: i,
-                original: orig_char.map(|c| c.to_string()),
-                original_codepoint: orig_char.map(|c| format!("U+{:04X}", c as u32)),
-                canonical: canon_char.map(|c| c.to_string()),
-                canonical_codepoint: canon_char.map(|c| format!("U+{:04X}", c as u32)),
-            };
-            mapping.push(entry);
+    while i < orig_chars.len() || j < canon_chars.len() {
+        match (orig_chars.get(i).copied(), canon_chars.get(j).copied()) {
+            (Some(o), Some(c)) if o == c => {
+                i += 1;
+                j += 1;
+            }
+            (Some(o), Some(c)) => {
+                // Expansion? If the *next* original char appears within the
+                // lookahead window ahead in canonical, the span between is
+                // this char's local expansion (e.g. `ß -> ss`).
+                let mut expanded_to: Option<usize> = None;
+                if let Some(next_orig) = orig_chars.get(i + 1).copied() {
+                    let end = (j + LOOKAHEAD + 1).min(canon_chars.len());
+                    for k in (j + 1)..=end {
+                        if canon_chars.get(k) == Some(&next_orig) {
+                            expanded_to = Some(k);
+                            break;
+                        }
+                    }
+                } else {
+                    // Last original char: consume a bounded trailing
+                    // expansion only (avoids swallowing a long unrelated
+                    // tail when canonical is much longer).
+                    let remaining = canon_chars.len().saturating_sub(j);
+                    if (2..=LOOKAHEAD).contains(&remaining) {
+                        expanded_to = Some(canon_chars.len());
+                    }
+                }
+                if let Some(k) = expanded_to {
+                    let span = &canon_chars[j..k.min(canon_chars.len())];
+                    if !span.is_empty() {
+                        mapping.push(CharMapping {
+                            position: i,
+                            original: Some(o.to_string()),
+                            original_codepoint: Some(format!("U+{:04X}", o as u32)),
+                            canonical: text(span),
+                            canonical_codepoint: codepoints(span),
+                        });
+                        i += 1;
+                        j = k.min(canon_chars.len());
+                        continue;
+                    }
+                }
+                // Contraction? If the current canonical char appears within
+                // the lookahead window ahead in original, the span between
+                // is a local contraction onto it.
+                let mut contracted_to: Option<usize> = None;
+                let oend = (i + LOOKAHEAD + 1).min(orig_chars.len());
+                for k in (i + 1)..=oend {
+                    if orig_chars.get(k) == Some(&c) {
+                        contracted_to = Some(k);
+                        break;
+                    }
+                }
+                if let Some(k) = contracted_to {
+                    let span = &orig_chars[i..k.min(orig_chars.len())];
+                    if !span.is_empty() {
+                        mapping.push(CharMapping {
+                            position: i,
+                            original: text(span),
+                            original_codepoint: codepoints(span),
+                            canonical: Some(c.to_string()),
+                            canonical_codepoint: Some(format!("U+{:04X}", c as u32)),
+                        });
+                        i = k.min(orig_chars.len());
+                        j += 1;
+                        continue;
+                    }
+                }
+                // Plain substitution fallback.
+                mapping.push(CharMapping {
+                    position: i,
+                    original: Some(o.to_string()),
+                    original_codepoint: Some(format!("U+{:04X}", o as u32)),
+                    canonical: Some(c.to_string()),
+                    canonical_codepoint: Some(format!("U+{:04X}", c as u32)),
+                });
+                i += 1;
+                j += 1;
+            }
+            (None, Some(c)) => {
+                mapping.push(CharMapping {
+                    position: i,
+                    original: None,
+                    original_codepoint: None,
+                    canonical: Some(c.to_string()),
+                    canonical_codepoint: Some(format!("U+{:04X}", c as u32)),
+                });
+                j += 1;
+            }
+            (Some(o), None) => {
+                mapping.push(CharMapping {
+                    position: i,
+                    original: Some(o.to_string()),
+                    original_codepoint: Some(format!("U+{:04X}", o as u32)),
+                    canonical: None,
+                    canonical_codepoint: None,
+                });
+                i += 1;
+            }
+            (None, None) => break,
         }
     }
 
@@ -924,5 +1024,78 @@ mod tests {
         let result = canonicalize_text("test", "invalid_profile", false);
         assert!(!result.base.changed);
         assert!(!result.base.findings.is_empty());
+    }
+
+    #[test]
+    fn test_normalization_instability_ignores_ordinary_precomposed() {
+        // "café" (U+00E9) is NFC-stable: NFC-vs-NFD inequality alone must not
+        // warn. The old predicate flagged every precomposed character.
+        let result = unicode_policy_check("café", "identifier_strict", None);
+        assert!(
+            !result
+                .findings
+                .iter()
+                .any(|f| f.rule == "normalization_instability"),
+            "NFC-stable input must not warn: {:?}",
+            result.findings
+        );
+    }
+
+    #[test]
+    fn test_normalization_instability_fires_on_profile_change() {
+        // Decomposed "cafe\u{301}" changes under the NFC profile: genuine
+        // instability. Compatibility "ﬁ" (U+FB01) survives NFC but folds
+        // under NFKC: also instability.
+        let decomposed = unicode_policy_check("cafe\u{301}", "identifier_strict", None);
+        assert!(
+            decomposed
+                .findings
+                .iter()
+                .any(|f| f.rule == "normalization_instability"),
+            "decomposed input must warn: {:?}",
+            decomposed.findings
+        );
+        let compat = unicode_policy_check("\u{FB01}", "identifier_strict", None);
+        assert!(
+            compat
+                .findings
+                .iter()
+                .any(|f| f.rule == "normalization_instability"),
+            "compatibility input must warn: {:?}",
+            compat.findings
+        );
+        let plain = unicode_policy_check("hello", "identifier_strict", None);
+        assert!(!plain
+            .findings
+            .iter()
+            .any(|f| f.rule == "normalization_instability"));
+    }
+
+    #[test]
+    fn test_char_mapping_no_cascade_after_expansion() {
+        // "ßtest" casefolds to "sstest": exactly one local expansion entry,
+        // with later positions still aligned (no cascade).
+        let result = canonicalize_text("ßtest", "identifier_compare", true);
+        let mapping = result.mapping.expect("changed input must map");
+        assert_eq!(mapping.len(), 1, "expansion must not cascade: {mapping:?}");
+        assert_eq!(mapping[0].position, 0);
+        assert_eq!(mapping[0].original.as_deref(), Some("ß"));
+        assert_eq!(mapping[0].canonical.as_deref(), Some("ss"));
+    }
+
+    #[test]
+    fn test_legitimate_japanese_mixture_not_flagged() {
+        let ja = unicode_policy_check("日本語テスト漢字", "human_text", None);
+        assert!(
+            !ja.findings.iter().any(|f| f.rule == "mixed_scripts"),
+            "legitimate Japanese mixture must not warn: {:?}",
+            ja.findings
+        );
+        let spoof = unicode_policy_check("hello привеt", "human_text", None);
+        assert!(
+            spoof.findings.iter().any(|f| f.rule == "mixed_scripts"),
+            "Latin/Cyrillic mixture must warn: {:?}",
+            spoof.findings
+        );
     }
 }

@@ -33,6 +33,95 @@ pub fn unicode_casefold(s: &str) -> String {
     caseless::default_case_fold_str(s)
 }
 
+/// Typed Unicode hazard classification for security decisions.
+///
+/// This is the single non-presentation source for hazard membership consumed
+/// by `text_measure`, `inspect_text_security`, and Unicode policy paths.
+/// Human-readable `display` and Unicode names must never be used as security
+/// predicates; use [`is_bidi_control`] / [`classify_hazard`] instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UnicodeHazard {
+    /// Explicit bidirectional controls (UAX #9): LRM, RLM, LRE, RLE, PDF,
+    /// LRO, RLO, LRI, RLI, FSI, PDI.
+    BidiControl,
+    /// Join controls: ZWNJ, ZWJ.
+    JoinControl,
+    /// Other invisible formatting: ZWSP, BOM/ZWNBSP, NBSP, line/paragraph
+    /// separators, word joiner, soft hyphen, Mongolian vowel separator,
+    /// combining grapheme joiner, invisible mathematical operators, and
+    /// deprecated formatting controls.
+    InvisibleFormat,
+    /// Variation selectors (U+FE00..U+FE0F).
+    VariationSelector,
+    /// Combining marks (General_Category=M); inherit the base script.
+    CombiningMark,
+    /// Ordinary controls (General_Category=C, excluding \n \t \r).
+    Control,
+}
+
+/// The 11 modern bidirectional controls (UAX #9).
+pub const BIDI_CONTROLS: &[char] = &[
+    '\u{200E}', '\u{200F}', '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}', '\u{2066}',
+    '\u{2067}', '\u{2068}', '\u{2069}',
+];
+
+/// Join controls: zero-width non-joiner and zero-width joiner.
+pub const JOIN_CONTROLS: &[char] = &['\u{200C}', '\u{200D}'];
+
+/// Whether `c` is an explicit bidirectional control.
+///
+/// Exactly the 11 members of [`BIDI_CONTROLS`]: LRM, RLM, LRE, RLE, PDF,
+/// LRO, RLO, LRI, RLI, FSI, PDI. Deprecated formatting controls
+/// (U+206A..U+206F) and invisible mathematical operators (U+2061..U+2065)
+/// are *not* bidi controls; they classify as [`UnicodeHazard::InvisibleFormat`].
+pub fn is_bidi_control(c: char) -> bool {
+    BIDI_CONTROLS.contains(&c)
+}
+
+/// Whether `c` is a join control (ZWNJ or ZWJ).
+pub fn is_join_control(c: char) -> bool {
+    JOIN_CONTROLS.contains(&c)
+}
+
+/// Typed hazard classification for one character.
+///
+/// Returns `None` for ordinary text (including newlines, tabs, and carriage
+/// returns). Combining marks report [`UnicodeHazard::CombiningMark`] and
+/// variation selectors report [`UnicodeHazard::VariationSelector`] so
+/// consumers can retain those distinctions instead of collapsing everything
+/// into a single "invisible" bucket.
+pub fn classify_hazard(c: char) -> Option<UnicodeHazard> {
+    let cp = c as u32;
+    if is_bidi_control(c) {
+        return Some(UnicodeHazard::BidiControl);
+    }
+    if is_join_control(c) {
+        return Some(UnicodeHazard::JoinControl);
+    }
+    if (0xFE00..=0xFE0F).contains(&cp) {
+        return Some(UnicodeHazard::VariationSelector);
+    }
+    if get_general_category(c).abbreviation().starts_with('M') {
+        return Some(UnicodeHazard::CombiningMark);
+    }
+    if matches!(
+        cp,
+        0x200B | 0xFEFF | 0x00A0 | 0x2028 | 0x2029 | 0x2060 | 0x00AD | 0x180E | 0x034F
+            | 0x2061..=0x2065
+            | 0x206A..=0x206F
+    ) {
+        return Some(UnicodeHazard::InvisibleFormat);
+    }
+    if get_general_category(c).abbreviation().starts_with('C')
+        && c != '\n'
+        && c != '\t'
+        && c != '\r'
+    {
+        return Some(UnicodeHazard::Control);
+    }
+    None
+}
+
 pub fn is_invisible_char(c: char) -> bool {
     let cp = c as u32;
     matches!(cp,
@@ -231,45 +320,13 @@ pub fn build_safe_repr(text: &str) -> String {
     result
 }
 
+/// Authoritative script identity for one character.
+///
+/// Delegates to [`crate::text::script::script_of`], the single source of
+/// truth for script identity. Returns `"Common"`, `"Inherited"`, a script
+/// name, or `"Other"`.
 pub fn script_name(c: char) -> String {
-    let cp = c as u32;
-    if get_general_category(c).abbreviation().starts_with('M') {
-        "Inherited".to_string()
-    } else if (0x3000..=0x303F).contains(&cp) {
-        "CJK".to_string()
-    } else if (0x0041..=0x024F).contains(&cp) || (0x1E00..=0x1EFF).contains(&cp) {
-        "Latin".to_string()
-    } else if (0x0400..=0x04FF).contains(&cp) || (0x0500..=0x052F).contains(&cp) {
-        "Cyrillic".to_string()
-    } else if (0x0370..=0x03FF).contains(&cp) {
-        "Greek".to_string()
-    } else if (0x0590..=0x05FF).contains(&cp) {
-        "Hebrew".to_string()
-    } else if (0x0600..=0x06FF).contains(&cp) || (0x0750..=0x077F).contains(&cp) {
-        "Arabic".to_string()
-    } else if (0x0900..=0x097F).contains(&cp) {
-        "Devanagari".to_string()
-    } else if (0x0E00..=0x0E7F).contains(&cp) {
-        "Thai".to_string()
-    } else if (0x3040..=0x309F).contains(&cp) {
-        "Hiragana".to_string()
-    } else if (0x30A0..=0x30FF).contains(&cp) {
-        "Katakana".to_string()
-    } else if (0x4E00..=0x9FFF).contains(&cp) || (0x3400..=0x4DBF).contains(&cp) {
-        "Han".to_string()
-    } else if (0xAC00..=0xD7AF).contains(&cp) {
-        "Hangul".to_string()
-    } else if (0x10A0..=0x10FF).contains(&cp) {
-        "Georgian".to_string()
-    } else if (0x0530..=0x058F).contains(&cp) {
-        "Armenian".to_string()
-    } else if (0x13A0..=0x13FF).contains(&cp) {
-        "Cherokee".to_string()
-    } else if (0x1400..=0x167F).contains(&cp) {
-        "Canadian_Aboriginal".to_string()
-    } else {
-        "Other".to_string()
-    }
+    crate::text::script::script_of(c).to_string()
 }
 
 pub fn detect_mixed_scripts(text: &str) -> MixedScriptsResult {
@@ -289,8 +346,15 @@ pub fn detect_mixed_scripts(text: &str) -> MixedScriptsResult {
         }
     }
 
+    // Legitimate writing-system mixtures (Japanese Han/Hiragana/Katakana,
+    // Korean Hangul/Han/Latin) are not spoof mixtures.
+    let script_refs: std::collections::BTreeSet<&str> =
+        scripts.iter().map(|s| s.as_str()).collect();
+    let mixed_scripts =
+        scripts.len() > 1 && !crate::text::script::is_legitimate_mixture(&script_refs);
+
     MixedScriptsResult {
-        mixed_scripts: scripts.len() > 1,
+        mixed_scripts,
         scripts: scripts.into_iter().collect(),
         positions,
     }
@@ -309,6 +373,14 @@ pub fn confusables_count(s: &str) -> usize {
     s.chars().filter(|c| lookup(*c).is_some()).count()
 }
 
+/// Source characters whose confusable mapping is exactly the single target
+/// character `ch`.
+///
+/// Only single-code-point mappings are indexed: a source such as `Æ`
+/// (which maps to the two-code-point sequence `U+0041 U+0045`) is *not*
+/// equivalent to `A` alone, so multi-code-point sources are excluded rather
+/// than misrepresented as single-code-point equivalence. Whole-string
+/// confusability must use [`crate::text::confusables::are_confusable`].
 pub fn reverse_confusables(ch: char) -> Result<Vec<String>, String> {
     use crate::text::confusables::CONFUSABLES;
     use std::collections::HashMap;
@@ -317,12 +389,16 @@ pub fn reverse_confusables(ch: char) -> Result<Vec<String>, String> {
     static REVERSE_INDEX: LazyLock<HashMap<String, Vec<String>>> = LazyLock::new(|| {
         let mut index: HashMap<String, Vec<String>> = HashMap::new();
         for &(source_cp, target_cps_str) in CONFUSABLES.iter() {
-            for target_cp in target_cps_str.split_whitespace() {
-                index
-                    .entry(target_cp.to_string())
-                    .or_default()
-                    .push(format!("U+{:04X}", source_cp));
-            }
+            // Single-code-point targets only; skip multi-code-point
+            // sequences (component mapping is not equivalence).
+            let mut parts = target_cps_str.split_whitespace();
+            let (Some(only), None) = (parts.next(), parts.next()) else {
+                continue;
+            };
+            index
+                .entry(only.to_string())
+                .or_default()
+                .push(format!("U+{:04X}", source_cp));
         }
         index
     });
@@ -340,4 +416,91 @@ pub fn reverse_confusables(ch: char) -> Result<Vec<String>, String> {
                 .collect()
         })
         .unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bidi_membership_covers_all_supported_controls() {
+        // Every bidi control named by Milestone 003 classifies as bidi.
+        for c in [
+            '\u{202A}', // LRE
+            '\u{202B}', // RLE
+            '\u{202C}', // PDF
+            '\u{202D}', // LRO
+            '\u{202E}', // RLO
+            '\u{2066}', // LRI
+            '\u{2067}', // RLI
+            '\u{2068}', // FSI
+            '\u{2069}', // PDI
+            '\u{200E}', // LRM
+            '\u{200F}', // RLM
+        ] {
+            assert!(
+                is_bidi_control(c),
+                "{c:?} (U+{:04X}) must be bidi",
+                c as u32
+            );
+            assert_eq!(classify_hazard(c), Some(UnicodeHazard::BidiControl));
+        }
+    }
+
+    #[test]
+    fn bidi_membership_excludes_lookalikes() {
+        // Ordinary RLO/LRO displays ("RLO", not "BIDI") were the reason
+        // display-string predicates failed; the typed classifier must also
+        // exclude neighboring invisible/format characters.
+        for c in [
+            'A', ' ', '\u{200B}', // ZWSP
+            '\u{200C}', // ZWNJ (join control, not bidi)
+            '\u{200D}', // ZWJ (join control, not bidi)
+            '\u{2061}', // FUNCTION APPLICATION (math invisible)
+            '\u{206A}', // deprecated formatting (invisible format, not bidi)
+            '\u{FE00}', // variation selector
+            '\u{0301}', // combining mark
+            '\u{0001}', // ordinary control
+        ] {
+            assert!(!is_bidi_control(c), "{c:?} must not be bidi");
+        }
+        assert_eq!(
+            classify_hazard('\u{200C}'),
+            Some(UnicodeHazard::JoinControl)
+        );
+        assert_eq!(
+            classify_hazard('\u{200D}'),
+            Some(UnicodeHazard::JoinControl)
+        );
+        assert_eq!(
+            classify_hazard('\u{FE00}'),
+            Some(UnicodeHazard::VariationSelector)
+        );
+        assert_eq!(
+            classify_hazard('\u{0301}'),
+            Some(UnicodeHazard::CombiningMark)
+        );
+        assert_eq!(classify_hazard('\u{0001}'), Some(UnicodeHazard::Control));
+        assert_eq!(
+            classify_hazard('\u{2061}'),
+            Some(UnicodeHazard::InvisibleFormat)
+        );
+        assert_eq!(classify_hazard('A'), None);
+        assert_eq!(classify_hazard('\n'), None);
+    }
+
+    #[test]
+    fn reverse_confusables_excludes_multi_code_point_sources() {
+        // Æ maps to U+0041 U+0045: a component mapping, not equivalence with
+        // 'A' alone, so it must not appear in reverse('A').
+        let back = reverse_confusables('A').unwrap();
+        assert!(
+            back.iter().any(|s| s == "А"),
+            "Cyrillic А must reverse to A"
+        );
+        assert!(
+            !back.iter().any(|s| s == "Æ"),
+            "Æ must not reverse to single 'A': {back:?}"
+        );
+    }
 }

@@ -1306,7 +1306,7 @@ fn all_fixtures() -> Vec<RouteFixture> {
         expect_machine_code: "UNICODE_RISK",
         expect_verdict: Some("review"),
         expect_findings: vec![ExpectedFinding {
-            code: "HIDDEN_CHARS",
+            code: "TEXT_INSPECT_WARNING",
             severity: "medium",
             disposition: "caution",
         }],

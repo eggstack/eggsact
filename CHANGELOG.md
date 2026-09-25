@@ -7,7 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Whole-string UTS #39 confusable skeleton API (`confusable_skeleton`,
+  `are_confusable`) over the pinned Unicode 17 security data: NFD, mapping
+  substitution, NFD. Collision detection (`identifier_inspect`,
+  `identifier_table_inspect`) now groups exact skeleton matches instead of
+  inferring collisions from shared per-character mapping targets.
+- Typed Unicode hazard classification (`UnicodeHazard`, `is_bidi_control`,
+  `is_join_control`, `classify_hazard` in `unicode_tools`): the single
+  non-presentation source for bidi/join/invisible-format/variation-selector/
+  combining-mark/control membership consumed by `text_measure`,
+  `inspect_text_security`, and Unicode policy paths.
+- Authoritative `text::script` module (`script_of`, `policy_script_of`,
+  `is_legitimate_mixture`): one script-identity source for `unicode_tools`,
+  `unicode_policy`, and `identifier`, with legitimate Japanese
+  (Han/Hiragana/Katakana) and Korean (Hangul/Han/Latin) mixtures excluded
+  from spoof-mixture verdicts.
+- Confusables provenance constants (`CONFUSABLES_UNICODE_VERSION`,
+  `CONFUSABLES_SOURCE_SHA256`, `CONFUSABLES_ENTRY_COUNT`) checked against
+  the generated header and exact table length by unit tests.
+- Generator `--check` (maintainer freshness check: fetch pinned source,
+  regenerate in memory, fail on drift, write nothing) and offline
+  `--self-test` strict-parser fixture suite for
+  `scripts/generate_confusables.py`.
+- Direct `unicode-ident` 1.0 dependency for Rust identifier validity
+  (MSRV-compatible, MIT/Apache/Unicode licenses, negligible footprint:
+  tables only, no runtime I/O).
+
+### Fixed
+- `identifier_inspect` / `identifier_table_inspect` missed real homoglyphs
+  (e.g. Latin `apple` vs Cyrillic-`аpple` now collide) and produced false
+  positives from shared mapping components or substring checks (e.g. `АX`
+  vs `ΑY` no longer collide). Edit-distance ≤ 1 proximity is now reported
+  as the distinct `near_match` kind, never as `confusable`.
+- Bidi controls (RLO/LRO/RLE/LRE/PDF/LRI/RLI/FSI/PDI plus LRM/RLM) no longer
+  depend on `display.contains("BIDI")`: ordinary displays such as `RLO`
+  classify correctly across `text_measure`, `text_inspect`,
+  `text_security_inspect`, and Unicode policy paths.
+- `reverse_confusables` indexes single-code-point targets only; `Æ`
+  (mapping `U+0041 U+0045`) no longer misreports as equivalent to `A` alone.
+- `normalization_instability` no longer flags ordinary precomposed
+  characters (NFC-vs-NFD inequality): it fires on actual input/profile
+  normalization changes or further NFKC compatibility changes.
+- `build_char_mapping` uses bounded greedy alignment, so one-to-many
+  transforms (e.g. `ß -> ss`) emit one local entry instead of cascading
+  every later diagnostic mapping.
+- The confusables generator fails closed on malformed rows, invalid scalar
+  values/surrogates, empty substitutions, and duplicate sources instead of
+  silently skipping or last-write-wins.
+
 ### Changed
+- Rust identifier validity follows Unicode XID rules (`café` is now
+  syntactically valid; keywords still rejected separately). The ASCII-only
+  verdict remains available as `is_valid_rust_identifier_ascii` for
+  stricter policy surfaces.
+- `text_inspect` groups RLO-style controls under `bidi_controls` rather
+  than `invisibles`; the `text_security_inspect` BIDI fixture now expects
+  the `TEXT_INSPECT_WARNING` envelope finding (machine code stays
+  `UNICODE_RISK`, verdict stays `review`). No ToolSpec, profile, audience,
+  schema, or machine-code vocabulary change.
+- Unicode Security data remains pinned to 17.0.0; no data-epoch change in
+  this pass (Unicode 18 qualification follows separately).
 - Self-update transport now uses `eggfetch-core` 0.2.0
   (`http1,tls-rustls,tls-native-roots,proxy`) instead of 0.1.7. Updater policy
   is unchanged: HTTP/1 only, strict HTTPS-downgrade rejection, explicit

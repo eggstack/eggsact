@@ -114,10 +114,37 @@ The script:
    `https://www.unicode.org/Public/17.0.0/security/confusables.txt`
 2. Verifies downloaded bytes against a pinned SHA-256 checksum
 3. Verifies the file header reports the pinned Unicode Security version
-4. Parses hex code point mappings (source → substitution)
+4. Strict-parses hex code point mappings (source → substitution), failing
+   closed — with no output written — on malformed rows, invalid Unicode
+   scalar values (including surrogates), empty substitutions, missing type
+   columns, or duplicate source mappings
 5. Writes two files:
    - `src/text/confusables_generated.rs` — sorted static table of `(u32, &str)` tuples (included at compile time)
    - `data/confusables.rs` — standalone reference with same static table
+
+### Validation and freshness checks
+
+```bash
+python3 scripts/generate_confusables.py --self-test  # offline strict-parser fixture suite (no network)
+python3 scripts/generate_confusables.py --check      # maintainer check: fetch pinned source,
+                                                     # regenerate in memory, fail if checked-in
+                                                     # outputs differ (writes nothing)
+```
+
+`--self-test` is offline and deterministic: it exercises duplicate,
+malformed, invalid-scalar, surrogate, empty-substitution, and known-good
+miniature fixtures. `--check` requires network access to the pinned
+unicode.org URL, so it is a maintainer/release check — ordinary merge CI
+must not depend on unicode.org availability and does not run it.
+
+Provenance single source of truth in code: `CONFUSABLES_UNICODE_VERSION`,
+`CONFUSABLES_SOURCE_SHA256`, and `CONFUSABLES_ENTRY_COUNT` in
+`src/text/confusables.rs` (checked against the generated header and exact
+table length by unit tests). The semantic layer above the data distinguishes
+per-character source mappings (`lookup`, `has_confusables`,
+`find_confusables`) from the whole-string UTS #39 skeleton relation
+(`confusable_skeleton`, `are_confusable`); collision detection must use the
+skeleton relation.
 
 ### Build Impact
 

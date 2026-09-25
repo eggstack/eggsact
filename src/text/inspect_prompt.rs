@@ -548,7 +548,7 @@ pub fn prompt_input_inspect(
                 _ => 2,
             }
         };
-        findings.sort_by_key(|f| severity_order(f));
+        findings.sort_by_key(severity_order);
         findings.truncate(MAX_FINDINGS);
     }
 

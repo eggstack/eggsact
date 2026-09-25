@@ -322,7 +322,8 @@ use eggsact::text::{patch_apply_check, patch_summary};
 use eggsact::text::{regex_safety_check, text_replace_check};
 use eggsact::text::{unicode_policy_check, canonicalize_text};
 use eggsact::text::{has_confusables, find_confusables};
-use eggsact::text::{CONFUSABLES};
+use eggsact::text::{confusable_skeleton, are_confusable};
+use eggsact::text::{CONFUSABLES, CONFUSABLES_UNICODE_VERSION};
 ```
 
 | Function | Signature | Description |
@@ -331,8 +332,15 @@ use eggsact::text::{CONFUSABLES};
 | `text_replace_check` | `(text: &str, find: &str, replace: &str) -> TextReplaceCheckResult` | Check replacement safety |
 | `unicode_policy_check` | `(text: &str) -> UnicodePolicyCheckResult` | Check text against Unicode safety policies |
 | `canonicalize_text` | `(text: &str, profile: &str) -> CanonicalizeResultWithMapping` | Normalize Unicode text |
-| `has_confusables` | `(text: &str) -> bool` | Check for homoglyph characters |
-| `find_confusables` | `(text: &str) -> Vec<(char, &'static str)>` | Find confusable characters with mappings |
+| `has_confusables` | `(text: &str) -> bool` | Check whether any character has a confusable mapping (source mapping, not a collision verdict) |
+| `find_confusables` | `(text: &str) -> Vec<(char, &'static str)>` | Find confusable characters with mappings (per-character source mappings) |
+| `confusable_skeleton` | `(text: &str) -> String` | Whole-string UTS #39 confusable skeleton (pinned Unicode 17 data); equal skeletons mean confusable |
+| `are_confusable` | `(a: &str, b: &str) -> bool` | True when two distinct strings share the exact skeleton |
+
+`lookup()`, `has_confusables()`, and `find_confusables()` report per-character
+source mappings. Whole-string collision verdicts must use `confusable_skeleton()`
+/ `are_confusable()`. Data provenance: `CONFUSABLES_UNICODE_VERSION` (`"17.0.0"`),
+`CONFUSABLES_SOURCE_SHA256`, `CONFUSABLES_ENTRY_COUNT`.
 
 ### Position and Line Ranges
 

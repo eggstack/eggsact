@@ -324,9 +324,7 @@ pub fn list_compare(args: &Value) -> ToolResponse {
             let op = match (&a_item, &b_item) {
                 (Some(_), None) => "delete",
                 (None, Some(_)) => "insert",
-                (Some(a_val), Some(b_val)) if a_transformed.get(i) == b_transformed.get(i) => {
-                    "equal"
-                }
+                (Some(_), Some(_)) if a_transformed.get(i) == b_transformed.get(i) => "equal",
                 _ => "replace",
             };
 

@@ -9,7 +9,11 @@ use crate::text::diff::levenshtein_distance;
 static PYTHON_IDENT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[\p{XID_Start}_][\p{XID_Continue}_]*$").unwrap());
 
-static RUST_IDENT_RE: LazyLock<Regex> =
+/// ASCII-only Rust identifier pattern, retained as the explicit
+/// ASCII/security-policy distinction. [`is_valid_rust_identifier`] implements
+/// the language's actual Unicode XID rules; use this helper where callers
+/// need a deliberately ASCII-only verdict.
+static RUST_IDENT_ASCII_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap());
 
 static JS_IDENT_RE: LazyLock<Regex> =
@@ -152,30 +156,10 @@ const INVISIBLE_CHARS: &[char] = &[
     '\u{2068}', '\u{2069}', '\u{2060}',
 ];
 
-const SCRIPT_RANGES: &[(u32, u32, &str)] = &[
-    (0x0041, 0x005a, "Latin"),
-    (0x0061, 0x007a, "Latin"),
-    (0x00c0, 0x00ff, "Latin"),
-    (0x0100, 0x017f, "Latin"),
-    (0x0180, 0x024f, "Latin"),
-    (0x0400, 0x04ff, "Cyrillic"),
-    (0x0500, 0x052f, "Cyrillic"),
-    (0x0370, 0x03ff, "Greek"),
-    (0x1f00, 0x1fff, "Greek"),
-    (0x4e00, 0x9fff, "Han"),
-    (0x3000, 0x303f, "CJK"),
-    (0x3040, 0x309f, "Hiragana"),
-    (0x30a0, 0x30ff, "Katakana"),
-    (0x0600, 0x06ff, "Arabic"),
-    (0x0590, 0x05ff, "Hebrew"),
-    (0x0900, 0x097f, "Devanagari"),
-    (0x0e00, 0x0e7f, "Thai"),
-    (0xac00, 0xd7af, "Hangul"),
-    (0x10a0, 0x10ff, "Georgian"),
-    (0x0530, 0x058f, "Armenian"),
-    (0x13a0, 0x13ff, "Cherokee"),
-    (0x1400, 0x167f, "Canadian_Aboriginal"),
-];
+/// Script identity delegates to [`crate::text::script`], the single
+/// authoritative source shared with `unicode_tools` and `unicode_policy`.
+/// (The former per-module `SCRIPT_RANGES` table was removed to eliminate
+/// divergent hand-maintained boundaries.)
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentifierAnalyzeResult {
@@ -489,11 +473,33 @@ fn is_valid_python_identifier(text: &str) -> bool {
     PYTHON_IDENT_RE.is_match(text).unwrap_or(false)
 }
 
+/// Whether `text` is a syntactically valid Rust identifier under the
+/// language's Unicode XID rules: first character `_` or `XID_Start`,
+/// remaining characters `_` or `XID_Continue` (via the `unicode-ident`
+/// crate, already the compiler's rule source). Reserved keywords are handled
+/// separately by [`is_rust_keyword`]; this reports syntax validity only.
 fn is_valid_rust_identifier(text: &str) -> bool {
     if text.is_empty() {
         return false;
     }
-    RUST_IDENT_RE.is_match(text).unwrap_or(false)
+    let mut chars = text.chars();
+    let first = chars.next().expect("non-empty checked above");
+    if first != '_' && !unicode_ident::is_xid_start(first) {
+        return false;
+    }
+    chars.all(|c| c == '_' || unicode_ident::is_xid_continue(c))
+}
+
+/// Whether `text` is a valid *ASCII-only* Rust identifier.
+///
+/// Explicit ASCII/security-policy distinction retained for callers that need
+/// it (e.g. stricter-than-the-language lint surfaces). Syntax validity for
+/// the language itself is [`is_valid_rust_identifier`].
+pub fn is_valid_rust_identifier_ascii(text: &str) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+    RUST_IDENT_ASCII_RE.is_match(text).unwrap_or(false)
 }
 
 fn is_valid_js_identifier(text: &str) -> bool {
@@ -524,38 +530,7 @@ fn _is_ts_keyword(text: &str) -> bool {
 }
 
 fn get_script_heuristic(c: char) -> String {
-    let cp = c as u32;
-
-    if cp == 0x200B
-        || cp == 0x200C
-        || cp == 0x200D
-        || cp == 0x200E
-        || cp == 0x200F
-        || cp == 0xFEFF
-        || cp == 0x00A0
-        || cp == 0x2028
-        || cp == 0x2029
-        || cp == 0x202A
-        || cp == 0x202B
-        || cp == 0x202C
-        || cp == 0x202D
-        || cp == 0x202E
-        || cp == 0x2066
-        || cp == 0x2067
-        || cp == 0x2068
-        || cp == 0x2069
-        || cp == 0x2060
-    {
-        return "Common".to_string();
-    }
-
-    for &(start, end, name) in SCRIPT_RANGES {
-        if start <= cp && cp <= end {
-            return name.to_string();
-        }
-    }
-
-    "Other".to_string()
+    crate::text::script::script_of(c).to_string()
 }
 
 fn get_scripts(text: &str) -> Vec<String> {
@@ -753,7 +728,11 @@ pub fn identifier_inspect(
         }
 
         if scripts.len() > 1 {
-            warnings.push("Mixed script identifier".to_string());
+            let refs: std::collections::BTreeSet<&str> =
+                scripts.iter().map(|s| s.as_str()).collect();
+            if !crate::text::script::is_legitimate_mixture(&refs) {
+                warnings.push("Mixed script identifier".to_string());
+            }
         }
 
         id_infos.push(IdentifierInfo {
@@ -769,81 +748,76 @@ pub fn identifier_inspect(
     }
 
     if check_confusables {
+        // Whole-string UTS #39 skeleton relation: one skeleton per normalized
+        // identifier, grouped by exact skeleton equality. Only distinct raw
+        // identifiers sharing the same skeleton are `confusable` collisions.
+        // (The former per-character shared-target/substring inference both
+        // missed real homoglyphs and produced false positives.) Edit-distance
+        // near matches are reported separately as `near_match`, never as
+        // `confusable`.
+        use crate::text::confusables::confusable_skeleton;
+
+        let skeletons: Vec<String> = normalized_ids
+            .iter()
+            .map(|s| confusable_skeleton(s))
+            .collect();
+        let mut skeleton_groups: std::collections::HashMap<&str, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (idx, skeleton) in skeletons.iter().enumerate() {
+            skeleton_groups
+                .entry(skeleton.as_str())
+                .or_default()
+                .push(idx);
+        }
+        for group in skeleton_groups.values().filter(|v| v.len() > 1) {
+            for x in 0..group.len() {
+                for y in (x + 1)..group.len() {
+                    let a_raw = &identifiers[group[x]];
+                    let b_raw = &identifiers[group[y]];
+                    if a_raw == b_raw {
+                        continue;
+                    }
+                    let pair = if a_raw <= b_raw {
+                        (a_raw.clone(), b_raw.clone())
+                    } else {
+                        (b_raw.clone(), a_raw.clone())
+                    };
+                    if !collision_pairs.contains(&pair) {
+                        collision_pairs.insert(pair.clone());
+                        collisions.push(CollisionInfo {
+                            kind: "confusable".to_string(),
+                            a: pair.0,
+                            b: pair.1,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Edit-distance <= 1 proximity is a near match, not a UTS #39
+        // confusable collision.
         for i in 0..identifiers.len() {
             for j in (i + 1)..identifiers.len() {
                 let a_raw = &identifiers[i];
                 let b_raw = &identifiers[j];
-                let a_norm = &normalized_ids[i];
-                let b_norm = &normalized_ids[j];
-
-                let a_confusables = find_confusables(a_norm);
-                let b_confusables = find_confusables(b_norm);
-
-                if !a_confusables.is_empty() && !b_confusables.is_empty() {
-                    let a_targets: std::collections::HashSet<String> = a_confusables
-                        .iter()
-                        .map(|(_, target)| (*target).to_string())
-                        .collect();
-                    let b_targets: std::collections::HashSet<String> = b_confusables
-                        .iter()
-                        .map(|(_, target)| (*target).to_string())
-                        .collect();
-                    let shared: std::collections::HashSet<_> =
-                        a_targets.intersection(&b_targets).collect();
-                    if !shared.is_empty() {
-                        let pair = if a_raw <= b_raw {
-                            (a_raw.clone(), b_raw.clone())
-                        } else {
-                            (b_raw.clone(), a_raw.clone())
-                        };
-                        if !collision_pairs.contains(&pair) {
-                            collision_pairs.insert(pair.clone());
-                            collisions.push(CollisionInfo {
-                                kind: "confusable".to_string(),
-                                a: pair.0,
-                                b: pair.1,
-                            });
-                        }
-                        continue;
-                    }
+                if a_raw == b_raw {
+                    continue;
                 }
-
-                for (_, target) in &a_confusables {
-                    if b_norm.contains(&target.to_string()) {
-                        let pair = if a_raw <= b_raw {
-                            (a_raw.clone(), b_raw.clone())
-                        } else {
-                            (b_raw.clone(), a_raw.clone())
-                        };
-                        if !collision_pairs.contains(&pair) {
-                            collision_pairs.insert(pair.clone());
-                            collisions.push(CollisionInfo {
-                                kind: "confusable".to_string(),
-                                a: pair.0,
-                                b: pair.1,
-                            });
-                        }
-                        break;
-                    }
+                let pair = if a_raw <= b_raw {
+                    (a_raw.clone(), b_raw.clone())
+                } else {
+                    (b_raw.clone(), a_raw.clone())
+                };
+                if collision_pairs.contains(&pair) {
+                    continue;
                 }
-
-                for (_, target) in &b_confusables {
-                    if a_norm.contains(&target.to_string()) {
-                        let pair = if a_raw <= b_raw {
-                            (a_raw.clone(), b_raw.clone())
-                        } else {
-                            (b_raw.clone(), a_raw.clone())
-                        };
-                        if !collision_pairs.contains(&pair) {
-                            collision_pairs.insert(pair.clone());
-                            collisions.push(CollisionInfo {
-                                kind: "confusable".to_string(),
-                                a: pair.0,
-                                b: pair.1,
-                            });
-                        }
-                        break;
-                    }
+                if levenshtein_distance(a_raw, b_raw) <= 1 {
+                    collision_pairs.insert(pair.clone());
+                    collisions.push(CollisionInfo {
+                        kind: "near_match".to_string(),
+                        a: pair.0,
+                        b: pair.1,
+                    });
                 }
             }
         }
@@ -1023,12 +997,58 @@ pub fn identifier_table_inspect(
     }
 
     if active_checks.contains(&"confusable") {
+        // Whole-string UTS #39 skeletons, grouped by exact equality: only
+        // distinct names sharing a skeleton are `confusable` collisions.
+        // Edit-distance <= 1 proximity without skeleton equality is a
+        // distinct `near_match` finding, never `confusable`.
+        use crate::text::confusables::confusable_skeleton;
+
         let mut checked_pairs: std::collections::HashSet<(String, String)> =
             std::collections::HashSet::new();
-        for i in 0..identifiers.len() {
-            for j in (i + 1)..identifiers.len() {
+        let skeletons: Vec<String> = names.iter().map(|n| confusable_skeleton(n)).collect();
+        let mut skeleton_groups: std::collections::HashMap<&str, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (idx, skeleton) in skeletons.iter().enumerate() {
+            skeleton_groups
+                .entry(skeleton.as_str())
+                .or_default()
+                .push(idx);
+        }
+        for group in skeleton_groups.values().filter(|v| v.len() > 1) {
+            for x in 0..group.len() {
+                for y in (x + 1)..group.len() {
+                    let name_a = &names[group[x]];
+                    let name_b = &names[group[y]];
+                    if name_a == name_b {
+                        continue;
+                    }
+                    let pair = if name_a <= name_b {
+                        (name_a.clone(), name_b.clone())
+                    } else {
+                        (name_b.clone(), name_a.clone())
+                    };
+                    if checked_pairs.contains(&pair) {
+                        continue;
+                    }
+                    checked_pairs.insert(pair);
+                    collisions.push(TableCollisionInfo {
+                        kind: "confusable".to_string(),
+                        names: vec![name_a.clone(), name_b.clone()],
+                        detail: format!(
+                            "UTS #39 confusable collision (shared skeleton): '{}' and '{}'",
+                            name_a, name_b
+                        ),
+                    });
+                }
+            }
+        }
+        for i in 0..names.len() {
+            for j in (i + 1)..names.len() {
                 let name_a = &names[i];
                 let name_b = &names[j];
+                if name_a == name_b {
+                    continue;
+                }
                 let pair = if name_a <= name_b {
                     (name_a.clone(), name_b.clone())
                 } else {
@@ -1037,58 +1057,17 @@ pub fn identifier_table_inspect(
                 if checked_pairs.contains(&pair) {
                     continue;
                 }
-
-                let confusables_a = find_confusables(name_a);
-                let confusables_b = find_confusables(name_b);
-
-                let mut is_confusable = false;
-
-                if !confusables_a.is_empty() && !confusables_b.is_empty() {
-                    let a_targets: std::collections::HashSet<String> = confusables_a
-                        .iter()
-                        .map(|(_, t)| (*t).to_string())
-                        .collect();
-                    let b_targets: std::collections::HashSet<String> = confusables_b
-                        .iter()
-                        .map(|(_, t)| (*t).to_string())
-                        .collect();
-                    if !a_targets.is_disjoint(&b_targets) {
-                        is_confusable = true;
-                    }
-                }
-
-                if !is_confusable {
-                    for (_, target) in &confusables_a {
-                        if name_b.contains(&target.to_string()) {
-                            is_confusable = true;
-                            break;
-                        }
-                    }
-                }
-
-                if !is_confusable {
-                    for (_, target) in &confusables_b {
-                        if name_a.contains(&target.to_string()) {
-                            is_confusable = true;
-                            break;
-                        }
-                    }
-                }
-
-                if !is_confusable {
-                    let dist = levenshtein_distance(name_a, name_b);
-                    let max_len = std::cmp::max(name_a.len(), name_b.len());
-                    if max_len > 0 && dist <= 1 && name_a != name_b {
-                        is_confusable = true;
-                    }
-                }
-
-                if is_confusable {
-                    checked_pairs.insert(pair.clone());
+                let dist = levenshtein_distance(name_a, name_b);
+                let max_len = std::cmp::max(name_a.len(), name_b.len());
+                if max_len > 0 && dist <= 1 {
+                    checked_pairs.insert(pair);
                     collisions.push(TableCollisionInfo {
-                        kind: "confusable".to_string(),
+                        kind: "near_match".to_string(),
                         names: vec![name_a.clone(), name_b.clone()],
-                        detail: format!("Confusable/near-collision: '{}' and '{}'", name_a, name_b),
+                        detail: format!(
+                            "Near match (edit distance {}): '{}' and '{}'",
+                            dist, name_a, name_b
+                        ),
                     });
                 }
             }
@@ -1261,9 +1240,18 @@ mod tests {
     }
 
     #[test]
-    fn test_rust_identifier_rejects_unicode() {
+    fn test_rust_identifier_accepts_unicode_xid() {
+        // Rust identifiers follow Unicode XID rules, not ASCII-only: é is
+        // XID_Continue, so "café" is syntactically valid (keyword check is
+        // separate). The ASCII-only verdict stays available via
+        // `is_valid_rust_identifier_ascii` for stricter policy surfaces.
         let result = identifier_analyze("café", Some(vec!["rust"]));
-        assert_eq!(result.rust_valid, Some(false));
+        assert_eq!(result.rust_valid, Some(true));
+        assert!(!is_valid_rust_identifier_ascii("café"));
+        assert!(is_valid_rust_identifier_ascii("cafe"));
+        assert!(!is_valid_rust_identifier("1abc"));
+        assert!(is_valid_rust_identifier("_private"));
+        assert!(is_valid_rust_identifier("café"));
     }
 
     #[test]
@@ -1288,5 +1276,107 @@ mod tests {
     fn test_python_identifier_accepts_unicode() {
         let result = identifier_analyze("café", Some(vec!["python"]));
         assert!(result.python_valid);
+    }
+
+    #[test]
+    fn test_inspect_cyrillic_spoof_is_confusable_collision() {
+        // Milestone 003 true positive: Latin "apple" vs Cyrillic-"аpple"
+        // collide through the identifier API via the skeleton relation.
+        let ids = vec!["apple".to_string(), "аpple".to_string()];
+        let result = identifier_inspect(&ids, "python", "NFC", false, true);
+        assert!(
+            result.collisions.iter().any(|c| c.kind == "confusable"
+                && ((c.a == "apple" && c.b == "аpple") || (c.a == "аpple" && c.b == "apple"))),
+            "expected UTS #39 confusable collision: {:?}",
+            result.collisions
+        );
+    }
+
+    #[test]
+    fn test_inspect_shared_component_is_not_confusable() {
+        // Cyrillic А and Greek Α share the U+0041 mapping target, but "АX"
+        // vs "ΑY" have different whole-string skeletons: no collision.
+        // (The old shared-target heuristic flagged this false positive.)
+        let ids = vec!["АX".to_string(), "ΑY".to_string()];
+        let result = identifier_inspect(&ids, "python", "NFC", false, true);
+        assert!(
+            !result.collisions.iter().any(|c| c.kind == "confusable"),
+            "shared mapping component must not collide: {:?}",
+            result.collisions
+        );
+    }
+
+    #[test]
+    fn test_inspect_edit_distance_is_near_match_not_confusable() {
+        // "foo" vs "fox" differ by one substitution and share no skeleton:
+        // a near match, never a UTS #39 confusable.
+        let ids = vec!["foo".to_string(), "fox".to_string()];
+        let result = identifier_inspect(&ids, "python", "NFC", false, true);
+        assert!(
+            result.collisions.iter().any(|c| c.kind == "near_match"),
+            "expected near_match: {:?}",
+            result.collisions
+        );
+        assert!(
+            !result.collisions.iter().any(|c| c.kind == "confusable"),
+            "edit distance must not report confusable: {:?}",
+            result.collisions
+        );
+    }
+
+    #[test]
+    fn test_inspect_legitimate_japanese_mixture_not_flagged() {
+        let ids = vec!["日本語テスト".to_string()];
+        let result = identifier_inspect(&ids, "python", "NFC", false, false);
+        assert!(
+            !result.identifiers[0]
+                .warnings
+                .iter()
+                .any(|w| w.contains("Mixed script")),
+            "legitimate Japanese mixture must not warn: {:?}",
+            result.identifiers[0].warnings
+        );
+        let spoof = vec!["аpple".to_string(), "apple".to_string()];
+        let result = identifier_inspect(&spoof, "python", "NFC", false, true);
+        assert!(
+            result.collisions.iter().any(|c| c.kind == "confusable"),
+            "Latin/Cyrillic spoof must still collide: {:?}",
+            result.collisions
+        );
+    }
+
+    #[test]
+    fn test_table_inspect_splits_confusable_and_near_match() {
+        let entries = vec![
+            TableIdentifierEntry {
+                name: "apple".to_string(),
+                kind: String::new(),
+                file: String::new(),
+                line: 1,
+            },
+            TableIdentifierEntry {
+                name: "аpple".to_string(),
+                kind: String::new(),
+                file: String::new(),
+                line: 2,
+            },
+            TableIdentifierEntry {
+                name: "applf".to_string(),
+                kind: String::new(),
+                file: String::new(),
+                line: 3,
+            },
+        ];
+        let result = identifier_table_inspect(&entries, "python", Some(vec!["confusable"]));
+        assert!(
+            result.collisions.iter().any(|c| c.kind == "confusable"),
+            "expected skeleton collision: {:?}",
+            result.collisions
+        );
+        assert!(
+            result.collisions.iter().any(|c| c.kind == "near_match"),
+            "expected near_match split: {:?}",
+            result.collisions
+        );
     }
 }

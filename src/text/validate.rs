@@ -2675,12 +2675,10 @@ pub fn json_compare(
                         } else {
                             format!("/{}->{}", orig_key_a, orig_key_b)
                         }
+                    } else if orig_key_a == orig_key_b {
+                        format!("{}/{}", path, orig_key_a)
                     } else {
-                        if orig_key_a == orig_key_b {
-                            format!("{}/{}", path, orig_key_a)
-                        } else {
-                            format!("{}/{}->{}", path, orig_key_a, orig_key_b)
-                        }
+                        format!("{}/{}->{}", path, orig_key_a, orig_key_b)
                     };
                     compare_values(
                         &new_path,

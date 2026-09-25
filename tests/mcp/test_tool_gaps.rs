@@ -2577,14 +2577,12 @@ fn test_inspect_bidi_findings() {
     assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
     // findings is at the envelope level, not inside result
     let findings = result.get("findings").unwrap().as_array().unwrap();
-    // BIDI char is reported as INVISIBLE_CHAR finding
-    let has_invisible = findings.iter().any(|f| {
-        f.get("code")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .contains("INVISIBLE")
-    });
-    assert!(has_invisible);
+    // RLO is a bidirectional control: typed membership reports it as
+    // BIDI_CONTROL, not INVISIBLE_CHAR.
+    let has_bidi = findings
+        .iter()
+        .any(|f| f.get("code").and_then(|v| v.as_str()).unwrap_or("") == "BIDI_CONTROL");
+    assert!(has_bidi, "RLO must report BIDI_CONTROL, got {:?}", findings);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

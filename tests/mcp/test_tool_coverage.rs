@@ -343,9 +343,23 @@ fn test_identifier_inspect_clean() {
     let inner = result.get("result").unwrap();
     let ids = inner.get("identifiers").unwrap().as_array().unwrap();
     assert_eq!(ids.len(), 3);
-    // No collisions expected
+    // No UTS #39 confusable collisions expected; "bar"/"baz" (edit distance
+    // 1) report as the distinct `near_match` kind, never as `confusable`.
     let collisions = inner.get("collisions").unwrap().as_array().unwrap();
-    assert!(collisions.is_empty());
+    assert!(
+        !collisions
+            .iter()
+            .any(|c| c.get("kind").and_then(|k| k.as_str()) == Some("confusable")),
+        "no confusable collisions expected, got {:?}",
+        collisions
+    );
+    assert!(
+        collisions
+            .iter()
+            .any(|c| c.get("kind").and_then(|k| k.as_str()) == Some("near_match")),
+        "bar/baz proximity must report as near_match, got {:?}",
+        collisions
+    );
 }
 
 // path_analyze tests

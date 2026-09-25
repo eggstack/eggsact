@@ -889,12 +889,10 @@ pub(crate) fn compare_json_values(
                             } else {
                                 format!("/{}->{}", orig_key_a, orig_key_b)
                             }
+                        } else if orig_key_a == orig_key_b {
+                            format!("{}/{}", path, orig_key_a)
                         } else {
-                            if orig_key_a == orig_key_b {
-                                format!("{}/{}", path, orig_key_a)
-                            } else {
-                                format!("{}/{}->{}", path, orig_key_a, orig_key_b)
-                            }
+                            format!("{}/{}->{}", path, orig_key_a, orig_key_b)
                         };
                         compare_rec(
                             &obj_a[orig_key_a],

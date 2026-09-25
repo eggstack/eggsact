@@ -124,7 +124,8 @@ pub fn inspect_text_security(
             "category": inv.category,
             "display": inv.display,
         });
-        if inv.display.contains("BIDI") {
+        // Typed bidi membership (never a display-string predicate).
+        if crate::text::unicode_tools::is_bidi_control(inv.char) {
             bidi_json.push(item);
         } else {
             invisibles_json.push(item);
@@ -249,6 +250,14 @@ pub fn inspect_text_security(
             format!("Found {} invisible character(s)", invisibles_json.len()),
             Some(DISP_CAUTION),
         ));
+    }
+    // Bidirectional controls are their own typed signal (split from
+    // invisibles by `is_bidi_control`, never by display text). They keep the
+    // UNICODE_RISK envelope code; the per-character detail already shipped
+    // above as TEXT_INSPECT_WARNING entries with kind "bidi_control", so no
+    // new finding code is introduced here.
+    if !bidi_json.is_empty() {
+        push_code(&mut code_list, "UNICODE_RISK");
     }
     if !confusables_json.is_empty() {
         push_code(&mut code_list, "UNICODE_RISK");

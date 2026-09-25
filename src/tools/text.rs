@@ -686,9 +686,10 @@ pub fn text_measure(args: &Value) -> ToolResponse {
     });
 
     let contains_invisibles = invisible_chars > 0;
+    // Typed bidi membership (never a display-string predicate).
     let contains_bidi_controls = all_invisibles
         .iter()
-        .any(|inv| inv.display.contains("BIDI"));
+        .any(|inv| crate::text::unicode_tools::is_bidi_control(inv.char));
     let mixed_script_result = unicode_detect_mixed_scripts(text);
     let scripts = mixed_script_result.scripts;
     let mixed_scripts = mixed_script_result.mixed_scripts;
@@ -1378,12 +1379,10 @@ pub fn text_inspect(args: &Value) -> ToolResponse {
             "category": inv.category,
             "display": inv.display,
         });
-        if item
-            .get("display")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .contains("BIDI")
-        {
+        // Typed bidi membership (never a display-string predicate): RLO and
+        // friends report displays like "RLO", not "BIDI", so the old
+        // `display.contains("BIDI")` check misclassified them.
+        if crate::text::unicode_tools::is_bidi_control(inv.char) {
             bidi_controls.push(item);
         } else {
             invisibles.push(item);
@@ -3729,7 +3728,7 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
                 _ => 2,
             }
         };
-        findings.sort_by_key(|f| severity_order(f));
+        findings.sort_by_key(severity_order);
         findings.truncate(MAX_FINDINGS);
     }
 

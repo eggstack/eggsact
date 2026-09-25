@@ -2262,9 +2262,15 @@ fn test_text_inspect_exact_bidi() {
         serde_json::json!({"text": "hello\u{202E}world"}),
     );
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
-    // RLO is detected as an invisible character (not in bidi_controls array)
-    let invisibles = r["result"]["invisibles"].as_array().unwrap();
-    assert!(!invisibles.is_empty(), "Should detect RLO as invisible");
+    // RLO is a bidirectional control: it belongs in bidi_controls (typed
+    // `is_bidi_control` membership), not in the generic invisibles array.
+    let bidi = r["result"]["bidi_controls"].as_array().unwrap();
+    assert!(
+        bidi.iter()
+            .any(|b| b.get("codepoint").and_then(|c| c.as_str()) == Some("U+202E")),
+        "Should detect RLO in bidi_controls, got {:?}",
+        r["result"]["bidi_controls"]
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
