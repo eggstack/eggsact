@@ -1,4 +1,35 @@
-# MCP Discovery Evaluation Closure Corrective
+# MCP Presentation Surface Milestone 03c — Discovery Evaluation Closure Corrective
+
+Status: active
+
+Repository baseline: `main` at migration (see git history; body retains original baselines per part)
+
+Source roadmap:
+
+- `plans/subsystems/mcp-presentation-surface-roadmap.md#7`
+
+Long-term requirements:
+
+- `plans/000-long-term-specification.md#2`
+- `plans/000-long-term-specification.md#4.5`
+- `plans/001-terminology-and-domain-model.md#5`
+- `plans/001-terminology-and-domain-model.md#6`
+- `plans/002-long-term-roadmap.md#phase-1`
+
+Applicable ADRs:
+
+- `plans/adrs/ADR-0001-planning-conventions-adoption.md`
+
+Primary class: infrastructure + invariant
+
+Legacy path: `plans/archive/` retains the pre-migration flat era; this
+file was moved from `plans/mcp-surface-03c-evaluation-closure-corrective.md`
+without rewriting evidence. The body below is the authoritative work
+specification.
+
+---
+
+# MCP Discovery Evaluation Closure Corrective (original title retained below)
 
 Status: active — deterministic preparation complete; external model/client evidence pending
 Priority: P1

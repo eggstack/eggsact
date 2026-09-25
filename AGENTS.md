@@ -70,6 +70,16 @@ Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_fai
 - `eggsact update` / `eggsact integrate list|detect|<client>` are verified/read-only; they never install a daemon or edit client config.
 - Self-update transport is in-process `eggfetch-core` 0.2.0 (`http1,tls-rustls,tls-native-roots,proxy`; HTTP/1 only, strict HTTPS-downgrade rejection, explicit env proxy, 10s connect / 120s total through body EOF, request-local decoded-body caps on small metadata/checksum bodies, streamed binaries, no external `curl` after install). Bootstrap `packaging/install.*` still uses external download tooling. Do not add HTTP to the library/MCP API, retries, or extra eggfetch features without measurement. Binary/package growth vs the old curl subprocess is intentional consolidation, not a regression to hide.
 
+## Planning
+
+`plans/registry.md` is the authoritative milestone/roadmap status — check it before
+assuming any roadmap state. Planning hierarchy and lifecycle: `plans/README.md`;
+canonical direction: `plans/000-long-term-specification.md`,
+`plans/001-terminology-and-domain-model.md`, `plans/002-long-term-roadmap.md`,
+`plans/003-planning-process.md`. Subsystem roadmaps own workstreams; `plans/implementation/`
+owns bounded handoffs; `plans/closure/` owns evidence gates; `plans/archive/` retains
+the legacy single-doc era for traceability. See ADR-0001 for the adoption record.
+
 ## Skills
 
 `.opencode/skills/` (symlinked to `.agents/skills/`): `mcp-tools`, `testing`, `debugging`, `release`, `text-processing`. Load the matching skill before those tasks.
