@@ -31,7 +31,7 @@ retained only for traceability.
 
 | Subsystem | Status | Roadmap | Current milestone | Dependencies or blockers |
 |---|---|---|---|---|
-| Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | 003 ready; 004 blocked on 003 | Unicode security semantic hardening is dependency-ready; Unicode 18 data qualification follows only after 003 closure. |
+| Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | 003 closed; 004 ready | Unicode security semantic hardening closed (`plans/closure/deterministic-tool-substrate/003-status.md`); Unicode 18 data qualification unblocked. |
 | MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c active (deterministic prep done; external evidence blocked) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
 | Distribution, update, and release | closed | `plans/subsystems/distribution-update-release-roadmap.md` | All milestones closed; maintenance only | New work requires a corrective plan. |
@@ -41,7 +41,8 @@ retained only for traceability.
 | Subsystem | Milestone | Status | Implementation plan | Dependencies / handoff note |
 |---|---|---|---|---|
 | MCP presentation surface | 03c evaluation closure corrective | active | `plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md` | Deterministic Parts A-C + G1 done. Parts D-F blocked on model credentials/budget. Do not fabricate traces; do not mark complete without OpenAI + Anthropic pairs and instructions A/B. |
-| Deterministic tool substrate | 003 Unicode security semantic correctness hardening | ready | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | Preserve Unicode 17 data epoch while fixing skeleton/collision, bidi/script, Rust XID, fuzz/property, normalization/mapping, and generator correctness. |
+| Deterministic tool substrate | 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | Implemented in `3d67807`; closure `plans/closure/deterministic-tool-substrate/003-status.md`. Data epoch held at Unicode 17.0.0. |
+| Deterministic tool substrate | 004 Unicode 18 security data qualification | ready | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | Unblocked by 003 closure. Qualify provider epochs, then advance the confusables pin to authoritative Unicode 18.0.0 bytes only. |
 
 ## Recently closed work (control points)
 
@@ -58,16 +59,17 @@ retained only for traceability.
 | Subsystem | Milestone | Blocker |
 |---|---|---|
 | MCP presentation surface | 03c Parts D-F (model/client traces, instructions A/B, rollout decision) | No provider credentials, subscriptions, or evaluation budget for ~200 model calls (attempted 2026-09-11: `codex`/`claude` CLIs present, no budget). Generated integrations stay on direct; discovery stays explicitly selectable. |
-| Deterministic tool substrate | 004 Unicode 18 security data qualification | Hard dependency on Milestone 003 closure; do not mix semantic corrections with Unicode data-epoch changes. |
+| Deterministic tool substrate | 004 Unicode 18 security data qualification | 003 closed 2026-09-25; 004 ready for handoff. Keep the data-refresh diff independently reviewable from the 003 semantic pass. |
 
 ## Closure work and current control points
 
 - MCP modernization protocol/runtime/discovery implementation is complete
   (`35f7dc2e`, `a5c00b8d`, `77ff57a5`, `121babde`, `40222999`); only the
   `03c` external evidence closure remains active.
-- Deterministic tool substrate is reopened for Unicode-security correctness:
-  Milestone 003 is ready for handoff and Milestone 004 is blocked on 003
-  closure. Harness remains guard-only; distribution remains closed/maintenance.
+- Deterministic tool substrate Unicode-security correctness: Milestone 003
+  is closed (`3d67807`, `plans/closure/deterministic-tool-substrate/003-status.md`)
+  and Milestone 004 is ready for handoff. Harness remains guard-only;
+  distribution remains closed/maintenance.
 - The durable rollout gates for `03c` remain: 100% stable-Model coverage,
   retrieval top-1 >=90% / top-3 >=98% / top-5 100%, 0 Model->HarnessOnly
   leaks, discovery/direct byte ratio <=25%, >=40 Model task scenarios

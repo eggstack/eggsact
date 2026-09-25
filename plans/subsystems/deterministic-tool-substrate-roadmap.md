@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Roadmap
 
-Status: active (Milestone 003 ready; Milestone 004 blocked on 003)
+Status: active (Milestone 003 closed; Milestone 004 ready)
 
 Long-term references:
 
@@ -262,5 +262,5 @@ via `closure/` records; the performance line is already closed.
 | Typed-first composition guard | closed (continuous guard) | — (legacy consolidation-01, pruned; history in git) | — | — |
 | Shared analysis anti-drift | closed | — (legacy consolidation-02, pruned; history in git) | — | — |
 | Performance campaign + corrective | closed | — (commits `85e10bf` + `e8067ae`) | — (detail in `plans/archive/roadmap.md`) | — |
-| 003 Unicode security semantic correctness hardening | ready | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | — | — |
-| 004 Unicode 18 security data qualification | blocked | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | — | Milestone 003 closure |
+| 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | `plans/closure/deterministic-tool-substrate/003-status.md` (`3d67807`) | — |
+| 004 Unicode 18 security data qualification | ready | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | — | 003 closure satisfied 2026-09-25 |

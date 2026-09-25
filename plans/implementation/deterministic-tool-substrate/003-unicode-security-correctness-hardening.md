@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Milestone 003 — Unicode Security Correctness Hardening
 
-Status: ready for handoff
+Status: closed (implemented in `3d67807`; see `plans/closure/deterministic-tool-substrate/003-status.md`)
 
 Repository baseline: `43971e7c1af7f936acfd876f9bff246e72866f2d`
 
