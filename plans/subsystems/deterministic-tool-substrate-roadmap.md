@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Roadmap
 
-Status: active (guard workstream; Milestones 003/004/005 closed)
+Status: active (Milestone 006 Unicode conformance edge-case corrective ready)
 
 Long-term references:
 
@@ -86,10 +86,17 @@ A post-004 standards-conformance review found residual gaps between those
 implementations and UTS #39 Revision 34: the public skeleton omitted
 Default_Ignorable removal and bidiSkeleton semantics, mixed-script detection was
 still an approximation rather than Script_Extensions/resolved-script-set logic,
-and Rust validation was missing from identifier_inspect. Milestone 005 closed
-those gaps as the corrective trace (closure
-`plans/closure/deterministic-tool-substrate/005-status.md`). The original
-003/004 closure records remain immutable.
+and Rust validation was missing from identifier_inspect. Milestone 005 landed
+that corrective architecture and is retained as immutable historical closure
+evidence.
+
+A post-005 edge-case review found three narrower conformance defects: Unicode
+18 DerivedBidiClass `@missing` defaults are currently discarded, the
+multi-paragraph bidi skeleton assumes paragraph-length output from a
+whole-text levels API and can fall back to all-LTR levels, and
+Script_Extensions `Unknown`/Zzzz is incorrectly treated as the ALL identity
+reserved for Common/Inherited. Milestone 006 owns only these residual
+corrections.
 
 ## 5. Target architecture
 
@@ -112,11 +119,13 @@ Registry integrity (continuous guard)
              `--> Unicode 18 data qualification (004, closed)
                       |
                       `--> UTS #39 standards-conformance corrective (005, closed)
+                               |
+                               `--> Unicode conformance edge-case corrective (006, ready)
 ```
 
-Milestones 003, 004, and 005 are closed historical dependencies completing the
-Unicode workstream. The substrate workstream remains active as a continuous
-guard; new work requires a corrective plan.
+Milestones 003, 004, and 005 are closed historical dependencies. Milestone 006
+has no open hard dependency and corrects three edge-case findings discovered
+after 005 without reopening the Unicode 18 data epoch or public surface.
 
 ## 7. Milestones
 
@@ -243,6 +252,36 @@ normative/reference vectors, the ordinary merge gate, and green remote CI.
 Deferred work: IDNA/UTS #46 and user-facing restriction-level policy remain out
 of scope.
 
+
+### Milestone 6 — Unicode conformance edge-case corrective
+
+Class: invariant
+
+Objective: correct Unicode 18 Bidi_Class `@missing` defaults,
+multi-paragraph bidi-skeleton level scoping, and Unknown/Zzzz resolved-script
+semantics while preserving the Milestone 005 architecture and public surface.
+
+Dependencies: Milestones 003, 004, and 005 (closed).
+
+Deliverable boundary: ordered UAX #44 Bidi_Class default overlays,
+paragraph-local UAX #9 L1/L2 handling for public skeletons, literal
+`Script_Extensions={Unknown}` intersection semantics, and regression fixtures
+for all three defects. No dependency, Unicode epoch, ToolSpec, schema, or
+product-policy change.
+
+User or operator value: edge-case inputs receive the same Unicode-security
+classification promised by the current Unicode 18 / UTS #39 implementation,
+including default-only RTL code points, multiple paragraphs, and private-use or
+unassigned script values.
+
+Exit conditions: implementation plan
+`plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md`
+is implemented and a new 006 closure record demonstrates baseline-failing
+fixtures, generator freshness, the ordered merge gate, and green remote CI.
+
+Deferred work: IDNA/UTS #46, restriction-level product policy, and unrelated
+Unicode provider version refreshes remain out of scope.
+
 ## 8. Cross-cutting requirements
 
 ### Determinism and bounded execution
@@ -276,19 +315,18 @@ with `--test-threads=4` for integration tests.
 
 ## 10. Risks and decision points
 
-Milestone 005 required version-correct UTS #39 support without turning eggsact
-into a general Unicode database. Ecosystem crates exposed useful UAX #9,
-Script_Extensions, and UTS #39 primitives, but their bundled data epochs were
-not uniformly Unicode 18. The corrective qualified dependency data versions
-before adoption (unicode-security 16.0, unicode-script 17.0,
-unicode-bidi-mirroring 16, and unicode-bidi 16.0 hardcoded data all rejected
-as authoritative) and generated only the missing security-relevant Unicode 18
-properties (27 DI ranges, 2321 Script, 210 Scx, 2356 Bidi_Class, 438
-mirroring, 130 brackets), using the `unicode-bidi` algorithm exclusively
-through the custom Unicode 18 data source.
+Milestone 005's architecture remains the target: compact generated Unicode 18
+properties plus `unicode-bidi` algorithm-only through the custom data source.
+Milestone 006 must correct data interpretation and indexing inside that design,
+not replace it.
 
-The current Unicode 18 confusables source is not itself in question. Do not
-downgrade that data merely to match an older helper crate.
+The main implementation risks are silent fallback behavior: treating a
+Bidi_Class miss as L, treating a per-paragraph vector mismatch as LTR, or
+treating Unknown as ALL. The corrective should make each condition explicit
+and regression-tested.
+
+The current Unicode 18 confusables/property sources are not themselves in
+question. No dependency change is expected.
 
 A new public restriction-level, IDNA, or enforcement policy would be a separate
 product decision and remains out of scope. A new utility category or
@@ -310,3 +348,4 @@ via `closure/` records; the performance line is already closed.
 | 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | `plans/closure/deterministic-tool-substrate/003-status.md` (`3d67807`) | — |
 | 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | `plans/closure/deterministic-tool-substrate/004-status.md` (`2e3860c`) | — |
 | 005 Unicode security standards-conformance corrective | closed | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | `plans/closure/deterministic-tool-substrate/005-status.md` | — |
+| 006 Unicode conformance edge-case corrective | ready | `plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | — | — |
