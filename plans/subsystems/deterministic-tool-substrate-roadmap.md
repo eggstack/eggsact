@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Roadmap
 
-Status: active (guard; Milestones 003 and 004 closed)
+Status: active (Milestone 005 Unicode standards-conformance corrective ready)
 
 Long-term references:
 
@@ -75,12 +75,19 @@ convention with evidence in git history. The performance campaign
 newline differential matrix as a regression test.
 
 A September 2026 Unicode/confusables audit reopened this guard workstream for
-correctness hardening. Milestone 003 completed those semantic fixes
-(skeletons, typed bidi hazards, authoritative script source, Rust XID
-validity, repaired fuzz/property coverage, fail-closed generator) and
-Milestone 004 advanced the generated UTS #39 table to reproducibly pinned
-Unicode 18.0.0 (6,712 entries) with an inventoried mixed-provider data
-graph. Both are closed (see §12); the workstream is back to guard status.
+correctness hardening. Milestone 003 landed substantial semantic fixes
+(skeleton grouping, typed bidi hazards, a consolidated script module, Rust XID
+validity in identifier analysis, repaired fuzz/property coverage, fail-closed
+generation) and Milestone 004 advanced the generated confusables table to
+reproducibly pinned Unicode 18.0.0 (6,712 entries) with an inventoried
+mixed-provider data graph.
+
+A post-004 standards-conformance review found residual gaps between those
+implementations and UTS #39 Revision 34: the public skeleton omits
+Default_Ignorable removal and bidiSkeleton semantics, mixed-script detection is
+still an approximation rather than Script_Extensions/resolved-script-set logic,
+and Rust validation is missing from identifier_inspect. Milestone 005 is the
+corrective closure. The original 003/004 closure records remain immutable.
 
 ## 5. Target architecture
 
@@ -98,14 +105,16 @@ Registry integrity (continuous guard)
     |
     +--> Hot-path evidence (closed; future patches are corrective-only)
     |
-    `--> Unicode security semantic hardening (003, ready)
+    `--> Unicode security semantic hardening (003, closed)
              |
-             `--> Unicode 18 data qualification (004, blocked on 003)
+             `--> Unicode 18 data qualification (004, closed)
+                      |
+                      `--> UTS #39 standards-conformance corrective (005, ready)
 ```
 
-Milestone 003 has no open hard dependency. Milestone 004 has a hard dependency
-on 003 closure so algorithmic corrections and versioned-data changes remain
-independently reviewable.
+Milestones 003 and 004 are historical closed dependencies. Milestone 005 has no
+open hard dependency; it corrects residual standards-fidelity findings without
+reopening the Unicode 18 confusables-data qualification itself.
 
 ## 7. Milestones
 
@@ -201,6 +210,36 @@ gates are green.
 Deferred work: IDNA/UTS #46 and any broader restriction-level product policy
 remain out of scope.
 
+
+### Milestone 5 — Unicode security standards-conformance corrective
+
+Class: invariant
+
+Objective: align the public skeleton and mixed-script semantics with UTS #39
+Revision 34, correct the missed Rust identifier-inspection validation path, and
+finish typed Unicode-property ownership without changing the public tool
+surface or Unicode 18 confusables data.
+
+Dependencies: Milestones 003 and 004 (closed).
+
+Deliverable boundary: UTS #39 internal + bidi skeleton semantics,
+Default_Ignorable handling, Unicode 18 Script_Extensions/resolved script sets,
+shared Rust XID/keyword validation, consolidated security predicates, and
+conformance fixtures. No new MCP capability or restriction-level product
+policy.
+
+User or operator value: the Unicode/security APIs mean what their documentation
+and standards references say, including RTL/default-ignorable and
+Script_Extensions cases that the previous corrective still missed.
+
+Exit conditions: implementation plan
+`plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md`
+is implemented and a new 005 closure record demonstrates normative/reference
+vectors, the ordinary merge gate, and green remote CI.
+
+Deferred work: IDNA/UTS #46 and user-facing restriction-level policy remain out
+of scope.
+
 ## 8. Cross-cutting requirements
 
 ### Determinism and bounded execution
@@ -234,20 +273,19 @@ with `--test-threads=4` for integration tests.
 
 ## 10. Risks and decision points
 
-Milestone 003 may need a small standards-backed Script/Script_Extensions
-dependency. This is an internal reversible implementation choice if it preserves
-MSRV, licensing, footprint, determinism, and the public surface; otherwise use a
-pinned generated property table. A new public Unicode restriction-level, IDNA,
-or policy contract would require a separate decision and is out of scope.
+Milestone 005 needs version-correct UTS #39 support without turning eggsact into
+a general Unicode database. Current ecosystem crates expose useful UAX #9,
+Script_Extensions, and UTS #39 primitives, but their bundled data epochs are not
+uniformly Unicode 18. The corrective therefore must qualify dependency data
+versions before adoption and generate only the missing security-relevant
+Unicode 18 properties when necessary.
 
-Milestone 004 must not overclaim a single Unicode epoch when normalization,
-casefold, script, identifier, or diagnostic providers ship different Unicode
-data versions. If security-semantic dependencies cannot support a coherent
-Unicode 18 implementation without disproportionate machinery, keep Unicode 17
-pinned and record the blocker.
+The current Unicode 18 confusables source is not itself in question. Do not
+downgrade that data merely to match an older helper crate.
 
-A new utility category or composition-layer change still requires an ADR before
-a milestone plan.
+A new public restriction-level, IDNA, or enforcement policy would be a separate
+product decision and remains out of scope. A new utility category or
+composition-layer change still requires an ADR before a milestone plan.
 
 ## 11. Completion definition
 
@@ -264,3 +302,4 @@ via `closure/` records; the performance line is already closed.
 | Performance campaign + corrective | closed | — (commits `85e10bf` + `e8067ae`) | — (detail in `plans/archive/roadmap.md`) | — |
 | 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | `plans/closure/deterministic-tool-substrate/003-status.md` (`3d67807`) | — |
 | 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | `plans/closure/deterministic-tool-substrate/004-status.md` (`2e3860c`) | — |
+| 005 Unicode security standards-conformance corrective | ready | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | — | — |
