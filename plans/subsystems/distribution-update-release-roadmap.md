@@ -1,6 +1,6 @@
 # Distribution, Update, and Release Roadmap
 
-Status: closed; maintenance only (new work requires a corrective plan)
+Status: active; M005 Eggpack producer adoption planned / blocked
 
 Long-term references:
 
@@ -69,7 +69,9 @@ capability semantics, harness API selection, or MCP defaults.
 
 ## 4. Current state
 
-Closed. Binary distribution qualified (C8 Zig correction `6658702`,
+M001-M004 remain closed historical control points. The workstream is reopened only for M005, a corrective/adoption milestone that replaces duplicated producer release construction with Eggpack while preserving eggsact-owned installer, updater, crates.io, tag, and publication policy.
+
+Binary distribution qualified (C8 Zig correction `6658702`,
 v1.2.4 matrix, workflow `33944943782`, exact-tag installer checks).
 Self-update consolidated on `eggfetch-core 0.2.0` with the pinned
 feature/trust profile; lockfile 166 packages; +48-byte stripped delta
@@ -80,8 +82,7 @@ dependency reaches users with the next normal release.
 
 ## 5. Target architecture
 
-Unchanged closed end state. Future dependency or installer work is a
-new corrective milestone, not a silent roadmap edit.
+M005 introduces Eggpack as producer authority while keeping eggsact as product-policy authority. The public installers and self-update semantics remain local; only build/qualification/artifact/checksum/generated-CI/draft-staging authority migrates. M001-M004 remain historical closed evidence.
 
 ## 6. Dependency graph
 
@@ -97,7 +98,7 @@ Binary distribution (closed)
                                   `--> 0.2.0 closeout corrective (closed)
 ```
 
-All hard/operational dependencies are closed.
+Historical M001-M004 dependencies are closed. M005 has two external hard dependencies in `eggstack/eggpack`: CI M003d consumer release composition and Build M005 deterministic cross-tool provisioning.
 
 ## 7. Milestones
 
@@ -175,6 +176,20 @@ Exit conditions: closed (`bfe12d7`, `35734609288`, `35740940881`).
 
 Deferred work: none.
 
+### M005 — Eggpack producer adoption + live draft qualification
+
+Class: corrective adoption + capability + infrastructure
+
+Objective: replace the hand-maintained five-target producer workflow with Eggpack-generated release construction and draft staging while preserving crates.io-first/tag-after-publish ordering, public installer latest/version/Cargo fallback semantics, self-update policy, and human publication.
+
+Dependencies: Eggpack CI M003d and Build M005 (hard); a normal maintainer-authorized version tag after crates.io publication (operational).
+
+Implementation plan: `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`.
+
+Exit conditions: generated workflow parity, exact five-target/toolchain coverage, MCP candidate validation, public wrapper/updater parity, real draft + rerun evidence, and no automatic publication. Closure record: `plans/closure/distribution-update-release/005-status.md`.
+
+Deferred work: deeper manifest-driven updater mapping and automatic tag-trigger ergonomics remain separate follow-ups.
+
 ## 8. Cross-cutting requirements
 
 ### Determinism and bounded execution
@@ -212,13 +227,11 @@ without replacement).
 
 ## 10. Risks and decision points
 
-No open risks. HTTP surface expansion, retries, or extra eggfetch
-features require measurement and an ADR first.
+M005 must not generalize eggsact-specific release selection/fallback policy into Eggpack. The principal migration risks are loss of public installer semantics, weaker MCP candidate qualification, mutable cross-tool provisioning, or duplicate active release workflows. HTTP surface expansion, retries, or extra updater eggfetch features remain out of scope without measurement and an ADR.
 
 ## 11. Completion definition
 
-Workstream closed. It reopens only via a new corrective implementation
-plan referencing the archive record and adding regression evidence.
+M001-M004 stay closed historical milestones. The workstream returns to maintenance-only after M005 closes with Eggpack producer authority qualified against a real draft release and all eggsact-owned installer/updater/release-order semantics preserved.
 
 ## 12. Milestone status
 
@@ -229,3 +242,4 @@ plan referencing the archive record and adding regression evidence.
 | M003 0.1.7 bump | closed | `plans/archive/eggfetch-0.1.7-updater-dependency-bump.md` | in-file closure | — |
 | M004 0.2.0 adoption | closed | `plans/archive/eggfetch-0.2.0-updater-adoption.md` | in-file closure | — |
 | M004 corrective closeout | closed | `plans/archive/eggfetch-0.2.0-adoption-closeout-corrective.md` | in-file closure | — |
+| M005 Eggpack producer adoption + live draft qualification | blocked / planned | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | — | Eggpack CI M003d + Build M005 must close before implementation; normal release tag is operational evidence |
