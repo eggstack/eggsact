@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Unicode conformance edge-case corrective, UTS #39 Rev 34 / UAX #9 / UAX #24 / UAX #44)
+
+- `bidi_class_name()` (and the `Unicode18BidiData` source plus the
+  `is_bidi_r_or_al()` fast-path gate) now honors the ordered Unicode 18
+  `DerivedBidiClass.txt` `@missing` defaults instead of treating every
+  explicit-data miss as `L`: U+0590 classifies `R`, U+070E `AL`, U+20C5 `ET`
+  (previously all `L`, which could bypass required bidi processing), while
+  ordinary global defaults such as U+0378 stay `L`. The generator parses the
+  24 directives through the pinned `PropertyValueAliases.txt` `bc` rows with
+  later-wins precedence into the compact `BIDI_CLASS_DEFAULT_RANGES` table;
+  a valid `char` covered by neither table is an internal invariant violation,
+  never a silent `L`. No source-checksum or data-epoch change.
+- `bidi_skeleton_ltr()` now applies UAX #9 L1/L2 levels paragraph-locally:
+  each paragraph substring runs through `unicode-bidi` independently instead
+  of assuming `reordered_levels_per_char()` returns paragraph-length output
+  (it returns a whole-text vector, which previously forced a silent all-LTR
+  fallback for every multi-paragraph input). Later RTL paragraphs now reorder
+  (L2) and mirror (L4) correctly across LF, CRLF, and U+2029 boundaries;
+  single-paragraph S1/S2 fixtures are unchanged.
+- `augmented_script_set()` no longer treats `Zzzz` (Unknown) as the ALL
+  identity reserved for `Zyyy`/`Zinh`: `Script_Extensions={Unknown}`
+  (e.g. private-use U+E000) constrains the resolved intersection like any
+  other set — U+E000 alone resolves to `{Zzzz}`, `0` + U+E000 stays `{Zzzz}`,
+  Latin + U+E000 is now mixed-script, and Unknown + Unknown stays
+  single-script. No identifier-policy change: unassigned/private-use
+  restriction handling is untouched.
+- Conformance fixtures (`tests/text/test_unicode_conformance_006.rs`: 14
+  tests incl. default-only R/AL/ET/L points proven absent from explicit rows,
+  two/three-paragraph LF/CRLF/U+2029 reorder/mirror cases against
+  per-paragraph references, Unknown/private-use matrix) plus property-test
+  extensions (default-only, multi-paragraph RTL, and private-use seeds) and
+  fuzz-target updates (new seeds and spot assertions).
+
 ### Fixed (Unicode security standards-conformance corrective, UTS #39 Revision 34)
 - `confusable_skeleton()` now implements the public `skeleton(X) =
   bidiSkeleton(LTR, X)` relation instead of the internal NFD+mapping stage

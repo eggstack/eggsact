@@ -209,6 +209,19 @@ fn internal_and_bidi_skeleton_deterministic_no_panic() {
         "\u{0301}\u{0302}\u{0303}",
         "\u{2C09B}",
         "\u{1F600}",
+        // Milestone 006 edge cases: default-only Bidi_Class values ...
+        "\u{0590}", // R via @missing
+        "\u{070E}", // AL via @missing
+        "\u{20C5}", // ET via @missing
+        "\u{0378}", // global-L default
+        // ... multi-paragraph RTL inputs ...
+        "ABC\n\u{05D0}\u{05D1}\u{05D2}",
+        "ABC\r\n\u{05D0}\u{05D1}\u{05D2}",
+        "ABC\u{2029}\u{05D0}\u{05D1}\u{05D2}",
+        "A\n\u{05D0}\u{05D1}\nB",
+        // ... and private-use/Unknown script values.
+        "\u{E000}",
+        "A\u{E000}",
     ];
     for input in &inputs {
         assert_eq!(internal_skeleton(input), internal_skeleton(input));
@@ -237,11 +250,29 @@ fn resolved_script_set_deterministic_common_inherited_neutral() {
         "\u{0301}",
         "a\u{0301}",
         "Circ1e",
+        "\u{E000}",
+        "0\u{E000}",
+        "A\u{E000}",
+        "\u{E000}\u{E001}",
     ];
     for input in &inputs {
         assert_eq!(resolved_script_set(input), resolved_script_set(input));
         assert_eq!(is_mixed_script(input), is_mixed_script(input));
     }
+    // Unknown (Zzzz) constrains the resolved intersection like any other
+    // non-ALL set: Common+Unknown stays {Zzzz}, Latin+Unknown mixes, while
+    // Unknown alone or doubled remains single-script.
+    assert_eq!(
+        resolved_script_set("\u{E000}"),
+        ["Zzzz"].into_iter().collect()
+    );
+    assert_eq!(
+        resolved_script_set("0\u{E000}"),
+        ["Zzzz"].into_iter().collect()
+    );
+    assert!(is_mixed_script("A\u{E000}"));
+    assert!(!is_mixed_script("\u{E000}"));
+    assert!(!is_mixed_script("\u{E000}\u{E001}"));
     // Common/Inherited alone never mix; adding them never flips a verdict.
     for base in ["Circle", "hello привеt", "日本語"] {
         let base_mixed = is_mixed_script(base);

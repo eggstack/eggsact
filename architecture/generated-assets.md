@@ -154,8 +154,8 @@ collision detection must use the public skeleton relation.
 `src/text/unicode_properties_generated.rs` is generated from seven
 checksum-pinned Unicode 18.0.0 UCD inputs (see the file header for URLs,
 SHA-256 per source, and entry counts: 27 Default_Ignorable ranges, 2321
-Script ranges, 210 Script_Extensions overrides, 2356 Bidi_Class ranges, 438
-mirroring entries, 130 bracket entries).
+Script ranges, 210 Script_Extensions overrides, 2356 Bidi_Class ranges, 24
+Bidi_Class `@missing` defaults, 438 mirroring entries, 130 bracket entries).
 
 ```bash
 python3 scripts/generate_unicode_security_properties.py --self-test  # offline strict-parser fixtures (no network)
@@ -172,6 +172,39 @@ run it. Provenance constants (`UNICODE_SECURITY_PROPERTIES_VERSION`,
 per-source URLs/SHA-256, entry counts) live in
 `src/text/unicode_properties.rs` and are checked against the generated
 header and table lengths by unit tests.
+
+### Bidi_Class `@missing` defaults (UAX #44 ordered overrides)
+
+`DerivedBidiClass.txt` carries machine-readable `@missing` directives after
+its explicit rows: a global `0000..10FFFF; Left_To_Right` default plus
+narrower later overrides (e.g. `0590..05FF; Right_To_Left`,
+`0600..07BF; Arabic_Letter`, `20A0..20CF; European_Terminator`). Per UAX #44,
+later directives override earlier ones, and explicit rows take precedence
+over every default.
+
+The generator parses these with a dedicated strict parser
+(`parse_bidi_class_missing` + `parse_bc_aliases` in
+`scripts/generate_unicode_security_properties.py`):
+
+- only lines matching the strict `# @missing: START..END; Value` syntax are
+  directives; informational comments merely containing the text `@missing`
+  are ignored, malformed `@missing:` directives fail closed;
+- ranges use the same scalar/range validation as ordinary property rows;
+- long Bidi_Class values (`Left_To_Right`, `Right_To_Left`,
+  `Arabic_Letter`, `European_Terminator`, …) normalize through the
+  already-pinned `PropertyValueAliases.txt` `bc` rows — never a second
+  hand-maintained vocabulary;
+- source order is preserved verbatim (no sorting; overlap is expected), and
+  the global-L-first shape is asserted so silent loss of the global default
+  is a generation error.
+
+Output is the compact ordered table `BIDI_CLASS_DEFAULT_RANGES` (24 ranges
+at Unicode 18.0.0; the full scalar space is never expanded). Runtime lookup
+in `bidi_class_name()` is explicit-table-first, then a reverse scan of the
+defaults (last match wins); a valid `char` covered by neither is an internal
+invariant violation (`unreachable!`), never a silent `L`. The generated
+header exposes the default count (`bidi_class_defaults=24 ranges`) so silent
+directive loss is detectable by `--check` and unit tests.
 
 ### Dependency data-epoch qualification (Milestone 005)
 

@@ -72,6 +72,11 @@ OUTPUT_FILE = (
 
 HEX_RE = re.compile(r"[0-9A-Fa-f]{4,6}")
 
+# Strict UAX #44 `@missing` directive: `# @missing: START..END; Value`.
+MISSING_RE = re.compile(
+    r"^#\s*@missing:\s*([0-9A-Fa-f]{4,6})\.\.([0-9A-Fa-f]{4,6})\s*;\s*([A-Za-z_]+)\s*(?:#.*)?$"
+)
+
 VALID_BIDI_CLASSES = {
     "L", "R", "AL", "EN", "ES", "ET", "AN", "CS", "NSM", "BN",
     "FSI", "LRI", "RLI", "PDI", "LRO", "RLO", "PDF", "LRE", "RLE",
@@ -275,6 +280,94 @@ def parse_bidi_class(content: str) -> list[tuple[int, int, str]]:
     return out
 
 
+def parse_bc_aliases(content: str) -> dict[str, str]:
+    """Map Bidi_Class long names (and short codes) to canonical short aliases.
+
+    Parses PropertyValueAliases.txt `bc` rows: `bc ; Short ; Long`.
+    Returns alias -> short. First alias wins; conflicts fail closed.
+    """
+    mapping: dict[str, str] = {}
+    for lineno, line in enumerate(content.split("\n"), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not stripped.startswith("bc "):
+            continue
+        parts = [p.strip() for p in line.split(";")]
+        if len(parts) < 3:
+            raise PropertyParseError(f"PropertyValueAliases line {lineno}: malformed bc row")
+        short = parts[1]
+        if short not in VALID_BIDI_CLASSES:
+            raise PropertyParseError(
+                f"PropertyValueAliases line {lineno}: unknown Bidi_Class short {short!r}"
+            )
+        mapping.setdefault(short, short)
+        long_name = parts[2].split("#")[0].strip()
+        if not long_name:
+            raise PropertyParseError(f"PropertyValueAliases line {lineno}: empty bc long name")
+        if long_name in mapping and mapping[long_name] != short:
+            raise PropertyParseError(
+                f"PropertyValueAliases line {lineno}: conflicting bc alias {long_name!r}"
+            )
+        mapping[long_name] = short
+    for probe in ("Left_To_Right", "Right_To_Left", "Arabic_Letter", "European_Terminator"):
+        if probe not in mapping:
+            raise PropertyParseError(f"bc alias table missing {probe}")
+    return mapping
+
+
+def parse_bidi_class_missing(
+    content: str, bc_aliases: dict[str, str]
+) -> list[tuple[int, int, str]]:
+    """Parse ordered Bidi_Class `@missing` defaults (UAX #44 machine-readable).
+
+    Only lines matching the strict `@missing` directive syntax are directives;
+    arbitrary comments merely containing the text `@missing` are ignored, while
+    malformed `@missing:` directives fail closed. Source order is preserved
+    because later directives override earlier ones; overlapping ranges are
+    therefore expected and NOT rejected here.
+    """
+    out: list[tuple[int, int, str]] = []
+    for lineno, line in enumerate(content.split("\n"), start=1):
+        s = line.strip()
+        if not s.startswith("#") or "@missing" not in s:
+            continue
+        if "@missing:" not in s:
+            # Informational comment (e.g. "For details see the @missing lines
+            # below"): not a directive, never parsed as one.
+            continue
+        m = MISSING_RE.match(s)
+        if m is None:
+            raise PropertyParseError(
+                f"DerivedBidiClass line {lineno}: malformed @missing directive {s!r}"
+            )
+        lo = check_scalar(int(m.group(1), 16), f"DerivedBidiClass line {lineno} @missing")
+        hi = check_scalar(int(m.group(2), 16), f"DerivedBidiClass line {lineno} @missing")
+        if lo > hi:
+            raise PropertyParseError(
+                f"DerivedBidiClass line {lineno}: inverted @missing range {s!r}"
+            )
+        value = m.group(3)
+        if value not in bc_aliases:
+            raise PropertyParseError(
+                f"DerivedBidiClass line {lineno}: unknown @missing Bidi_Class {value!r}"
+            )
+        short = bc_aliases[value]
+        if short not in VALID_BIDI_CLASSES:
+            raise PropertyParseError(
+                f"DerivedBidiClass line {lineno}: @missing Bidi_Class {value!r} "
+                f"normalizes to unknown short {short!r}"
+            )
+        out.append((lo, hi, short))
+    if not out:
+        raise PropertyParseError("no Bidi_Class @missing defaults parsed")
+    if out[0] != (0x0000, 0x10FFFF, "L"):
+        raise PropertyParseError(
+            f"first Bidi_Class @missing directive must be the global L default, got {out[0]!r}"
+        )
+    return out
+
+
 def parse_bidi_mirroring(content: str) -> list[tuple[int, int]]:
     out: list[tuple[int, int]] = []
     seen: set[int] = set()
@@ -335,6 +428,7 @@ def render_rust(
     scripts: list[tuple[int, int, str]],
     scx: list[tuple[int, int, tuple[str, ...]]],
     bidi: list[tuple[int, int, str]],
+    bidi_defaults: list[tuple[int, int, str]],
     mirr: list[tuple[int, int]],
     brackets: list[tuple[int, int, bool]],
     short_to_long: dict[str, str],
@@ -353,7 +447,8 @@ def render_rust(
     )
     header_lines.append(f"// Entry counts: default_ignorable={len(di)} ranges, "
                         f"scripts={len(scripts)} ranges, script_extensions={len(scx)} ranges, "
-                        f"bidi_class={len(bidi)} ranges, bidi_mirroring={len(mirr)} entries, "
+                        f"bidi_class={len(bidi)} ranges, bidi_class_defaults={len(bidi_defaults)} ranges, "
+                        f"bidi_mirroring={len(mirr)} entries, "
                         f"bidi_brackets={len(brackets)} entries.")
     out = ["\n".join(header_lines), ""]
     out.append("/// Default_Ignorable_Code_Point ranges as (start, end) inclusive.")
@@ -374,6 +469,13 @@ def render_rust(
     out.append("/// Bidi_Class ranges as (start, end, class). Sorted, non-overlapping.")
     out.append("pub static BIDI_CLASS_RANGES: &[(u32, u32, &str)] = &[")
     for lo, hi, bc in bidi:
+        out.append(f"    (0x{lo:04X}, 0x{hi:04X}, \"{bc}\"),")
+    out.append("];\n")
+    out.append("/// Bidi_Class `@missing` defaults as (start, end, class) in UAX #44 source")
+    out.append("/// order. Later directives override earlier ones: runtime lookup scans")
+    out.append("/// this table in reverse after the explicit table misses.")
+    out.append("pub static BIDI_CLASS_DEFAULT_RANGES: &[(u32, u32, &str)] = &[")
+    for lo, hi, bc in bidi_defaults:
         out.append(f"    (0x{lo:04X}, 0x{hi:04X}, \"{bc}\"),")
     out.append("];\n")
     out.append("/// Bidi_Mirroring_Glyph entries as (source, mirror). Sorted by source.")
@@ -400,19 +502,22 @@ def build_tables(raw_map: dict[str, bytes]):
         verify_checksum(name, raw)
     texts = {n: raw_map[n].decode("utf-8") for n in raw_map}
     aliases, short_to_long = parse_sc_aliases(texts["PropertyValueAliases.txt"])
+    bc_aliases = parse_bc_aliases(texts["PropertyValueAliases.txt"])
     di = parse_default_ignorables(texts["DerivedCoreProperties.txt"])
     scripts = parse_scripts(texts["Scripts.txt"], aliases)
     scx = parse_script_extensions(texts["ScriptExtensions.txt"])
     bidi = parse_bidi_class(texts["DerivedBidiClass.txt"])
+    bidi_defaults = parse_bidi_class_missing(texts["DerivedBidiClass.txt"], bc_aliases)
     mirr = parse_bidi_mirroring(texts["BidiMirroring.txt"])
     brackets = parse_bidi_brackets(texts["BidiBrackets.txt"])
     checksums = {n: hashlib.sha256(raw_map[n]).hexdigest() for n in raw_map}
-    rust = render_rust(di, scripts, scx, bidi, mirr, brackets, short_to_long, checksums)
+    rust = render_rust(di, scripts, scx, bidi, bidi_defaults, mirr, brackets, short_to_long, checksums)
     counts = {
         "default_ignorable": len(di),
         "scripts": len(scripts),
         "script_extensions": len(scx),
         "bidi_class": len(bidi),
+        "bidi_class_defaults": len(bidi_defaults),
         "bidi_mirroring": len(mirr),
         "bidi_brackets": len(brackets),
     }
@@ -509,6 +614,133 @@ def run_self_test() -> int:
         fail("bidi-class unknown class parsed without error")
     except PropertyParseError:
         pass
+
+    try:
+        bc_aliases = parse_bc_aliases(
+            "# PropertyValueAliases\n"
+            "bc ; L ; Left_To_Right\n"
+            "bc ; R ; Right_To_Left\n"
+            "bc ; AL ; Arabic_Letter\n"
+            "bc ; ET ; European_Terminator\n"
+        )
+        if bc_aliases.get("Left_To_Right") != "L":
+            fail("bc alias Left_To_Right miniature mismatch")
+        if bc_aliases.get("Arabic_Letter") != "AL":
+            fail("bc alias Arabic_Letter miniature mismatch")
+        if bc_aliases.get("ET") != "ET":
+            fail("bc alias short-code identity miniature mismatch")
+    except PropertyParseError as e:
+        fail(f"bc alias miniature unexpected failure: {e}")
+
+    try:
+        parse_bc_aliases("bc ; QQQ ; Bogus_Class\n")
+        fail("bc alias unknown short parsed without error")
+    except PropertyParseError:
+        pass
+
+    try:
+        bc_aliases = parse_bc_aliases(
+            "bc ; L ; Left_To_Right\nbc ; R ; Right_To_Left\n"
+            "bc ; AL ; Arabic_Letter\nbc ; ET ; European_Terminator\n"
+            "bc ; AL ; Arabic_Letter\nbc ; ET ; European_Terminator\n"
+        )
+        missing = parse_bidi_class_missing(
+            "# DerivedBidiClass\n"
+            "# For details see the @missing lines below.\n"
+            "# @missing: 0000..10FFFF; Left_To_Right\n"
+            "# @missing: 0590..05FF; Right_To_Left\n"
+            "# @missing: 0600..07BF; Arabic_Letter\n"
+            "0041..005A ; L # ...\n",
+            bc_aliases,
+        )
+        if missing != [
+            (0x0000, 0x10FFFF, "L"),
+            (0x0590, 0x05FF, "R"),
+            (0x0600, 0x07BF, "AL"),
+        ]:
+            fail(f"@missing miniature mismatch: {missing!r}")
+
+        # Ordered override semantics: the last matching directive wins, and
+        # explicit rows take precedence over every default.
+        explicit = [(0x0041, 0x005A, "L")]
+
+        def resolve(cp: int) -> str:
+            for lo, hi, tag in explicit:
+                if lo <= cp <= hi:
+                    return tag
+            for lo, hi, tag in reversed(missing):
+                if lo <= cp <= hi:
+                    return tag
+            raise AssertionError(f"U+{cp:04X} uncovered")
+
+        if resolve(0x0041) != "L":
+            fail("explicit row must win over @missing defaults")
+        if resolve(0x0590) != "R":
+            fail("@missing R override did not apply")
+        if resolve(0x0600) != "AL":
+            fail("@missing AL override did not apply")
+        if resolve(0x0378) != "L":
+            fail("global L default did not apply")
+
+        # Later directives override earlier ones on overlap.
+        overlap = parse_bidi_class_missing(
+            "# @missing: 0000..10FFFF; Left_To_Right\n"
+            "# @missing: 0600..07BF; Arabic_Letter\n"
+            "# @missing: 0700..074F; Right_To_Left\n",
+            bc_aliases,
+        )
+        winner = next(tag for lo, hi, tag in reversed(overlap) if lo <= 0x0710 <= hi)
+        if winner != "R":
+            fail(f"later @missing default must win, got {winner!r}")
+    except PropertyParseError as e:
+        fail(f"@missing miniature unexpected failure: {e}")
+
+    try:
+        bc_aliases = parse_bc_aliases(
+            "bc ; L ; Left_To_Right\nbc ; R ; Right_To_Left\n"
+            "bc ; AL ; Arabic_Letter\nbc ; ET ; European_Terminator\n"
+        )
+        parse_bidi_class_missing("# @missing: 0590..05FF; Backwards_Class\n", bc_aliases)
+        fail("@missing unknown value parsed without error")
+    except PropertyParseError:
+        pass
+
+    try:
+        bc_aliases = parse_bc_aliases(
+            "bc ; L ; Left_To_Right\nbc ; R ; Right_To_Left\n"
+            "bc ; AL ; Arabic_Letter\nbc ; ET ; European_Terminator\n"
+        )
+        parse_bidi_class_missing("# @missing: 05FF..0590; Right_To_Left\n", bc_aliases)
+        fail("@missing inverted range parsed without error")
+    except PropertyParseError:
+        pass
+
+    try:
+        bc_aliases = parse_bc_aliases(
+            "bc ; L ; Left_To_Right\nbc ; R ; Right_To_Left\n"
+            "bc ; AL ; Arabic_Letter\nbc ; ET ; European_Terminator\n"
+        )
+        parse_bidi_class_missing("# @missing: not-a-range; Right_To_Left\n", bc_aliases)
+        fail("@missing malformed directive parsed without error")
+    except PropertyParseError:
+        pass
+
+    try:
+        bc_aliases = parse_bc_aliases(
+            "bc ; L ; Left_To_Right\nbc ; R ; Right_To_Left\n"
+            "bc ; AL ; Arabic_Letter\nbc ; ET ; European_Terminator\n"
+        )
+        # A bare comment mentioning @missing is not a directive and must be
+        # ignored rather than parsed or rejected.
+        missing = parse_bidi_class_missing(
+            "# For details see the @missing lines below.\n"
+            "# @missing: 0000..10FFFF; Left_To_Right\n",
+            bc_aliases,
+        )
+        if missing != [(0x0000, 0x10FFFF, "L")]:
+            fail(f"informational @missing comment mishandled: {missing!r}")
+    except PropertyParseError as e:
+        fail(f"informational @missing comment unexpected failure: {e}")
 
     try:
         mirr = parse_bidi_mirroring("0028; 0029 # LEFT PARENTHESIS\n")

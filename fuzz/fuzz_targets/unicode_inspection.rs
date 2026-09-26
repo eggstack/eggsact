@@ -6,7 +6,9 @@
 //! safe representation deterministic, findings bounded, internal skeleton
 //! idempotent (UTS #39-guaranteed), public/bidi skeletons deterministic
 //! (no bidi idempotence claim), resolved script sets deterministic with
-//! Common/Inherited neutrality, central hazard agreement.
+//! Common/Inherited neutrality and Unknown/Zzzz constraint, central hazard
+//! agreement, ordered Bidi_Class `@missing` defaults, paragraph-local bidi
+//! levels.
 //!
 //! Exercises every valid Unicode policy (`identifier_strict`,
 //! `filename_safe`, `source_code`, `human_text`, `json_key`,
@@ -48,11 +50,13 @@ const VALID_PROFILES: &[&str] = &[
     "path_segment_compare",
 ];
 
-/// Fixed seeds covering the security-relevant classes from Milestones 003
-/// and 005: bidi controls, canonical-equivalent forms, whole-identifier
+/// Fixed seeds covering the security-relevant classes from Milestones 003,
+/// 005, and 006: bidi controls, canonical-equivalent forms, whole-identifier
 /// homoglyphs, legitimate Japanese mixed-script, one-to-many casefolds,
 /// supplementary-plane confusables, variation selectors, Default_Ignorables,
-/// RTL/mirrored vectors, and augmented-script (Hntl/Kore/Jpan) cases.
+/// RTL/mirrored vectors, augmented-script (Hntl/Kore/Jpan) cases,
+/// Bidi_Class `@missing` defaults, multi-paragraph RTL inputs, and
+/// Unknown/private-use script values.
 fn seeded_corpus() -> Vec<String> {
     vec![
         "\u{202e}test\u{202c}".to_string(),       // RLO ... PDF bidi controls
@@ -72,6 +76,14 @@ fn seeded_corpus() -> Vec<String> {
         "A1<\u{05E9}\u{05C2}".to_string(),       // UTS #39 §4 S1 (RTL)
         "\u{0391}\u{05E9}\u{05B9}>1".to_string(), // UTS #39 §4 S2 (RTL+mirror)
         "\u{200b}\u{200c}\u{200d}".to_string(),  // zero-width controls
+        "\u{0590}".to_string(),                  // default-only R (@missing)
+        "\u{070E}".to_string(),                  // default-only AL (@missing)
+        "\u{20C5}".to_string(),                  // default-only ET (@missing)
+        "ABC\n\u{05D0}\u{05D1}\u{05D2}".to_string(), // multi-paragraph RTL (LF)
+        "ABC\r\n\u{05D0}\u{05D1}\u{05D2}".to_string(), // multi-paragraph RTL (CRLF)
+        "ABC\u{2029}\u{05D0}\u{05D1}\u{05D2}".to_string(), // multi-paragraph RTL (U+2029)
+        "\u{E000}".to_string(),                  // private-use Unknown (Zzzz)
+        "A\u{E000}".to_string(),                 // Latin + Unknown (mixed)
     ]
 }
 
@@ -160,6 +172,28 @@ fuzz_target!(|data: &[u8]| {
     assert!(!is_mixed_script("日本語テスト漢字"));
     assert!(!is_mixed_script("한글한자"));
     assert!(is_mixed_script("한\u{6F22}A"));
+    // Milestone 006 edge cases: ordered @missing defaults, paragraph-local
+    // levels, and Unknown-as-constraint resolved sets.
+    assert_eq!(
+        eggsact::text::unicode_properties::bidi_class_name('\u{0590}'),
+        "R"
+    );
+    assert_eq!(
+        eggsact::text::unicode_properties::bidi_class_name('\u{070E}'),
+        "AL"
+    );
+    assert_eq!(
+        eggsact::text::unicode_properties::bidi_class_name('\u{20C5}'),
+        "ET"
+    );
+    assert!(bidi_skeleton_ltr("ABC\n\u{05D0}\u{05D1}\u{05D2}")
+        .contains("\u{05D2}\u{05D1}\u{05D0}"));
+    assert_eq!(
+        resolved_script_set("\u{E000}"),
+        ["Zzzz"].into_iter().collect()
+    );
+    assert!(is_mixed_script("A\u{E000}"));
+    assert!(!is_mixed_script("\u{E000}\u{E001}"));
     let ja: BTreeSet<&str> = ["Han", "Hiragana", "Katakana"].into_iter().collect();
     assert!(is_legitimate_mixture(&ja));
 

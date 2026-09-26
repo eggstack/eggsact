@@ -336,11 +336,11 @@ use eggsact::text::{resolved_script_set, is_mixed_script};
 | `has_confusables` | `(text: &str) -> bool` | Check whether any character has a confusable mapping (source mapping, not a collision verdict) |
 | `find_confusables` | `(text: &str) -> Vec<(char, &'static str)>` | Find confusable characters with mappings (per-character source mappings) |
 | `internal_skeleton` | `(text: &str) -> String` | UTS #39 internal skeleton: NFD → remove Default_Ignorable → confusables map → NFD (Unicode 18.0.0) |
-| `bidi_skeleton_ltr` | `(text: &str) -> String` | UTS #39 `bidiSkeleton(LTR, X)`: UAX #9 (L1/L2 via version-correct tables) → L3 mark fixup → L4 mirroring → internal skeleton |
+| `bidi_skeleton_ltr` | `(text: &str) -> String` | UTS #39 `bidiSkeleton(LTR, X)`: UAX #9 L1/L2 applied paragraph-locally per paragraph (never a whole-text level vector) → L3 mark fixup → L4 mirroring → internal skeleton |
 | `confusable_skeleton` | `(text: &str) -> String` | Public UTS #39 `skeleton(X) = bidiSkeleton(LTR, X)` (Unicode 18.0.0); equal skeletons mean confusable |
 | `are_confusable` | `(a: &str, b: &str) -> bool` | True when two distinct strings share the exact public skeleton |
-| `resolved_script_set` | `(text: &str) -> BTreeSet<&str>` | UTS #39 §5.1 resolved script set (augmented Script_Extensions intersection; short codes) |
-| `is_mixed_script` | `(text: &str) -> bool` | UTS #39 §5.1 mixed-script verdict (true iff resolved set empty with script-bearing input) |
+| `resolved_script_set` | `(text: &str) -> BTreeSet<&str>` | UTS #39 §5.1 resolved script set (augmented Script_Extensions intersection; short codes; only Common/Inherited are ALL — Unknown/Zzzz constrains) |
+| `is_mixed_script` | `(text: &str) -> bool` | UTS #39 §5.1 mixed-script verdict (true iff resolved set empty with script-bearing input; Latin + private-use/Unknown counts as mixed) |
 
 `lookup()`, `has_confusables()`, and `find_confusables()` report per-character
 source mappings. Whole-string collision verdicts must use `confusable_skeleton()`

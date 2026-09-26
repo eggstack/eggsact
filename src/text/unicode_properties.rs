@@ -18,8 +18,8 @@ mod generated {
 }
 
 pub use generated::{
-    BIDI_BRACKET_ENTRIES, BIDI_CLASS_RANGES, BIDI_MIRRORING_ENTRIES, DEFAULT_IGNORABLE_RANGES,
-    SCRIPT_EXTENSION_OVERRIDES, SCRIPT_RANGES, SCRIPT_SHORT_TO_LONG,
+    BIDI_BRACKET_ENTRIES, BIDI_CLASS_DEFAULT_RANGES, BIDI_CLASS_RANGES, BIDI_MIRRORING_ENTRIES,
+    DEFAULT_IGNORABLE_RANGES, SCRIPT_EXTENSION_OVERRIDES, SCRIPT_RANGES, SCRIPT_SHORT_TO_LONG,
 };
 
 /// Pinned Unicode version for all tables in this module.
@@ -59,6 +59,8 @@ pub const COUNT_DEFAULT_IGNORABLE_RANGES: usize = 27;
 pub const COUNT_SCRIPT_RANGES: usize = 2321;
 pub const COUNT_SCRIPT_EXTENSION_OVERRIDES: usize = 210;
 pub const COUNT_BIDI_CLASS_RANGES: usize = 2356;
+/// Ordered UAX #44 `@missing` Bidi_Class defaults (later overrides earlier).
+pub const COUNT_BIDI_CLASS_DEFAULT_RANGES: usize = 24;
 pub const COUNT_BIDI_MIRRORING_ENTRIES: usize = 438;
 pub const COUNT_BIDI_BRACKET_ENTRIES: usize = 130;
 
@@ -118,9 +120,23 @@ pub fn is_default_ignorable(c: char) -> bool {
     binary_search_ranges(DEFAULT_IGNORABLE_RANGES, c as u32)
 }
 
-/// Bidi_Class short name for `c` (Unicode 18.0.0; unlisted defaults to `L`).
+/// Bidi_Class short name for `c` (Unicode 18.0.0).
+///
+/// Lookup order is explicit `BIDI_CLASS_RANGES` rows first, then the ordered
+/// UAX #44 `@missing` defaults with the last matching directive winning. The
+/// global `0000..10FFFF; L` default covers every valid `char`, so falling off
+/// the defaults is an internal data invariant violation, never a silent `L`.
 pub fn bidi_class_name(c: char) -> &'static str {
-    binary_search_tagged(BIDI_CLASS_RANGES, c as u32).unwrap_or("L")
+    let cp = c as u32;
+    if let Some(tag) = binary_search_tagged(BIDI_CLASS_RANGES, cp) {
+        return tag;
+    }
+    for (lo, hi, tag) in BIDI_CLASS_DEFAULT_RANGES.iter().rev() {
+        if cp >= *lo && cp <= *hi {
+            return tag;
+        }
+    }
+    unreachable!("invariant: global Bidi_Class @missing default must cover U+{cp:04X}");
 }
 
 /// Map a Bidi_Class name to the `unicode-bidi` enum.
@@ -226,6 +242,8 @@ pub fn script_extensions(c: char) -> Vec<&'static str> {
 /// - Hani → + Hanb, Hntl, Jpan, Kore
 /// - Hira → + Jpan; Kana → + Jpan; Hang → + Kore; Bopo → + Hanb; Latn → + Hntl
 /// - Zyyy/Zinh treated as ALL by callers (returned here as empty marker).
+/// - Zzzz (Unknown) is an ordinary singleton set and constrains the resolved
+///   intersection like any other non-ALL set.
 pub fn augmented_script_set(c: char) -> BTreeSet<&'static str> {
     let ext = script_extensions(c);
     if ext.iter().any(|s| *s == "Zyyy" || *s == "Zinh") {
@@ -234,10 +252,6 @@ pub fn augmented_script_set(c: char) -> BTreeSet<&'static str> {
         return BTreeSet::new();
     }
     let mut set: BTreeSet<&'static str> = ext.into_iter().collect();
-    // Unknown does not constrain the intersection either.
-    if set.contains("Zzzz") {
-        return BTreeSet::new();
-    }
     if set.contains("Hani") {
         set.insert("Hanb");
         set.insert("Hntl");
@@ -264,7 +278,7 @@ pub fn augmented_script_set(c: char) -> BTreeSet<&'static str> {
 
 /// UTS #39 §5.1 resolved script set: intersection of augmented sets.
 ///
-/// Characters with Common/Inherited/Unknown (ALL) do not constrain the
+/// Characters with Common/Inherited (ALL) do not constrain the
 /// intersection. A string of only such characters resolves to ALL
 /// (represented here as empty set + `all=true`? No — return empty meaning
 /// unconstrained? Instead return the full ALL marker as empty set and let
@@ -284,7 +298,7 @@ pub fn resolved_script_set_detailed(text: &str) -> (BTreeSet<&'static str>, bool
     for c in text.chars() {
         let aug = augmented_script_set(c);
         if aug.is_empty() {
-            // ALL (Common/Inherited/Unknown): intersects to identity.
+            // ALL (Common/Inherited): intersects to identity.
             continue;
         }
         any_bearing = true;
@@ -356,6 +370,10 @@ mod tests {
             COUNT_SCRIPT_EXTENSION_OVERRIDES
         );
         assert_eq!(BIDI_CLASS_RANGES.len(), COUNT_BIDI_CLASS_RANGES);
+        assert_eq!(
+            BIDI_CLASS_DEFAULT_RANGES.len(),
+            COUNT_BIDI_CLASS_DEFAULT_RANGES
+        );
         assert_eq!(BIDI_MIRRORING_ENTRIES.len(), COUNT_BIDI_MIRRORING_ENTRIES);
         assert_eq!(BIDI_BRACKET_ENTRIES.len(), COUNT_BIDI_BRACKET_ENTRIES);
         assert_eq!(UNICODE_SECURITY_PROPERTIES_VERSION, "18.0.0");
@@ -376,6 +394,12 @@ mod tests {
         ] {
             assert!(src.contains(sha), "missing checksum {sha}");
         }
+        assert!(
+            src.contains(&format!(
+                "bidi_class_defaults={COUNT_BIDI_CLASS_DEFAULT_RANGES} ranges"
+            )),
+            "generated header must expose the @missing default count"
+        );
     }
 
     #[test]

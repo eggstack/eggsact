@@ -141,18 +141,26 @@ pub fn bidi_skeleton_ltr(text: &str) -> String {
             last_end = para.range.end;
             continue;
         }
-        // Levels per character (logical order) after L1.
-        let levels_per_char: Vec<Level> = {
-            let levels = info.reordered_levels_per_char(para, para.range.clone());
-            // `reordered_levels_per_char` returns one level per char.
-            debug_assert_eq!(levels.len(), para_chars.len());
-            if levels.len() == para_chars.len() {
-                levels
-            } else {
-                // Fallback: should not happen; treat as LTR.
-                vec![Level::ltr(); para_chars.len()]
-            }
-        };
+        // Levels per character (logical order) after L1, scoped to this
+        // paragraph: UAX #9 processes each paragraph independently, so run
+        // the algorithm on the paragraph substring alone. Slicing the
+        // whole-text vector is incorrect — `reordered_levels_per_char`
+        // returns one level per character of the *whole* text, including
+        // characters outside the requested range.
+        let sub_info = BidiInfo::new_with_data_source(&data, para_text, Some(Level::ltr()));
+        assert_eq!(
+            sub_info.paragraphs.len(),
+            1,
+            "invariant: paragraph substring must yield exactly one paragraph"
+        );
+        let sub_para = &sub_info.paragraphs[0];
+        let levels_per_char: Vec<Level> =
+            sub_info.reordered_levels_per_char(sub_para, sub_para.range.clone());
+        assert_eq!(
+            levels_per_char.len(),
+            para_chars.len(),
+            "invariant: paragraph-local levels must match paragraph chars"
+        );
         // L2: visual order map (visual index → logical index).
         let index_map = BidiInfo::reorder_visual(&levels_per_char);
         // Build visual-order chars + levels.

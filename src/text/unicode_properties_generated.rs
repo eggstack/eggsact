@@ -15,7 +15,7 @@
 // Source PropertyValueAliases.txt: https://www.unicode.org/Public/18.0.0/ucd/PropertyValueAliases.txt
 // Source checksum (SHA-256) PropertyValueAliases.txt: 06c4c8eaf7b0bf34abe73b113da1215bd784ac254d4c223600b90267caa4bbbd
 // Generation command: python3 scripts/generate_unicode_security_properties.py
-// Entry counts: default_ignorable=27 ranges, scripts=2321 ranges, script_extensions=210 ranges, bidi_class=2356 ranges, bidi_mirroring=438 entries, bidi_brackets=130 entries.
+// Entry counts: default_ignorable=27 ranges, scripts=2321 ranges, script_extensions=210 ranges, bidi_class=2356 ranges, bidi_class_defaults=24 ranges, bidi_mirroring=438 entries, bidi_brackets=130 entries.
 
 /// Default_Ignorable_Code_Point ranges as (start, end) inclusive.
 pub static DEFAULT_IGNORABLE_RANGES: &[(u32, u32)] = &[
@@ -4945,6 +4945,36 @@ pub static BIDI_CLASS_RANGES: &[(u32, u32, &str)] = &[
     (0xFFFFE, 0xFFFFF, "BN"),
     (0x100000, 0x10FFFD, "L"),
     (0x10FFFE, 0x10FFFF, "BN"),
+];
+
+/// Bidi_Class `@missing` defaults as (start, end, class) in UAX #44 source
+/// order. Later directives override earlier ones: runtime lookup scans
+/// this table in reverse after the explicit table misses.
+pub static BIDI_CLASS_DEFAULT_RANGES: &[(u32, u32, &str)] = &[
+    (0x0000, 0x10FFFF, "L"),
+    (0x0590, 0x05FF, "R"),
+    (0x0600, 0x07BF, "AL"),
+    (0x07C0, 0x085F, "R"),
+    (0x0860, 0x08FF, "AL"),
+    (0x20A0, 0x20CF, "ET"),
+    (0xFB1D, 0xFB4F, "R"),
+    (0xFB50, 0xFDCF, "AL"),
+    (0xFDF0, 0xFDFF, "AL"),
+    (0xFE70, 0xFEFF, "AL"),
+    (0x10800, 0x10CFF, "R"),
+    (0x10D00, 0x10D3F, "AL"),
+    (0x10D40, 0x10EBF, "R"),
+    (0x10EC0, 0x10EFF, "AL"),
+    (0x10F00, 0x10F2F, "R"),
+    (0x10F30, 0x10F6F, "AL"),
+    (0x10F70, 0x10FFF, "R"),
+    (0x1E800, 0x1EC6F, "R"),
+    (0x1EC70, 0x1ECBF, "AL"),
+    (0x1ECC0, 0x1ECFF, "R"),
+    (0x1ED00, 0x1ED4F, "AL"),
+    (0x1ED50, 0x1EDFF, "R"),
+    (0x1EE00, 0x1EEFF, "AL"),
+    (0x1EF00, 0x1EFFF, "R"),
 ];
 
 /// Bidi_Mirroring_Glyph entries as (source, mirror). Sorted by source.
