@@ -19,7 +19,7 @@ Implementation commits or pull requests:
   A–D: 006 conformance fixtures, Bidi_Class `@missing` generation/lookup,
   paragraph-local bidi skeleton, Unknown/Zzzz resolved sets,
   property/fuzz extensions, documentation/CHANGELOG)
-- `09cf7fa` — Close Milestone 006 (this closure record, plan status,
+- `79a4ff5` — Close Milestone 006 (this closure record, plan status,
   registry/roadmap reconciliation)
 
 Milestone 003/004/005 closure references (immutable history):
