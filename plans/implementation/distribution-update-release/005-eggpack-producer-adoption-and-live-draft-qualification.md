@@ -14,8 +14,8 @@ Mirrored Eggpack plan:
 
 Required Eggpack prerequisite plans:
 
-- `plans/implementation/ci-release-orchestration/003d-consumer-release-composition-seam.md`
-- `plans/implementation/build-qualification/005-deterministic-cross-tool-provisioning.md`
+- `eggstack/eggpack: plans/implementation/ci-release-orchestration/003d-consumer-release-composition-seam.md`
+- `eggstack/eggpack: plans/implementation/build-qualification/005-deterministic-cross-tool-provisioning.md`
 
 Primary class: corrective adoption / release infrastructure / operational qualification
 
