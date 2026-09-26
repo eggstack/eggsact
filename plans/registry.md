@@ -31,7 +31,7 @@ retained only for traceability.
 
 | Subsystem | Status | Roadmap | Current milestone | Dependencies or blockers |
 |---|---|---|---|---|
-| Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | 006 ready | 003/004/005 remain closed historical dependencies; 006 owns post-005 Bidi_Class @missing, multi-paragraph bidi-skeleton, and Unknown/Zzzz resolved-script corrections. |
+| Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | Guard only; 006 closed | 003/004/005/006 remain closed historical dependencies; substrate is guard-only. |
 | MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c active (deterministic prep done; external evidence blocked) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
 | Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M004 closed; M005 blocked / planned | mirrored Eggpack adoption plan registered; waits on Eggpack CI M003d + Build M005; updater/product release policy remains local |
@@ -44,7 +44,7 @@ retained only for traceability.
 | Deterministic tool substrate | 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | Implemented in `3d67807`; closure `plans/closure/deterministic-tool-substrate/003-status.md`. Data epoch held at Unicode 17.0.0. |
 | Deterministic tool substrate | 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | Implemented in `2e3860c`; closure `plans/closure/deterministic-tool-substrate/004-status.md`. Shipped claim: "confusables data: Unicode 18.0.0" (6,712 entries). |
 | Deterministic tool substrate | 005 Unicode security standards-conformance corrective | closed | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | Closure `plans/closure/deterministic-tool-substrate/005-status.md`. Historical control point; residual edge cases are owned by 006. |
-| Deterministic tool substrate | 006 Unicode conformance edge-case corrective | ready | `plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | Parse ordered Unicode 18 Bidi_Class @missing defaults, fix paragraph-local bidi levels, and retain Zzzz as a real resolved Script_Extensions set. |
+| Deterministic tool substrate | 006 Unicode conformance edge-case corrective | closed | `plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | Closure `plans/closure/deterministic-tool-substrate/006-status.md`. Ordered Bidi_Class @missing defaults, paragraph-local bidi levels, Zzzz-as-constraint resolved sets. |
 
 ## Recently closed work (control points)
 
@@ -68,11 +68,11 @@ retained only for traceability.
 - MCP modernization protocol/runtime/discovery implementation is complete
   (`35f7dc2e`, `a5c00b8d`, `77ff57a5`, `121babde`, `40222999`); only the
   `03c` external evidence closure remains active.
-- Deterministic tool substrate Milestones 003, 004, and 005 remain closed
-  historical control points, but post-005 edge-case review reopened the Unicode
-  line under Milestone 006. 006 is ready for handoff and is limited to
-  Bidi_Class @missing defaults, paragraph-local bidi-skeleton levels, and
-  Unknown/Zzzz resolved-script semantics. Harness remains guard-only (03c
+- Deterministic tool substrate Milestones 003, 004, 005, and 006 remain closed
+  historical control points. The Unicode workstream (003 semantic hardening +
+  004 data qualification + 005 standards-conformance corrective + 006
+  edge-case corrective) is complete; the substrate is guard-only with no open
+  milestone. Harness remains guard-only (03c
   external evidence still blocked). Distribution M001-M004 remain closed
   historical control points, while distribution M005 remains separately
   blocked on Eggpack prerequisites; self-update semantics are not reopened.

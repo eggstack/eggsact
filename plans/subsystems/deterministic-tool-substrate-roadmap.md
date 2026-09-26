@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Roadmap
 
-Status: active (Milestone 006 Unicode conformance edge-case corrective ready)
+Status: active (guard workstream; Milestones 003–006 closed)
 
 Long-term references:
 
@@ -95,8 +95,8 @@ A post-005 edge-case review found three narrower conformance defects: Unicode
 multi-paragraph bidi skeleton assumes paragraph-length output from a
 whole-text levels API and can fall back to all-LTR levels, and
 Script_Extensions `Unknown`/Zzzz is incorrectly treated as the ALL identity
-reserved for Common/Inherited. Milestone 006 owns only these residual
-corrections.
+reserved for Common/Inherited. Milestone 006 corrected only these residual
+defects and is closed; the substrate is guard-only.
 
 ## 5. Target architecture
 
@@ -118,14 +118,13 @@ Registry integrity (continuous guard)
              |
              `--> Unicode 18 data qualification (004, closed)
                       |
-                      `--> UTS #39 standards-conformance corrective (005, closed)
-                               |
-                               `--> Unicode conformance edge-case corrective (006, ready)
+                       `--> UTS #39 standards-conformance corrective (005, closed)
+                                |
+                                `--> Unicode conformance edge-case corrective (006, closed)
 ```
 
-Milestones 003, 004, and 005 are closed historical dependencies. Milestone 006
-has no open hard dependency and corrects three edge-case findings discovered
-after 005 without reopening the Unicode 18 data epoch or public surface.
+Milestones 003, 004, 005, and 006 are closed historical dependencies. The
+substrate workstream is guard-only with no open milestone.
 
 ## 7. Milestones
 
@@ -348,4 +347,4 @@ via `closure/` records; the performance line is already closed.
 | 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | `plans/closure/deterministic-tool-substrate/003-status.md` (`3d67807`) | — |
 | 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | `plans/closure/deterministic-tool-substrate/004-status.md` (`2e3860c`) | — |
 | 005 Unicode security standards-conformance corrective | closed | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | `plans/closure/deterministic-tool-substrate/005-status.md` | — |
-| 006 Unicode conformance edge-case corrective | ready | `plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | — | — |
+| 006 Unicode conformance edge-case corrective | closed | `plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | `plans/closure/deterministic-tool-substrate/006-status.md` (`83de61a`) | — |

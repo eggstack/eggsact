@@ -1,8 +1,10 @@
 # Deterministic Tool Substrate Milestone 006 — Unicode Conformance Edge-Case Corrective
 
-Status: ready for handoff
+Status: closed
 
 Repository baseline: `6c6a47890f2bfa27922f85834c3e641d12745e21`
+
+Implemented in `83de61a`; closed in `plans/closure/deterministic-tool-substrate/006-status.md`.
 
 Source roadmap:
 
