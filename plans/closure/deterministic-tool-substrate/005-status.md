@@ -19,7 +19,7 @@ Implementation commits or pull requests:
   packages A–F: generated Unicode 18 property tables, internal/bidi/public
   skeleton, resolved Script_Extensions, Rust inspect parity, hazard
   consolidation, conformance/property/fuzz tests, documentation)
-- `<plans-sha>` — Close Milestone 005 (this closure record, plan status,
+- `536e5a0` — Close Milestone 005 (this closure record, plan status,
   registry/roadmap reconciliation)
 
 Milestone 003/004 closure references (immutable history):
