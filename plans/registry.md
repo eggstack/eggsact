@@ -45,12 +45,6 @@ retained only for traceability.
 | Deterministic tool substrate | 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | Implemented in `2e3860c`; closure `plans/closure/deterministic-tool-substrate/004-status.md`. Shipped claim: "confusables data: Unicode 18.0.0" (6,712 entries). |
 | Deterministic tool substrate | 005 Unicode security standards-conformance corrective | ready | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | Correct UTS #39 Revision 34 public/internal skeleton semantics, Unicode 18 resolved Script_Extensions, Rust identifier_inspect validation, and residual hazard ownership drift. |
 
-## Blocked implementation plans
-
-| Subsystem | Milestone | Status | Implementation plan | Blocker |
-|---|---|---|---|---|
-| Distribution, update, and release | M005 Eggpack producer adoption + live draft qualification | blocked / planned | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | Eggpack CI M003d + Build M005 closures; then first normal version tag supplies live draft evidence |
-
 ## Recently closed work (control points)
 
 | Subsystem | Milestone | Status | Controlling evidence |
@@ -65,7 +59,7 @@ retained only for traceability.
 
 | Subsystem | Milestone | Blocker |
 |---|---|---|
-| Distribution, update, and release | M005 Eggpack producer adoption | Eggpack CI M003d + Build M005 must close; mirrored Eggpack Ecosystem M001 plan is already registered. |
+| Distribution, update, and release | M005 Eggpack producer adoption | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`; Eggpack CI M003d + Build M005 must close; mirrored Eggpack Ecosystem M001 plan is registered. |
 | MCP presentation surface | 03c Parts D-F (model/client traces, instructions A/B, rollout decision) | No provider credentials, subscriptions, or evaluation budget for ~200 model calls (attempted 2026-09-11: `codex`/`claude` CLIs present, no budget). Generated integrations stay on direct; discovery stays explicitly selectable. |
 
 ## Closure work and current control points
