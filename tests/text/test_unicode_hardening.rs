@@ -110,7 +110,11 @@ fn script_classification_agrees_across_consumers() {
 #[test]
 fn mixed_script_matrix_legitimate_vs_spoof() {
     // Legitimate writing-system mixtures are not spoof mixtures.
-    for text in ["日本語テスト漢字", "한글한자test"] {
+    // Milestone 005 corrective: Hangul+Han without Latin resolves via Kore
+    // (single); with trailing Latin it is mixed under UTS #39 resolved sets
+    // (the old Korean+Latin allowlist conflated restriction-level
+    // acceptability with the mixed-script predicate).
+    for text in ["日本語テスト漢字", "한글한자"] {
         let tools = unicode_tools::detect_mixed_scripts(text);
         assert!(!tools.mixed_scripts, "{text:?} is legitimate");
         let policy = unicode_policy_check(text, "human_text", None);
@@ -119,6 +123,13 @@ fn mixed_script_matrix_legitimate_vs_spoof() {
             "{text:?} policy must not warn"
         );
     }
+    // Hangul+Han+Latin is restriction-friendly but mixed-script per UTS #39.
+    let mixed_ko = "한글한자test";
+    let tools = unicode_tools::detect_mixed_scripts(mixed_ko);
+    assert!(
+        tools.mixed_scripts,
+        "{mixed_ko:?} is mixed under resolved sets"
+    );
     // Spoof mixtures still detected by both paths.
     for text in ["hello привет", "appleаpple"] {
         let tools = unicode_tools::detect_mixed_scripts(text);

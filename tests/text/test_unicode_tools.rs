@@ -247,14 +247,27 @@ fn test_find_invisibles_u2061_classified_as_bidi() {
     );
 }
 
-// ─── L17: unicode_scripts returns "Other" for unknown chars ───────────
+// ─── L17: unicode_scripts returns UAX #24 Script (005 corrective) ───────────
 
 #[test]
 fn test_unicode_scripts_returns_other_for_unknown_chars() {
+    // Milestone 005: snowman U+2603 is Script=Common per UAX #24 (Scripts.txt
+    // 2600..266E → Common), not "Other". The hand-maintained range table
+    // returned "Other" for unlisted symbols; the generated Unicode 18 tables
+    // report the authoritative identity. Both spellings are filtered from
+    // mixed-script verdicts, so only diagnostics change.
     let scripts = unicode_scripts("\u{2603}");
     assert!(
-        scripts.contains(&"Other".to_string()),
-        "Snowman U+2603 should map to 'Other' script, got {:?}",
+        scripts.contains(&"Common".to_string()),
+        "Snowman U+2603 should map to 'Common' script, got {:?}",
         scripts
+    );
+    // Truly unassigned code points still report "Other" for tool compat
+    // (policy layer maps to "Unknown").
+    let unassigned = unicode_scripts("\u{0378}");
+    assert!(
+        unassigned.contains(&"Other".to_string()),
+        "Unassigned U+0378 should map to 'Other', got {:?}",
+        unassigned
     );
 }

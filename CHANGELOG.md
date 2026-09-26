@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Unicode security standards-conformance corrective, UTS #39 Revision 34)
+- `confusable_skeleton()` now implements the public `skeleton(X) =
+  bidiSkeleton(LTR, X)` relation instead of the internal NFD+mapping stage
+  alone: Default_Ignorable characters (variation selectors, ZWSP/ZWNJ/ZWJ,
+  CGJ, soft hyphen, bidi embeddings, tags, etc.) are stripped before mapping,
+  and RTL inputs take the UAX #9 L1/L2 → L3 mark-fixup → L4 mirroring path
+  (version-correct Unicode 18 tables driving the `unicode-bidi` algorithm;
+  its bundled Unicode 16 data is never used). New true positives include
+  `a\u{FE0F}b` ≅ `ab` and the spec §4 `A1<שׂ` ≅ `Αשֺ>1` pair; pure-LTR
+  skeletons (`apple`/`аpple`, `Æ`/`AE`) are unchanged via the spec fast path.
+- Mixed-script detection now uses Unicode 18 Script_Extensions with the exact
+  UTS #39 §5.1 augmented resolved-set rule (Han→Hanb/Hntl/Jpan/Kore,
+  Hiragana/Katakana→Jpan, Hangul→Kore, Bopomofo→Hanb, Latin→Hntl;
+  Common/Inherited as ALL) instead of the hand range table plus
+  Japanese/Korean allowlists. Han+Latin resolves via Hntl (single),
+  Hangul+Han via Kore (single), Japanese via Jpan (single);
+  Hangul+Han+Latin is now mixed (previously allowlisted) — a
+  restriction-level-friendly combination correctly distinguished from the
+  narrower mixed-script predicate.
+- `identifier_inspect(language = "rust")` now validates via the shared
+  XID+keyword helper (previously fell through as `valid = true`): `1abc`,
+  `fn`, and other invalid Rust identifiers correctly report `valid = false`.
+- Remaining security-sensitive invisible/bidi/join membership is consolidated
+  behind the typed layer (`has_security_invisible_hazard`, `is_zero_width_char`,
+  `is_invisible_char` all delegate to `classify_hazard`; policy and identifier
+  private lists removed; `helpers::is_invisible_char` delegates). U+034F (CGJ)
+  now classifies as `InvisibleFormat` rather than generic `CombiningMark`.
+- `unicode_scripts("☃")` now reports `Common` (correct UAX #24 Script) instead
+  of `Other`; truly unassigned code points still report `Other` (policy maps
+  to `Unknown`). No ToolSpec/profile/audience/schema/machine-code change.
+
+### Added (Unicode security standards-conformance corrective)
+- Unicode 18.0.0 security property tables (`src/text/unicode_properties_generated.rs`,
+  never hand-edited) from seven checksum-pinned UCD inputs via
+  `scripts/generate_unicode_security_properties.py` (`--self-test` offline,
+  `--check` maintainer freshness): 27 Default_Ignorable ranges, 2321 Script
+  ranges, 210 Script_Extensions overrides, 2356 Bidi_Class ranges, 438
+  mirroring entries, 130 bracket entries. Provenance constants and entry-count
+  guards in `src/text/unicode_properties.rs`.
+- Additive skeleton APIs: `internal_skeleton()` (NFD → remove
+  Default_Ignorable → map → NFD) and `bidi_skeleton_ltr()`; `are_confusable()`
+  compares the corrected public skeletons (distinct-raw-strings behavior kept).
+- Authoritative resolved-script APIs: `resolved_script_set()`,
+  `is_mixed_script()` (UTS #39 §5.1), re-exported through `text::script`;
+  `is_legitimate_mixture()` retained for 1.x source compatibility only.
+- `unicode-bidi` 0.3.18 dependency (algorithm only, `default-features = false`;
+  MSRV 1.47, MIT/Apache-2.0, no transitive deps at this feature set).
+- Conformance fixtures (`tests/text/test_unicode_conformance_005.rs`: 14 tests
+  incl. Default-Ignorable collapse, spec §4 S1/S2 vectors, Table 1a matrix,
+  Jpan/Kore/Hanb/Hntl augmentation, Rust inspect matrix, cross-consumer hazard
+  agreement) plus property-test extensions (internal/bidi determinism, resolved
+  determinism, Common/Inherited neutrality, hazard agreement) and fuzz-target
+  updates (internal idempotence asserted; no public-bidi idempotence claim).
+
 ### Changed (Unicode 18 data qualification)
 - Confusables/security data advanced from Unicode 17.0.0 to authoritative
   Unicode 18.0.0 bytes (`confusables.txt` 2026-08-06, SHA-256

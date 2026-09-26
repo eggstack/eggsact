@@ -21,6 +21,7 @@ pub mod synthesis;
 pub mod toml;
 pub mod transform;
 pub mod unicode_policy;
+pub mod unicode_properties;
 pub mod unicode_tools;
 pub mod validate;
 pub mod version;
@@ -42,8 +43,9 @@ pub use config::{
 };
 pub use confusables::CONFUSABLES;
 pub use confusables::{
-    are_confusable, confusable_skeleton, find_confusables, has_confusables, lookup,
-    CONFUSABLES_ENTRY_COUNT, CONFUSABLES_SOURCE_SHA256, CONFUSABLES_UNICODE_VERSION,
+    are_confusable, bidi_skeleton_ltr, confusable_skeleton, find_confusables, has_confusables,
+    internal_skeleton, lookup, CONFUSABLES_ENTRY_COUNT, CONFUSABLES_SOURCE_SHA256,
+    CONFUSABLES_UNICODE_VERSION,
 };
 pub use diff::{
     common_prefix_suffix, diff_spans, first_diff, levenshtein_distance,
@@ -72,7 +74,10 @@ pub use primitives::{
     codepoint_index_to_byte_offset, codepoints, count_graphemes, truncate_to_grapheme,
     CodepointInfo,
 };
-pub use script::{is_legitimate_mixture, is_script_bearing, policy_script_of, script_of};
+pub use script::{
+    is_legitimate_mixture, is_mixed_script, is_script_bearing, policy_script_of,
+    resolved_script_set, script_of,
+};
 pub use shell::{
     argv_compare, shell_quote_join, shell_split, ArgvCompareResult, ShellFeatures,
     ShellQuoteJoinResult, ShellSplitResult,
@@ -87,7 +92,8 @@ pub use unicode_policy::{
     PolicyFinding, UnicodePolicyCheckResult,
 };
 pub use unicode_tools::{
-    classify_hazard, is_bidi_control, is_join_control, UnicodeHazard, BIDI_CONTROLS, JOIN_CONTROLS,
+    classify_hazard, has_security_invisible_hazard, is_bidi_control, is_join_control,
+    is_zero_width_char, UnicodeHazard, BIDI_CONTROLS, JOIN_CONTROLS,
 };
 pub use validate::{
     json_canonicalize, json_compare, json_extract, json_shape, list_dedupe, list_sort,

@@ -10,6 +10,7 @@ Maintainer reference for generated files, doc generation, confusables data, pari
 | `generated/tool-cards.md` | `ToolSpec` registry | `cargo run --locked --features dev-tools --bin generate-docs` | Per-codegg-profile tool cards with required args, aliases, composite flags |
 | `architecture/overview.md` registry facts | `ToolSpec` registry + profiles + discovery policy | `cargo run --locked --features dev-tools --bin generate-docs` | Underlying/category/profile counts and discovery advertised count |
 | `src/text/confusables_generated.rs` | Unicode UTS #39 `confusables.txt` | `python3 scripts/generate_confusables.py` | Sorted static table of Unicode codepoints to confusable alternatives (binary-search key lookup) |
+| `src/text/unicode_properties_generated.rs` | Unicode 18.0.0 UCD (`DerivedCoreProperties.txt`, `Scripts.txt`, `ScriptExtensions.txt`, `extracted/DerivedBidiClass.txt`, `BidiMirroring.txt`, `BidiBrackets.txt`, `PropertyValueAliases.txt`) | `python3 scripts/generate_unicode_security_properties.py` | Sorted range tables for Default_Ignorable, Script/Script_Extensions, Bidi_Class, mirroring, brackets, plus short→long script names (binary-search lookup; never hand-edit) |
 
 These files are **never hand-edited**. Edit the source of truth and re-run the generator.
 
@@ -141,10 +142,49 @@ Provenance single source of truth in code: `CONFUSABLES_UNICODE_VERSION`
 (`"18.0.0"`), `CONFUSABLES_SOURCE_SHA256`, and `CONFUSABLES_ENTRY_COUNT`
 (6712) in `src/text/confusables.rs` (checked against the generated header
 and exact table length by unit tests). The semantic layer above the data
-distinguishes per-character source mappings (`lookup`, `has_confusables`,
-`find_confusables`) from the whole-string UTS #39 skeleton relation
-(`confusable_skeleton`, `are_confusable`); collision detection must use the
-skeleton relation.
+distinguishes the UTS #39 internal skeleton (`internal_skeleton`: NFD →
+remove Default_Ignorable → mapping → NFD), the public operation
+(`confusable_skeleton = bidiSkeleton(LTR, X)` via version-correct UAX #9
+tables), per-character source mappings (`lookup`, `has_confusables`,
+`find_confusables`), and the resolved-script verdict (`is_mixed_script`);
+collision detection must use the public skeleton relation.
+
+### Unicode security property tables (UTS #39 / UAX #24 / UAX #9)
+
+`src/text/unicode_properties_generated.rs` is generated from seven
+checksum-pinned Unicode 18.0.0 UCD inputs (see the file header for URLs,
+SHA-256 per source, and entry counts: 27 Default_Ignorable ranges, 2321
+Script ranges, 210 Script_Extensions overrides, 2356 Bidi_Class ranges, 438
+mirroring entries, 130 bracket entries).
+
+```bash
+python3 scripts/generate_unicode_security_properties.py --self-test  # offline strict-parser fixtures (no network)
+python3 scripts/generate_unicode_security_properties.py --check      # maintainer check: fetch pinned sources,
+                                                                     # regenerate in memory, fail if checked-in
+                                                                     # output differs (writes nothing)
+```
+
+`--self-test` is offline and deterministic (miniature fixtures for every
+parser plus range-overlap/duplicate/surrogate guards). `--check` requires
+network to the pinned unicode.org URLs and is a maintainer/release check —
+ordinary merge CI must not depend on unicode.org availability and does not
+run it. Provenance constants (`UNICODE_SECURITY_PROPERTIES_VERSION`,
+per-source URLs/SHA-256, entry counts) live in
+`src/text/unicode_properties.rs` and are checked against the generated
+header and table lengths by unit tests.
+
+### Dependency data-epoch qualification (Milestone 005)
+
+Security-semantic providers were qualified from authoritative crate metadata
+before adoption; older epochs are never silently mixed:
+
+| Crate | `UNICODE_VERSION` | Verdict |
+|---|---|---|
+| `unicode-security` 0.1.2 | (16, 0, 0) | Rejected as authoritative (older than the Unicode 18 security baseline); not a dependency |
+| `unicode-script` 0.5.8 | (17, 0, 0) | Rejected as authoritative; Script/Script_Extensions generated from pinned UCD 18.0.0 instead |
+| `unicode-bidi-mirroring` 0.4.0 | Unicode 16 (per release notes) | Rejected as authoritative; mirroring generated from pinned UCD 18.0.0 instead |
+| `unicode-bidi` 0.3.18 | (16, 0, 0) hardcoded | Algorithm adopted, data rejected: built with `default-features = false` (no `hardcoded-data`) and always driven through the custom Unicode 18 `Unicode18BidiData` source (Bidi_Class + brackets from generated tables) |
+| `unicode-ident` 1.0.26 | (18, 0, 0) | Accepted (already current; Rust XID validity) |
 
 ### Provider epoch inventory (Unicode 18 qualification)
 
@@ -161,12 +201,16 @@ keep their own epochs (verified from authoritative crate/project metadata
 | Character names | `unicode_names2` 3.1.0 | 17.0 | diagnostic-only (display names) |
 | Segmentation | `unicode-segmentation` 1.13.3 | 17.0 | diagnostic (grapheme counts) |
 | Rust XID | `unicode-ident` 1.0.26 (`UNICODE_VERSION = (18, 0, 0)`) | 18.0 | security-semantic (Rust validity) |
-| Script ranges | `src/text/script.rs` hand table | 17.0-shaped; unlisted assignments surface as `Other`/filtered (safe direction) | security-semantic (spoof mixtures) |
+| UAX #9 algorithm | `unicode-bidi` 0.3.18 WITHOUT bundled data (`default-features = false`, custom `Unicode18BidiData`) | 18.0 (generated tables drive the algorithm) | security-semantic (bidiSkeleton L1/L2; L3/L4 in `confusables.rs`) |
+| Script / Script_Extensions | generated (`Scripts.txt` + `ScriptExtensions.txt` 18.0.0, SHA-256 pinned) | 18.0.0 | security-semantic (resolved sets with Jpan/Kore/Hanb/Hntl) |
+| Bidi_Class / mirroring / brackets | generated (`DerivedBidiClass.txt` + `BidiMirroring.txt` + `BidiBrackets.txt` 18.0.0, SHA-256 pinned) | 18.0.0 | security-semantic (bidiSkeleton) |
+| Default_Ignorable | generated (`DerivedCoreProperties.txt` 18.0.0, SHA-256 pinned) | 18.0.0 | security-semantic (internal-skeleton removal) |
 
-The accurate shipped claim is "confusables data: Unicode 18.0.0" — never
-"all Unicode processing: 18.0.0". No dependency was bumped for this
-milestone: no newer security-semantic provider release exists that would
-change results, and adopting unreleased git revisions is out of scope.
+The accurate shipped claim is "confusables data: Unicode 18.0.0" plus
+"security skeleton/script/bidi properties: Unicode 18.0.0" — never
+"all Unicode processing: 18.0.0" (normalization remains 17.0, casefold and
+general-category remain 16.0 per the table above; canonical mappings are
+stability-guaranteed so the skew cannot alter existing skeletons).
 
 ### Build Impact
 
@@ -343,6 +387,7 @@ Two companion tools provide deeper introspection:
 | Add/remove/rename tool in `src/mcp/specs/` | `cargo run --locked --features dev-tools --bin generate-docs` |
 | Change tool metadata (tier, cost, exposure, profiles) | `cargo run --locked --features dev-tools --bin generate-docs` |
 | New Unicode version with updated confusables | `python3 scripts/generate_confusables.py` |
+| New Unicode version with updated security properties (Default_Ignorable, Script, Bidi) | `python3 scripts/generate_unicode_security_properties.py` |
 | Change `CATEGORY_ORDER` or `CODEGG_PROFILES` | `cargo run --locked --features dev-tools --bin generate-docs` |
 
 ### Verification Steps

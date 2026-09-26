@@ -3,13 +3,13 @@ name: text-processing
 description: Use when working with text processing functionality in src/text/, adding new text modules, or understanding the text module catalog and conventions in the eggsact codebase.
 ---
 
-## Module List (25 modules, 27 files including `mod.rs` and `confusables_generated.rs`)
+## Module List (27 modules, 30 files including `mod.rs` and generated data files)
 
 | Module | File | Purpose |
 |--------|------|---------|
 | `cargo` | `cargo.rs` | Cargo.toml inspection |
 | `config` | `config.rs` | .env and .ini validation |
-| `confusables` | `confusables.rs` | Unicode confusable character detection (sorted static table, binary search) |
+| `confusables` | `confusables.rs` | Unicode confusable skeleton (UTS #39 internal/bidi/public stages over sorted static table, binary search) |
 | `diff` | `diff.rs` | Text diffing, Levenshtein distance |
 | `glob` | `glob.rs` | Glob pattern matching |
 | `identifier` | `identifier.rs` | Identifier naming analysis |
@@ -24,18 +24,21 @@ description: Use when working with text processing functionality in src/text/, a
 | `regex_engine` | `regex_engine.rs` | Regex backend classifier (rust-regex vs fancy-regex) |
 | `regex_safety` | `regex_safety.rs` | ReDoS detection |
 | `replace` | `replace.rs` | Text replacement with preview |
+| `script` | `script.rs` | Script diagnostics + UTS #39 resolved-script verdicts (over `unicode_properties`) |
 | `shell` | `shell.rs` | Shell command parsing and quoting |
 | `synthesis` | `synthesis.rs` | Composite tool orchestration |
 | `toml` | `toml.rs` | TOML validation and shape analysis |
 | `transform` | `transform.rs` | Text transforms, hashing, fingerprinting |
 | `unicode_policy` | `unicode_policy.rs` | Unicode safety policies |
-| `unicode_tools` | `unicode_tools.rs` | Mixed-script, invisible char detection |
+| `unicode_properties` | `unicode_properties.rs` | Unicode 18.0.0 security property tables (Default_Ignorable, Script/Extensions, Bidi) + typed layer |
+| `unicode_tools` | `unicode_tools.rs` | Mixed-script, invisible char detection (typed hazards) |
 | `validate` | `validate.rs` | JSON/regex/bracket validation, list ops |
 | `version` | `version.rs` | Semver comparison and constraint checking |
 
-Plus `confusables_generated.rs` — auto-generated data file (never edit directly).
-It is generated from the pinned Unicode Security 17.0.0 source by
-`scripts/generate_confusables.py`; the checked-in table is used at build time,
+Plus `confusables_generated.rs` and `unicode_properties_generated.rs` — auto-generated data files (never edit directly).
+`confusables_generated.rs` is generated from the pinned Unicode Security 18.0.0 source by
+`scripts/generate_confusables.py`; `unicode_properties_generated.rs` from pinned UCD 18.0.0 inputs by
+`scripts/generate_unicode_security_properties.py`; the checked-in tables are used at build time,
 so ordinary CI does not need network access.
 
 ## Code Conventions

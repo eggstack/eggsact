@@ -322,8 +322,9 @@ use eggsact::text::{patch_apply_check, patch_summary};
 use eggsact::text::{regex_safety_check, text_replace_check};
 use eggsact::text::{unicode_policy_check, canonicalize_text};
 use eggsact::text::{has_confusables, find_confusables};
-use eggsact::text::{confusable_skeleton, are_confusable};
+use eggsact::text::{confusable_skeleton, are_confusable, internal_skeleton, bidi_skeleton_ltr};
 use eggsact::text::{CONFUSABLES, CONFUSABLES_UNICODE_VERSION};
+use eggsact::text::{resolved_script_set, is_mixed_script};
 ```
 
 | Function | Signature | Description |
@@ -334,13 +335,22 @@ use eggsact::text::{CONFUSABLES, CONFUSABLES_UNICODE_VERSION};
 | `canonicalize_text` | `(text: &str, profile: &str) -> CanonicalizeResultWithMapping` | Normalize Unicode text |
 | `has_confusables` | `(text: &str) -> bool` | Check whether any character has a confusable mapping (source mapping, not a collision verdict) |
 | `find_confusables` | `(text: &str) -> Vec<(char, &'static str)>` | Find confusable characters with mappings (per-character source mappings) |
-| `confusable_skeleton` | `(text: &str) -> String` | Whole-string UTS #39 confusable skeleton (pinned Unicode 17 data); equal skeletons mean confusable |
-| `are_confusable` | `(a: &str, b: &str) -> bool` | True when two distinct strings share the exact skeleton |
+| `internal_skeleton` | `(text: &str) -> String` | UTS #39 internal skeleton: NFD → remove Default_Ignorable → confusables map → NFD (Unicode 18.0.0) |
+| `bidi_skeleton_ltr` | `(text: &str) -> String` | UTS #39 `bidiSkeleton(LTR, X)`: UAX #9 (L1/L2 via version-correct tables) → L3 mark fixup → L4 mirroring → internal skeleton |
+| `confusable_skeleton` | `(text: &str) -> String` | Public UTS #39 `skeleton(X) = bidiSkeleton(LTR, X)` (Unicode 18.0.0); equal skeletons mean confusable |
+| `are_confusable` | `(a: &str, b: &str) -> bool` | True when two distinct strings share the exact public skeleton |
+| `resolved_script_set` | `(text: &str) -> BTreeSet<&str>` | UTS #39 §5.1 resolved script set (augmented Script_Extensions intersection; short codes) |
+| `is_mixed_script` | `(text: &str) -> bool` | UTS #39 §5.1 mixed-script verdict (true iff resolved set empty with script-bearing input) |
 
 `lookup()`, `has_confusables()`, and `find_confusables()` report per-character
 source mappings. Whole-string collision verdicts must use `confusable_skeleton()`
-/ `are_confusable()`. Data provenance: `CONFUSABLES_UNICODE_VERSION` (`"18.0.0"`),
-`CONFUSABLES_SOURCE_SHA256`, `CONFUSABLES_ENTRY_COUNT`.
+/ `are_confusable()` (public bidi skeleton, not the internal stage alone).
+Mixed-script verdicts must use `is_mixed_script()` / `resolved_script_set()`
+(Script_Extensions + Jpan/Kore/Hanb/Hntl augmentation), not restriction-level
+allowances. Data provenance: `CONFUSABLES_UNICODE_VERSION` (`"18.0.0"`),
+`CONFUSABLES_SOURCE_SHA256`, `CONFUSABLES_ENTRY_COUNT`, plus
+`UNICODE_SECURITY_PROPERTIES_VERSION` (`"18.0.0"`) and per-source SHA-256 in
+`src/text/unicode_properties.rs` (generated tables never hand-edited).
 
 ### Position and Line Ranges
 

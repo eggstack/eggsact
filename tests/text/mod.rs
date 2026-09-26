@@ -18,6 +18,7 @@ pub mod test_replace;
 pub mod test_shell;
 pub mod test_toml;
 pub mod test_transform;
+pub mod test_unicode_conformance_005;
 pub mod test_unicode_hardening;
 pub mod test_unicode_policy;
 pub mod test_unicode_tools;

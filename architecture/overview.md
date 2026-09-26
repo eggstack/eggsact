@@ -135,12 +135,12 @@ membership, profile exposure, or discovery front doors.
 ┌─────────────────────────────────────────────────────────────────┐
 │                     text/ — Text Processing Library               │
 │                                                                   │
-│  25 modules providing the core text operations:                   │
+│  27 modules providing the core text operations:                   │
 │  primitives, confusables, diff, measure, validate, transform,   │
 │  position, regex_safety, regex_engine, replace, path,           │
 │  identifier, shell, markdown, glob, config, toml, patch,        │
-│  line_range, unicode_policy, unicode_tools, inspect_prompt,     │
-│  synthesis, cargo, version                                       │
+│  line_range, unicode_policy, unicode_tools, unicode_properties, │
+│  inspect_prompt, synthesis, cargo, version, script              │
 │                                                                   │
 │  confusables_generated.rs — auto-generated Unicode data           │
 │                                                                     │
@@ -161,7 +161,7 @@ Natural-language math pipeline: `normalize.rs` turns English ("thirty miles per 
 
 ### Text library (`src/text/`)
 
-Leaf deterministic cores — 26 modules (measure, diff, validate, transform, position, regex engine/safety, shell tokenizer, path, identifier, markdown, patch, Unicode policy/tools, confusables, script, prompt inspection, …) plus auto-generated `confusables_generated.rs` (confusables data: Unicode 18.0.0 — see [generated-assets.md](generated-assets.md) for the per-provider epoch inventory; never hand-edit). Pure functions with no dependency on agent/mcp/tools; the recommended Rust import surface below `calc`. Deep dive → [text-library.md](text-library.md).
+Leaf deterministic cores — 27 modules (measure, diff, validate, transform, position, regex engine/safety, shell tokenizer, path, identifier, markdown, patch, Unicode policy/tools/properties, confusables, script, prompt inspection, …) plus auto-generated `confusables_generated.rs` (confusables data: Unicode 18.0.0) and `unicode_properties_generated.rs` (security properties: Unicode 18.0.0 — see [generated-assets.md](generated-assets.md) for the per-provider epoch inventory; never hand-edit either). Pure functions with no dependency on agent/mcp/tools; the recommended Rust import surface below `calc`. Deep dive → [text-library.md](text-library.md).
 
 ### Temporal core (`src/temporal/`, `pub(crate)`)
 
@@ -470,7 +470,7 @@ The Model/Harness gap comes from audience filtering (`Model` excludes `HarnessOn
 | `src/services/security.rs` | — | `SecurityInspection` pipeline over `text::*` cores |
 | `src/services/repo.rs` | — | `RepoFacts` canonical ecosystem/path/language facts |
 | `src/services/patch_analysis.rs` | — | `PatchAnalysis` single-parse neutral diff facts |
-| `src/text/*.rs` | — | Text processing library (25 modules + generated `confusables_generated.rs` data file) |
+| `src/text/*.rs` | — | Text processing library (27 modules + generated `confusables_generated.rs` / `unicode_properties_generated.rs` data files) |
 | `src/temporal/*.rs` | — | Fixed-offset datetime helpers and bounded cron parser/search |
 | `src/agent/mod.rs` | ~1820 | ToolRegistry, Profile, ExecutionContext |
 | `src/preflight/mod.rs` | ~3540 | Typed preflight wrappers |

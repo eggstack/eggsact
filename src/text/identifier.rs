@@ -150,16 +150,13 @@ const PYTHON_KEYWORDS: &[&str] = &[
     "with", "yield",
 ];
 
-const INVISIBLE_CHARS: &[char] = &[
-    '\u{200b}', '\u{200c}', '\u{200d}', '\u{200e}', '\u{200f}', '\u{feff}', '\u{00a0}', '\u{2028}',
-    '\u{2029}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}', '\u{2067}',
-    '\u{2068}', '\u{2069}', '\u{2060}',
-];
-
 /// Script identity delegates to [`crate::text::script`], the single
 /// authoritative source shared with `unicode_tools` and `unicode_policy`.
 /// (The former per-module `SCRIPT_RANGES` table was removed to eliminate
 /// divergent hand-maintained boundaries.)
+///
+/// Invisible membership delegates to the central typed hazard classifier
+/// (`has_security_invisible_hazard`); no local static list is kept.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentifierAnalyzeResult {
@@ -490,6 +487,13 @@ fn is_valid_rust_identifier(text: &str) -> bool {
     chars.all(|c| c == '_' || unicode_ident::is_xid_continue(c))
 }
 
+/// Shared Rust identifier validity: Unicode XID syntax plus reserved-keyword
+/// rejection. Used by both [`identifier_analyze`] and [`identifier_inspect`]
+/// so the two APIs cannot drift.
+fn rust_identifier_is_valid(text: &str) -> bool {
+    is_valid_rust_identifier(text) && !is_rust_keyword(text)
+}
+
 /// Whether `text` is a valid *ASCII-only* Rust identifier.
 ///
 /// Explicit ASCII/security-policy distinction retained for callers that need
@@ -547,7 +551,8 @@ fn get_scripts(text: &str) -> Vec<String> {
 }
 
 fn has_invisibles(text: &str) -> bool {
-    text.chars().any(|c| INVISIBLE_CHARS.contains(&c))
+    text.chars()
+        .any(crate::text::unicode_tools::has_security_invisible_hazard)
 }
 
 fn normalize_text(text: &str, normalization: &str) -> String {
@@ -577,11 +582,7 @@ pub fn identifier_analyze(text: &str, languages: Option<Vec<&str>>) -> Identifie
     }
 
     let rust_valid = if languages.contains(&"rust") {
-        if is_valid_rust_identifier(text) {
-            Some(!is_rust_keyword(text))
-        } else {
-            Some(false)
-        }
+        Some(rust_identifier_is_valid(text))
     } else {
         None
     };
@@ -710,6 +711,12 @@ pub fn identifier_inspect(
                     warnings.push("Invalid Python identifier".to_string());
                 }
             }
+            "rust" => {
+                valid = rust_identifier_is_valid(&normalized);
+                if !valid {
+                    warnings.push("Invalid Rust identifier".to_string());
+                }
+            }
             "javascript" | "typescript" => {
                 valid = is_valid_js_identifier(&normalized) && !is_js_keyword(&normalized);
                 if !valid {
@@ -727,12 +734,8 @@ pub fn identifier_inspect(
             warnings.push("Contains confusable characters".to_string());
         }
 
-        if scripts.len() > 1 {
-            let refs: std::collections::BTreeSet<&str> =
-                scripts.iter().map(|s| s.as_str()).collect();
-            if !crate::text::script::is_legitimate_mixture(&refs) {
-                warnings.push("Mixed script identifier".to_string());
-            }
+        if crate::text::script::is_mixed_script(&normalized) {
+            warnings.push("Mixed script identifier".to_string());
         }
 
         id_infos.push(IdentifierInfo {

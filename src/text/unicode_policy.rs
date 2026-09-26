@@ -67,20 +67,19 @@ const WINDOWS_RESERVED: &[&str] = &[
 /// (Previously a duplicated hand-maintained list.)
 use crate::text::unicode_tools::BIDI_CONTROLS as BIDI_CHARS;
 
-const ZERO_WIDTH_CHARS: &[char] = &['\u{200b}', '\u{200c}', '\u{200d}', '\u{2060}'];
-
 const WIN_FORBIDDEN: &[char] = &['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
 
 /// Count occurrences of zero-width characters in text (matching Python's
 /// `[c for c in normalized if c in _ZERO_WIDTH_CHARS]` which counts every
 /// occurrence, not just distinct types).
 fn count_zero_width_occurrences(text: &str, exclude_word_joiner: bool) -> usize {
+    use crate::text::unicode_tools::is_zero_width_char;
     text.chars()
         .filter(|c| {
             if exclude_word_joiner && *c == '\u{2060}' {
                 return false;
             }
-            ZERO_WIDTH_CHARS.contains(c)
+            is_zero_width_char(*c)
         })
         .count()
 }
@@ -113,18 +112,9 @@ fn get_unicode_category(c: char) -> &'static str {
 }
 
 fn find_invisibles(text: &str) -> Vec<char> {
-    let invisible_chars: HashSet<char> = [
-        '\u{200b}', '\u{200c}', '\u{200d}', '\u{2060}', '\u{200e}', '\u{200f}', '\u{2028}',
-        '\u{2029}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}',
-        '\u{2067}', '\u{2068}', '\u{2069}', '\u{feff}', '\u{180e}', '\u{034f}', '\u{206a}',
-        '\u{206b}', '\u{206c}', '\u{206d}', '\u{206e}', '\u{206f}',
-    ]
-    .iter()
-    .cloned()
-    .collect();
-
+    use crate::text::unicode_tools::has_security_invisible_hazard;
     text.chars()
-        .filter(|c| invisible_chars.contains(c))
+        .filter(|c| has_security_invisible_hazard(*c))
         .collect()
 }
 
@@ -157,10 +147,9 @@ fn detect_mixed_scripts(text: &str) -> (bool, Vec<String>) {
 
     let mut script_list: Vec<String> = scripts.iter().map(|s| s.to_string()).collect();
     script_list.sort();
-    // Legitimate writing-system mixtures (Japanese, Korean) are not spoof
-    // mixtures: report them as non-mixed while keeping the observed list.
-    let refs: std::collections::BTreeSet<&str> = scripts.into_iter().collect();
-    let has_multiple = refs.len() > 1 && !crate::text::script::is_legitimate_mixture(&refs);
+    // UTS #39 §5.1 resolved-script verdict (authoritative); the observed
+    // list above is preserved for diagnostics.
+    let has_multiple = crate::text::script::is_mixed_script(text);
     (has_multiple, script_list)
 }
 

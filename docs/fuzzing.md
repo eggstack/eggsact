@@ -26,7 +26,7 @@ Fuzz targets require the nightly toolchain because libFuzzer uses unstable Rust 
 | `regex_execution` | `src/text/validate.rs` | Regex compile and match |
 | `json_pointer` | `src/text/validate.rs` | JSON parse/extract/canonicalize |
 | `toml_config` | `src/text/toml.rs`, `config.rs` | TOML/dotenv/INI validation |
-| `unicode_inspection` | `src/text/unicode_*.rs`, `confusables.rs`, `script.rs` | Unicode policy/profile matrix, skeleton determinism/idempotence, bidi/script classification, seeded bidi/homoglyph/casefold/supplementary-plane/variation-selector corpus |
+| `unicode_inspection` | `src/text/unicode_*.rs`, `confusables.rs`, `script.rs`, `unicode_properties.rs` | Unicode policy/profile matrix, internal-skeleton determinism/idempotence (UTS #39-guaranteed), public/bidi-skeleton determinism (no bidi idempotence claim), resolved script-set determinism with Common/Inherited neutrality, central hazard agreement, seeded bidi/RTL-mirror/Default-Ignorable/homoglyph/Jpan-Kore-Hanb-Hntl/casefold/supplementary-plane/variation-selector corpus |
 | `markdown_fences` | `src/text/markdown.rs` | Markdown structure extraction |
 | `glob_matching` | `src/text/glob.rs`, `path.rs` | Glob and path operations |
 
@@ -108,7 +108,7 @@ Property tests run in ordinary CI via `cargo test`. They verify algebraic proper
 - **Regex**: classification determinism, span bounds, max_matches
 - **JSON**: canonicalization idempotence, compare symmetry, extract bounds
 - **Config**: validation determinism
-- **Unicode**: per-profile canonicalization idempotence over every valid policy (`identifier_strict`, `filename_safe`, `source_code`, `human_text`, `json_key`, `domain_like`) and every canonicalization profile, grapheme bounds, casefold validity, skeleton determinism/idempotence, bidi/spoof detection (invalid policy/profile paths asserted separately so valid-path coverage is never masked)
+- **Unicode**: per-profile canonicalization idempotence over every valid policy (`identifier_strict`, `filename_safe`, `source_code`, `human_text`, `json_key`, `domain_like`) and every canonicalization profile, grapheme bounds, casefold validity, internal-skeleton determinism/idempotence, public/bidi-skeleton determinism (no bidi idempotence claim), resolved script-set determinism with Common/Inherited neutrality, central hazard agreement, bidi/spoof detection (invalid policy/profile paths asserted separately so valid-path coverage is never masked)
 - **Markdown**: fence span ordering, extraction determinism
 - **Path/Glob**: normalization idempotence, matching determinism
 

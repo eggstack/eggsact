@@ -521,14 +521,7 @@ pub(crate) fn generate_agent_instruction(
 // ---------------------------------------------------------------------------
 
 pub(crate) fn is_invisible_char(c: char) -> bool {
-    let cp = c as u32;
-    matches!(cp,
-        0x200b | 0x200c | 0x200d | 0x200e | 0x200f |
-        0xfeff | 0x00a0 | 0x2028 | 0x2029 |
-        0x2060 | 0x00ad | 0x180e | 0x034f |
-        0x202a..=0x202e | 0x2066..=0x2069 |
-        0xfe00..=0xfe0f
-    )
+    crate::text::unicode_tools::is_invisible_char(c)
 }
 
 // ---------------------------------------------------------------------------

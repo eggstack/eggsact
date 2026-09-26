@@ -101,9 +101,9 @@ pub fn classify_hazard(c: char) -> Option<UnicodeHazard> {
     if (0xFE00..=0xFE0F).contains(&cp) {
         return Some(UnicodeHazard::VariationSelector);
     }
-    if get_general_category(c).abbreviation().starts_with('M') {
-        return Some(UnicodeHazard::CombiningMark);
-    }
+    // InvisibleFormat before CombiningMark: U+034F (CGJ, Mn) is a format
+    // control and a Default_Ignorable, not an ordinary accent. Other Mn
+    // (e.g. U+0301) still report CombiningMark below.
     if matches!(
         cp,
         0x200B | 0xFEFF | 0x00A0 | 0x2028 | 0x2029 | 0x2060 | 0x00AD | 0x180E | 0x034F
@@ -111,6 +111,9 @@ pub fn classify_hazard(c: char) -> Option<UnicodeHazard> {
             | 0x206A..=0x206F
     ) {
         return Some(UnicodeHazard::InvisibleFormat);
+    }
+    if get_general_category(c).abbreviation().starts_with('M') {
+        return Some(UnicodeHazard::CombiningMark);
     }
     if get_general_category(c).abbreviation().starts_with('C')
         && c != '\n'
@@ -122,15 +125,35 @@ pub fn classify_hazard(c: char) -> Option<UnicodeHazard> {
     None
 }
 
-pub fn is_invisible_char(c: char) -> bool {
-    let cp = c as u32;
-    matches!(cp,
-        0x200b | 0x200c | 0x200d | 0x200e | 0x200f |
-        0xfeff | 0x00a0 | 0x2028 | 0x2029 |
-        0x2060 | 0x00ad | 0x180e | 0x034f |
-        0x202a..=0x202e | 0x2066..=0x2069 |
-        0xfe00..=0xfe0f
+/// User-visible invisible hazard: BidiControl, JoinControl, InvisibleFormat,
+/// or VariationSelector per the central [`classify_hazard`].
+///
+/// This is the single security-verdict predicate for "invisible" used by
+/// policy and identifier paths. It is intentionally distinct from
+/// `Default_Ignorable_Code_Point` (a Unicode property used by the skeleton);
+/// see [`crate::text::unicode_properties::is_default_ignorable`].
+pub fn has_security_invisible_hazard(c: char) -> bool {
+    matches!(
+        classify_hazard(c),
+        Some(
+            UnicodeHazard::BidiControl
+                | UnicodeHazard::JoinControl
+                | UnicodeHazard::InvisibleFormat
+                | UnicodeHazard::VariationSelector
+        )
     )
+}
+
+/// Zero-width characters for policy findings (single source).
+pub fn is_zero_width_char(c: char) -> bool {
+    matches!(c, '\u{200B}' | '\u{200C}' | '\u{200D}' | '\u{2060}')
+}
+
+pub fn is_invisible_char(c: char) -> bool {
+    // Single source: the typed hazard classifier (presentation-adjacent
+    // compatibility wrapper; security verdicts use
+    // `has_security_invisible_hazard` directly).
+    has_security_invisible_hazard(c)
 }
 
 pub fn is_known_invisible_char(c: char) -> bool {
@@ -346,12 +369,9 @@ pub fn detect_mixed_scripts(text: &str) -> MixedScriptsResult {
         }
     }
 
-    // Legitimate writing-system mixtures (Japanese Han/Hiragana/Katakana,
-    // Korean Hangul/Han/Latin) are not spoof mixtures.
-    let script_refs: std::collections::BTreeSet<&str> =
-        scripts.iter().map(|s| s.as_str()).collect();
-    let mixed_scripts =
-        scripts.len() > 1 && !crate::text::script::is_legitimate_mixture(&script_refs);
+    // UTS #39 §5.1 resolved-script verdict (authoritative); the observed
+    // per-character list above is preserved for diagnostics.
+    let mixed_scripts = crate::text::script::is_mixed_script(text);
 
     MixedScriptsResult {
         mixed_scripts,

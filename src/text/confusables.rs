@@ -70,20 +70,19 @@ fn expand_substitution(sub: &str) -> Vec<char> {
     out
 }
 
-/// Whole-string UTS #39 confusable skeleton for the pinned data epoch.
+/// UTS #39 internal skeleton: NFD → remove `Default_Ignorable_Code_Point`
+/// → confusables prototype mapping → NFD.
 ///
-/// Algorithm (compatible with the pinned UTS #39 / Unicode 18 security
-/// data): NFD-normalize the input, replace each character by its confusable
-/// mapping target characters when the table contains one, then NFD-normalize
-/// the result so the skeleton is idempotent.
-///
-/// Two strings are confusable if and only if their skeletons are exactly
-/// equal (see [`are_confusable`]). A non-empty skeleton mapping on one
-/// input alone is NOT a collision verdict.
-pub fn confusable_skeleton(text: &str) -> String {
+/// This is the internal transformation; the public whole-string operation is
+/// [`confusable_skeleton`] (`skeleton(X) = bidiSkeleton(LTR, X)`). Exposed for
+/// conformance testing and for callers that need the pre-bidi stage.
+pub fn internal_skeleton(text: &str) -> String {
     use unicode_normalization::UnicodeNormalization;
     let mut out = String::with_capacity(text.len());
     for c in text.nfd().collect::<String>().chars() {
+        if crate::text::unicode_properties::is_default_ignorable(c) {
+            continue;
+        }
         match lookup(c) {
             Some(sub) => {
                 let expanded = expand_substitution(sub);
@@ -97,6 +96,129 @@ pub fn confusable_skeleton(text: &str) -> String {
         }
     }
     out.nfd().collect()
+}
+
+/// UTS #39 `bidiSkeleton(LTR, X)` (Revision 34, Unicode 18.0.0).
+///
+/// Steps: UAX #9 up to L2 with paragraph level LTR (via `unicode-bidi` with
+/// the pinned Unicode 18 [`crate::text::unicode_properties::Unicode18BidiData`]
+/// source) → L3 combining-mark fixup → L4 mirroring via Unicode 18
+/// `Bidi_Mirroring_Glyph` → [`internal_skeleton`].
+///
+/// Fast path (per spec): when `X` contains no Bidi_Class R/AL characters,
+/// the result equals [`internal_skeleton`] directly.
+pub fn bidi_skeleton_ltr(text: &str) -> String {
+    use unicode_bidi::{BidiInfo, Level};
+    use unicode_normalization::UnicodeNormalization as _;
+
+    // Fast path: no R/AL → internal skeleton.
+    if !text
+        .chars()
+        .any(crate::text::unicode_properties::is_bidi_r_or_al)
+    {
+        return internal_skeleton(text);
+    }
+
+    let data = crate::text::unicode_properties::Unicode18BidiData;
+    let info = BidiInfo::new_with_data_source(&data, text, Some(Level::ltr()));
+    if info.paragraphs.is_empty() {
+        return internal_skeleton(text);
+    }
+
+    // Reorder each paragraph independently; separators between paragraphs
+    // stay in logical order (they are Common/B/WS and survive the skeleton
+    // unless Default_Ignorable).
+    let mut reordered = String::with_capacity(text.len());
+    let mut last_end = 0usize;
+    for para in &info.paragraphs {
+        // Preserve inter-paragraph separators verbatim.
+        if para.range.start > last_end {
+            reordered.push_str(&text[last_end..para.range.start]);
+        }
+        let para_text = &text[para.range.clone()];
+        let para_chars: Vec<char> = para_text.chars().collect();
+        if para_chars.is_empty() {
+            last_end = para.range.end;
+            continue;
+        }
+        // Levels per character (logical order) after L1.
+        let levels_per_char: Vec<Level> = {
+            let levels = info.reordered_levels_per_char(para, para.range.clone());
+            // `reordered_levels_per_char` returns one level per char.
+            debug_assert_eq!(levels.len(), para_chars.len());
+            if levels.len() == para_chars.len() {
+                levels
+            } else {
+                // Fallback: should not happen; treat as LTR.
+                vec![Level::ltr(); para_chars.len()]
+            }
+        };
+        // L2: visual order map (visual index → logical index).
+        let index_map = BidiInfo::reorder_visual(&levels_per_char);
+        // Build visual-order chars + levels.
+        let mut visual: Vec<(char, Level)> = Vec::with_capacity(para_chars.len());
+        for &logical_idx in &index_map {
+            if let Some(&c) = para_chars.get(logical_idx) {
+                let lvl = levels_per_char
+                    .get(logical_idx)
+                    .copied()
+                    .unwrap_or_else(Level::ltr);
+                visual.push((c, lvl));
+            }
+        }
+        // L3: move combining marks after their base in visual order.
+        // Bubble each mark right past an immediately following base.
+        let is_mark = |c: char| {
+            unicode_general_category::get_general_category(c)
+                .abbreviation()
+                .starts_with('M')
+        };
+        let mut i = 0usize;
+        while i + 1 < visual.len() {
+            let (c, _) = visual[i];
+            let (nxt, _) = visual[i + 1];
+            if is_mark(c) && !is_mark(nxt) {
+                visual.swap(i, i + 1);
+                i = i.saturating_sub(1);
+            } else {
+                i += 1;
+            }
+        }
+        // L4: mirror chars with odd (RTL) resolved levels.
+        for (c, lvl) in visual.iter_mut() {
+            if lvl.is_rtl() {
+                if let Some(m) = crate::text::unicode_properties::bidi_mirror(*c) {
+                    *c = m;
+                }
+            }
+        }
+        for (c, _) in visual {
+            reordered.push(c);
+        }
+        last_end = para.range.end;
+    }
+    if last_end < text.len() {
+        reordered.push_str(&text[last_end..]);
+    }
+    // Silence unused import in fast-path-only builds (NFD used in internal).
+    let _ = || {
+        let _: String = "".nfd().collect();
+    };
+    internal_skeleton(&reordered)
+}
+
+/// Whole-string UTS #39 confusable skeleton for the pinned data epoch.
+///
+/// Implements `skeleton(X) = bidiSkeleton(LTR, X)` (UTS #39 Revision 34,
+/// Unicode 18.0.0): directional reordering/mirroring via the pinned UAX #9
+/// tables, then the internal skeleton (NFD → Default_Ignorable removal →
+/// confusables mapping → NFD).
+///
+/// Two strings are confusable if and only if their skeletons are exactly
+/// equal (see [`are_confusable`]). A non-empty skeleton mapping on one
+/// input alone is NOT a collision verdict.
+pub fn confusable_skeleton(text: &str) -> String {
+    bidi_skeleton_ltr(text)
 }
 
 /// Whole-string confusability: true when both inputs share the exact same

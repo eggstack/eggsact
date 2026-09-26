@@ -3,7 +3,10 @@
 //! Fuzz Unicode inspection and normalization.
 //!
 //! Asserts: no panic, NFC idempotent, grapheme positions within bounds,
-//! safe representation deterministic, findings bounded.
+//! safe representation deterministic, findings bounded, internal skeleton
+//! idempotent (UTS #39-guaranteed), public/bidi skeletons deterministic
+//! (no bidi idempotence claim), resolved script sets deterministic with
+//! Common/Inherited neutrality, central hazard agreement.
 //!
 //! Exercises every valid Unicode policy (`identifier_strict`,
 //! `filename_safe`, `source_code`, `human_text`, `json_key`,
@@ -17,7 +20,11 @@ use libfuzzer_sys::fuzz_target;
 use eggsact::text::{
     unicode_policy_check, canonicalize_text, count_graphemes, has_confusables,
     confusables::{are_confusable, confusable_skeleton},
-    unicode_tools::{find_invisibles, unicode_casefold, build_safe_repr, is_bidi_control},
+    internal_skeleton, bidi_skeleton_ltr, is_mixed_script, resolved_script_set,
+    unicode_tools::{
+        find_invisibles, unicode_casefold, build_safe_repr, is_bidi_control,
+        has_security_invisible_hazard,
+    },
     script::is_legitimate_mixture,
 };
 use std::collections::BTreeSet;
@@ -41,10 +48,11 @@ const VALID_PROFILES: &[&str] = &[
     "path_segment_compare",
 ];
 
-/// Fixed seeds covering the security-relevant classes from Milestone 003
-/// WP-A: bidi controls, canonical-equivalent forms, whole-identifier
+/// Fixed seeds covering the security-relevant classes from Milestones 003
+/// and 005: bidi controls, canonical-equivalent forms, whole-identifier
 /// homoglyphs, legitimate Japanese mixed-script, one-to-many casefolds,
-/// supplementary-plane confusables, and variation selectors.
+/// supplementary-plane confusables, variation selectors, Default_Ignorables,
+/// RTL/mirrored vectors, and augmented-script (Hntl/Kore/Jpan) cases.
 fn seeded_corpus() -> Vec<String> {
     vec![
         "\u{202e}test\u{202c}".to_string(),       // RLO ... PDF bidi controls
@@ -54,10 +62,15 @@ fn seeded_corpus() -> Vec<String> {
         "apple".to_string(),
         "аpple".to_string(),                     // Cyrillic а + pple homoglyph
         "日本語テスト漢字".to_string(),              // legitimate Japanese mixture
-        "한글한자".to_string(),                      // legitimate Korean mixture
+        "한글한자".to_string(),                      // Hangul+Han (Kore, single)
+        "한\u{6F22}A".to_string(),                // Hangul+Han+Latin (mixed, restriction-friendly)
+        "\u{6F22}A".to_string(),                  // Han+Latin (Hntl, single)
         "ß".to_string(),                          // one-to-many casefold (ß -> ss)
         "\u{2C09B}".to_string(),                 // supplementary-plane confusable
         "a\u{FE0F}b".to_string(),                // variation selector sequence
+        "x\u{200B}y".to_string(),                // Default_Ignorable ZWSP
+        "A1<\u{05E9}\u{05C2}".to_string(),       // UTS #39 §4 S1 (RTL)
+        "\u{0391}\u{05E9}\u{05B9}>1".to_string(), // UTS #39 §4 S2 (RTL+mirror)
         "\u{200b}\u{200c}\u{200d}".to_string(),  // zero-width controls
     ]
 }
@@ -100,16 +113,26 @@ fuzz_target!(|data: &[u8]| {
         "obsolete lowercase profile name must take the invalid-profile path"
     );
 
-    // Whole-string skeleton relation: determinism + idempotence on fuzzer input.
+    // Whole-string skeleton relation: determinism on fuzzer input.
+    // Internal skeleton is idempotent per UTS #39 (spec-guaranteed); the
+    // public bidi skeleton is asserted deterministic only — no algebraic
+    // idempotence claim (Revision 34 guarantees internal idempotence, not
+    // bidi re-application).
     let skel1 = confusable_skeleton(text);
     let skel2 = confusable_skeleton(text);
     assert_eq!(skel1, skel2);
-    assert_eq!(confusable_skeleton(&skel1), skel1);
+    let internal1 = internal_skeleton(text);
+    assert_eq!(internal_skeleton(&internal1), internal1);
+    assert_eq!(bidi_skeleton_ltr(text), bidi_skeleton_ltr(text));
     assert!(!are_confusable(text, text), "identical inputs are not confusable");
     assert_eq!(
         are_confusable(text, &skel1),
         text != skel1 && confusable_skeleton(&skel1) == skel1
     );
+
+    // Resolved script sets: deterministic; Common/Inherited never flip.
+    assert_eq!(resolved_script_set(text), resolved_script_set(text));
+    assert_eq!(is_mixed_script(text), is_mixed_script(text));
 
     // Seeded security corpus: each class must round-trip without panic and
     // land in its expected typed classification.
@@ -118,15 +141,25 @@ fuzz_target!(|data: &[u8]| {
         let _ = unicode_policy_check(&seed, "human_text", None);
         let _ = canonicalize_text(&seed, "identifier_compare", true);
         let _ = confusable_skeleton(&seed);
+        let _ = internal_skeleton(&seed);
+        let _ = bidi_skeleton_ltr(&seed);
         let _ = find_invisibles(&seed);
         let _ = unicode_casefold(&seed);
         let _ = build_safe_repr(&seed);
         let _ = has_confusables(&seed);
+        let _ = resolved_script_set(&seed);
+        let _ = is_mixed_script(&seed);
     }
     // Spot classifications over the seeds (fail-closed, not fail-silent).
     assert!(is_bidi_control('\u{202e}'));
     assert!(is_bidi_control('\u{2066}'));
+    assert!(has_security_invisible_hazard('\u{FE0F}'));
+    assert!(has_security_invisible_hazard('\u{200D}'));
     assert!(are_confusable("apple", "аpple"));
+    assert!(are_confusable("a\u{FE0F}b", "ab"));
+    assert!(!is_mixed_script("日本語テスト漢字"));
+    assert!(!is_mixed_script("한글한자"));
+    assert!(is_mixed_script("한\u{6F22}A"));
     let ja: BTreeSet<&str> = ["Han", "Hiragana", "Katakana"].into_iter().collect();
     assert!(is_legitimate_mixture(&ja));
 

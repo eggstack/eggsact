@@ -105,7 +105,7 @@ eggsact/
     preflight/           # Typed preflight wrappers
     services/            # Typed composite services (RepoFacts, PatchAnalysis, SecurityInspection, ...)
     temporal/            # Fixed-offset datetime/cron cores (leaf, like text/)
-    text/                # Text processing library (25 modules)
+    text/                # Text processing library (27 modules)
     integrate.rs         # Read-only per-client MCP setup renderers
     update.rs            # Verified binary self-update
   tests/
