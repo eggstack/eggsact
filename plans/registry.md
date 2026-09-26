@@ -34,7 +34,7 @@ retained only for traceability.
 | Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | 005 ready | 003/004 remain closed historical dependencies; post-004 review found UTS #39 skeleton/Script_Extensions and Rust identifier-inspect correctness gaps owned by 005. |
 | MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c active (deterministic prep done; external evidence blocked) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
-| Distribution, update, and release | closed | `plans/subsystems/distribution-update-release-roadmap.md` | All milestones closed; maintenance only | New work requires a corrective plan. |
+| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M004 closed; M005 blocked / planned | mirrored Eggpack adoption plan registered; waits on Eggpack CI M003d + Build M005; updater/product release policy remains local |
 
 ## Dependency-ready implementation plans
 
@@ -44,6 +44,12 @@ retained only for traceability.
 | Deterministic tool substrate | 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | Implemented in `3d67807`; closure `plans/closure/deterministic-tool-substrate/003-status.md`. Data epoch held at Unicode 17.0.0. |
 | Deterministic tool substrate | 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | Implemented in `2e3860c`; closure `plans/closure/deterministic-tool-substrate/004-status.md`. Shipped claim: "confusables data: Unicode 18.0.0" (6,712 entries). |
 | Deterministic tool substrate | 005 Unicode security standards-conformance corrective | ready | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | Correct UTS #39 Revision 34 public/internal skeleton semantics, Unicode 18 resolved Script_Extensions, Rust identifier_inspect validation, and residual hazard ownership drift. |
+
+## Blocked implementation plans
+
+| Subsystem | Milestone | Status | Implementation plan | Blocker |
+|---|---|---|---|---|
+| Distribution, update, and release | M005 Eggpack producer adoption + live draft qualification | blocked / planned | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | Eggpack CI M003d + Build M005 closures; then first normal version tag supplies live draft evidence |
 
 ## Recently closed work (control points)
 
@@ -59,6 +65,7 @@ retained only for traceability.
 
 | Subsystem | Milestone | Blocker |
 |---|---|---|
+| Distribution, update, and release | M005 Eggpack producer adoption | Eggpack CI M003d + Build M005 must close; mirrored Eggpack Ecosystem M001 plan is already registered. |
 | MCP presentation surface | 03c Parts D-F (model/client traces, instructions A/B, rollout decision) | No provider credentials, subscriptions, or evaluation budget for ~200 model calls (attempted 2026-09-11: `codex`/`claude` CLIs present, no budget). Generated integrations stay on direct; discovery stays explicitly selectable. |
 
 ## Closure work and current control points
@@ -71,7 +78,7 @@ retained only for traceability.
   under Milestone 005. 005 is ready for handoff and owns the remaining UTS #39
   skeleton/Script_Extensions correctness plus the Rust identifier-inspect and
   typed-hazard drift findings. Harness remains guard-only (03c external
-  evidence still blocked); distribution remains closed/maintenance.
+  evidence still blocked). Distribution M001-M004 remain closed historical control points, while M005 is a blocked corrective/adoption plan for Eggpack producer migration; self-update semantics are not reopened.
 - The durable rollout gates for `03c` remain: 100% stable-Model coverage,
   retrieval top-1 >=90% / top-3 >=98% / top-5 100%, 0 Model->HarnessOnly
   leaks, discovery/direct byte ratio <=25%, >=40 Model task scenarios
