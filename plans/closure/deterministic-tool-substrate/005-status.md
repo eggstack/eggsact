@@ -197,7 +197,7 @@ cargo build --locked --release  # size evidence
   new code. Representation evaluated: sorted ranges with binary search (not
   per-character arrays); no per-call HashMap construction; tables immutable
   after process start. No stop condition triggered.
-- Remote CI: `<ci-run-id>` (ordinary correctness job green after push;
+- Remote CI: `36215528682` (ordinary correctness job green after push;
   maintenance-lane MSRV/deny/platform coverage per repo policy).
 
 ## 5. Invariant review
