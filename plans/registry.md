@@ -31,7 +31,7 @@ retained only for traceability.
 
 | Subsystem | Status | Roadmap | Current milestone | Dependencies or blockers |
 |---|---|---|---|---|
-| Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | 005 ready | 003/004 remain closed historical dependencies; post-004 review found UTS #39 skeleton/Script_Extensions and Rust identifier-inspect correctness gaps owned by 005. |
+| Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | Guard only; no open milestone (005 closed) | 003/004/005 closed historical line; Unicode workstream complete (skeleton/Script_Extensions/Rust-inspect/hazard conformance landed). |
 | MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c active (deterministic prep done; external evidence blocked) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
 | Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M004 closed; M005 blocked / planned | mirrored Eggpack adoption plan registered; waits on Eggpack CI M003d + Build M005; updater/product release policy remains local |
@@ -43,7 +43,7 @@ retained only for traceability.
 | MCP presentation surface | 03c evaluation closure corrective | active | `plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md` | Deterministic Parts A-C + G1 done. Parts D-F blocked on model credentials/budget. Do not fabricate traces; do not mark complete without OpenAI + Anthropic pairs and instructions A/B. |
 | Deterministic tool substrate | 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | Implemented in `3d67807`; closure `plans/closure/deterministic-tool-substrate/003-status.md`. Data epoch held at Unicode 17.0.0. |
 | Deterministic tool substrate | 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | Implemented in `2e3860c`; closure `plans/closure/deterministic-tool-substrate/004-status.md`. Shipped claim: "confusables data: Unicode 18.0.0" (6,712 entries). |
-| Deterministic tool substrate | 005 Unicode security standards-conformance corrective | ready | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | Correct UTS #39 Revision 34 public/internal skeleton semantics, Unicode 18 resolved Script_Extensions, Rust identifier_inspect validation, and residual hazard ownership drift. |
+| Deterministic tool substrate | 005 Unicode security standards-conformance corrective | closed | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | Closure `plans/closure/deterministic-tool-substrate/005-status.md`. UTS #39 Rev 34 public/internal skeleton, Unicode 18 resolved Script_Extensions, Rust identifier_inspect parity, hazard consolidation. Substrate returns to guard-only. |
 
 ## Recently closed work (control points)
 
@@ -67,11 +67,10 @@ retained only for traceability.
 - MCP modernization protocol/runtime/discovery implementation is complete
   (`35f7dc2e`, `a5c00b8d`, `77ff57a5`, `121babde`, `40222999`); only the
   `03c` external evidence closure remains active.
-- Deterministic tool substrate Milestones 003 and 004 remain closed historical
-  control points, but a post-004 conformance review reopened the Unicode line
-  under Milestone 005. 005 is ready for handoff and owns the remaining UTS #39
-  skeleton/Script_Extensions correctness plus the Rust identifier-inspect and
-  typed-hazard drift findings. Harness remains guard-only (03c external
+- Deterministic tool substrate Milestones 003, 004, and 005 are closed
+  historical control points completing the Unicode workstream (semantic
+  hardening + data qualification + standards-conformance corrective).
+  Harness remains guard-only (03c external
   evidence still blocked). Distribution M001-M004 remain closed historical control points, while M005 is a blocked corrective/adoption plan for Eggpack producer migration; self-update semantics are not reopened.
 - The durable rollout gates for `03c` remain: 100% stable-Model coverage,
   retrieval top-1 >=90% / top-3 >=98% / top-5 100%, 0 Model->HarnessOnly
