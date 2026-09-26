@@ -15,11 +15,11 @@ Repository baseline reviewed: `b7fcc004dab0b2550eae3ffd31a1aa99fbdbb276`
 
 Implementation commits or pull requests:
 
-- `0c7816d` — Unicode security standards-conformance corrective (work
+- `cb0d743` — Unicode security standards-conformance corrective (work
   packages A–F: generated Unicode 18 property tables, internal/bidi/public
   skeleton, resolved Script_Extensions, Rust inspect parity, hazard
   consolidation, conformance/property/fuzz tests, documentation)
-- `536e5a0` — Close Milestone 005 (this closure record, plan status,
+- `1f0816e` — Close Milestone 005 (this closure record, plan status,
   registry/roadmap reconciliation)
 
 Milestone 003/004 closure references (immutable history):
@@ -324,5 +324,5 @@ requiring product decisions, not corrective passes).
   active (guard workstream); milestone 005 row → closed with closure link;
   dependency graph annotated complete.
 - `plans/implementation/deterministic-tool-substrate/005-*.md`: status header
-  → `closed` (implemented in `0c7816d`, closed here).
+  → `closed` (implemented in `cb0d743`, closed here).
 - 003/004 implementation and closure files: untouched (immutable history).
