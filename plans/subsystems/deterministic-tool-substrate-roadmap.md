@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Roadmap
 
-Status: active (guard workstream; Milestones 003–006 closed)
+Status: active (Milestone 007 ready; Milestones 003–006 closed)
 
 Long-term references:
 
@@ -96,7 +96,15 @@ multi-paragraph bidi skeleton assumes paragraph-length output from a
 whole-text levels API and can fall back to all-LTR levels, and
 Script_Extensions `Unknown`/Zzzz is incorrectly treated as the ALL identity
 reserved for Common/Inherited. Milestone 006 corrected only these residual
-defects and is closed; the substrate is guard-only.
+defects and is closed.
+
+A September 27, 2026 maintenance/overlap audit then found that the typed-first
+ownership invariant is not yet fully realized at four remaining same-module
+handler-to-handler call sites, and that prompt_input_inspect still has a
+parallel semantic implementation in src/tools/text.rs despite the canonical
+typed core in src/text/inspect_prompt.rs. Milestone 007 is dependency-ready to
+remove those duplicate execution paths without changing any public API or
+capability.
 
 ## 5. Target architecture
 
@@ -112,6 +120,8 @@ Registry integrity (continuous guard)
     |
     +--> Shared analysis anti-drift (closed)
     |
+    +--> Typed-core ownership / adapter deduplication (007, ready)
+    |
     +--> Hot-path evidence (closed; future patches are corrective-only)
     |
     `--> Unicode security semantic hardening (003, closed)
@@ -123,8 +133,9 @@ Registry integrity (continuous guard)
                                 `--> Unicode conformance edge-case corrective (006, closed)
 ```
 
-Milestones 003, 004, 005, and 006 are closed historical dependencies. The
-substrate workstream is guard-only with no open milestone.
+Milestones 003, 004, 005, and 006 are closed historical dependencies.
+Milestone 007 is dependency-ready and depends only on the continuous registry
+and typed-first invariants; it does not reopen the Unicode line.
 
 ## 7. Milestones
 
@@ -281,6 +292,38 @@ fixtures, generator freshness, the ordered merge gate, and green remote CI.
 Deferred work: IDNA/UTS #46, restriction-level product policy, and unrelated
 Unicode provider version refreshes remain out of scope.
 
+
+### Milestone 7 — Typed-core ownership and adapter deduplication
+
+Class: invariant
+
+Objective: restore the typed-first composition invariant by making the existing
+prompt-input typed core authoritative and eliminating the four remaining
+same-module handler-to-handler production calls.
+
+Dependencies: typed-first composition/registry guards (continuous; satisfied).
+Milestones 003–006 are historical and are not reopened.
+
+Deliverable boundary: prompt_input_inspect_tool becomes a wire adapter over
+text::inspect_prompt::prompt_input_inspect; structured_data_compare,
+config_preflight, and command_preflight consume their existing typed
+JSON/TOML/shell cores through private typed-result projection helpers as needed;
+a static guard enforces zero handler-to-handler composition under src/tools.
+
+User or operator value: one semantic implementation per deterministic operation,
+lower security/correctness drift risk, and simpler maintenance without changing
+the 86-tool/API surface.
+
+Exit conditions: implementation plan
+plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md
+is implemented; differential fixtures prove external compatibility; the zero
+handler-to-handler guard is green; the ordinary merge gate and remote CI pass;
+and plans/closure/deterministic-tool-substrate/007-status.md is accepted.
+
+Deferred work: ConfigFacts/dependency-facts normalization, broad tools/helpers.rs
+drain-down, large-module decomposition, and transport-neutral ToolSpec/catalog
+ownership. Catalog ownership changes require an ADR before planning.
+
 ## 8. Cross-cutting requirements
 
 ### Determinism and bounded execution
@@ -331,6 +374,13 @@ A new public restriction-level, IDNA, or enforcement policy would be a separate
 product decision and remains out of scope. A new utility category or
 composition-layer change still requires an ADR before a milestone plan.
 
+For Milestone 007, the principal risk is accidentally changing wire semantics
+while deleting handler reuse or duplicate prompt logic. The implementation must
+pin adapter/core differential fixtures first, preserve composite policy and
+subresult shapes at the adapter boundary, and stop if the typed and MCP public
+contracts have a genuine semantic disagreement. Moving ToolSpec/catalog
+ownership out of mcp is explicitly not a 007 cleanup and remains ADR-gated.
+
 ## 11. Completion definition
 
 This roadmap closes only if the substrate is intentionally superseded;
@@ -348,3 +398,4 @@ via `closure/` records; the performance line is already closed.
 | 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | `plans/closure/deterministic-tool-substrate/004-status.md` (`2e3860c`) | — |
 | 005 Unicode security standards-conformance corrective | closed | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | `plans/closure/deterministic-tool-substrate/005-status.md` | — |
 | 006 Unicode conformance edge-case corrective | closed | `plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | `plans/closure/deterministic-tool-substrate/006-status.md` (`83de61a`) | — |
+| 007 Typed-core ownership and adapter deduplication | ready | `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | — | — |
