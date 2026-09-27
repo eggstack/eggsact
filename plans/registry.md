@@ -31,7 +31,7 @@ retained only for traceability.
 
 | Subsystem | Status | Roadmap | Current milestone | Dependencies or blockers |
 |---|---|---|---|---|
-| Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | Guard only; 006 closed | 003/004/005/006 remain closed historical dependencies; substrate is guard-only. |
+| Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | 007 ready | No hard blocker; preserves the 1.x API/ToolSpec surface while closing remaining typed-core ownership drift. |
 | MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c active (deterministic prep done; external evidence blocked) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
 | Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M004 closed; M005 blocked / planned | mirrored Eggpack adoption plan registered; waits on Eggpack CI M003d + Build M005; updater/product release policy remains local |
@@ -40,6 +40,7 @@ retained only for traceability.
 
 | Subsystem | Milestone | Status | Implementation plan | Dependencies / handoff note |
 |---|---|---|---|---|
+| Deterministic tool substrate | 007 typed-core ownership and adapter deduplication | ready | `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | Dependency-ready. Remove duplicate prompt semantics and four remaining same-module handler calls with differential/anti-drift guards; no API/ToolSpec/schema/profile changes. |
 | MCP presentation surface | 03c evaluation closure corrective | active | `plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md` | Deterministic Parts A-C + G1 done. Parts D-F blocked on model credentials/budget. Do not fabricate traces; do not mark complete without OpenAI + Anthropic pairs and instructions A/B. |
 | Deterministic tool substrate | 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | Implemented in `3d67807`; closure `plans/closure/deterministic-tool-substrate/003-status.md`. Data epoch held at Unicode 17.0.0. |
 | Deterministic tool substrate | 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | Implemented in `2e3860c`; closure `plans/closure/deterministic-tool-substrate/004-status.md`. Shipped claim: "confusables data: Unicode 18.0.0" (6,712 entries). |
@@ -71,11 +72,12 @@ retained only for traceability.
 - Deterministic tool substrate Milestones 003, 004, 005, and 006 remain closed
   historical control points. The Unicode workstream (003 semantic hardening +
   004 data qualification + 005 standards-conformance corrective + 006
-  edge-case corrective) is complete; the substrate is guard-only with no open
-  milestone. Harness remains guard-only (03c
-  external evidence still blocked). Distribution M001-M004 remain closed
-  historical control points, while distribution M005 remains separately
-  blocked on Eggpack prerequisites; self-update semantics are not reopened.
+  edge-case corrective) is complete and is not reopened. Milestone 007 is now
+  ready to close the remaining typed-core/adapter ownership drift identified by
+  the September 27 audit. Harness remains guard-only (03c external evidence
+  still blocked). Distribution M001-M004 remain closed historical control
+  points, while distribution M005 remains separately blocked on Eggpack
+  prerequisites; self-update semantics are not reopened.
 - The durable rollout gates for `03c` remain: 100% stable-Model coverage,
   retrieval top-1 >=90% / top-3 >=98% / top-5 100%, 0 Model->HarnessOnly
   leaks, discovery/direct byte ratio <=25%, >=40 Model task scenarios
