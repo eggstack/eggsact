@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Roadmap
 
-Status: active (Milestone 008 ready; Milestones 003–007 closed)
+Status: active (guard workstream; Milestones 003–008 closed)
 
 Long-term references:
 
@@ -108,9 +108,9 @@ duplicate execution paths and is closed historical evidence. A post-closure
 review found two narrower closure defects: the MCP prompt recommendation
 projection lost its historical string-or-array behavior by collapsing onto
 the typed Option<String> recommendation, and the zero-composition guard only
-checked the four known historical handler edges. Milestone 008 is ready to
-restore the pre-007 wire projection and generalize the guard without
-reopening 007's successful typed-core ownership.
+checked the four known historical handler edges. Milestone 008 restored the
+pre-007 wire projection and generalized the guard without reopening 007's
+successful typed-core ownership, and is closed historical evidence.
 
 ## 5. Target architecture
 
@@ -128,7 +128,7 @@ Registry integrity (continuous guard)
     |
     +--> Typed-core ownership / adapter deduplication (007, closed)
     |        |
-    |        `--> Prompt wire compatibility + generic layering guard (008, ready)
+    |        `--> Prompt wire compatibility + generic layering guard (008, closed)
     |
     +--> Hot-path evidence (closed; future patches are corrective-only)
     |
@@ -141,9 +141,9 @@ Registry integrity (continuous guard)
                                 `--> Unicode conformance edge-case corrective (006, closed)
 ```
 
-Milestones 003, 004, 005, 006, and 007 are closed historical dependencies.
-Milestone 008 is a bounded corrective over 007's wire-compatibility and
-guard-evidence gaps. It has no hard blocker and does not reopen the Unicode
+Milestones 003, 004, 005, 006, 007, and 008 are closed historical dependencies.
+Milestone 008 was a bounded corrective over 007's wire-compatibility and
+guard-evidence gaps. It had no hard blocker and did not reopen the Unicode
 line or the broader catalog/runtime architecture.
 
 ## 7. Milestones
@@ -449,4 +449,4 @@ via `closure/` records; the performance line is already closed.
 | 005 Unicode security standards-conformance corrective | closed | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | `plans/closure/deterministic-tool-substrate/005-status.md` | — |
 | 006 Unicode conformance edge-case corrective | closed | `plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | `plans/closure/deterministic-tool-substrate/006-status.md` (`83de61a`) | — |
 | 007 Typed-core ownership and adapter deduplication | closed | `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | `plans/closure/deterministic-tool-substrate/007-status.md` (`237afb5` + `7176857`) | — |
-| 008 Prompt wire compatibility and layering-guard corrective | ready | `plans/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md` | — | — |
+| 008 Prompt wire compatibility and layering-guard corrective | closed | `plans/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md` | `plans/closure/deterministic-tool-substrate/008-status.md` (`475fc19`) | — |

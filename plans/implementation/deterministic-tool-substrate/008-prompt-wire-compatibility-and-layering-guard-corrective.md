@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Milestone 008 — Prompt Wire Compatibility and Layering-Guard Corrective
 
-Status: ready
+Status: closed (implemented in `475fc19`; closure `plans/closure/deterministic-tool-substrate/008-status.md`)
 
 Repository baseline: 5d57b89d30fdd226da9e99db23d943eaecfd0150
 
