@@ -14,10 +14,15 @@ Mirrored Eggpack plan:
 
 - `eggstack/eggpack: plans/implementation/ecosystem-adoption/001-eggsact-direct-release-adoption-and-live-draft-qualification.md`
 
-Required Eggpack prerequisite plans:
+Closed Eggpack prerequisite plans:
 
-- `eggstack/eggpack: plans/implementation/ci-release-orchestration/003d-consumer-release-composition-seam.md`
-- `eggstack/eggpack: plans/implementation/build-qualification/005-deterministic-cross-tool-provisioning.md`
+- `eggstack/eggpack: plans/implementation/ci-release-orchestration/003d-consumer-release-composition-seam.md` — closed by `plans/closure/ci-release-orchestration/003d-status.md`.
+- `eggstack/eggpack: plans/implementation/build-qualification/005-deterministic-cross-tool-provisioning.md` — closed by `plans/closure/build-qualification/005-status.md`.
+
+Current Eggpack blocker:
+
+- `eggstack/eggpack: plans/adrs/ADR-0005-native-qualification-for-cross-tool-builds.md` — proposed, undecided.
+- `eggstack/eggpack: plans/implementation/build-qualification/006-native-qualification-for-cross-tool-builds.md` — proposed/not started, conditional on ADR-0005 Option A.
 
 Primary class: corrective adoption / release infrastructure / operational qualification
 
