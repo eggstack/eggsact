@@ -96,10 +96,10 @@ fn _pi_find_unicode_hidden(text: &str) -> Vec<Value> {
     let mut findings = Vec::new();
     for (i, c) in text.chars().enumerate() {
         let cp = c as u32;
+        // The architecture spec for `unicode_hidden` covers zero-width
+        // spaces, joiners, BOM, NBSP, variation selectors, and line/paragraph
+        // separators. C0/C1 control characters belong to `terminal_controls`.
         let (found, name, severity) = match cp {
-            0x00..=0x08 | 0x0E..=0x1F => (true, "C0 CONTROL", "warn"),
-            0x7F => (true, "DEL", "warn"),
-            0x80..=0x9F => (true, "C1 CONTROL", "warn"),
             0x200B => (true, "ZERO WIDTH SPACE", "error"),
             0x200C => (true, "ZERO WIDTH NON-JOINER", "error"),
             0x200D => (true, "ZERO WIDTH JOINER", "error"),
@@ -275,7 +275,7 @@ fn _pi_find_terminal_controls(text: &str) -> Vec<Value> {
         let char_end = byte_offset_to_char_index(text, m.end()).unwrap_or(text.chars().count());
         findings.push(serde_json::json!({
             "code": "TERMINAL_CONTROL",
-            "severity": "warn",
+            "severity": "info",
             "message": format!("Terminal control character at position {} (length {})", char_start, char_end - char_start),
             "span": {"char_start": char_start, "char_end": char_end},
             "details": {
@@ -313,7 +313,7 @@ fn _pi_find_base64_like_blobs(text: &str) -> Vec<Value> {
                 blob.to_string()
             };
             findings.push(serde_json::json!({
-                "code": "BASE64_LIKE_BLOB",
+                "code": "BASE64_BLOB",
                 "severity": "warn",
                 "message": format!("Potential base64 blob at position {} ({} chars)", byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count()), blob.len()),
                 "span": {"char_start": byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count()), "char_end": byte_offset_to_char_index(text, m.end()).unwrap_or(text.chars().count())},
@@ -330,24 +330,51 @@ fn _pi_find_base64_like_blobs(text: &str) -> Vec<Value> {
 
 fn _pi_find_long_minified_lines(text: &str) -> Vec<Value> {
     let mut findings = Vec::new();
+    let mut char_offset = 0usize;
+    let mut byte_offset = 0usize;
     for (line_idx, line) in text.lines().enumerate() {
-        if line.chars().count() > 1000 {
-            let preview = if line.chars().count() > 200 {
+        let line_len = line.chars().count();
+        if line_len > 1000 {
+            let preview = if line_len > 200 {
                 format!("{}...", line.chars().take(200).collect::<String>())
             } else {
                 line.to_string()
             };
             findings.push(serde_json::json!({
-                "code": "LONG_MINIFIED_LINE",
+                "code": "LONG_LINE",
                 "severity": "info",
-                "message": format!("Long line {}: {} chars", line_idx + 1, line.chars().count()),
-                "span": {"line": line_idx + 1},
+                "message": format!("Very long line {} ({} chars)", line_idx + 1, line_len),
+                "span": {
+                    "line": line_idx + 1,
+                    "char_start": char_offset,
+                    "char_end": char_offset + line_len,
+                },
                 "details": {
-                    "length": line.chars().count(),
+                    "length": line_len,
                     "preview": preview,
                 },
             }));
         }
+        char_offset += line_len;
+        byte_offset += line.len();
+        // Account for the line separator that `lines()` consumed (handles
+        // CRLF and LF; lone CR never appears as a `lines()` separator).
+        let bytes = text.as_bytes();
+        let (sep_bytes, sep_chars) = if byte_offset < bytes.len()
+            && bytes[byte_offset] == b'\r'
+            && byte_offset + 1 < bytes.len()
+            && bytes[byte_offset + 1] == b'\n'
+        {
+            (2, 2)
+        } else if byte_offset < bytes.len()
+            && (bytes[byte_offset] == b'\n' || bytes[byte_offset] == b'\r')
+        {
+            (1, 1)
+        } else {
+            (0, 0)
+        };
+        byte_offset += sep_bytes;
+        char_offset += sep_chars;
     }
     findings
 }

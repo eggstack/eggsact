@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Typed-core ownership and adapter deduplication, substrate Milestone 007)
+
+- `prompt_input_inspect_tool` is now an input-validation/wire-projection
+  adapter over the single semantic implementation in
+  `text/inspect_prompt.rs`: the parallel adapter-local `_pi_*` detector
+  family in `src/tools/text.rs` is deleted. The typed core's finding codes
+  now match the documented contract (`LONG_LINE` instead of
+  `LONG_MINIFIED_LINE`, `BASE64_BLOB` instead of `BASE64_LIKE_BLOB`,
+  `TERMINAL_CONTROL` at info severity with C0/C1 controls owned by the
+  `terminal_controls` check rather than `unicode_hidden`); the adapter
+  projects the typed result to the existing wire shape (field names,
+  machine codes, verdict routing, `recommended_next_tool`, `checks_run`).
+- `structured_data_compare` now consumes `text::validate::json_compare()`
+  and `text::validate::json_shape()` directly (including a BUG-002 fix so
+  `max_diffs = 0` still reports unequal documents as not equal); the
+  `TYPE_MISMATCH` check stays dead code preserved for parity (BUG-006).
+- `config_preflight` now consumes `text::toml::toml_shape()` directly for
+  its `toml_shape` subresult; `command_preflight` now consumes
+  `text::shell::shell_split()` directly for `subresults["shell_split"]`.
+  Each composite shares only a private typed-result-to-wire projection
+  helper with its standalone sibling. No production handler-to-handler
+  composition remains (guarded by
+  `adapter_layering_has_no_handler_to_handler_composition`). No ToolSpec,
+  schema, profile, audience, exposure, machine-code, or public API change.
+
 ### Fixed (Unicode conformance edge-case corrective, UTS #39 Rev 34 / UAX #9 / UAX #24 / UAX #44)
 
 - `bidi_class_name()` (and the `Unicode18BidiData` source plus the

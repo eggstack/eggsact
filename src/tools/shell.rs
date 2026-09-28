@@ -70,6 +70,26 @@ pub fn shell_split(args: &Value) -> ToolResponse {
     .with_tool("shell_split")
 }
 
+/// Project a typed `ShellSplitResult` to the `subresults["shell_split"]`
+/// wire shape used by `command_preflight`. The standalone `shell_split`
+/// tool keeps its full wire shape; the composite only needs argv and
+/// features for downstream analysis.
+fn shell_split_to_wire(result: &crate::text::shell::ShellSplitResult) -> serde_json::Value {
+    serde_json::json!({
+        "argv": result.argv,
+        "features": {
+            "has_pipe": result.features.has_pipe,
+            "has_redirection": result.features.has_redirection,
+            "has_command_substitution": result.features.has_command_substitution,
+            "has_variable_expansion": result.features.has_variable_expansion,
+            "has_glob_pattern": result.features.has_glob_pattern,
+            "has_control_operator": result.features.has_control_operator,
+            "has_background": result.features.has_background,
+            "has_unbalanced_quotes": result.features.has_unbalanced_quotes,
+        },
+    })
+}
+
 pub fn shell_quote_join(args: &Value) -> ToolResponse {
     let argv_raw = match args.get("argv").and_then(|v| v.as_array()) {
         Some(arr) => arr,
@@ -905,27 +925,16 @@ pub fn command_preflight(args: &Value) -> ToolResponse {
     }
 
     let shell = "posix";
-    let ss_args = serde_json::json!({"command": command, "shell": shell});
-    let ss_result = shell_split(&ss_args);
-    if let Some(ref r) = ss_result.result {
-        subresults.insert(
-            "shell_split".to_string(),
-            serde_json::json!({
-                "argv": r.get("argv").cloned().unwrap_or(serde_json::json!([])),
-                "features": r.get("features").cloned().unwrap_or(serde_json::json!({})),
-            }),
-        );
-    } else if let Some(ref e) = ss_result.error {
-        code_list.push(machine_codes::SHELL_PARSE_ERROR.to_string());
-        findings.push(finding(
-            "SHELL_PARSE_ERROR",
-            severity::HIGH,
-            e,
-            Some(disposition::BLOCKING),
-            None,
-        ));
-        matched_rules.push("parse_error".to_string());
-    }
+    // Typed composition: consume the typed `text::shell::shell_split` core
+    // directly. The `shell_split` subresult is a private projection of
+    // `ShellSplitResult` to the standalone tool's wire shape (argv +
+    // features). Parse-error info is captured in the typed result and
+    // surfaced only via the `shell_split` subresult; the policy engine's
+    // `RISKY_SHELL_FEATURE` finding (with `has_unbalanced_quotes`) drives
+    // the wire-level primary machine code, preserving the prior
+    // `SHELL_RISK` selection for unbalanced-quote inputs.
+    let ss_result = crate::text::shell::shell_split(command, shell, true);
+    subresults.insert("shell_split".to_string(), shell_split_to_wire(&ss_result));
 
     // Extract argv and features for downstream analysis
     let argv: Vec<String> = subresults

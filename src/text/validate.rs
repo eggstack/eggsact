@@ -2375,6 +2375,7 @@ pub fn json_compare(
     let parsed_a = parsed_a.unwrap();
     let parsed_b = parsed_b.unwrap();
     let mut same_type = true;
+    let mut not_equal = false;
 
     fn normalize_key(key: &str, casefold: bool) -> String {
         if casefold {
@@ -2400,8 +2401,19 @@ pub fn json_compare(
         max_diffs: usize,
         diffs: &mut Vec<JsonCompareDiff>,
         same_type: &mut bool,
+        not_equal: &mut bool,
     ) {
-        if depth > 100 || diffs.len() >= max_diffs {
+        if depth > 100 {
+            return;
+        }
+        if diffs.len() >= max_diffs {
+            // BUG-002: even when no more diffs fit in the budget, the
+            // comparison may still have observed inequality deeper in the
+            // tree. Set `not_equal` if the current values differ so the
+            // outer `equal` flag is still correct.
+            if a_val != b_val {
+                *not_equal = true;
+            }
             return;
         }
 
@@ -2570,6 +2582,7 @@ pub fn json_compare(
                             max_diffs,
                             diffs,
                             same_type,
+                            not_equal,
                         );
                     }
                     if len_a != len_b {
@@ -2693,6 +2706,7 @@ pub fn json_compare(
                         max_diffs,
                         diffs,
                         same_type,
+                        not_equal,
                     );
                 }
             }
@@ -2758,6 +2772,7 @@ pub fn json_compare(
                             max_diffs,
                             diffs,
                             same_type,
+                            not_equal,
                         );
                     }
                 } else {
@@ -2775,6 +2790,7 @@ pub fn json_compare(
                             max_diffs,
                             diffs,
                             same_type,
+                            not_equal,
                         );
                     }
                 }
@@ -2808,11 +2824,14 @@ pub fn json_compare(
         max_diffs,
         &mut diffs,
         &mut same_type,
+        &mut not_equal,
     );
 
     let truncated = diffs.len() >= max_diffs;
     let diffs: Vec<JsonCompareDiff> = diffs.into_iter().take(max_diffs).collect();
-    let equal = diffs.is_empty();
+    // BUG-002: respect `not_equal` even when the per-call diff budget
+    // (e.g. `max_diffs = 0`) prevented recording any concrete diffs.
+    let equal = diffs.is_empty() && !not_equal;
 
     let summary = if equal {
         "JSON documents are equal".to_string()

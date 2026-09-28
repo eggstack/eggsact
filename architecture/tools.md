@@ -51,24 +51,32 @@ Typed deterministic core (`text/`, `calc/`)
 ### Dependency rules
 
 - `services/*` never touch `ToolResponse`, the MCP registry, profile/audience policy, or JSON-schema validation (only `serde`/`BTreeMap`/typed cores + `super::repo` for patch roles). Verified: no such imports in `src/services/*.rs`.
-- `tools/*` adapters parse/validate their own input, call typed cores/services, and build the response once. Never call a sibling `tools::*` handler for an internal result — except the four intra-module reuses listed below.
+- `tools/*` adapters parse/validate their own input, call typed cores/services, and build the response once. Never call a sibling `tools::*` handler for an internal result — there are no production handler-to-handler compositions under `src/tools/` (enforced by `adapter_layering_has_no_handler_to_handler_composition` in `tests/mcp/test_substrate_007.rs`).
 - Orchestration pattern (confirmed by the `patch.rs` module header): each patch-family tool projects a different answer from one `PatchAnalysis` — `patch_summary` neutral presentation, `patch_contract_check` contract policy, `diff_risk_classify` review-routing policy — with path roles from the canonical repository classifier so bucket facts cannot drift. Same shape holds for repo tools over `RepoFacts` and `edit_preflight` over fingerprint/newline/security facts.
 
-### Deliberate Remaining Handler-to-Handler Reuse
+### Zero Handler-to-Handler Composition (closed by substrate Milestone 007)
 
-Four same-module handler-to-handler calls remain, each intra-module with no
-registry dispatch; three are commented at the call site, one (`command_preflight`
-→ `shell_split`) is an uncommented pipeline step. None crosses category
-boundaries. They are intra-module reuses deferred to follow-up typed extraction:
+No production handler-to-handler composition remains under `src/tools/`: every
+adapter obtains semantic facts from `text/`/`calc` cores or `services/` and
+builds its wire response once at the boundary. Where two adapters need the same
+wire representation of one typed result, they share a private
+typed-result-to-wire projection helper in the owning adapter module — never a
+sibling `ToolResponse`-producing handler.
 
-| Call site | Reuse | Why it remains |
+The four former same-module reuses were migrated to typed cores with private
+projections:
+
+| Former call site | Now consumes | Projection |
 |-----------|-------|----------------|
-| `structured_data_compare` → `json_compare` | Same-file `json.rs` handler | Shares diff formatting/options handling; extracting a shared typed comparator is follow-up |
-| `structured_data_compare` → `json_shape_tool` | Same-file `json.rs` handler | `TYPE_MISMATCH` from `json_shape` is dead code preserved for parity (BUG-006); `json_shape` has no `"type"` field so the check never fires in Python or Rust |
-| `config_preflight` → `toml_shape_tool` | Same-module `config.rs` handler | Shares TOML shape diagnostics; typed extraction is follow-up |
-| `command_preflight` → `shell_split` | Same-file `shell.rs` handler (`shell.rs:909`) | Reuses the `shell_split` envelope for the parse stage (`subresults["shell_split"]`); the typed `text::shell_split` core is used elsewhere in the same file — extracting a shared typed parse step is follow-up |
+| `structured_data_compare` → `json_compare` handler | `text::validate::json_compare()` | `VALUE_DIFF` findings plus the `json_compare` (`equal`/`diff_count`) subresult |
+| `structured_data_compare` → `json_shape_tool` handler | `text::validate::json_shape()` | `json_shape_to_wire()` keeps the `shape_a`/`shape_b` subresult shape; the `TYPE_MISMATCH` check stays dead code preserved for parity (BUG-006) because the typed shape result has no top-level `type` field |
+| `config_preflight` → `toml_shape_tool` handler | `text::toml::toml_shape()` | `toml_shape_to_wire()` keeps the `toml_shape` subresult shape |
+| `command_preflight` → `shell_split` handler | `text::shell::shell_split()` | `shell_split_to_wire()` keeps the `subresults["shell_split"]` (`argv`/`features`) shape |
 
-Every other former adapter-to-adapter call now goes through `text/` cores or `services/` (fingerprint/newline/security, JSON/TOML/schema/cargo/dotenv/ini validation, replace/line-range/patch checks, path scope, regex safety, unicode/identifier/prompt inspection).
+`prompt_input_inspect_tool` is an input-validation/wire-projection adapter over
+the single semantic implementation in `text/inspect_prompt.rs`
+(`prompt_input_inspect()`); no adapter-local detector/risk-scoring
+implementation remains. See `plans/closure/deterministic-tool-substrate/007-status.md`.
 
 ### Deterministic Output
 
@@ -284,7 +292,7 @@ Pre-checks a shell command through a multi-stage pipeline:
 
 #### Pipeline
 
-1. **Parse** — calls `shell_split` to tokenize the command. On parse error, emits `SHELL_PARSE_ERROR` (HIGH/BLOCKING).
+1. **Parse** — calls the typed `text::shell_split` core to tokenize the command and projects the typed result into `subresults["shell_split"]` (`argv`/`features`).
 2. **policy_config rules** — if `policy_config` is provided, applies custom `deny_commands`/`allow_commands`/`deny_subcommands`. Deny beats allow.
 3. **Built-in policy classification** — calls `classify(program, subcommand, policy)` which dispatches to `classify_default`, `classify_strict`, or `classify_permissive`. See [Command Policy Engine](#command-policy-engine) below.
 4. **Destructive pattern detection** — `check_destructive_patterns()` detects:
@@ -321,7 +329,7 @@ Pre-checks a configuration file using format-specific validation:
    - Explicit: `json`, `toml`, `dotenv`, `ini`, `cargo_toml`
 2. **Format-specific validation (typed cores):**
     - **JSON** → `text::validate_json` → if valid and schema provided → `text::validate_schema_light` → if valid → `text::json_canonicalize` (canonicalization check)
-    - **TOML** → `text::toml::validate_toml` → if valid → `toml_shape` (structure analysis; same-module reuse, see above)
+    - **TOML** → `text::toml::validate_toml` → if valid → typed `text::toml::toml_shape` core (structure analysis, projected to the standalone `toml_shape` wire shape)
     - **dotenv** → `text::dotenv_validate` (custom validator with key pattern, duplicate policy, export support)
     - **INI** → `text::ini_validate` (section parsing, duplicate detection)
     - **cargo_toml** → `text::cargo_toml_inspect` (Cargo-specific validation)
@@ -353,8 +361,8 @@ Compares two structured data inputs (currently JSON only):
 #### Pipeline
 
 1. **Validate both inputs** — calls the `text::validate_json` core on `a` and `b`. Emits `INVALID_JSON_A`/`INVALID_JSON_B` findings if invalid.
-2. **JSON comparison** — calls `json_compare` with configurable options (ignore_object_order, ignore_array_order, max_diffs). Collects `VALUE_DIFF` findings. (Same-module reuse, see above.)
-3. **Shape comparison** — calls `json_shape_tool` on both inputs. Emits `TYPE_MISMATCH` finding if top-level types differ. (Dead code preserved for parity — BUG-006.)
+2. **JSON comparison** — calls the typed `text::validate::json_compare` core with configurable options (ignore_object_order, ignore_array_order, max_diffs). Collects `VALUE_DIFF` findings.
+3. **Shape comparison** — calls the typed `text::validate::json_shape` core on both inputs and projects each typed result to the standalone `json_shape` wire shape. Emits `TYPE_MISMATCH` finding if top-level types differ. (Dead code preserved for parity — BUG-006: the typed shape result has no top-level `type` field, so the check never fires.)
 4. **Machine code** — `INVALID_INPUT` > `DATA_EQUAL` > `DATA_DIFF`.
 5. **Sub-results** — includes `validate_a`, `validate_b`, `json_compare`, `shape_a`, `shape_b`.
 

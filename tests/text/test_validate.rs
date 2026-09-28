@@ -646,6 +646,49 @@ fn test_regex_backend_captures_are_rust_regex() {
 }
 
 #[test]
+fn test_json_compare_positional_casefold_key_rename_no_panic() {
+    // Substrate 007 regression guard: with `ignore_object_order = false`
+    // and `casefold_keys = true`, a positional key pair that matches only
+    // modulo casefold must recurse into `b` via `b`'s own key spelling.
+    // (Looking the value up under `a`'s spelling would `unwrap()` on `None`.)
+    let result = json_compare(
+        r#"{"Key": 1}"#,
+        r#"{"key": 1}"#,
+        false,
+        false,
+        false,
+        true,
+        false,
+        50,
+    )
+    .expect("typed json_compare should succeed");
+    assert!(
+        result.equal,
+        "casefolded positional keys with equal values must compare equal"
+    );
+}
+
+#[test]
+fn test_json_compare_max_diffs_zero_still_reports_unequal() {
+    // BUG-002 at the typed-core level: `max_diffs = 0` records no diffs but
+    // must still report `equal = false` for differing documents.
+    let result = json_compare(
+        r#"{"a": 1}"#,
+        r#"{"a": 2}"#,
+        true,
+        false,
+        false,
+        false,
+        false,
+        0,
+    )
+    .expect("typed json_compare should succeed");
+    assert!(!result.equal, "differing documents must not compare equal");
+    assert!(result.diffs.is_empty(), "no diffs fit in a zero budget");
+    assert!(result.truncated);
+}
+
+#[test]
 fn test_json_extract_invalid_json_summary_has_error() {
     let result = json_extract("{invalid", "", 1000).unwrap();
     assert!(!result.valid_json, "BUG-010: should detect invalid JSON");

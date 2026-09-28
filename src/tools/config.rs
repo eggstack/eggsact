@@ -422,11 +422,18 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                             None,
                         ));
                     } else {
-                        // Intentional same-module reuse: toml_shape shares this
-                        // module's handler; typed extraction is follow-up.
-                        let ts_result = toml_shape_tool(&serde_json::json!({"text": text}));
-                        if let Some(ref r) = ts_result.result {
-                            subresults.insert("toml_shape".to_string(), r.clone());
+                        // Typed composition: consume the typed
+                        // `text::toml::toml_shape` core directly. The
+                        // `toml_shape` subresult below is a private
+                        // projection of `TomlShapeResult` to the
+                        // standalone tool's wire shape (valid / shape
+                        // keys / truncated / summary).
+                        // (Unreachable in practice: `text` passed the adapter
+                        // bounds check above. On typed-core error, no
+                        // subresult is inserted — matching the prior
+                        // handler's error path, which carried no `result`.)
+                        if let Ok(ts) = crate::text::toml::toml_shape(text, 100) {
+                            subresults.insert("toml_shape".to_string(), toml_shape_to_wire(&ts));
                         }
                     }
                 }
@@ -610,6 +617,19 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
         resp = resp.with_findings(findings);
     }
     resp
+}
+
+/// Project a typed `TomlShapeResult` to the `toml_shape_tool` wire shape.
+/// Used by `config_preflight` to keep the `subresults["toml_shape"]`
+/// representation identical to the standalone tool's output.
+fn toml_shape_to_wire(result: &crate::text::toml::TomlShapeResult) -> serde_json::Value {
+    serde_json::json!({
+        "valid": result.valid,
+        "top_level_keys": result.top_level_keys,
+        "tables": result.tables,
+        "truncated": result.truncated,
+        "summary": result.summary,
+    })
 }
 
 pub fn toml_shape_tool(args: &Value) -> ToolResponse {

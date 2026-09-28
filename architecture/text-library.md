@@ -674,12 +674,12 @@ pub struct PromptInspectResult {
 
 | Check name | What it detects | Severity |
 |------------|----------------|----------|
-| `unicode_hidden` | C0/C1 controls, ZWSP, ZWNJ, ZWJ, WORD JOINER, BOM, variation selectors, line/paragraph separators | error (hidden), warn (control) |
+| `unicode_hidden` | ZWSP, ZWNJ, ZWJ, WORD JOINER, LRM/RLM, BOM, variation selectors, line/paragraph separators, invisible formats | error (ZWSP/ZWNJ/ZWJ/WORD JOINER), warn (others) |
 | `bidi` | LRE, RLE, PDF, LRO, RLO, LRI, RLI, FSI, PDI, LRM, RLM | warn |
 | `html_comments` | `<!-- ... -->` blocks | warn (non-empty), info (empty) |
 | `markdown_links` | `[text](target)` — classifies as external/anchor/relative, flags label≠target mismatches | warn (external/anchor with mismatch) |
 | `ansi_escapes` | ANSI escape sequences (`ESC[...letter`) | warn |
-| `terminal_controls` | C0 controls, DEL, escape sequences for terminal modes | warn |
+| `terminal_controls` | C0/C1 controls, DEL, escape sequences for terminal modes | info |
 | `base64_like_blobs` | Base64-like strings ≥40 chars with entropy >4.2 | warn |
 | `instruction_phrases` | 20+ prompt-injection phrases (e.g., "ignore previous", "jailbreak", "do anything now") | warn |
 | `long_minified_lines` | Lines >1000 chars | info |

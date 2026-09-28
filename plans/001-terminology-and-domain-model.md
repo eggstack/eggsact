@@ -97,8 +97,9 @@ Typed logic in `src/services/` over cores: `RepoFacts`,
 
 Code in `src/tools/` that parses MCP/library JSON input, calls one
 core/service, and builds the wire response once. Never call one handler
-from another (except the three intentional same-module reuses documented
-in `architecture/tools.md`).
+from another: there are no production handler-to-handler compositions
+(the former same-module reuses were removed in substrate Milestone 007;
+see `plans/closure/deterministic-tool-substrate/007-status.md`).
 
 ### ToolRegistry
 

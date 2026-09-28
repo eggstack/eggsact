@@ -353,6 +353,19 @@ pub fn json_extract(args: &Value) -> ToolResponse {
     ToolResponse::success(result, Some("json_extract")).with_tool("json_extract")
 }
 
+/// Project a typed `JsonShapeResult` to the `json_shape_tool` wire shape
+/// (matching the standalone tool's response). Used by
+/// `structured_data_compare` for its `shape_a` / `shape_b` subresults and
+/// for the dead `TYPE_MISMATCH` parity check.
+fn json_shape_to_wire(result: crate::text::validate::JsonShapeResult) -> serde_json::Value {
+    serde_json::json!({
+        "valid": result.valid,
+        "shape": result.shape,
+        "truncated": result.truncated,
+        "summary": result.summary,
+    })
+}
+
 pub fn json_compare(args: &Value) -> ToolResponse {
     let a = match args.get("a").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -1175,56 +1188,62 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
     }
 
     let equal = if valid_a && valid_b {
-        // Intentional same-module reuse: structured_data_compare composes the
-        // json_compare handler directly (no registry dispatch). Extracting a
-        // shared typed comparator is follow-up work; the JSON envelope here
-        // is intra-module, not cross-category adapter coupling.
-        let jc_result = json_compare(&serde_json::json!({
-            "a": a,
-            "b": b,
-            "ignore_object_order": ignore_object_order,
-            "ignore_array_order": ignore_array_order,
-            "max_diffs": max_diffs,
-        }));
-        if jc_result.error.is_some() {
-            findings.push(serde_json::json!({
-                "code": "COMPARE_ERROR",
-                "severity": "error",
-                "message": jc_result.error.as_deref().unwrap_or("json_compare failed"),
-            }));
-            false
-        } else {
-            let jc_equal = jc_result
-                .result
-                .as_ref()
-                .and_then(|r| r.get("equal"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            if let Some(jc_res) = &jc_result.result {
-                if let Some(diffs) = jc_res.get("diffs").and_then(|d| d.as_array()) {
-                    for d in diffs.iter().take(max_diffs) {
-                        let path = d.get("path").and_then(|v| v.as_str()).unwrap_or("/");
-                        let kind = d.get("kind").and_then(|v| v.as_str()).unwrap_or("unknown");
-                        findings.push(serde_json::json!({
-                            "code": "VALUE_DIFF",
-                            "severity": "info",
-                            "message": format!("{}: {}", path, kind),
-                        }));
-                    }
+        // Typed composition: consume the typed `text::validate::json_compare`
+        // core directly. No handler-to-handler call; the JSON envelope below
+        // is a private projection of `JsonCompareResult` to the structured-
+        // data-compare wire shape.
+        match crate::text::validate::json_compare(
+            a,
+            b,
+            ignore_object_order,
+            ignore_array_order,
+            false,
+            false,
+            false,
+            max_diffs,
+        ) {
+            Ok(jc) => {
+                let diffs_json: Vec<serde_json::Value> = jc
+                    .diffs
+                    .iter()
+                    .take(max_diffs)
+                    .map(|d| {
+                        serde_json::json!({
+                            "path": d.path,
+                            "kind": d.kind,
+                            "a_type": d.a_type,
+                            "b_type": d.b_type,
+                            "a_preview": d.a_preview,
+                            "b_preview": d.b_preview,
+                        })
+                    })
+                    .collect();
+                for d in &diffs_json {
+                    let path = d.get("path").and_then(|v| v.as_str()).unwrap_or("/");
+                    let kind = d.get("kind").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    findings.push(serde_json::json!({
+                        "code": "VALUE_DIFF",
+                        "severity": "info",
+                        "message": format!("{}: {}", path, kind),
+                    }));
                 }
+                subresults.insert(
+                    "json_compare".to_string(),
+                    serde_json::json!({
+                        "equal": jc.equal,
+                        "diff_count": jc.diff_count,
+                    }),
+                );
+                jc.equal
             }
-            let eq = jc_equal;
-            subresults.insert(
-                "json_compare".to_string(),
-                serde_json::json!({
-                    "equal": eq,
-                    "diff_count": jc_result.result.as_ref()
-                        .and_then(|r| r.get("diff_count"))
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0),
-                }),
-            );
-            eq
+            Err(e) => {
+                findings.push(serde_json::json!({
+                    "code": "COMPARE_ERROR",
+                    "severity": "error",
+                    "message": e,
+                }));
+                false
+            }
         }
     } else {
         false
@@ -1236,12 +1255,22 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
             .unwrap_err();
     }
 
-    // Intentional same-module reuse (see above). The TYPE_MISMATCH check is
-    // dead code in both Python and Rust (json_shape has no "type" field);
-    // preserved as-is for parity. See tests/mcp/test_tool_coverage.rs BUG-006.
-    let shape_a = json_shape_tool(&serde_json::json!({"text": a}));
-    let shape_b = json_shape_tool(&serde_json::json!({"text": b}));
-    if let (Some(sa), Some(sb)) = (&shape_a.result, &shape_b.result) {
+    // Typed composition: consume the typed `text::validate::json_shape`
+    // core directly. The TYPE_MISMATCH check below is dead code in both
+    // Python and Rust (json_shape's wire shape has no top-level "type"
+    // field) and is preserved as-is for parity (BUG-006). The shape
+    // subresults are projected from `JsonShapeResult` to the existing
+    // wire format.
+    let shape_a = crate::text::validate::json_shape(a, 4, 100, 5)
+        .ok()
+        .map(json_shape_to_wire);
+    let shape_b = crate::text::validate::json_shape(b, 4, 100, 5)
+        .ok()
+        .map(json_shape_to_wire);
+    if let (Some(sa), Some(sb)) = (shape_a.as_ref(), shape_b.as_ref()) {
+        // BUG-006: TYPE_MISMATCH is dead code in Python and Rust because
+        // json_shape has no top-level `type` field. Preserved as-is for
+        // parity; see tests/mcp/test_tool_coverage.rs.
         let type_a = sa.get("type").and_then(|v| v.as_str());
         let type_b = sb.get("type").and_then(|v| v.as_str());
         if type_a.is_some() && type_b.is_some() && type_a != type_b {
@@ -1251,14 +1280,8 @@ pub fn structured_data_compare(args: &Value) -> ToolResponse {
                 "message": format!("Type mismatch: a={}, b={}", type_a.unwrap_or("?"), type_b.unwrap_or("?")),
             }));
         }
-        subresults.insert(
-            "shape_a".to_string(),
-            shape_a.result.unwrap_or(serde_json::Value::Null),
-        );
-        subresults.insert(
-            "shape_b".to_string(),
-            shape_b.result.unwrap_or(serde_json::Value::Null),
-        );
+        subresults.insert("shape_a".to_string(), sa.clone());
+        subresults.insert("shape_b".to_string(), sb.clone());
     }
 
     if budget_ctx.should_stop() {

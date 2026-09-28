@@ -1,11 +1,8 @@
 use crate::mcp::machine_codes;
 use crate::mcp::response::{finding, verdict, ToolResponse};
-use crate::text::inspect_prompt::{
-    ANSI_ESCAPE_RE, HTML_COMMENT_RE, MARKDOWN_LINK_RE, TERMINAL_CONTROL_RE,
-};
+use crate::text::inspect_prompt::prompt_input_inspect;
 use crate::text::measure::{char_category_metrics, word_metrics};
 use crate::text::position::{TextPositionResult, TextWindowPosition, TextWindowResult};
-use crate::text::primitives::byte_offset_to_char_index;
 use crate::text::transform::{
     TextFingerprintResult, TextHashResult, TextTransformResult, UnescapeTextResult,
 };
@@ -15,526 +12,8 @@ use crate::text::unicode_tools::{
 };
 use crate::text::{count_graphemes, text_fingerprint};
 use crate::tools::helpers::*;
-use regex::Regex;
 use serde_json::Value;
-use std::sync::LazyLock;
 use unicode_normalization::UnicodeNormalization;
-
-// ---------------------------------------------------------------------------
-// prompt_input_inspect static regex patterns
-// ---------------------------------------------------------------------------
-
-static DEFAULT_INSTRUCTION_RE: LazyLock<Regex> = LazyLock::new(|| {
-    let escaped: Vec<String> = DEFAULT_INSTRUCTION_PHRASES
-        .iter()
-        .map(|s| regex::escape(s))
-        .collect();
-    let combined = escaped.join("|");
-    Regex::new(&format!("(?i){}", combined)).unwrap()
-});
-
-static DEFAULT_INSTRUCTION_PHRASES: &[&str] = &[
-    "ignore previous",
-    "ignore all previous",
-    "disregard previous",
-    "disregard all previous",
-    "forget everything",
-    "new instructions",
-    "override instructions",
-    "system prompt",
-    "you are now",
-    "act as",
-    "pretend you are",
-    "roleplay as",
-    "do not follow",
-    "ignore the above",
-    "ignore the following",
-    "disregard the above",
-    "disregard the following",
-    "override safety",
-    "bypass safety",
-    "jailbreak",
-    "do anything now",
-    " DAN",
-];
-
-const MAX_FINDINGS: usize = 1000;
-
-// ---------------------------------------------------------------------------
-// prompt_input_inspect helpers
-// ---------------------------------------------------------------------------
-
-fn _pi_char_span(index: usize, length: usize) -> serde_json::Value {
-    serde_json::json!({"char_start": index, "char_end": index + length})
-}
-
-fn _pi_hidden_char_display(c: char) -> &'static str {
-    match c {
-        '\u{200b}' => "ZWSP",
-        '\u{200c}' => "ZWNJ",
-        '\u{200d}' => "ZWJ",
-        '\u{200e}' => "LRM",
-        '\u{200f}' => "RLM",
-        '\u{feff}' => "BOM",
-        '\u{00a0}' => "NBSP",
-        '\u{2028}' => "LINE SEP",
-        '\u{2029}' => "PARA SEP",
-        '\u{2060}' => "WORD JOINER",
-        '\u{00ad}' => "SHY",
-        '\u{180e}' => "MVS",
-        '\u{034f}' => "CGJ",
-        '\u{202a}' => "LRE",
-        '\u{202b}' => "RLE",
-        '\u{202c}' => "PDF",
-        '\u{202d}' => "LRO",
-        '\u{202e}' => "RLO",
-        '\u{2066}' => "LRI",
-        '\u{2067}' => "RLI",
-        '\u{2068}' => "FSI",
-        '\u{2069}' => "PDI",
-        _ => "CTRL",
-    }
-}
-
-fn _pi_hidden_char_category(c: char) -> &'static str {
-    let cp = c as u32;
-    match cp {
-        0x00..=0x1F | 0x7F | 0x80..=0x9F => "Cc",
-        0x034F => "Mn",
-        0x200B..=0x200F | 0x2060..=0x2069 | 0xFEFF => "Cf",
-        0x2028 => "Zl",
-        0x2029 => "Zp",
-        0xFE00..=0xFE0F => "Mn",
-        0xFFF0..=0xFFFD => "Cn",
-        _ => "Cf",
-    }
-}
-
-fn _pi_find_unicode_hidden(text: &str) -> Vec<serde_json::Value> {
-    let mut findings = Vec::new();
-    for (i, c) in text.chars().enumerate() {
-        let cp = c as u32;
-        let (found, name, severity): (bool, String, &str) = match cp {
-            // C0 controls except TAB(09), LF(0A), CR(0D)
-            0x00..=0x08 | 0x0B..=0x0C | 0x0E..=0x1F => (true, "CONTROL".to_string(), "warn"),
-            0x7F => (true, "CONTROL".to_string(), "warn"),
-            0x80..=0x9F => (true, "CONTROL".to_string(), "warn"),
-            // Zero-width characters — high severity
-            0x200B => (true, "ZERO WIDTH SPACE".to_string(), "error"),
-            0x200C => (true, "ZERO WIDTH NON-JOINER".to_string(), "error"),
-            0x200D => (true, "ZERO WIDTH JOINER".to_string(), "error"),
-            0x200E => (true, "LEFT-TO-RIGHT MARK".to_string(), "warn"),
-            0x200F => (true, "RIGHT-TO-LEFT MARK".to_string(), "warn"),
-            0x2028 => (true, "LINE SEPARATOR".to_string(), "warn"),
-            0x2029 => (true, "PARAGRAPH SEPARATOR".to_string(), "warn"),
-            0x2060 => (true, "WORD JOINER".to_string(), "error"),
-            0x202A..=0x202E | 0x2066..=0x2069 => (
-                true,
-                unicode_names2::name(c)
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| "BIDI CONTROL".to_string()),
-                "warn",
-            ),
-            0x2061..=0x2065 => (true, "INVISIBLE FORMAT".to_string(), "warn"),
-            // Variation selectors
-            0xFE00..=0xFE0F => (true, "VARIATION SELECTOR".to_string(), "warn"),
-            // Specials
-            0xFFF0..=0xFFFD => (true, "SPECIALS".to_string(), "warn"),
-            0xFEFF => (true, "BOM/ZWNBSP".to_string(), "warn"),
-            _ => (false, String::new(), "info"),
-        };
-        if found {
-            let display = _pi_hidden_char_display(c);
-            let category = _pi_hidden_char_category(c);
-            findings.push(serde_json::json!({
-                "code": "HIDDEN_CHAR",
-                "severity": severity,
-                "message": format!("Hidden character: {} (U+{:04X}) at position {}", name, cp, i),
-                "span": _pi_char_span(i, 1),
-                "details": {
-                    "codepoint": format!("U+{:04X}", cp),
-                    "name": name,
-                    "category": category,
-                    "display": display,
-                },
-            }));
-        }
-    }
-    findings
-}
-
-fn _pi_find_bidi(text: &str) -> Vec<serde_json::Value> {
-    let bidi_names: &[(u32, &str)] = &[
-        (0x202A, "LEFT-TO-RIGHT EMBEDDING (LRE)"),
-        (0x202B, "RIGHT-TO-LEFT EMBEDDING (RLE)"),
-        (0x202C, "POP DIRECTIONAL FORMATTING (PDF)"),
-        (0x202D, "LEFT-TO-RIGHT OVERRIDE (LRO)"),
-        (0x202E, "RIGHT-TO-LEFT OVERRIDE (RLO)"),
-        (0x2066, "LEFT-TO-RIGHT ISOLATE (LRI)"),
-        (0x2067, "RIGHT-TO-LEFT ISOLATE (RLI)"),
-        (0x2068, "FIRST STRONG ISOLATE (FSI)"),
-        (0x2069, "POP DIRECTIONAL ISOLATE (PDI)"),
-        (0x200E, "LEFT-TO-RIGHT MARK (LRM)"),
-        (0x200F, "RIGHT-TO-LEFT MARK (RLM)"),
-    ];
-    let mut findings = Vec::new();
-    for (i, c) in text.chars().enumerate() {
-        let cp = c as u32;
-        if let Some(&(_, name)) = bidi_names.iter().find(|&&(cp_id, _)| cp_id == cp) {
-            findings.push(serde_json::json!({
-                "code": "BIDI_CONTROL",
-                "severity": "warn",
-                "message": format!("Bidi control character: {} at position {}", name, i),
-                "span": _pi_char_span(i, 1),
-                "details": {
-                    "codepoint": format!("U+{:04X}", cp),
-                    "name": name,
-                },
-            }));
-        }
-    }
-    findings
-}
-
-fn _pi_find_html_comments(text: &str) -> Vec<serde_json::Value> {
-    let mut findings = Vec::new();
-    for m in HTML_COMMENT_RE.captures_iter(text) {
-        let full_match = m.get(0).unwrap();
-        let char_start =
-            byte_offset_to_char_index(text, full_match.start()).unwrap_or(text.chars().count());
-        let char_end =
-            byte_offset_to_char_index(text, full_match.end()).unwrap_or(text.chars().count());
-        let content = m
-            .get(1)
-            .map(|c| c.as_str().trim().to_string())
-            .unwrap_or_default();
-        let severity = if content.is_empty() { "info" } else { "warn" };
-        let truncated = if content.chars().count() > 100 {
-            let preview: String = content.chars().take(100).collect();
-            format!("{}...", preview)
-        } else {
-            content.clone()
-        };
-        let message = if content.is_empty() {
-            format!("HTML comment at position {}", char_start)
-        } else {
-            format!("HTML comment at position {}: {}", char_start, truncated)
-        };
-        let content_preview: String = content.chars().take(500).collect();
-        findings.push(serde_json::json!({
-            "code": "HTML_COMMENT",
-            "severity": severity,
-            "message": message,
-            "span": {"char_start": char_start, "char_end": char_end},
-            "details": {"content": content_preview},
-        }));
-    }
-    findings
-}
-
-fn _pi_find_markdown_links(text: &str) -> Vec<serde_json::Value> {
-    let mut findings = Vec::new();
-    for m in MARKDOWN_LINK_RE.captures_iter(text) {
-        let full_match = m.get(0).unwrap();
-        let char_start =
-            byte_offset_to_char_index(text, full_match.start()).unwrap_or(text.chars().count());
-        let char_end =
-            byte_offset_to_char_index(text, full_match.end()).unwrap_or(text.chars().count());
-        let link_text = m.get(1).map(|c| c.as_str()).unwrap_or("");
-        let link_target = m.get(2).map(|c| c.as_str()).unwrap_or("");
-        let mut severity = "info";
-        let mut details = serde_json::json!({
-            "text": link_text,
-            "target": link_target,
-        });
-
-        if (link_target.starts_with("http://")
-            || link_target.starts_with("https://")
-            || link_target.starts_with("ftp://"))
-            && (link_text.contains("http://") || link_text.contains("https://"))
-        {
-            severity = "warn";
-            details["mismatch"] = serde_json::json!("text contains URL while target is also a URL");
-        }
-        if link_target.starts_with("data:") {
-            severity = "warn";
-            details["mismatch"] = serde_json::json!("data URI target");
-        }
-
-        let display_text: String = if link_text.chars().count() > 50 {
-            link_text.chars().take(50).collect()
-        } else {
-            link_text.to_string()
-        };
-        let display_target: String = if link_target.chars().count() > 80 {
-            link_target.chars().take(80).collect()
-        } else {
-            link_target.to_string()
-        };
-        findings.push(serde_json::json!({
-            "code": "MARKDOWN_LINK",
-            "severity": severity,
-            "message": format!(
-                "Markdown link at position {}: [{}]({})",
-                char_start,
-                display_text,
-                display_target
-            ),
-            "span": {"char_start": char_start, "char_end": char_end},
-            "details": details,
-        }));
-    }
-    findings
-}
-
-fn _pi_python_repr(s: &str) -> String {
-    let mut out = String::from("'");
-    for ch in s.chars() {
-        match ch {
-            '\\' => out.push_str("\\\\"),
-            '\'' => out.push_str("\\'"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\x1b' => out.push_str("\\x1b"),
-            c if c.is_control() => out.push_str(&format!("\\x{:02x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('\'');
-    out
-}
-
-fn _pi_find_ansi_escapes(text: &str) -> Vec<serde_json::Value> {
-    let mut findings = Vec::new();
-    for m in ANSI_ESCAPE_RE.find_iter(text) {
-        let char_start = byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count());
-        let char_end = byte_offset_to_char_index(text, m.end()).unwrap_or(text.chars().count());
-        findings.push(serde_json::json!({
-            "code": "ANSI_ESCAPE",
-            "severity": "warn",
-            "message": format!("ANSI escape sequence at position {}", char_start),
-            "span": {"char_start": char_start, "char_end": char_end},
-            "details": {"sequence": _pi_python_repr(m.as_str())},
-        }));
-    }
-    findings
-}
-
-fn _pi_find_terminal_controls(text: &str) -> Vec<serde_json::Value> {
-    let mut findings = Vec::new();
-    for m in TERMINAL_CONTROL_RE.find_iter(text) {
-        let char_start = byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count());
-        let char_end = byte_offset_to_char_index(text, m.end()).unwrap_or(text.chars().count());
-        let first_char = m.as_str().chars().next().unwrap();
-        let cp = format!("U+{:04X}", first_char as u32);
-        let name = "CONTROL".to_string();
-        findings.push(serde_json::json!({
-            "code": "TERMINAL_CONTROL",
-            "severity": "info",
-            "message": format!(
-                "Terminal control character {} ({}) at position {}",
-                name,
-                cp,
-                char_start
-            ),
-            "span": {"char_start": char_start, "char_end": char_end},
-            "details": {"codepoint": cp, "name": name},
-        }));
-    }
-    findings
-}
-
-fn _pi_find_base64_like_blobs(text: &str) -> Vec<serde_json::Value> {
-    let mut findings = Vec::new();
-    let re = match Regex::new(r"(?:[A-Za-z0-9+/]{4}){16,}(?:[A-Za-z0-9+/]{0,3})?(?:=){0,2}") {
-        Ok(r) => r,
-        Err(_) => return findings,
-    };
-    for m in re.find_iter(text) {
-        let s = m.as_str();
-        if s.chars().count() < 64 {
-            continue;
-        }
-        let has_upper = s.chars().any(|c| c.is_uppercase());
-        let has_lower = s.chars().any(|c| c.is_lowercase());
-        let has_digit = s.chars().any(|c| c.is_ascii_digit());
-        if has_upper && has_lower && has_digit {
-            let preview: String = s.chars().take(100).collect();
-            findings.push(serde_json::json!({
-                "code": "BASE64_BLOB",
-                "severity": "warn",
-                "message": format!("Base64-like blob ({} chars) at position {}", s.chars().count(), byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count())),
-                "span": {"char_start": byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count()), "char_end": byte_offset_to_char_index(text, m.end()).unwrap_or(text.chars().count())},
-                "details": {"length": s.chars().count(), "preview": preview},
-            }));
-        }
-    }
-    findings
-}
-
-fn _pi_find_long_minified_lines(text: &str) -> Vec<serde_json::Value> {
-    let mut findings = Vec::new();
-    let mut char_offset = 0usize;
-    let mut byte_offset = 0usize;
-    for (line_idx, line) in text.lines().enumerate() {
-        let line_len = line.chars().count();
-        if line_len > 1000 {
-            findings.push(serde_json::json!({
-                "code": "LONG_LINE",
-                "severity": "info",
-                "message": format!("Very long line {} ({} chars)", line_idx + 1, line_len),
-                "span": {"char_start": char_offset, "char_end": char_offset + line_len},
-                "details": {"length": line_len},
-            }));
-        }
-
-        byte_offset += line.len();
-        char_offset += line_len;
-        if text[byte_offset..].starts_with("\r\n") {
-            byte_offset += 2;
-            char_offset += 2;
-        } else if text[byte_offset..].starts_with('\n') {
-            byte_offset += 1;
-            char_offset += 1;
-        }
-    }
-    findings
-}
-
-fn _pi_find_instruction_phrases(
-    text: &str,
-    phrase_patterns: Option<&[String]>,
-) -> Vec<serde_json::Value> {
-    let re = match phrase_patterns {
-        Some(custom) if !custom.is_empty() => {
-            let escaped: Vec<String> = custom.iter().map(|p| regex::escape(p)).collect();
-            let combined = escaped.join("|");
-            match Regex::new(&format!("(?i){}", combined)) {
-                Ok(r) => r,
-                Err(_) => return Vec::new(),
-            }
-        }
-        Some(_) | None => DEFAULT_INSTRUCTION_RE.clone(),
-    };
-
-    let mut findings = Vec::new();
-    for m in re.find_iter(text) {
-        let char_start = byte_offset_to_char_index(text, m.start()).unwrap_or(text.chars().count());
-        let char_end = byte_offset_to_char_index(text, m.end()).unwrap_or(text.chars().count());
-        findings.push(serde_json::json!({
-            "code": "INSTRUCTION_PHRASE",
-            "severity": "warn",
-            "message": format!("Instruction-like phrase at position {}: '{}'", char_start, m.as_str()),
-            "span": {"char_start": char_start, "char_end": char_end},
-            "details": {"phrase": m.as_str()},
-        }));
-    }
-    findings
-}
-
-fn _pi_compute_risk_score(findings: &[serde_json::Value]) -> i64 {
-    let mut score: i64 = 0;
-    for f in findings {
-        let sev = f.get("severity").and_then(|v| v.as_str()).unwrap_or("info");
-        score += match sev {
-            "error" => 5,
-            "warn" => 3,
-            _ => 1,
-        };
-    }
-    score
-}
-
-fn _pi_build_summary(findings: &[serde_json::Value], risk_score: i64) -> String {
-    if findings.is_empty() {
-        return "No red flags detected in the input text.".to_string();
-    }
-
-    let mut code_counts: std::collections::HashMap<String, usize> =
-        std::collections::HashMap::new();
-    let mut sev_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    for f in findings {
-        let code = f
-            .get("code")
-            .and_then(|v| v.as_str())
-            .unwrap_or("UNKNOWN")
-            .to_string();
-        *code_counts.entry(code).or_insert(0) += 1;
-        let sev = f
-            .get("severity")
-            .and_then(|v| v.as_str())
-            .unwrap_or("info")
-            .to_string();
-        *sev_counts.entry(sev).or_insert(0) += 1;
-    }
-
-    let mut codes: Vec<String> = code_counts.keys().cloned().collect();
-    codes.sort();
-    let parts: Vec<String> = codes
-        .iter()
-        .map(|code| format!("{} {}", code_counts.get(code).copied().unwrap_or(0), code))
-        .collect();
-
-    let mut sev_parts = Vec::new();
-    for sev in &["error", "warn", "info"] {
-        if let Some(&count) = sev_counts.get(*sev) {
-            sev_parts.push(format!("{} {}", count, sev));
-        }
-    }
-
-    format!(
-        "{} finding(s): {}. Severity: {}. Risk score: {}.",
-        findings.len(),
-        parts.join(", "),
-        sev_parts.join(", "),
-        risk_score
-    )
-}
-
-fn _pi_recommend_next_tool(findings: &[serde_json::Value]) -> Option<serde_json::Value> {
-    if findings.is_empty() {
-        return None;
-    }
-
-    let codes: std::collections::HashSet<String> = findings
-        .iter()
-        .filter_map(|f| f.get("code").and_then(|v| v.as_str()).map(String::from))
-        .collect();
-
-    let mut recommendations: Vec<String> = Vec::new();
-
-    if codes.contains("HIDDEN_CHAR") || codes.contains("BIDI_CONTROL") {
-        recommendations.push("text_inspect".to_string());
-    }
-    if codes.contains("ANSI_ESCAPE") || codes.contains("TERMINAL_CONTROL") {
-        recommendations.push("text_transform".to_string());
-    }
-    if codes.contains("BASE64_BLOB") {
-        recommendations.push("text_inspect".to_string());
-    }
-    if codes.contains("HTML_COMMENT") || codes.contains("MARKDOWN_LINK") {
-        recommendations.push("markdown_structure".to_string());
-    }
-    if codes.contains("INSTRUCTION_PHRASE") {
-        recommendations.push("text_inspect".to_string());
-    }
-
-    if recommendations.len() == 1 {
-        Some(serde_json::Value::String(
-            recommendations.into_iter().next().unwrap(),
-        ))
-    } else if recommendations.is_empty() {
-        None
-    } else {
-        Some(serde_json::Value::Array(
-            recommendations
-                .into_iter()
-                .map(serde_json::Value::String)
-                .collect(),
-        ))
-    }
-}
 
 // ---------------------------------------------------------------------------
 // text_measure
@@ -3541,6 +3020,54 @@ pub fn line_range_compare_tool(args: &Value) -> ToolResponse {
 // prompt_input_inspect_tool
 // ---------------------------------------------------------------------------
 
+/// Build the wire-format `summary` string for `prompt_input_inspect` from a
+/// list of typed-core findings. Pure projection of `PromptInspectResult`
+/// fields — no semantic interpretation.
+fn prompt_inspect_wire_summary(findings: &[serde_json::Value], risk_score: i64) -> String {
+    if findings.is_empty() {
+        return "No red flags detected.".to_string();
+    }
+    let mut code_counts: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
+    let mut error_count = 0usize;
+    let mut warn_count = 0usize;
+    let mut info_count = 0usize;
+    for f in findings {
+        let code = f
+            .get("code")
+            .and_then(|v| v.as_str())
+            .unwrap_or("UNKNOWN")
+            .to_string();
+        *code_counts.entry(code).or_insert(0) += 1;
+        match f.get("severity").and_then(|v| v.as_str()).unwrap_or("info") {
+            "error" => error_count += 1,
+            "warn" => warn_count += 1,
+            _ => info_count += 1,
+        }
+    }
+    let codes: Vec<String> = code_counts
+        .iter()
+        .map(|(code, n)| format!("{} {}", n, code))
+        .collect();
+    let mut sev_parts: Vec<String> = Vec::new();
+    if error_count > 0 {
+        sev_parts.push(format!("{} error", error_count));
+    }
+    if warn_count > 0 {
+        sev_parts.push(format!("{} warn", warn_count));
+    }
+    if info_count > 0 {
+        sev_parts.push(format!("{} info", info_count));
+    }
+    format!(
+        "{} finding(s): {}. Severity: {}. Risk score: {}.",
+        findings.len(),
+        codes.join(", "),
+        sev_parts.join(", "),
+        risk_score
+    )
+}
+
 pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -3569,7 +3096,7 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
         );
     }
 
-    // Parse checks parameter
+    // Parse checks parameter.
     let valid_check_names: &[&str] = &[
         "unicode_hidden",
         "bidi",
@@ -3584,9 +3111,9 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
     let all_check_set: std::collections::HashSet<&str> =
         valid_check_names.iter().copied().collect();
 
-    let active_checks: std::collections::HashSet<String> = match args.get("checks") {
+    let active_checks: Vec<String> = match args.get("checks") {
         Some(Value::Array(arr)) => {
-            let mut set = std::collections::HashSet::new();
+            let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
             let mut invalid: Vec<&str> = Vec::new();
             for v in arr {
                 if let Some(s) = v.as_str() {
@@ -3609,9 +3136,9 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
                     Some("prompt_input_inspect"),
                 );
             }
-            set
+            set.into_iter().collect()
         }
-        None => all_check_set.iter().map(|s| s.to_string()).collect(),
+        None => valid_check_names.iter().map(|s| s.to_string()).collect(),
         _ => {
             return ToolResponse::error_with_code(
                 "invalid_arguments",
@@ -3623,7 +3150,7 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
         }
     };
 
-    // Parse phrase_patterns parameter
+    // Parse phrase_patterns parameter.
     let phrase_patterns: Option<Vec<String>> = match args.get("phrase_patterns") {
         Some(Value::Array(arr)) => {
             let patterns: Vec<String> = arr
@@ -3663,94 +3190,28 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
         }
     };
 
-    // Run checks
-    let mut findings: Vec<serde_json::Value> = Vec::new();
+    // Delegate semantic inspection to the typed core.
+    let result = prompt_input_inspect(text, Some(&active_checks), phrase_patterns.as_deref());
+    let recommended_next_tool = result.recommended_next_tool.clone();
+    let findings = result.findings;
+    let risk_score = result.risk_score;
+    let summary = prompt_inspect_wire_summary(&findings, risk_score);
+    let recommended_next_tool_json = result
+        .recommended_next_tool
+        .map(serde_json::Value::String)
+        .unwrap_or(serde_json::Value::Null);
 
-    if active_checks.contains("unicode_hidden") {
-        findings.extend(_pi_find_unicode_hidden(text));
-    }
-    if active_checks.contains("bidi") {
-        findings.extend(_pi_find_bidi(text));
-    }
-    if active_checks.contains("html_comments") {
-        findings.extend(_pi_find_html_comments(text));
-    }
-    if active_checks.contains("markdown_links") {
-        findings.extend(_pi_find_markdown_links(text));
-    }
-    if active_checks.contains("ansi_escapes") {
-        findings.extend(_pi_find_ansi_escapes(text));
-    }
-    if active_checks.contains("terminal_controls") {
-        findings.extend(_pi_find_terminal_controls(text));
-    }
-    if active_checks.contains("base64_like_blobs") {
-        findings.extend(_pi_find_base64_like_blobs(text));
-    }
-    if active_checks.contains("instruction_phrases") {
-        findings.extend(_pi_find_instruction_phrases(
-            text,
-            phrase_patterns.as_deref(),
-        ));
-    }
-    if active_checks.contains("long_minified_lines") {
-        findings.extend(_pi_find_long_minified_lines(text));
-    }
-
-    // Deduplicate by (position, codepoint)
-    let mut seen: std::collections::HashSet<(i64, String)> = std::collections::HashSet::new();
-    let mut deduped: Vec<serde_json::Value> = Vec::new();
-    for f in &findings {
-        let pos = f
-            .get("span")
-            .and_then(|s| s.get("char_start"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(-1);
-        let codepoint = f
-            .get("details")
-            .and_then(|d| d.get("codepoint"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_else(|| f.get("code").and_then(|v| v.as_str()).unwrap_or("UNKNOWN"));
-        let key = (pos, codepoint.to_string());
-        if seen.insert(key) {
-            deduped.push(f.clone());
-        }
-    }
-    findings = deduped;
-
-    // Truncate if needed (sort by severity first so high-severity findings are kept)
-    let findings_truncated = findings.len() > MAX_FINDINGS;
-    if findings_truncated {
-        let severity_order = |f: &serde_json::Value| -> u8 {
-            match f.get("severity").and_then(|v| v.as_str()).unwrap_or("info") {
-                "error" => 0,
-                "warn" => 1,
-                _ => 2,
-            }
-        };
-        findings.sort_by_key(severity_order);
-        findings.truncate(MAX_FINDINGS);
-    }
-
-    let risk_score = _pi_compute_risk_score(&findings);
-    let summary = _pi_build_summary(&findings, risk_score);
-    let mut checks_run: Vec<String> = active_checks.iter().cloned().collect();
-    checks_run.sort();
-
-    let recommended_next_tool_json =
-        _pi_recommend_next_tool(&findings).unwrap_or(serde_json::Value::Null);
-
-    let result = serde_json::json!({
+    let result_json = serde_json::json!({
         "findings": findings.clone(),
         "summary": summary,
         "risk_score": risk_score,
         "recommended_next_tool": recommended_next_tool_json,
-        "text_length": text.chars().count(),
-        "checks_run": checks_run,
-        "findings_truncated": findings_truncated,
+        "text_length": result.text_length,
+        "checks_run": result.checks_run,
+        "findings_truncated": result.findings_truncated,
     });
 
-    // Determine machine_code and findings for envelope
+    // Determine machine_code and envelope findings.
     let has_findings = !findings.is_empty();
     let codes: std::collections::HashSet<String> = findings
         .iter()
@@ -3782,7 +3243,7 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
         })
         .collect();
 
-    let mut resp = ToolResponse::success(result.clone(), Some("prompt_input_inspect"))
+    let mut resp = ToolResponse::success(result_json, Some("prompt_input_inspect"))
         .with_tool("prompt_input_inspect");
 
     if !envelope_findings.is_empty() {
@@ -3791,8 +3252,8 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
     if let Some(code) = machine_code {
         resp = resp.with_machine_code(&code);
     }
-    if let Some(rec) = _pi_recommend_next_tool(&findings) {
-        resp = resp.with_recommended_next_tool(rec);
+    if let Some(rec) = recommended_next_tool {
+        resp = resp.with_recommended_next_tool(serde_json::Value::String(rec));
     }
     resp
 }

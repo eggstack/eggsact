@@ -183,8 +183,8 @@ fn test_long_line_threshold_1000() {
         result_500
             .findings
             .iter()
-            .all(|f| f.get("code").and_then(|v| v.as_str()) != Some("LONG_MINIFIED_LINE")),
-        "500-char line should not trigger LONG_MINIFIED_LINE"
+            .all(|f| f.get("code").and_then(|v| v.as_str()) != Some("LONG_LINE")),
+        "500-char line should not trigger LONG_LINE"
     );
 
     let line_1001 = "x".repeat(1001);
@@ -193,8 +193,8 @@ fn test_long_line_threshold_1000() {
         result_1001
             .findings
             .iter()
-            .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("LONG_MINIFIED_LINE")),
-        "1001-char line should trigger LONG_MINIFIED_LINE"
+            .any(|f| f.get("code").and_then(|v| v.as_str()) == Some("LONG_LINE")),
+        "1001-char line should trigger LONG_LINE"
     );
 }
 
@@ -302,5 +302,22 @@ fn test_prompt_inspect_long_line_crlf_line_number() {
     let checks = vec!["long_minified_lines".to_string()];
     let result = prompt_input_inspect(&text, Some(&checks), None);
     assert_eq!(result.findings.len(), 1);
+    assert_eq!(result.findings[0]["code"], "LONG_LINE");
     assert_eq!(result.findings[0]["span"]["line"], 2);
+    assert_eq!(result.findings[0]["span"]["char_start"], 3);
+    assert_eq!(result.findings[0]["span"]["char_end"], 3 + 1001);
+}
+
+#[test]
+fn test_prompt_inspect_long_line_mid_text_cumulative_offsets() {
+    // A long line in the middle of multi-line text must report cumulative
+    // char offsets (not per-line-relative) and the correct 1-based line.
+    let long = "y".repeat(1001);
+    let text = format!("ab\n{}\ncd", long);
+    let checks = vec!["long_minified_lines".to_string()];
+    let result = prompt_input_inspect(&text, Some(&checks), None);
+    assert_eq!(result.findings.len(), 1);
+    assert_eq!(result.findings[0]["span"]["line"], 2);
+    assert_eq!(result.findings[0]["span"]["char_start"], 3);
+    assert_eq!(result.findings[0]["span"]["char_end"], 3 + 1001);
 }

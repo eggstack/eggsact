@@ -106,9 +106,9 @@ The crate stays single-crate with no workspace split. One `ToolSpec` in
 `SecurityInspection`, `FingerprintFacts`, `NewlineFacts`) sit over
 `text/`/`calc` cores. `tools/*` adapters parse input, call typed
 cores/services, and build the wire shape once at the boundary. No
-adapter-to-adapter JSON composition except the intentional same-module
-reuses documented in `architecture/tools.md`. Never call one handler from
-another.
+adapter-to-adapter JSON composition: never call one handler from another.
+(Substrate Milestone 007 removed the last same-module handler-to-handler
+reuses; see `plans/closure/deterministic-tool-substrate/007-status.md`.)
 
 ### 4.3 Determinism with explicit inputs
 
@@ -174,8 +174,7 @@ The implementation MUST preserve:
 1. Single crate; `Cargo.lock` tracked; `--locked` always.
 2. One `ToolSpec` per tool; registry sync test green.
 3. Typed hierarchy (`calc`/root -> `text` -> `ToolRegistry`/contexts ->
-   `preflight` -> MCP server); no adapter-to-adapter calls outside the
-   three documented same-module reuses.
+   `preflight` -> MCP server); no adapter-to-adapter calls.
 4. Profile/audience as the authorization boundary;
    `available_tools_model_safe()` for model-facing paths.
 5. Deterministic exact-input/exact-output behavior; no clock/TZ/env/net in
