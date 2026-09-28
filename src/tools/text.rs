@@ -1,6 +1,6 @@
 use crate::mcp::machine_codes;
 use crate::mcp::response::{finding, verdict, ToolResponse};
-use crate::text::inspect_prompt::prompt_input_inspect;
+use crate::text::inspect_prompt::{prompt_input_inspect, prompt_wire_recommendations};
 use crate::text::measure::{char_category_metrics, word_metrics};
 use crate::text::position::{TextPositionResult, TextWindowPosition, TextWindowResult};
 use crate::text::transform::{
@@ -3190,16 +3190,27 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
         }
     };
 
-    // Delegate semantic inspection to the typed core.
+    // Delegate semantic inspection to the typed core. The typed
+    // `PromptInspectResult::recommended_next_tool` (single preferred) is
+    // preserved for Rust callers; the MCP/tool wire uses the separate legacy
+    // compatibility projection (null/string/array, historical order,
+    // duplicates preserved) derived from the same findings.
     let result = prompt_input_inspect(text, Some(&active_checks), phrase_patterns.as_deref());
-    let recommended_next_tool = result.recommended_next_tool.clone();
     let findings = result.findings;
     let risk_score = result.risk_score;
     let summary = prompt_inspect_wire_summary(&findings, risk_score);
-    let recommended_next_tool_json = result
-        .recommended_next_tool
-        .map(serde_json::Value::String)
-        .unwrap_or(serde_json::Value::Null);
+    // Historical wire candidates in fixed order; the adapter only serializes.
+    let wire_candidates = prompt_wire_recommendations(&findings);
+    let recommended_next_tool_json = match wire_candidates.len() {
+        0 => serde_json::Value::Null,
+        1 => serde_json::Value::String(wire_candidates[0].clone()),
+        _ => serde_json::Value::Array(
+            wire_candidates
+                .iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect(),
+        ),
+    };
 
     let result_json = serde_json::json!({
         "findings": findings.clone(),
@@ -3252,8 +3263,8 @@ pub fn prompt_input_inspect_tool(args: &Value) -> ToolResponse {
     if let Some(code) = machine_code {
         resp = resp.with_machine_code(&code);
     }
-    if let Some(rec) = recommended_next_tool {
-        resp = resp.with_recommended_next_tool(serde_json::Value::String(rec));
+    if !recommended_next_tool_json.is_null() {
+        resp = resp.with_recommended_next_tool(recommended_next_tool_json.clone());
     }
     resp
 }

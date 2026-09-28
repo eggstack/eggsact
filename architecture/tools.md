@@ -51,17 +51,20 @@ Typed deterministic core (`text/`, `calc/`)
 ### Dependency rules
 
 - `services/*` never touch `ToolResponse`, the MCP registry, profile/audience policy, or JSON-schema validation (only `serde`/`BTreeMap`/typed cores + `super::repo` for patch roles). Verified: no such imports in `src/services/*.rs`.
-- `tools/*` adapters parse/validate their own input, call typed cores/services, and build the response once. Never call a sibling `tools::*` handler for an internal result — there are no production handler-to-handler compositions under `src/tools/` (enforced by `adapter_layering_has_no_handler_to_handler_composition` in `tests/mcp/test_substrate_007.rs`).
+- `tools/*` adapters parse/validate their own input, call typed cores/services, and build the response once. Never call a sibling `tools::*` handler for an internal result — there are no production handler-to-handler compositions under `src/tools/` (enforced by the repository-wide discovered handler-graph guard `substrate_008_generic_handler_graph_has_no_handler_to_handler_edges` in `tests/mcp/test_substrate_008.rs`; the four-edge `adapter_layering_has_no_handler_to_handler_composition` in `tests/mcp/test_substrate_007.rs` remains as supplemental diagnostics).
 - Orchestration pattern (confirmed by the `patch.rs` module header): each patch-family tool projects a different answer from one `PatchAnalysis` — `patch_summary` neutral presentation, `patch_contract_check` contract policy, `diff_risk_classify` review-routing policy — with path roles from the canonical repository classifier so bucket facts cannot drift. Same shape holds for repo tools over `RepoFacts` and `edit_preflight` over fingerprint/newline/security facts.
 
-### Zero Handler-to-Handler Composition (closed by substrate Milestone 007)
+### Zero Handler-to-Handler Composition (closed by substrate Milestone 007; strengthened by 008)
 
 No production handler-to-handler composition remains under `src/tools/`: every
 adapter obtains semantic facts from `text/`/`calc` cores or `services/` and
 builds its wire response once at the boundary. Where two adapters need the same
 wire representation of one typed result, they share a private
 typed-result-to-wire projection helper in the owning adapter module — never a
-sibling `ToolResponse`-producing handler.
+sibling `ToolResponse`-producing handler. The repository-wide claim is enforced
+by a discovered handler-graph guard covering all 86 public `ToolResponse`
+handlers across all 24 `src/tools/*.rs` files (same-file and cross-file edges),
+not only the four historical sites.
 
 The four former same-module reuses were migrated to typed cores with private
 projections:
@@ -76,7 +79,13 @@ projections:
 `prompt_input_inspect_tool` is an input-validation/wire-projection adapter over
 the single semantic implementation in `text/inspect_prompt.rs`
 (`prompt_input_inspect()`); no adapter-local detector/risk-scoring
-implementation remains. See `plans/closure/deterministic-tool-substrate/007-status.md`.
+implementation remains. The typed `PromptInspectResult` exposes one preferred
+recommendation (`Option<String>`); the MCP/tool compatibility projection
+(`prompt_wire_recommendations()`, crate-private) may be null, string, or an
+ordered array with historical duplicates preserved, and the result and
+`ToolResponse` envelope use the same compatibility value. See
+`plans/closure/deterministic-tool-substrate/007-status.md` (historical) and
+`plans/closure/deterministic-tool-substrate/008-status.md` (corrective).
 
 ### Deterministic Output
 

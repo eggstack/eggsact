@@ -490,6 +490,44 @@ fn _pi_recommend_next_tool(findings: &[Value]) -> Option<String> {
     None
 }
 
+/// Historical MCP/tool wire compatibility projection for
+/// `prompt_input_inspect.recommended_next_tool` (pre-007).
+///
+/// The typed [`PromptInspectResult::recommended_next_tool`] (`Option<String>`)
+/// is the single preferred recommendation for Rust callers and is unchanged.
+/// This legacy wire list is a *separate* compatibility projection over the
+/// same already-computed finding set: it evaluates the five historical
+/// conditions in fixed order and preserves duplicates (e.g. `HIDDEN_CHAR` +
+/// `BASE64_BLOB` yields `["text_inspect", "text_inspect"]`). Do not collapse
+/// one contract into the other, and do not add `ToolResponse`/MCP/schema
+/// dependencies here.
+pub(crate) fn prompt_wire_recommendations(findings: &[Value]) -> Vec<String> {
+    if findings.is_empty() {
+        return Vec::new();
+    }
+    let codes: std::collections::HashSet<&str> = findings
+        .iter()
+        .filter_map(|f| f.get("code").and_then(|v| v.as_str()))
+        .collect();
+    let mut recommendations: Vec<String> = Vec::new();
+    if codes.contains("HIDDEN_CHAR") || codes.contains("BIDI_CONTROL") {
+        recommendations.push("text_inspect".to_string());
+    }
+    if codes.contains("ANSI_ESCAPE") || codes.contains("TERMINAL_CONTROL") {
+        recommendations.push("text_transform".to_string());
+    }
+    if codes.contains("BASE64_BLOB") {
+        recommendations.push("text_inspect".to_string());
+    }
+    if codes.contains("HTML_COMMENT") || codes.contains("MARKDOWN_LINK") {
+        recommendations.push("markdown_structure".to_string());
+    }
+    if codes.contains("INSTRUCTION_PHRASE") {
+        recommendations.push("text_inspect".to_string());
+    }
+    recommendations
+}
+
 /// Inspect text for prompt injection red flags.
 /// Returns findings with code, severity, message, span, and details.
 pub fn prompt_input_inspect(

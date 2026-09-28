@@ -690,10 +690,27 @@ Findings are deduplicated by `(position, codepoint)`. If >1000 findings, sorted 
 
 ### `recommended_next_tool`
 
-Based on finding codes:
+Typed `PromptInspectResult::recommended_next_tool` (`Option<String>`) is the
+single preferred recommendation:
+
 - `HIDDEN_CHAR` / `BIDI_CONTROL` → `"text_inspect"`
 - `ANSI_ESCAPE` / `TERMINAL_CONTROL` → `"text_transform"`
 - `MARKDOWN_LINK` → `"markdown_structure"`
+
+The MCP/tool wire compatibility projection (`prompt_wire_recommendations()`,
+crate-private, historical pre-007 behavior) is a separate ordered list over
+the same findings that may be null, string, or array with duplicates
+preserved:
+
+1. `HIDDEN_CHAR` or `BIDI_CONTROL` → `text_inspect`
+2. `ANSI_ESCAPE` or `TERMINAL_CONTROL` → `text_transform`
+3. `BASE64_BLOB` → `text_inspect`
+4. `HTML_COMMENT` or `MARKDOWN_LINK` → `markdown_structure`
+5. `INSTRUCTION_PHRASE` → `text_inspect`
+
+The adapter serializes the list as null (empty), string (one), or array
+(many) and uses the same value in the result and the `ToolResponse`
+envelope. Do not collapse the two contracts.
 
 ## Path (`path.rs`)
 

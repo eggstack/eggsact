@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Prompt wire compatibility and layering-guard corrective, substrate Milestone 008)
+
+- `prompt_input_inspect` MCP/tool wire restores the pre-007
+  `recommended_next_tool` null/string/array projection (historical fixed
+  order with duplicates preserved: hidden/bidi → `text_inspect`,
+  ansi/terminal → `text_transform`, base64 → `text_inspect`, html/markdown
+  → `markdown_structure`, instruction → `text_inspect`; result and envelope
+  share the same value) while the typed `PromptInspectResult` keeps its
+  `Option<String>` preferred-recommendation API and behavior. No ToolSpec,
+  schema capability, profile, audience, or dependency change.
+- The zero handler-to-handler composition guard is now repository-wide: a
+  discovered handler-graph scan covers all 86 public `ToolResponse`
+  handlers across `src/tools/*.rs` (same-file and cross-file) with
+  synthetic self-tests, replacing the four-edge check as the controlling
+  evidence (the four-edge assertions remain as diagnostics).
+
 ### Fixed (Typed-core ownership and adapter deduplication, substrate Milestone 007)
 
 - `prompt_input_inspect_tool` is now an input-validation/wire-projection
