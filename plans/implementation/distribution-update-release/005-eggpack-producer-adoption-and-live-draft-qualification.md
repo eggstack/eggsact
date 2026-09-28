@@ -2,7 +2,9 @@
 
 Status: blocked / planned
 
-Repository baseline: `174764c5c71130ec98fee18c445fcecb3e35eb25`
+Reviewed repository baseline: `34aed3ab36da2637c22412f7ca65d35f1ca5021d`
+
+Original adoption-review baseline: `174764c5c71130ec98fee18c445fcecb3e35eb25`. The intervening 17 commits were re-reviewed: no production distribution/release surface changed (`.github/workflows/release-binaries.yml`, `packaging/install.sh`, `packaging/install.ps1`, `src/update.rs`, and `scripts/check-release-contract.py` are unchanged). Changes were Unicode/tool-substrate work plus this planning line.
 
 Source roadmap:
 
@@ -58,14 +60,18 @@ Use the first normal release after implementation as Eggpack's real M003b live-d
 
 ## 3. Hard dependencies
 
-Do not implement this plan until Eggpack closes:
+M003d and Build M005 are now closed and no longer block this plan.
 
-1. CI M003d consumer composition/runtime-identity seam;
-2. Build M005 deterministic cross-tool provisioning.
+Implementation is currently blocked on Eggpack ADR-0005, because the two Linux targets use `CargoZigbuild` for the glibc 2.17 floor but must still receive `Qualification::Native` on matching x86-64/AArch64 Linux runners. Current Eggpack declaration validation rejects that combination even though the execution path can perform it.
 
-At handoff, pin the exact closing Eggpack implementation SHA.
+Do not implement this plan until one of the following is explicitly selected and recorded:
 
-If either upstream closure reports a medium-or-higher unresolved finding affecting eggsact, update/re-review this plan before implementation.
+1. **ADR-0005 Option A (preferred in the upstream proposal):** accept the ADR, implement/close Eggpack Build M006, then pin eggsact to the M006 implementation revision and continue this plan with native qualification on all five targets.
+2. **ADR-0005 Option B:** intentionally use `DeferredNative` for the two Linux targets and record the declared-intent compromise in both Eggpack Ecosystem M001 and this closure. Re-review this plan before implementation.
+3. **ADR-0005 Option C:** would drop core CLI smoke evidence for Linux and therefore conflicts with this plan's no-regression acceptance criteria; do not proceed without an explicit plan revision.
+4. **Option D/new design:** supersede/revise this plan after the corresponding upstream ADR/implementation contract is accepted.
+
+Until that decision is made, no eggsact production/config/workflow migration should begin.
 
 ## 4. Current authority to replace
 
@@ -150,6 +156,8 @@ No file may contain:
 The Eggpack CLI revision itself is pinned immutably in provider policy after upstream closure.
 
 ## 7. Five-target parity
+
+For the two Linux targets, native qualification is a non-negotiable parity requirement. A structural-only downgrade is not equivalent to the current release evidence. The exact declaration used depends on the accepted ADR-0005 disposition.
 
 The Eggpack config must reproduce the current public matrix exactly:
 
@@ -454,7 +462,9 @@ Plus:
 
 M005 implementation is complete only when:
 
-- upstream M003d and Build M005 are closed/pinned;
+- ADR-0005 has an accepted disposition and the required upstream corrective (Build M006 for Option A) is closed/pinned;
+
+- upstream M003d and Build M005 remain closed/pinned;
 - Eggpack static release config is checked in;
 - generated workflow replaces the handwritten release matrix;
 - workflow contains no future release-specific SHA/tag;
@@ -475,7 +485,8 @@ Full closure additionally records post-publication public/latest installer smoke
 
 Stop and re-plan if:
 
-- upstream Eggpack M003d/M005 changes invalidate this interface;
+- ADR-0005 is resolved in a way that changes the native-qualification contract assumed here;
+- upstream Eggpack M003d/M005 compatibility changes invalidate this interface;
 - generated workflow cannot preserve all five target/runner requirements;
 - public wrapper behavior must be weakened;
 - exact MCP candidate validation cannot gate draft creation;
