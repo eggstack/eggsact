@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Roadmap
 
-Status: active (Milestone 007 ready; Milestones 003–006 closed)
+Status: active (guard workstream; Milestones 003–007 closed)
 
 Long-term references:
 
@@ -99,12 +99,12 @@ reserved for Common/Inherited. Milestone 006 corrected only these residual
 defects and is closed.
 
 A September 27, 2026 maintenance/overlap audit then found that the typed-first
-ownership invariant is not yet fully realized at four remaining same-module
-handler-to-handler call sites, and that prompt_input_inspect still has a
+ownership invariant was not yet fully realized at four remaining same-module
+handler-to-handler call sites, and that prompt_input_inspect still had a
 parallel semantic implementation in src/tools/text.rs despite the canonical
-typed core in src/text/inspect_prompt.rs. Milestone 007 is dependency-ready to
-remove those duplicate execution paths without changing any public API or
-capability.
+typed core in src/text/inspect_prompt.rs. Milestone 007 removed those
+duplicate execution paths without changing any public API or capability and
+is closed; the workstream is guard-only.
 
 ## 5. Target architecture
 
@@ -120,7 +120,7 @@ Registry integrity (continuous guard)
     |
     +--> Shared analysis anti-drift (closed)
     |
-    +--> Typed-core ownership / adapter deduplication (007, ready)
+    +--> Typed-core ownership / adapter deduplication (007, closed)
     |
     +--> Hot-path evidence (closed; future patches are corrective-only)
     |
@@ -133,9 +133,10 @@ Registry integrity (continuous guard)
                                 `--> Unicode conformance edge-case corrective (006, closed)
 ```
 
-Milestones 003, 004, 005, and 006 are closed historical dependencies.
-Milestone 007 is dependency-ready and depends only on the continuous registry
-and typed-first invariants; it does not reopen the Unicode line.
+Milestones 003, 004, 005, 006, and 007 are closed historical dependencies.
+Milestone 007 depended only on the continuous registry and typed-first
+invariants; it did not reopen the Unicode line. The workstream is now
+guard-only with no open milestone.
 
 ## 7. Milestones
 
@@ -398,4 +399,4 @@ via `closure/` records; the performance line is already closed.
 | 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | `plans/closure/deterministic-tool-substrate/004-status.md` (`2e3860c`) | — |
 | 005 Unicode security standards-conformance corrective | closed | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | `plans/closure/deterministic-tool-substrate/005-status.md` | — |
 | 006 Unicode conformance edge-case corrective | closed | `plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | `plans/closure/deterministic-tool-substrate/006-status.md` (`83de61a`) | — |
-| 007 Typed-core ownership and adapter deduplication | ready | `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | — | — |
+| 007 Typed-core ownership and adapter deduplication | closed | `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | `plans/closure/deterministic-tool-substrate/007-status.md` (`237afb5` + `7176857`) | — |

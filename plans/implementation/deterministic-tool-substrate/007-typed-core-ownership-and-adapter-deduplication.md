@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Milestone 007 — Typed-Core Ownership and Adapter Deduplication
 
-Status: ready
+Status: closed (implemented in `237afb5` + `7176857`; closure `plans/closure/deterministic-tool-substrate/007-status.md`)
 
 Repository baseline: 38aa6da3e8745ed4599362e2ecb0837bc20fca90
 
