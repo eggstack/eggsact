@@ -98,7 +98,7 @@ Binary distribution (closed)
                                   `--> 0.2.0 closeout corrective (closed)
 ```
 
-Historical M001-M004 dependencies are closed. M005 has two external hard dependencies in `eggstack/eggpack`: CI M003d consumer release composition and Build M005 deterministic cross-tool provisioning.
+Historical M001-M004 dependencies are closed. Eggpack CI M003d and Build M005 are also closed. M005 is now blocked on Eggpack ADR-0005's native-qualification decision; if Option A is accepted, Eggpack Build M006 must close before eggsact implementation starts.
 
 ## 7. Milestones
 
@@ -182,7 +182,7 @@ Class: corrective adoption + capability + infrastructure
 
 Objective: replace the hand-maintained five-target producer workflow with Eggpack-generated release construction and draft staging while preserving crates.io-first/tag-after-publish ordering, public installer latest/version/Cargo fallback semantics, self-update policy, and human publication.
 
-Dependencies: Eggpack CI M003d and Build M005 (hard); a normal maintainer-authorized version tag after crates.io publication (operational).
+Dependencies: Eggpack CI M003d + Build M005 (closed); ADR-0005 native-qualification decision (hard); Build M006 if Option A is accepted (hard); a normal maintainer-authorized version tag after crates.io publication (operational).
 
 Implementation plan: `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`.
 
@@ -242,4 +242,4 @@ M001-M004 stay closed historical milestones. The workstream returns to maintenan
 | M003 0.1.7 bump | closed | `plans/archive/eggfetch-0.1.7-updater-dependency-bump.md` | in-file closure | — |
 | M004 0.2.0 adoption | closed | `plans/archive/eggfetch-0.2.0-updater-adoption.md` | in-file closure | — |
 | M004 corrective closeout | closed | `plans/archive/eggfetch-0.2.0-adoption-closeout-corrective.md` | in-file closure | — |
-| M005 Eggpack producer adoption + live draft qualification | blocked / planned | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | — | Eggpack CI M003d + Build M005 must close before implementation; normal release tag is operational evidence |
+| M005 Eggpack producer adoption + live draft qualification | blocked / planned | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | — | Eggpack M003d + Build M005 are closed; blocked on ADR-0005 decision and, for Option A, Build M006 closure; normal release tag remains operational evidence |
