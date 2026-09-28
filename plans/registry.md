@@ -34,7 +34,7 @@ retained only for traceability.
 | Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | 007 ready | No hard blocker; preserves the 1.x API/ToolSpec surface while closing remaining typed-core ownership drift. |
 | MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c active (deterministic prep done; external evidence blocked) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
-| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M004 closed; M005 blocked / planned | mirrored Eggpack adoption plan registered; waits on Eggpack CI M003d + Build M005; updater/product release policy remains local |
+| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M004 closed; M005 blocked / planned | Eggpack M003d + Build M005 are closed; current blocker is ADR-0005 native-qualification decision and, for Option A, Build M006; updater/product release policy remains local |
 
 ## Dependency-ready implementation plans
 
@@ -61,7 +61,7 @@ retained only for traceability.
 
 | Subsystem | Milestone | Blocker |
 |---|---|---|
-| Distribution, update, and release | M005 Eggpack producer adoption | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`; Eggpack CI M003d + Build M005 must close; mirrored Eggpack Ecosystem M001 plan is registered. |
+| Distribution, update, and release | M005 Eggpack producer adoption | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`; M003d + Build M005 are closed. Blocked on Eggpack ADR-0005 and, if Option A is accepted, Build M006. Mirrored Eggpack Ecosystem M001 has hit the same stop condition. |
 | MCP presentation surface | 03c Parts D-F (model/client traces, instructions A/B, rollout decision) | No provider credentials, subscriptions, or evaluation budget for ~200 model calls (attempted 2026-09-11: `codex`/`claude` CLIs present, no budget). Generated integrations stay on direct; discovery stays explicitly selectable. |
 
 ## Closure work and current control points
@@ -77,7 +77,7 @@ retained only for traceability.
   the September 27 audit. Harness remains guard-only (03c external evidence
   still blocked). Distribution M001-M004 remain closed historical control
   points, while distribution M005 remains separately blocked on Eggpack
-  prerequisites; self-update semantics are not reopened.
+  ADR-0005 / native-qualification resolution (Build M006 if Option A is accepted); self-update semantics are not reopened.
 - The durable rollout gates for `03c` remain: 100% stable-Model coverage,
   retrieval top-1 >=90% / top-3 >=98% / top-5 100%, 0 Model->HarnessOnly
   leaks, discovery/direct byte ratio <=25%, >=40 Model task scenarios
