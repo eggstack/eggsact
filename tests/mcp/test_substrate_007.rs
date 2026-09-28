@@ -29,19 +29,19 @@ fn find_fn_start(source: &str, fn_name: &str) -> Option<usize> {
     let needle_pub = format!("pub fn {}", fn_name);
     let needle_plain = format!("fn {}", fn_name);
     let mut idx = 0;
-    while let Some(pos) = source[idx..].find(&needle_pub).or_else(|| {
-        // Only fall back if `pub fn` was not found.
-        let s = &source[idx..];
-        s.find(&needle_plain).and_then(|p| {
-            // Make sure the `pub fn` variant really didn't match here.
-            if s[p..].starts_with(&needle_pub) {
-                None
-            } else {
-                Some(p)
-            }
-        })
-    }) {
-        let abs = idx + pos;
+    loop {
+        // Prefer the `pub fn` spelling; fall back to the plain spelling only
+        // when `pub fn` no longer occurs in the remainder.
+        let next = source[idx..]
+            .find(&needle_pub)
+            .map(|p| (idx + p, true))
+            .or_else(|| {
+                source[idx..]
+                    .find(&needle_plain)
+                    .filter(|p| !source[idx + p..].starts_with(&needle_pub))
+                    .map(|p| (idx + p, false))
+            });
+        let (abs, _) = next?;
         // Confirm it is the start of a fn declaration (preceded by whitespace
         // or newline; not part of a longer identifier).
         let line_start = source[..abs].rfind('\n').map(|i| i + 1).unwrap_or(0);
@@ -51,7 +51,6 @@ fn find_fn_start(source: &str, fn_name: &str) -> Option<usize> {
         }
         idx = abs + 1;
     }
-    None
 }
 
 /// Extract the source body of `pub fn <fn_name>` from `source`, up to and
