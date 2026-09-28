@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Roadmap
 
-Status: active (guard workstream; Milestones 003–007 closed)
+Status: active (Milestone 008 ready; Milestones 003–007 closed)
 
 Long-term references:
 
@@ -34,8 +34,9 @@ selection, installer/update trust, or release publishing.
 
 - One `ToolSpec` per tool; `tool_registration_tables_are_in_sync` green.
 - `calc`/root -> typed `text` -> `ToolRegistry`/contexts -> typed
-  `preflight` -> MCP server; no sibling-handler calls outside the three
-  documented same-module reuses.
+  `preflight` -> MCP server; no handler-to-handler composition under
+  `src/tools/`. Milestone 008 strengthens the source guard to prove this
+  repository-wide rather than only for the four historical 007 edges.
 - Deterministic exact-input/exact-output; no clock/TZ/env/net in utils.
 - Bounded limits with `limits_applied`; automatic truncation.
 
@@ -103,8 +104,13 @@ ownership invariant was not yet fully realized at four remaining same-module
 handler-to-handler call sites, and that prompt_input_inspect still had a
 parallel semantic implementation in src/tools/text.rs despite the canonical
 typed core in src/text/inspect_prompt.rs. Milestone 007 removed those
-duplicate execution paths without changing any public API or capability and
-is closed; the workstream is guard-only.
+duplicate execution paths and is closed historical evidence. A post-closure
+review found two narrower closure defects: the MCP prompt recommendation
+projection lost its historical string-or-array behavior by collapsing onto
+the typed Option<String> recommendation, and the zero-composition guard only
+checked the four known historical handler edges. Milestone 008 is ready to
+restore the pre-007 wire projection and generalize the guard without
+reopening 007's successful typed-core ownership.
 
 ## 5. Target architecture
 
@@ -121,6 +127,8 @@ Registry integrity (continuous guard)
     +--> Shared analysis anti-drift (closed)
     |
     +--> Typed-core ownership / adapter deduplication (007, closed)
+    |        |
+    |        `--> Prompt wire compatibility + generic layering guard (008, ready)
     |
     +--> Hot-path evidence (closed; future patches are corrective-only)
     |
@@ -134,9 +142,9 @@ Registry integrity (continuous guard)
 ```
 
 Milestones 003, 004, 005, 006, and 007 are closed historical dependencies.
-Milestone 007 depended only on the continuous registry and typed-first
-invariants; it did not reopen the Unicode line. The workstream is now
-guard-only with no open milestone.
+Milestone 008 is a bounded corrective over 007's wire-compatibility and
+guard-evidence gaps. It has no hard blocker and does not reopen the Unicode
+line or the broader catalog/runtime architecture.
 
 ## 7. Milestones
 
@@ -325,6 +333,42 @@ Deferred work: ConfigFacts/dependency-facts normalization, broad tools/helpers.r
 drain-down, large-module decomposition, and transport-neutral ToolSpec/catalog
 ownership. Catalog ownership changes require an ADR before planning.
 
+
+### Milestone 8 — Prompt wire compatibility and layering-guard corrective
+
+Class: invariant
+
+Objective: restore the pre-007 MCP/tool
+prompt_input_inspect.recommended_next_tool null/string/array compatibility
+while preserving PromptInspectResult's typed Option<String> API, and replace
+the four-edge source guard with a generic repository-wide handler graph guard.
+
+Dependencies: Milestone 007 (closed historical evidence) plus the continuous
+typed-first/registry guards. No hard blocker.
+
+Deliverable boundary: one typed/core-owned recommendation classification with
+separate legacy wire and typed preferred projections; exact pre-007 MCP
+recommendation cardinality/order restored; a test-only generic scan discovers
+all public ToolResponse handlers under src/tools/*.rs and rejects same-file or
+cross-file handler calls. No ToolSpec/schema capability/profile/protocol or
+dependency change.
+
+User or operator value: strict 1.x wire compatibility after the 007
+deduplication, plus architecture evidence that matches the repository-wide
+zero-handler-composition claim rather than only guarding four historical
+edges.
+
+Exit conditions: implementation plan
+plans/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md
+is implemented; baseline recommendation fixtures, typed non-regression, generic
+guard self-tests/live scan, merge gate, parity when available, and remote CI
+are green; and plans/closure/deterministic-tool-substrate/008-status.md is
+accepted.
+
+Deferred work: the 007 deferred inventory remains deferred (ConfigFacts,
+dependency-facts normalization, tools/helpers.rs drain-down, large-module
+decomposition, and ADR-gated transport-neutral catalog/runtime ownership).
+
 ## 8. Cross-cutting requirements
 
 ### Determinism and bounded execution
@@ -375,12 +419,17 @@ A new public restriction-level, IDNA, or enforcement policy would be a separate
 product decision and remains out of scope. A new utility category or
 composition-layer change still requires an ADR before a milestone plan.
 
-For Milestone 007, the principal risk is accidentally changing wire semantics
-while deleting handler reuse or duplicate prompt logic. The implementation must
-pin adapter/core differential fixtures first, preserve composite policy and
-subresult shapes at the adapter boundary, and stop if the typed and MCP public
-contracts have a genuine semantic disagreement. Moving ToolSpec/catalog
-ownership out of mcp is explicitly not a 007 cleanup and remains ADR-gated.
+Milestone 007's closed architecture remains the target: typed prompt findings
+and JSON/TOML/shell cores stay authoritative, with adapters limited to
+validation/policy/wire projection. Milestone 008 must not restore duplicated
+adapter semantics merely to regain compatibility.
+
+For Milestone 008, the principal risks are collapsing the distinct typed and
+legacy-wire recommendation contracts again, and creating a source guard that
+passes only because its scanner cannot recognize real Rust call sites. Baseline
+wire outputs and synthetic positive/negative scanner tests are therefore
+closure requirements. Moving ToolSpec/catalog ownership out of mcp remains
+ADR-gated and out of scope.
 
 ## 11. Completion definition
 
@@ -400,3 +449,4 @@ via `closure/` records; the performance line is already closed.
 | 005 Unicode security standards-conformance corrective | closed | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | `plans/closure/deterministic-tool-substrate/005-status.md` | — |
 | 006 Unicode conformance edge-case corrective | closed | `plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | `plans/closure/deterministic-tool-substrate/006-status.md` (`83de61a`) | — |
 | 007 Typed-core ownership and adapter deduplication | closed | `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | `plans/closure/deterministic-tool-substrate/007-status.md` (`237afb5` + `7176857`) | — |
+| 008 Prompt wire compatibility and layering-guard corrective | ready | `plans/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md` | — | — |
