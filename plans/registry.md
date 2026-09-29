@@ -34,7 +34,7 @@ retained only for traceability.
 | Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | Guard only; no open milestone | 008 closed the post-007 wire-cardinality/guard-coverage corrective without reopening 007 architecture; workstream is guard-only. |
 | MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c active (deterministic prep done; external evidence blocked) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
-| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M004 closed; M005 blocked / planned | Eggpack M003d + Build M005 are closed; current blocker is ADR-0005 native-qualification decision and, for Option A, Build M006; updater/product release policy remains local |
+| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M004 closed; M005 active (cutover implemented, live draft pending) | Eggpack M003d, Build M005, Build M006, and CI M003e are closed; consumer configuration cut over on branch `m001-eggpack-producer-adoption` pinned to Eggpack `b9062d4`; live real-draft qualification rides release v1.2.7 |
 
 ## Dependency-ready implementation plans
 
@@ -62,7 +62,7 @@ retained only for traceability.
 
 | Subsystem | Milestone | Blocker |
 |---|---|---|
-| Distribution, update, and release | M005 Eggpack producer adoption | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`; M003d + Build M005 are closed. Blocked on Eggpack ADR-0005 and, if Option A is accepted, Build M006. Mirrored Eggpack Ecosystem M001 has hit the same stop condition. |
+| Distribution, update, and release | M005 Eggpack producer adoption | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`; Eggpack ADR-0005 Option A implemented (Build M006), execution wiring corrected (CI M003e `b9062d4`); consumer cutover on branch `m001-eggpack-producer-adoption`, live draft pending v1.2.7 release. |
 | MCP presentation surface | 03c Parts D-F (model/client traces, instructions A/B, rollout decision) | No provider credentials, subscriptions, or evaluation budget for ~200 model calls (attempted 2026-09-11: `codex`/`claude` CLIs present, no budget). Generated integrations stay on direct; discovery stays explicitly selectable. |
 
 ## Closure work and current control points

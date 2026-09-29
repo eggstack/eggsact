@@ -1,6 +1,6 @@
 # Distribution, Update, and Release Milestone 005 — Eggpack Producer Adoption and Live Draft Qualification
 
-Status: blocked / planned
+Status: active — Eggpack ADR-0005 Option A implemented (Build M006 closed), execution wiring corrected (CI M003e closed); consumer cutover implemented on branch `m001-eggpack-producer-adoption`, live draft pending v1.2.7 release
 
 Reviewed repository baseline: `34aed3ab36da2637c22412f7ca65d35f1ca5021d`
 
@@ -77,6 +77,8 @@ Do not implement this plan until one of the following is explicitly selected and
 4. **Option D/new design:** supersede/revise this plan after the corresponding upstream ADR/implementation contract is accepted.
 
 Until that decision is made, no eggsact production/config/workflow migration should begin.
+
+Decision recorded: upstream selected ADR-0005 Option A (Build M006 closed at Eggpack `398cd43`) and corrected the generated execution wiring (CI M003e closed at Eggpack `b9062d4`). This plan proceeds on Option A pinned to the M003e implementation; consumer baseline re-reviewed at `8a582a4` with no material release-surface drift since `34aed3a`.
 
 ## 4. Current authority to replace
 
