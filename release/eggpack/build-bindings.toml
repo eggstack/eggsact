@@ -1,0 +1,14 @@
+schema_version = 1
+
+# One direct Cargo output per canonical target. The same package/binary pair
+# is used for every target; only the target triple changes.
+#
+# TOML note: the schema is a map of target triple to a *list* of outputs, so
+# each entry is an inline table rather than a `[[...outputs]]` sub-table.
+
+[targets]
+"aarch64-apple-darwin" = [{ selector = { kind = "direct" }, package = "eggsact", binary = "eggsact" }]
+"aarch64-unknown-linux-gnu" = [{ selector = { kind = "direct" }, package = "eggsact", binary = "eggsact" }]
+"x86_64-apple-darwin" = [{ selector = { kind = "direct" }, package = "eggsact", binary = "eggsact" }]
+"x86_64-pc-windows-msvc" = [{ selector = { kind = "direct" }, package = "eggsact", binary = "eggsact" }]
+"x86_64-unknown-linux-gnu" = [{ selector = { kind = "direct" }, package = "eggsact", binary = "eggsact" }]

@@ -1,0 +1,6 @@
+schema_version = 1
+
+# Empty bootstrap install policy: every eggsact release target is a direct
+# artifact with no bundle or archive, so there is no per-target install
+# policy to express. Eggpack still generates the exact-release installers
+# from this policy plus the resolved ReleaseManifest.

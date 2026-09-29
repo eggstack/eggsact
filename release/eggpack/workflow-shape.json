@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "target": "aarch64-apple-darwin",
+      "strategy": "native_cargo",
+      "host_os": "macos",
+      "host_arch": "aarch64",
+      "toolchain": { "rust": "stable" },
+      "floor": { "kind": "none" },
+      "qualification": "native",
+      "support": "required"
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "strategy": "cargo_zigbuild",
+      "host_os": "linux",
+      "host_arch": "aarch64",
+      "toolchain": {
+        "rust": "stable",
+        "cargo_zigbuild": "0.23.3",
+        "zig": "0.14.1"
+      },
+      "floor": { "kind": "glibc", "major": 2, "minor": 17 },
+      "qualification": "native",
+      "support": "required"
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "strategy": "native_cargo",
+      "host_os": "macos",
+      "host_arch": "x86_64",
+      "toolchain": { "rust": "stable" },
+      "floor": { "kind": "none" },
+      "qualification": "native",
+      "support": "required"
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "strategy": "native_cargo",
+      "host_os": "windows",
+      "host_arch": "x86_64",
+      "toolchain": { "rust": "stable" },
+      "floor": { "kind": "none" },
+      "qualification": "native",
+      "support": "required"
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "strategy": "cargo_zigbuild",
+      "host_os": "linux",
+      "host_arch": "x86_64",
+      "toolchain": {
+        "rust": "stable",
+        "cargo_zigbuild": "0.23.3",
+        "zig": "0.14.1"
+      },
+      "floor": { "kind": "glibc", "major": 2, "minor": 17 },
+      "qualification": "native",
+      "support": "required"
+    }
+  ],
+  "selected_aliases": [
+    "linux-x64",
+    "linux-arm64",
+    "macos-x64",
+    "macos-arm64",
+    "windows-x64"
+  ],
+  "build_bindings": {
+    "schema_version": 1,
+    "targets": {
+      "aarch64-apple-darwin": [
+        { "selector": { "kind": "direct" }, "package": "eggsact", "binary": "eggsact" }
+      ],
+      "aarch64-unknown-linux-gnu": [
+        { "selector": { "kind": "direct" }, "package": "eggsact", "binary": "eggsact" }
+      ],
+      "x86_64-apple-darwin": [
+        { "selector": { "kind": "direct" }, "package": "eggsact", "binary": "eggsact" }
+      ],
+      "x86_64-pc-windows-msvc": [
+        { "selector": { "kind": "direct" }, "package": "eggsact", "binary": "eggsact" }
+      ],
+      "x86_64-unknown-linux-gnu": [
+        { "selector": { "kind": "direct" }, "package": "eggsact", "binary": "eggsact" }
+      ]
+    }
+  },
+  "qualification_bindings": {
+    "schema_version": 1,
+    "targets": {
+      "aarch64-apple-darwin": {
+        "smoke": {
+          "selector": { "kind": "direct" },
+          "argv": ["--version"],
+          "timeout_ms": 10000,
+          "stdout_limit": 8192,
+          "stderr_limit": 8192
+        }
+      },
+      "aarch64-unknown-linux-gnu": {
+        "smoke": {
+          "selector": { "kind": "direct" },
+          "argv": ["--version"],
+          "timeout_ms": 10000,
+          "stdout_limit": 8192,
+          "stderr_limit": 8192
+        }
+      },
+      "x86_64-apple-darwin": {
+        "smoke": {
+          "selector": { "kind": "direct" },
+          "argv": ["--version"],
+          "timeout_ms": 10000,
+          "stdout_limit": 8192,
+          "stderr_limit": 8192
+        }
+      },
+      "x86_64-pc-windows-msvc": {
+        "smoke": {
+          "selector": { "kind": "direct" },
+          "argv": ["--version"],
+          "timeout_ms": 10000,
+          "stdout_limit": 8192,
+          "stderr_limit": 8192
+        }
+      },
+      "x86_64-unknown-linux-gnu": {
+        "smoke": {
+          "selector": { "kind": "direct" },
+          "argv": ["--version"],
+          "timeout_ms": 10000,
+          "stdout_limit": 8192,
+          "stderr_limit": 8192
+        }
+      }
+    }
+  },
+  "consumer_validators": {
+    "aarch64-apple-darwin": {
+      "schema_version": 1,
+      "selector": { "kind": "direct" },
+      "interpreter": "python3",
+      "script": "scripts/smoke-mcp-binary.py",
+      "timeout_ms": 120000,
+      "stdout_limit": 65536,
+      "stderr_limit": 65536
+    },
+    "aarch64-unknown-linux-gnu": {
+      "schema_version": 1,
+      "selector": { "kind": "direct" },
+      "interpreter": "python3",
+      "script": "scripts/smoke-mcp-binary.py",
+      "timeout_ms": 120000,
+      "stdout_limit": 65536,
+      "stderr_limit": 65536
+    },
+    "x86_64-apple-darwin": {
+      "schema_version": 1,
+      "selector": { "kind": "direct" },
+      "interpreter": "python3",
+      "script": "scripts/smoke-mcp-binary.py",
+      "timeout_ms": 120000,
+      "stdout_limit": 65536,
+      "stderr_limit": 65536
+    },
+    "x86_64-pc-windows-msvc": {
+      "schema_version": 1,
+      "selector": { "kind": "direct" },
+      "interpreter": "python3",
+      "script": "scripts/smoke-mcp-binary.py",
+      "timeout_ms": 120000,
+      "stdout_limit": 65536,
+      "stderr_limit": 65536
+    },
+    "x86_64-unknown-linux-gnu": {
+      "schema_version": 1,
+      "selector": { "kind": "direct" },
+      "interpreter": "python3",
+      "script": "scripts/smoke-mcp-binary.py",
+      "timeout_ms": 120000,
+      "stdout_limit": 65536,
+      "stderr_limit": 65536
+    }
+  },
+  "staging": {
+    "provider": "git_hub_draft",
+    "tag_source": "dispatch_input",
+    "required": true
+  }
+}
