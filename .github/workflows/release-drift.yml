@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           rev="$(python3 -c "import json;print(json.load(open('release/eggpack/github-policy.json'))['eggpack_tool']['revision'])")"
-          cargo install --git https://github.com/eggstack/eggpack --rev "$rev" --locked -p eggpack-cli
+          cargo install --git https://github.com/eggstack/eggpack --rev "$rev" --locked eggpack-cli
           eggpack --version
       - name: Check generated workflow matches Eggpack configuration
         shell: bash

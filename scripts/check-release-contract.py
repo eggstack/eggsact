@@ -58,6 +58,14 @@ for target in PUBLIC_ASSETS:
     if target not in workflow:
         errors.append(f"generated workflow does not mention target {target}")
 
+# Tool installs select the package positionally: `cargo install` has no
+# `-p/--package` flag for git sources (M003f). Guard every workflow,
+# including the hand-written drift guard, not just generated output.
+for workflow_file in sorted((ROOT / ".github/workflows").glob("*.yml")):
+    text = workflow_file.read_text()
+    if re.search(r"cargo install\b.*(?:\s-p\b|\s--package\b)", text):
+        errors.append(f"{workflow_file.name} passes -p/--package to cargo install")
+
 # Exactly one write-authorized job (the staging job); nothing else may write.
 if workflow.count("contents: write") != 1:
     errors.append("generated workflow must grant contents: write to exactly one job")
