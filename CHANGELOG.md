@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-09-29
+
 ### Fixed (Prompt wire compatibility and layering-guard corrective, substrate Milestone 008)
 
 - `prompt_input_inspect` MCP/tool wire restores the pre-007

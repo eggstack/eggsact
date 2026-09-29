@@ -95,20 +95,22 @@ authority chain:
 2. Publish the exact version with `cargo publish --locked`.
 3. Verify that `max_stable_version` on crates.io shows that version.
 4. Create and push the annotated `vX.Y.Z` tag.
-5. The tag-triggered `release-binaries.yml` workflow builds and verifies the
-   five qualified targets, checks the staged MCP handshake, and creates or
-   updates a draft GitHub Release.
+5. Manually dispatch the Eggpack-generated `release-binaries.yml` workflow
+   with that exact tag. Eggpack is producer authority for the five qualified
+   targets, artifact names, checksums, and installers; the workflow builds and
+   verifies the targets, checks the staged MCP handshake, and creates or
+   reuses a draft GitHub Release without publishing it.
 6. Review and publish the draft manually, then verify both the exact-tag and
    `releases/latest/download` installer URLs.
 
-The five-target workflow uses pinned Zig 0.14.1 (SHA-256 checked for the
-runner's x86-64 or AArch64 archive) and cargo-zigbuild 0.23.3. Linux x86-64
-uses the glibc 2.17 target suffix; Linux AArch64 builds and executes on the
-`ubuntu-24.04-arm` runner. macOS and Windows use native runners. ARMv7 is
-installer-recognized Cargo fallback only. Each verified Zig archive is
-extracted into a fixed temporary directory with the archive's top-level
-directory stripped; the workflow uses that same path for `GITHUB_PATH` and
-`zig version`, and the release contract checker guards this invariant.
+The five-target workflow uses pinned Zig 0.14.1 and cargo-zigbuild 0.23.3
+(pinned in `release/eggpack/pack.toml`). Linux x86-64 uses the glibc 2.17
+target suffix; Linux AArch64 builds and executes on the `ubuntu-24.04-arm`
+runner. macOS and Windows use native runners. ARMv7 is
+installer-recognized Cargo fallback only. Cross-toolchain provisioning and
+verification are Eggpack-owned; the release contract checker guards the
+target/asset mapping against the Eggpack configuration rather than
+hand-written shell fragments.
 
 The workflow requires an existing tag and never creates, moves, or publishes a
 tag. It also never calls `cargo publish` or publishes the GitHub draft. ARMv7
@@ -153,6 +155,16 @@ GitHub Actions CI runs on push/PR to `main` (plus manual `workflow_dispatch`):
 - macOS: `cargo check --locked --all-targets --all-features`
 
 MSRV, cargo-deny, parity, latest-compatible, and fuzz/sanitizer checks are scheduled/manual (not merge-blocking). See `docs/verification.md`.
+
+**Release drift guard** (push/PR to `main`, plus manual dispatch):
+- installs the exact pinned Eggpack tool revision from `release/eggpack/github-policy.json` (never floating `main`)
+- `eggpack ci check` fails if the checked-in release workflow differs from the Eggpack configuration
+- `python3 scripts/check-release-contract.py` checks the Eggpack-sourced target/asset mapping and eggsact-owned installer/updater invariants
+
+Public install wrappers (`packaging/install.sh`, `packaging/install.ps1`)
+remain eggsact-owned, as does `eggsact update` (eggsact/Eggup-owned
+self-update); Eggpack never publishes the draft and never touches
+self-update policy.
 
 Parity tests are excluded from CI because Python `eggcalc` is not available in the CI environment. Run parity locally with `cargo test --test lib parity`.
 
