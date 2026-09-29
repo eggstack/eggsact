@@ -1,0 +1,80 @@
+schema_version = 1
+
+# Producer release contract for eggsact, owned by Eggpack since Ecosystem M001.
+#
+# This file is the single authority for the published target set, release
+# asset names, install names, and checksum sidecar names. It is static: it
+# carries no release tag, no source revision, and no artifact digest.
+#
+# Public asset names are version-free by contract; `releases/latest/download`
+# and `releases/download/vX.Y.Z` both resolve the same file name.
+#
+# ARMv7 (`armv7-unknown-linux-gnueabihf`) is intentionally absent. It stays a
+# product-recognized Cargo-fallback-only host in packaging/install.sh and
+# src/update.rs until a separate executable or emulated qualification gate is
+# planned; declaring it here would imply a published artifact that does not
+# exist.
+
+[product]
+id = "eggsact"
+display_name = "eggsact"
+
+[[targets]]
+triple = "aarch64-apple-darwin"
+aliases = ["macos-arm64"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}"
+install = "{product}"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"
+
+[[targets]]
+triple = "aarch64-unknown-linux-gnu"
+aliases = ["linux-arm64"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}"
+install = "{product}"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"
+
+[[targets]]
+triple = "x86_64-apple-darwin"
+aliases = ["macos-x64"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}"
+install = "{product}"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"
+
+[[targets]]
+triple = "x86_64-pc-windows-msvc"
+aliases = ["windows-x64"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}.exe"
+install = "{product}.exe"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"
+
+[[targets]]
+triple = "x86_64-unknown-linux-gnu"
+aliases = ["linux-x64"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}"
+install = "{product}"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"

@@ -1,0 +1,50 @@
+schema_version = 1
+
+# One bounded core candidate smoke per canonical target.
+#
+# `--version` is the stronger identity check: it proves the exact candidate
+# executes and identifies itself as `eggsact X.Y.Z`. A single fixed argv
+# cannot also cover `--help`, so the help path is covered by repository tests
+# (tests/cli_surface.rs) instead of by a second per-target release step.
+# The MCP handshake remains per-target release evidence through the
+# consumer validator map in consumer-validators.json.
+
+[targets."aarch64-apple-darwin"]
+[targets."aarch64-apple-darwin".smoke]
+selector = { kind = "direct" }
+argv = ["--version"]
+timeout_ms = 10000
+stdout_limit = 8192
+stderr_limit = 8192
+
+[targets."aarch64-unknown-linux-gnu"]
+[targets."aarch64-unknown-linux-gnu".smoke]
+selector = { kind = "direct" }
+argv = ["--version"]
+timeout_ms = 10000
+stdout_limit = 8192
+stderr_limit = 8192
+
+[targets."x86_64-apple-darwin"]
+[targets."x86_64-apple-darwin".smoke]
+selector = { kind = "direct" }
+argv = ["--version"]
+timeout_ms = 10000
+stdout_limit = 8192
+stderr_limit = 8192
+
+[targets."x86_64-pc-windows-msvc"]
+[targets."x86_64-pc-windows-msvc".smoke]
+selector = { kind = "direct" }
+argv = ["--version"]
+timeout_ms = 10000
+stdout_limit = 8192
+stderr_limit = 8192
+
+[targets."x86_64-unknown-linux-gnu"]
+[targets."x86_64-unknown-linux-gnu".smoke]
+selector = { kind = "direct" }
+argv = ["--version"]
+timeout_ms = 10000
+stdout_limit = 8192
+stderr_limit = 8192
