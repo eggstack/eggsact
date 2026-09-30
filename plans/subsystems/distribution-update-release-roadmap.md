@@ -1,6 +1,6 @@
 # Distribution, Update, and Release Roadmap
 
-Status: active; M005 Eggpack producer adoption closed (conditionally on M005a)
+Status: active; M005 Eggpack producer adoption closed conditionally; M005a ready
 
 Long-term references:
 
@@ -69,7 +69,7 @@ capability semantics, harness API selection, or MCP defaults.
 
 ## 4. Current state
 
-M001-M004 remain closed historical control points. The workstream is reopened only for M005, a corrective/adoption milestone that replaces duplicated producer release construction with Eggpack while preserving eggsact-owned installer, updater, crates.io, tag, and publication policy.
+M001-M004 remain closed historical control points. M005 replaced duplicated producer release construction with Eggpack while preserving eggsact-owned installer, updater, crates.io, tag, and publication policy; it is now conditionally closed after the v1.2.7 live qualification. M005a is the only open distribution milestone and is dependency-ready, but should be sequenced with the next release rather than executed mid-release.
 
 Binary distribution qualified (C8 Zig correction `6658702`,
 v1.2.4 matrix, workflow `33944943782`, exact-tag installer checks).
@@ -82,7 +82,7 @@ dependency reaches users with the next normal release.
 
 ## 5. Target architecture
 
-M005 introduces Eggpack as producer authority while keeping eggsact as product-policy authority. The public installers and self-update semantics remain local; only build/qualification/artifact/checksum/generated-CI/draft-staging authority migrates. M001-M004 remain historical closed evidence.
+M005 established Eggpack as producer authority while keeping eggsact as product-policy authority. The public installers and self-update semantics remain local; only build/qualification/artifact/checksum/generated-CI/draft-staging authority migrated. M005a corrects the remaining Windows byte-reproducibility condition without changing that ownership boundary. M001-M004 remain historical closed evidence.
 
 ## 6. Dependency graph
 
@@ -100,7 +100,17 @@ Binary distribution (closed)
 
 Historical M001-M004 dependencies are closed. Eggpack CI M003d, Build M005, Build M006, and the CI M003e/M003f/M003g corrective chain are also closed. The ADR-0005 and Build M006 hard dependencies that once blocked M005 are resolved; M005 is implemented and its live draft qualification ran on release v1.2.7.
 
+The active tail of the dependency graph is:
+
+```text
+M005 Eggpack producer adoption (closed conditionally)
+    |
+    `--> M005a deterministic Windows artifacts (ready)
+```
+
 ### M005a — Deterministic Windows release artifacts
+
+Status: ready
 
 Class: corrective
 
@@ -192,7 +202,7 @@ Class: corrective adoption + capability + infrastructure
 
 Objective: replace the hand-maintained five-target producer workflow with Eggpack-generated release construction and draft staging while preserving crates.io-first/tag-after-publish ordering, public installer latest/version/Cargo fallback semantics, self-update policy, and human publication.
 
-Dependencies: Eggpack CI M003d + Build M005 (closed); ADR-0005 native-qualification decision (hard); Build M006 if Option A is accepted (hard); a normal maintainer-authorized version tag after crates.io publication (operational).
+Dependencies: historical prerequisites satisfied: Eggpack CI M003d, Build M005, ADR-0005 Option A, Build M006, and the M003e/M003f/M003g corrective chain are closed. The v1.2.7 maintainer-authorized release supplied the required live qualification evidence; no hard dependency remains.
 
 Implementation plan: `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`.
 
@@ -243,7 +253,7 @@ M005 must not generalize eggsact-specific release selection/fallback policy into
 
 ## 11. Completion definition
 
-M001-M004 stay closed historical milestones. The workstream returns to maintenance-only after M005 closes with Eggpack producer authority qualified against a real draft release and all eggsact-owned installer/updater/release-order semantics preserved.
+M001-M004 stay closed historical milestones. M005 is conditionally closed with Eggpack producer authority qualified against a real draft/release and all eggsact-owned installer/updater/release-order semantics preserved. The workstream returns to maintenance-only after M005a closes the remaining Windows byte-reproducibility condition.
 
 ## 12. Milestone status
 
@@ -254,4 +264,5 @@ M001-M004 stay closed historical milestones. The workstream returns to maintenan
 | M003 0.1.7 bump | closed | `plans/archive/eggfetch-0.1.7-updater-dependency-bump.md` | in-file closure | — |
 | M004 0.2.0 adoption | closed | `plans/archive/eggfetch-0.2.0-updater-adoption.md` | in-file closure | — |
 | M004 corrective closeout | closed | `plans/archive/eggfetch-0.2.0-adoption-closeout-corrective.md` | in-file closure | — |
-| M005 Eggpack producer adoption + live draft qualification | blocked / planned | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | — | Eggpack M003d + Build M005 are closed; blocked on ADR-0005 decision and, for Option A, Build M006 closure; normal release tag remains operational evidence |
+| M005 Eggpack producer adoption + live draft qualification | closed (conditionally) | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | `plans/closure/distribution-update-release/005-status.md` | M005a is the sole remaining condition (Windows byte-reproducibility); all former hard dependencies are closed |
+| M005a Deterministic Windows release artifacts | ready | `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md` | — | No hard blocker; sequence with the next release rather than mid-release |
