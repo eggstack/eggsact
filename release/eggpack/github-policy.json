@@ -47,7 +47,7 @@
   "artifact_retention_days": 7,
   "eggpack_tool": {
     "repo": "https://github.com/eggstack/eggpack",
-    "revision": "5ac5b83a0f47c453212b09fc2c744065f3dfaf8e",
+    "revision": "e5c81f28bd328d4aea41c3f061a0ed9944306262",
     "package": "eggpack-cli",
     "install_timeout_minutes": 20
   },
