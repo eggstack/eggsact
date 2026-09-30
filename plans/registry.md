@@ -34,12 +34,13 @@ retained only for traceability.
 | Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | Guard only; no open milestone | 008 closed the post-007 wire-cardinality/guard-coverage corrective without reopening 007 architecture; workstream is guard-only. |
 | MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c active (deterministic prep done; external evidence blocked) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
-| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M004 closed; M005 active (cutover implemented, live draft pending) | Eggpack M003d, Build M005, Build M006, and CI M003e are closed; consumer configuration cut over on branch `m001-eggpack-producer-adoption` pinned to Eggpack `b9062d4`; live real-draft qualification rides release v1.2.7 |
+| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M005 closed; M005a planned | Eggpack is producer authority (cutover at `d8014cf`, pinned to Eggpack M003g `e5c81f2`); live draft qualified and published for v1.2.7 (`plans/closure/distribution-update-release/005-status.md`). M005a tracks Windows artifact determinism, the one open rerun-reuse condition |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Implementation plan | Dependencies / handoff note |
 |---|---|---|---|---|
+| Distribution, update, and release | M005 Eggpack producer adoption | closed (conditionally) | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | Closure `plans/closure/distribution-update-release/005-status.md`; cutover `d8014cf`; live draft run 36652731202 (15 assets, receipt `RE_kwDOTGg0Mc4X0gk6`); v1.2.7 published with installer/latest/update smoke verified. Open condition: M005a (Windows byte-reproducibility) |
 | Deterministic tool substrate | 008 prompt wire compatibility and layering-guard corrective | closed | `plans/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md` | Implemented in `475fc19`; closure `plans/closure/deterministic-tool-substrate/008-status.md`. Pre-007 null/string/array projection restored; generic 86-handler guard green. |
 | Deterministic tool substrate | 007 typed-core ownership and adapter deduplication | closed | `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | Implemented in `237afb5` + `7176857`; closure `plans/closure/deterministic-tool-substrate/007-status.md`. Zero handler-to-handler composition; typed prompt core authoritative. |
 | MCP presentation surface | 03c evaluation closure corrective | active | `plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md` | Deterministic Parts A-C + G1 done. Parts D-F blocked on model credentials/budget. Do not fabricate traces; do not mark complete without OpenAI + Anthropic pairs and instructions A/B. |
@@ -62,7 +63,7 @@ retained only for traceability.
 
 | Subsystem | Milestone | Blocker |
 |---|---|---|
-| Distribution, update, and release | M005 Eggpack producer adoption | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`; Eggpack ADR-0005 Option A implemented (Build M006), execution wiring corrected (CI M003e `b9062d4`); consumer cutover on branch `m001-eggpack-producer-adoption`, live draft pending v1.2.7 release. |
+| Distribution, update, and release | M005a deterministic Windows artifacts | blocked | `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md`; recorded from M005 closure. Not blocked: implementable now, but it is the last open M005 condition and should be sequenced with the next release, not run mid-release |
 | MCP presentation surface | 03c Parts D-F (model/client traces, instructions A/B, rollout decision) | No provider credentials, subscriptions, or evaluation budget for ~200 model calls (attempted 2026-09-11: `codex`/`claude` CLIs present, no budget). Generated integrations stay on direct; discovery stays explicitly selectable. |
 
 ## Closure work and current control points
@@ -79,10 +80,13 @@ retained only for traceability.
   pre-007 prompt recommendation wire cardinality/order is restored and the
   layering guard is generalized to all src/tools handlers. Harness remains
   guard-only (03c external evidence still blocked).
-  Distribution M001-M004 remain closed historical control points, while
-  distribution M005 remains separately blocked on Eggpack ADR-0005 /
-  native-qualification resolution (Build M006 if Option A is accepted);
-  self-update semantics are not reopened.
+  Distribution M001-M005 are now closed control points: M005 replaced the
+  handwritten release workflow with Eggpack-generated CI (producer authority
+  pinned to Eggpack M003g `e5c81f2`), qualified a real draft for v1.2.7, and
+  that release was published with public installer, latest/download, and
+  `eggsact update` smoke all verified. The single open condition is M005a
+  (deterministic Windows artifacts for byte-identical rerun reuse);
+  self-update semantics remain eggsact/Eggup-owned and were not migrated.
 - The durable rollout gates for `03c` remain: 100% stable-Model coverage,
   retrieval top-1 >=90% / top-3 >=98% / top-5 100%, 0 Model->HarnessOnly
   leaks, discovery/direct byte ratio <=25%, >=40 Model task scenarios

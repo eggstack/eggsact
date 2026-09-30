@@ -1,6 +1,6 @@
 # Distribution, Update, and Release Roadmap
 
-Status: active; M005 Eggpack producer adoption planned / blocked
+Status: active; M005 Eggpack producer adoption closed (conditionally on M005a)
 
 Long-term references:
 
@@ -98,7 +98,17 @@ Binary distribution (closed)
                                   `--> 0.2.0 closeout corrective (closed)
 ```
 
-Historical M001-M004 dependencies are closed. Eggpack CI M003d and Build M005 are also closed. M005 is now blocked on Eggpack ADR-0005's native-qualification decision; if Option A is accepted, Eggpack Build M006 must close before eggsact implementation starts.
+Historical M001-M004 dependencies are closed. Eggpack CI M003d, Build M005, Build M006, and the CI M003e/M003f/M003g corrective chain are also closed. The ADR-0005 and Build M006 hard dependencies that once blocked M005 are resolved; M005 is implemented and its live draft qualification ran on release v1.2.7.
+
+### M005a — Deterministic Windows release artifacts
+
+Class: corrective
+
+Objective: make the `x86_64-pc-windows-msvc` candidate byte-reproducible for a fixed source revision and toolchain, so a rerun of the same tag reuses all five staged assets instead of failing closed on the one asset whose bytes differ.
+
+Implementation plan: `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md`.
+
+Dependencies: none hard; sequence with the next release rather than mid-release.
 
 ## 7. Milestones
 
@@ -188,7 +198,9 @@ Implementation plan: `plans/implementation/distribution-update-release/005-eggpa
 
 Exit conditions: generated workflow parity, exact five-target/toolchain coverage, MCP candidate validation, public wrapper/updater parity, real draft + rerun evidence, and no automatic publication. Closure record: `plans/closure/distribution-update-release/005-status.md`.
 
-Deferred work: deeper manifest-driven updater mapping and automatic tag-trigger ergonomics remain separate follow-ups.
+Met on release `v1.2.7`: cutover at `d8014cf`, Eggpack producer pin M003g `e5c81f2`, live run 36652731202 (all 20 jobs, 15-asset draft, receipt `RE_kwDOTGg0Mc4X0gk6`), rerun reused the draft and every asset except the Windows binary, which Eggpack correctly refused to clobber because MSVC embeds a build timestamp and a random PDB GUID (24 bytes, proven). Release published by the maintainer; public installer, `latest/download`, and `eggsact update` smoke all verified. M005 therefore closes **conditionally** on M005a.
+
+Deferred work: M005a deterministic Windows release artifacts (byte-reproducible MSVC link/PDB so reruns reuse all five assets). Also deferred, unchanged: deeper manifest-driven updater mapping and automatic tag-trigger ergonomics (the generated workflow stays `workflow_dispatch` with the exact tag for now).
 
 ## 8. Cross-cutting requirements
 

@@ -1,6 +1,6 @@
 # Distribution, Update, and Release Milestone 005 — Eggpack Producer Adoption and Live Draft Qualification
 
-Status: active — Eggpack ADR-0005 Option A implemented (Build M006 closed), execution wiring corrected (CI M003e closed); consumer cutover implemented on branch `m001-eggpack-producer-adoption`, live draft pending v1.2.7 release
+Status: closed (conditionally on M005a) — see `plans/closure/distribution-update-release/005-status.md`
 
 Reviewed repository baseline: `34aed3ab36da2637c22412f7ca65d35f1ca5021d`
 
