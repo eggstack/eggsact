@@ -32,7 +32,7 @@ retained only for traceability.
 | Subsystem | Status | Roadmap | Current milestone | Dependencies or blockers |
 |---|---|---|---|---|
 | Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | Guard only; no open milestone | 008 closed the post-007 wire-cardinality/guard-coverage corrective without reopening 007 architecture; workstream is guard-only. |
-| MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c active (deterministic prep done; external evidence blocked) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
+| MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c blocked (deterministic prep re-verified 2026-09-30; external evidence blocked; closure `plans/closure/mcp-presentation-surface/003c-status.md`) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
 | Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M005 closed; M005a planned | Eggpack is producer authority (cutover at `d8014cf`, pinned to Eggpack M003g `e5c81f2`); live draft qualified and published for v1.2.7 (`plans/closure/distribution-update-release/005-status.md`). M005a tracks Windows artifact determinism, the one open rerun-reuse condition |
 
@@ -43,7 +43,7 @@ retained only for traceability.
 | Distribution, update, and release | M005 Eggpack producer adoption | closed (conditionally) | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | Closure `plans/closure/distribution-update-release/005-status.md`; cutover `d8014cf`; live draft run 36652731202 (15 assets, receipt `RE_kwDOTGg0Mc4X0gk6`); v1.2.7 published with installer/latest/update smoke verified. Open condition: M005a (Windows byte-reproducibility) |
 | Deterministic tool substrate | 008 prompt wire compatibility and layering-guard corrective | closed | `plans/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md` | Implemented in `475fc19`; closure `plans/closure/deterministic-tool-substrate/008-status.md`. Pre-007 null/string/array projection restored; generic 86-handler guard green. |
 | Deterministic tool substrate | 007 typed-core ownership and adapter deduplication | closed | `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | Implemented in `237afb5` + `7176857`; closure `plans/closure/deterministic-tool-substrate/007-status.md`. Zero handler-to-handler composition; typed prompt core authoritative. |
-| MCP presentation surface | 03c evaluation closure corrective | active | `plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md` | Deterministic Parts A-C + G1 done. Parts D-F blocked on model credentials/budget. Do not fabricate traces; do not mark complete without OpenAI + Anthropic pairs and instructions A/B. |
+| MCP presentation surface | 03c evaluation closure corrective | blocked | `plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md` | Closure `plans/closure/mcp-presentation-surface/003c-status.md` (blocked). Deterministic Parts A-C + G1 re-verified 2026-09-30 (76/76 targets, 88+9 fixtures, top-1 96.59%, 48+4 scenarios, 5.44% bytes). Parts D-F blocked on model credentials/budget. Do not fabricate traces; do not mark complete without OpenAI + Anthropic pairs and instructions A/B. |
 | Deterministic tool substrate | 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | Implemented in `3d67807`; closure `plans/closure/deterministic-tool-substrate/003-status.md`. Data epoch held at Unicode 17.0.0. |
 | Deterministic tool substrate | 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | Implemented in `2e3860c`; closure `plans/closure/deterministic-tool-substrate/004-status.md`. Shipped claim: "confusables data: Unicode 18.0.0" (6,712 entries). |
 | Deterministic tool substrate | 005 Unicode security standards-conformance corrective | closed | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | Closure `plans/closure/deterministic-tool-substrate/005-status.md`. Historical control point; residual edge cases are owned by 006. |
@@ -64,13 +64,16 @@ retained only for traceability.
 | Subsystem | Milestone | Blocker |
 |---|---|---|
 | Distribution, update, and release | M005a deterministic Windows artifacts | blocked | `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md`; recorded from M005 closure. Not blocked: implementable now, but it is the last open M005 condition and should be sequenced with the next release, not run mid-release |
-| MCP presentation surface | 03c Parts D-F (model/client traces, instructions A/B, rollout decision) | No provider credentials, subscriptions, or evaluation budget for ~200 model calls (attempted 2026-09-11: `codex`/`claude` CLIs present, no budget). Generated integrations stay on direct; discovery stays explicitly selectable. |
+| MCP presentation surface | 03c Parts D-F (model/client traces, instructions A/B, rollout decision) | No provider credentials, subscriptions, or evaluation budget for ~200 model calls (attempted 2026-09-11 and re-attempted 2026-09-30: `codex` 0.159.2 / `claude` 2.1.280 CLIs present, no budget/approval). Closure `plans/closure/mcp-presentation-surface/003c-status.md` records the blocked disposition. Generated integrations stay on direct; discovery stays explicitly selectable. |
 
 ## Closure work and current control points
 
 - MCP modernization protocol/runtime/discovery implementation is complete
   (`35f7dc2e`, `a5c00b8d`, `77ff57a5`, `121babde`, `40222999`); only the
-  `03c` external evidence closure remains active.
+  `03c` external evidence closure remains blocked
+  (`plans/closure/mcp-presentation-surface/003c-status.md`; deterministic
+  prep re-verified 2026-09-30, no future plan unblocked — M005a stays
+  independent).
 - Deterministic tool substrate Milestones 003, 004, 005, 006, 007, and 008 remain
   closed historical control points. The Unicode workstream (003 semantic
   hardening + 004 data qualification + 005 standards-conformance corrective

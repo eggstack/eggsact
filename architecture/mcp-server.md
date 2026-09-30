@@ -390,7 +390,9 @@ paired provider traces are scored separately with
 `scripts/score-discovery-traces.py --pair` (strict validation, 2pp
 success/selection noninferiority, invalid/retry and workflow-exercised
 gates). External OpenAI/Anthropic direct/discovery pairs plus the
-instructions A/B are still pending under `mcp-surface-03c`; generated
+instructions A/B are still pending under
+`plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md`;
+generated
 integrations stay direct until that evidence lands (see
 `tests/fixtures/discovery_traces/README.md` and `docs/verification.md`).
 

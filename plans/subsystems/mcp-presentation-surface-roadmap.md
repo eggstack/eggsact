@@ -1,6 +1,6 @@
 # MCP Presentation Surface Roadmap
 
-Status: active; 03c active (deterministic preparation done; external evidence blocked)
+Status: active; 03c blocked (deterministic preparation re-verified 2026-09-30; external evidence blocked; closure `plans/closure/mcp-presentation-surface/003c-status.md`)
 
 Long-term references:
 
@@ -68,14 +68,17 @@ the `03c` rollout decision).
 
 Protocol/runtime/discovery implementation is complete (`35f7dc2e`,
 `a5c00b8d`, `77ff57a5`, `121babde`). Deterministic evaluation
-preparation is landed and retained (`40222999` + `03c` Parts A-C, G1):
+preparation is landed and retained (`40222999` + `03c` Parts A-C, G1),
+re-verified 2026-09-30 (closure `plans/closure/mcp-presentation-surface/003c-status.md`):
 full/Model direct is 77 tools / 111,911 bytes vs discovery 7 / 6,088
 bytes (5.44%, gate <=25%); registry-derived semantic coverage 100% (76
 stable targets, 88 positive intents, 9 containment, no bare-name
-fixtures); retrieval top-1 ~96.6% / top-3 100% / top-5 100% with zero
+fixtures); retrieval top-1 96.59% (85/88) / top-3 100% / top-5 100% with zero
 leaks; 48 task + 4 containment scenarios; strict plural scorer with
-`--pair` deltas and 2pp noninferiority gates; CI `34546867650` green;
-`test_discovery` (15 tests) green.
+`--pair` deltas and 2pp noninferiority gates;
+`test_discovery` (15 tests) green. Parts D–F (OpenAI + Anthropic pairs,
+instructions A/B, rollout decision) remain blocked on provider credentials /
+eval budget (CLIs present, no budget/approval 2026-09-30); no traces fabricated.
 
 ## 5. Target architecture
 
@@ -214,4 +217,4 @@ A/B outcome, and the integration/default decision recorded.
 | 02 progressive discovery | closed | — (commit `a5c00b8d`) | — | — |
 | 02c contract corrective | closed | — (commit `77ff57a5`) | — | — |
 | 02d era classification | closed | — (commit `121babde`) | — | — |
-| 03c evaluation closure | active/blocked | `plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md` | — (pending) | Provider credentials / eval budget; instructions A/B blocked |
+| 03c evaluation closure | blocked | `plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md` | `plans/closure/mcp-presentation-surface/003c-status.md` (blocked; deterministic prep re-verified 2026-09-30) | Provider credentials / eval budget (re-attempted 2026-09-30); instructions A/B blocked; no future plan unblocked |

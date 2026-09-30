@@ -3,7 +3,7 @@
 Sanitized direct-vs-discovery traces from real model/client runs live here.
 No traces are checked in yet; the deterministic retrieval/context gates pass,
 but the external model/client evidence required by
-`plans/mcp-surface-03c-evaluation-closure-corrective.md` Parts D/E is still
+`plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md` Parts D/E is still
 pending.
 
 ## File naming

@@ -1,6 +1,6 @@
 # MCP Presentation Surface Milestone 03c — Discovery Evaluation Closure Corrective
 
-Status: active
+Status: blocked — deterministic preparation complete and re-verified 2026-09-30; external model/client evidence pending (see closure `plans/closure/mcp-presentation-surface/003c-status.md`)
 
 Repository baseline: `main` at migration (see git history; body retains original baselines per part)
 
@@ -31,7 +31,8 @@ specification.
 
 # MCP Discovery Evaluation Closure Corrective (original title retained below)
 
-Status: active — deterministic preparation complete; external model/client evidence pending
+Status: blocked — deterministic preparation complete; external model/client evidence pending
+Closure: `plans/closure/mcp-presentation-surface/003c-status.md` (blocked; Parts D–F outstanding)
 Priority: P1
 Scope: semantic discovery coverage, provider/client direct-vs-discovery evidence, server-instructions A/B, trace/scorer contract, closure evidence; no protocol, registry, transport, or capability redesign
 
@@ -65,6 +66,30 @@ status annotations mark what is done.
   discovery remains explicitly selectable until the evidence gates pass.
 - **G1 (roadmap honesty) — done.** `plans/roadmap.md` distinguishes
   implementation, deterministic infrastructure, and pending external evidence.
+
+## Progress (2026-09-30 closure pass)
+
+Re-verified deterministic preparation on `main` at closure; no production-code
+drift. Measured values are unchanged from 2026-09-11:
+
+- Stable full/Model tools 76 (77 total Model-visible incl. 1 non-Stable),
+  positive semantic targets 76, coverage 100%, 88 positive intents,
+  9 containment intents; retrieval top-1 85/88 (96.59%), top-3 88/88 (100%),
+  top-5 88/88 (100%), zero Model-audience leaks.
+- Direct full/Model 77 tools / 111,911 bytes vs discovery 7 / 6,088 bytes
+  (5.44%, gate <=25%). `SERVER_INSTRUCTIONS` 264 UTF-8 bytes (budget <=500).
+- `test_discovery` 15/15 green; scorer strict validation + `--pair` gates
+  verified (malformed traces fail loudly; synthetic pair scores PASS).
+- Parts D–F re-attempted 2026-09-30: `codex` 0.159.2 and `claude` 2.1.280
+  CLIs present, but no evaluation budget/approval for the ~200 model calls
+  (48 tasks × 2 modes × 2 families + 10–15-scenario instructions A/B), so no
+  traces were fabricated. Stale doc references to the pre-migration flat plan
+  path were corrected to this file in `docs/verification.md`,
+  `architecture/mcp-server.md`, and `tests/fixtures/discovery_traces/README.md`.
+- Formal closure record: `plans/closure/mcp-presentation-surface/003c-status.md`
+  (Status: blocked). Generated integrations stay on direct; discovery stays
+  explicitly selectable. No future plan is unblocked by this disposition
+  (M005a remains independent; see closure §11).
 
 ## Objective
 

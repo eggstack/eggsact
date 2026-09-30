@@ -126,8 +126,8 @@ check. Generated client integrations stay on direct mode until paired OpenAI
 and Anthropic traces plus the instructions A/B are recorded and show
 noninferior success and host compatibility. As of this revision that
 external evidence is still pending under
-`plans/mcp-surface-03c-evaluation-closure-corrective.md`; the scorer and
-corpus preparation above are complete, but the plan remains active.
+`plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md`; the scorer and
+corpus preparation above are complete, but the plan remains blocked.
 
 ## Tier 3 — Targeted Hardening
 
