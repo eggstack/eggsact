@@ -962,6 +962,72 @@ mod tests {
     use std::net::TcpListener;
     use std::sync::Arc;
 
+    /// Ecosystem M001 §17: the updater's published-target table must match
+    /// the Eggpack producer contract exactly, so a contract change without
+    /// an updater change (or vice versa) fails here instead of in a release.
+    /// ARMv7 stays fallback-only: it is recognized by `target_for_host` but
+    /// intentionally absent from both tables.
+    #[test]
+    fn published_targets_match_eggpack_contract() {
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/release/eggpack/distribution.toml"
+        ))
+        .expect("Eggpack distribution contract must be checked in");
+        let mut product = String::new();
+        let mut contracted: Vec<(String, String)> = Vec::new();
+        let mut triple = String::new();
+        let mut asset = String::new();
+        let mut in_product = false;
+        let mut in_target = false;
+        let field = |line: &str| {
+            line.split('=')
+                .nth(1)
+                .unwrap_or_default()
+                .trim()
+                .trim_matches('"')
+                .to_owned()
+        };
+        for raw in text.lines() {
+            let line = raw.trim();
+            if line == "[product]" {
+                in_product = true;
+                in_target = false;
+            } else if line == "[[targets]]" {
+                if !triple.is_empty() {
+                    contracted.push((std::mem::take(&mut triple), std::mem::take(&mut asset)));
+                }
+                in_product = false;
+                in_target = true;
+            } else if line.starts_with('[') {
+                in_product = false;
+                in_target = line.starts_with("[targets.");
+            } else if in_product && line.starts_with("id") {
+                product = field(line);
+            } else if in_target && line.starts_with("triple") {
+                triple = field(line);
+            } else if in_target && line.starts_with("asset") {
+                asset = field(line);
+            }
+        }
+        if !triple.is_empty() {
+            contracted.push((triple, asset));
+        }
+        assert!(!product.is_empty(), "contract must name its product");
+        assert_eq!(contracted.len(), RELEASE_TARGETS.len());
+        for (target, template) in &contracted {
+            let expected = template
+                .replace("{product}", &product)
+                .replace("{target}", target);
+            let mapped = RELEASE_TARGETS
+                .iter()
+                .find(|entry| entry.rust_target == target.as_str())
+                .unwrap_or_else(|| panic!("updater lacks contract target {target}"));
+            assert_eq!(mapped.asset_name, expected.as_str());
+            assert_eq!(mapped.windows, expected.ends_with(".exe"));
+        }
+    }
+
     #[test]
     fn target_mapping_is_explicit() {
         assert_eq!(
