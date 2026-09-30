@@ -34,12 +34,13 @@ retained only for traceability.
 | Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | Guard only; no open milestone | 008 closed the post-007 wire-cardinality/guard-coverage corrective without reopening 007 architecture; workstream is guard-only. |
 | MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c blocked (deterministic prep re-verified 2026-09-30; external evidence blocked; closure `plans/closure/mcp-presentation-surface/003c-status.md`) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
-| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M005 closed; M005a planned | Eggpack is producer authority (cutover at `d8014cf`, pinned to Eggpack M003g `e5c81f2`); live draft qualified and published for v1.2.7 (`plans/closure/distribution-update-release/005-status.md`). M005a tracks Windows artifact determinism, the one open rerun-reuse condition |
+| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M005 closed; M005a ready | Eggpack is producer authority (cutover at `d8014cf`, pinned to Eggpack M003g `e5c81f2`); v1.2.7 live draft/release qualification is complete. M005a is dependency-ready and owns the sole remaining Windows byte-reproducibility condition. |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Implementation plan | Dependencies / handoff note |
 |---|---|---|---|---|
+| Distribution, update, and release | M005a deterministic Windows artifacts | ready | `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md` | No hard blocker; implement with the next release. Prove two fixed-input Windows builds are byte-identical and same-tag rerun reuses all five staged assets without weakening Eggpack digest refusal. |
 | Distribution, update, and release | M005 Eggpack producer adoption | closed (conditionally) | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | Closure `plans/closure/distribution-update-release/005-status.md`; cutover `d8014cf`; live draft run 36652731202 (15 assets, receipt `RE_kwDOTGg0Mc4X0gk6`); v1.2.7 published with installer/latest/update smoke verified. Open condition: M005a (Windows byte-reproducibility) |
 | Deterministic tool substrate | 008 prompt wire compatibility and layering-guard corrective | closed | `plans/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md` | Implemented in `475fc19`; closure `plans/closure/deterministic-tool-substrate/008-status.md`. Pre-007 null/string/array projection restored; generic 86-handler guard green. |
 | Deterministic tool substrate | 007 typed-core ownership and adapter deduplication | closed | `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | Implemented in `237afb5` + `7176857`; closure `plans/closure/deterministic-tool-substrate/007-status.md`. Zero handler-to-handler composition; typed prompt core authoritative. |
@@ -63,7 +64,6 @@ retained only for traceability.
 
 | Subsystem | Milestone | Blocker |
 |---|---|---|
-| Distribution, update, and release | M005a deterministic Windows artifacts | blocked | `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md`; recorded from M005 closure. Not blocked: implementable now, but it is the last open M005 condition and should be sequenced with the next release, not run mid-release |
 | MCP presentation surface | 03c Parts D-F (model/client traces, instructions A/B, rollout decision) | No provider credentials, subscriptions, or evaluation budget for ~200 model calls (attempted 2026-09-11 and re-attempted 2026-09-30: `codex` 0.159.2 / `claude` 2.1.280 CLIs present, no budget/approval). Closure `plans/closure/mcp-presentation-surface/003c-status.md` records the blocked disposition. Generated integrations stay on direct; discovery stays explicitly selectable. |
 
 ## Closure work and current control points
