@@ -45,6 +45,7 @@ workloads.
 | MSRV compilation and library tests | `maintenance.yml` | Weekly |
 | cargo-deny advisory/policy audit | `maintenance.yml` | Weekly |
 | Supported-platform compile checks (Windows, macOS) | `maintenance.yml` | Weekly |
+| Windows release-candidate byte reproducibility | `maintenance.yml` | Weekly |
 | Latest-compatible dependency resolution | `latest-compatible.yml` | Weekly |
 | Python eggcalc parity | `parity.yml` | Weekly |
 
@@ -59,6 +60,16 @@ Checks licenses, advisories, bans, and sources against `deny.toml`. Failures cre
 ### Supported-platform compilation
 
 Compile-checks on Windows and macOS to verify cross-platform compatibility. Uses `cargo check --locked --all-targets --all-features`.
+
+### Windows release reproducibility
+
+Builds the `x86_64-pc-windows-msvc` release candidate twice from different
+target directories and requires identical SHA-256 digests, mirroring the
+attempt-1/attempt-2 pair of a release rerun. Also requires the candidate to
+carry no CodeView (RSDS) debug record and fails if `RUSTFLAGS` is set in the
+job. This is the byte-level evidence behind the release rerun-reuse
+guarantee; the link flags it protects are documented in
+[`docs/release.md`](release.md#release-candidate-determinism).
 
 ### Latest-compatible
 

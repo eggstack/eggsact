@@ -49,10 +49,68 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (toolchain param)
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
           key: check-${{ runner.os }}-stable
       - run: cargo check --locked --all-targets --all-features
+
+  windows-reproducibility:
+    name: Windows reproducibility
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (toolchain param)
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+      - name: Build the release candidate twice from different target directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          # `RUSTFLAGS` would replace, not extend, the target-scoped
+          # rustflags in .cargo/config.toml, silently dropping the Windows
+          # link determinism flags. scripts/check-release-contract.py keeps
+          # it out of every workflow; this asserts it for this job too.
+          if [ -n "${RUSTFLAGS:-}" ]; then
+            echo "::error::RUSTFLAGS must be unset for a reproducible release candidate"
+            exit 1
+          fi
+          # The release pipeline points CARGO_TARGET_DIR at a per-run
+          # scratch directory keyed by run id and attempt, so the two builds
+          # must use different directories to prove the candidate does not
+          # embed its build path. This mirrors the attempt-1/attempt-2 pair
+          # of release run 36652731202, which produced two differing Windows
+          # candidates.
+          for attempt in 1 2; do
+            export CARGO_TARGET_DIR="$RUNNER_TEMP/eggpack/${{ github.run_id }}-$attempt"
+            cargo +stable build --release --locked \
+              --target x86_64-pc-windows-msvc \
+              --package eggsact --bin eggsact
+            candidate="$CARGO_TARGET_DIR/x86_64-pc-windows-msvc/release/eggsact.exe"
+            if [ ! -f "$candidate" ]; then
+              echo "::error::missing release candidate $candidate"
+              exit 1
+            fi
+            sha256sum "$candidate" | tee "$RUNNER_TEMP/digest-$attempt.txt"
+            wc -c < "$candidate"
+            if grep -q RSDS "$candidate"; then
+              echo "::error::release candidate still carries a CodeView (RSDS) debug record"
+              exit 1
+            fi
+          done
+      - name: Compare candidate digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          first=$(cut -d' ' -f1 "$RUNNER_TEMP/digest-1.txt")
+          second=$(cut -d' ' -f1 "$RUNNER_TEMP/digest-2.txt")
+          if [ "$first" != "$second" ]; then
+            echo "::error::x86_64-pc-windows-msvc is not byte-reproducible: $first != $second"
+            exit 1
+          fi
+          echo "x86_64-pc-windows-msvc candidate is byte-identical across two builds: $first"
+

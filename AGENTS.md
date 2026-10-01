@@ -70,6 +70,7 @@ Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_fai
 - Env: `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (`Model` default, case-insensitive), `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`), `EGGSACT_MCP_SURFACE` (`direct`/`discovery`). `EGGCALC_NO_CONFIG=1` is for Python-`eggcalc` callers.
 - `eggsact update` / `eggsact integrate list|detect|<client>` are verified/read-only; they never install a daemon or edit client config.
 - Self-update transport is `eggup-core`/`eggup-eggfetch`/`eggup-acquisition` 0.1.0 over `eggfetch-core` (in-process HTTP/1 + TLS, strict HTTPS-downgrade rejection, explicit env proxy, no external `curl` after install). Bootstrap `packaging/install.*` still uses external download tooling. Do not add HTTP to the library/MCP API, retries, or extra fetch features without measurement.
+- Release candidates: `.cargo/config.toml` holds the only release link flags (`/BREPRO`, `/DEBUG:NONE` for `x86_64-pc-windows-msvc`) and is load-bearing for byte-identical rerun reuse. `[profile.release] strip` is a no-op for `windows-msvc` (rustc discards `-C strip` there). Never set `RUSTFLAGS` — it replaces, not extends, target rustflags. Guards: `check-release-contract.py` + `windows_release_link_flags_are_deterministic`; byte proof: `windows-reproducibility` in `maintenance.yml`. See `docs/release.md`.
 
 ## Planning
 

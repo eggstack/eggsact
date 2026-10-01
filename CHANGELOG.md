@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Deterministic Windows release artifacts, distribution Milestone 005a)
+
+- The `x86_64-pc-windows-msvc` release candidate is now byte-reproducible for
+  a fixed source revision and toolchain. `.cargo/config.toml` adds two
+  target-scoped MSVC linker flags: `/BREPRO` derives the PE COFF-header,
+  import-descriptor, and bound-import time-date-stamps from a content hash
+  instead of the wall clock, and `/DEBUG:NONE` drops the PDB and PE debug
+  directory whose CodeView RSDS GUID the linker randomized on every link.
+  Between two attempts of release run `36652731202` the Windows candidates
+  differed in exactly 24 bytes while the other four targets were identical, so
+  Eggpack correctly refused to clobber the differing staged asset; a rerun now
+  reuses all five staged assets. `[profile.release] strip = "symbols"` is
+  unchanged and still governs the ELF and Mach-O candidates -- rustc discards
+  `-C strip` for `windows-msvc`, so it cannot do this job.
+- Guarded by `windows_release_link_flags_are_deterministic` (`src/update.rs`),
+  `scripts/check-release-contract.py` (which now also rejects `RUSTFLAGS` in
+  any workflow, because it would replace the target-scoped rustflags), and the
+  new `windows-reproducibility` job in `.github/workflows/maintenance.yml`,
+  which builds the candidate twice from different target directories and
+  compares SHA-256. No change to asset names, sidecar format, installer
+  behavior, updater mapping, the five-target matrix, or the single
+  write-authorized staging job.
+
 ## [1.2.7] - 2026-09-29
 
 ### Fixed (Prompt wire compatibility and layering-guard corrective, substrate Milestone 008)

@@ -1028,6 +1028,51 @@ mod tests {
         }
     }
 
+    /// Distribution M005a: the Windows release candidate is byte-reproducible
+    /// only because of the two linker flags in `.cargo/config.toml`. `/BREPRO`
+    /// derives the PE time-date-stamps from content instead of the clock, and
+    /// `/DEBUG:NONE` drops the CodeView debug directory whose RSDS GUID the MSVC
+    /// linker randomizes on every link. `strip = "symbols"` cannot substitute:
+    /// rustc passes `/DEBUG` unconditionally for `windows-msvc` and discards
+    /// `-C strip` for that target. The byte-level double-build proof lives in the
+    /// `windows-reproducibility` job of `.github/workflows/maintenance.yml`.
+    #[test]
+    fn windows_release_link_flags_are_deterministic() {
+        let text =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/.cargo/config.toml"))
+                .expect("Cargo configuration must be checked in");
+        let config: toml::Value = toml::from_str(&text).expect("Cargo configuration must parse");
+        let targets = config
+            .get("target")
+            .and_then(toml::Value::as_table)
+            .expect("Cargo configuration must scope release flags by target");
+        let flags: Vec<&str> = targets
+            .get("x86_64-pc-windows-msvc")
+            .and_then(|target| target.get("rustflags"))
+            .and_then(toml::Value::as_array)
+            .expect("the Windows target must carry release link flags")
+            .iter()
+            .filter_map(toml::Value::as_str)
+            .collect();
+        for required in ["link-arg=/BREPRO", "link-arg=/DEBUG:NONE"] {
+            assert!(
+                flags.iter().any(|flag| flag.ends_with(required)),
+                "x86_64-pc-windows-msvc rustflags must pass -C {required}, found {flags:?}"
+            );
+        }
+        // Determinism policy is Windows-only: the other four candidates are
+        // already byte-reproducible and must keep their current link inputs.
+        for (target, policy) in targets {
+            if target == "x86_64-pc-windows-msvc" {
+                continue;
+            }
+            assert!(
+                policy.get("rustflags").is_none(),
+                "unexpected target rustflags for {target}"
+            );
+        }
+    }
+
     #[test]
     fn target_mapping_is_explicit() {
         assert_eq!(

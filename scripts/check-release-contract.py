@@ -61,10 +61,17 @@ for target in PUBLIC_ASSETS:
 # Tool installs select the package positionally: `cargo install` has no
 # `-p/--package` flag for git sources (M003f). Guard every workflow,
 # including the hand-written drift guard, not just generated output.
+# `RUSTFLAGS` is guarded in the same loop: it replaces, rather than extends,
+# the target-scoped rustflags in `.cargo/config.toml`, so setting it anywhere
+# would silently drop the Windows release link determinism flags. Only
+# assignment forms count; reading `${RUSTFLAGS}` to assert it is unset does
+# not change any build.
 for workflow_file in sorted((ROOT / ".github/workflows").glob("*.yml")):
     text = workflow_file.read_text()
     if re.search(r"cargo install\b.*(?:\s-p\b|\s--package\b)", text):
         errors.append(f"{workflow_file.name} passes -p/--package to cargo install")
+    if re.search(r"(?m)(^|[\s\"'-])RUSTFLAGS\s*[:=]", text):
+        errors.append(f"{workflow_file.name} must not set RUSTFLAGS")
 
 # Exactly one write-authorized job (the staging job); nothing else may write.
 if workflow.count("contents: write") != 1:
@@ -93,6 +100,23 @@ if not re.fullmatch(r"[0-9a-f]{40}", revision):
 for pinned in ['zig = "0.14.1"', 'cargo_zigbuild = "0.23.3"']:
     if pinned not in pack:
         errors.append(f"pack.toml must pin the legacy cross toolchain: {pinned}")
+
+# Windows release-candidate determinism (M005a). The MSVC linker stamps
+# wall-clock PE time-date-stamps and a random CodeView RSDS GUID on every
+# link, so two builds of one revision produced different bytes and Eggpack
+# correctly refused to clobber the differing staged asset. `/BREPRO` derives
+# the timestamps from content and `/DEBUG:NONE` drops the debug directory
+# that holds the random GUID. `strip = "symbols"` cannot substitute: rustc
+# discards `-C strip` for `windows-msvc`. Both flags are target-scoped so the
+# four already-reproducible candidates keep their bytes.
+cargo_config = (ROOT / ".cargo/config.toml").read_text()
+if "[target.x86_64-pc-windows-msvc]" not in cargo_config:
+    errors.append(".cargo/config.toml must scope release link flags to x86_64-pc-windows-msvc")
+for required in ["link-arg=/BREPRO", "link-arg=/DEBUG:NONE"]:
+    if required not in cargo_config:
+        errors.append(f".cargo/config.toml must set -C {required} for the Windows release candidate")
+if "windows-reproducibility" not in (ROOT / ".github/workflows/maintenance.yml").read_text():
+    errors.append("maintenance.yml must keep the Windows double-build reproducibility job")
 
 # Every published target is qualified and consumer-validated.
 for target in PUBLIC_ASSETS:

@@ -39,6 +39,54 @@ five qualified target assets, checksums, and installers are live; v1.2.3
 remains the earlier source-only release and was not retrofitted. Keep the
 post-release checks below current for future releases.
 
+## Release candidate determinism
+
+The five binary candidates are byte-reproducible from a fixed source revision
+and toolchain, so a rerun of a release run reuses every already-staged asset
+instead of failing closed on a differing one.
+
+Four targets (both Linux, both macOS) are already byte-identical across builds
+and need no special handling. `x86_64-pc-windows-msvc` needs the two linker
+flags in `.cargo/config.toml`:
+
+- `/BREPRO` makes the MSVC linker derive the PE COFF-header, import-descriptor,
+  and bound-import time-date-stamps from a content hash instead of the wall
+  clock.
+- `/DEBUG:NONE` suppresses the PDB and the PE debug directory, removing the
+  CodeView RSDS GUID that the linker otherwise randomizes on every link. It
+  also removes any PDB path, so the candidate does not depend on the build
+  directory (the pipeline varies it per run as
+  `${{ runner.temp }}/eggpack/<run_id>-<run_attempt>`).
+
+`[profile.release] strip = "symbols"` is not a substitute: rustc passes
+`/DEBUG` unconditionally for `windows-msvc` and discards `-C strip` for that
+target. The flags are target-scoped, so the other four candidates keep their
+current bytes. The cost is that Windows debug-profile builds no longer emit a
+PDB.
+
+Invariants to preserve:
+
+- Do not set `RUSTFLAGS` in any workflow, script, or shell. It replaces, rather
+  than extends, the target-scoped rustflags in `.cargo/config.toml` and would
+  silently restore the non-deterministic link.
+- Do not add target-scoped rustflags for the other four targets.
+- The digest guarantee is not weakened anywhere: the staging job must keep
+  refusing to clobber a same-name asset whose digest differs.
+
+Evidence and proof:
+
+```bash
+# static guards (also run in CI)
+python3 scripts/check-release-contract.py
+cargo test --locked --bin eggsact windows_release_link_flags_are_deterministic
+
+# byte-level proof: the `windows-reproducibility` job of
+# .github/workflows/maintenance.yml builds the release candidate twice from
+# different target directories on windows-latest, compares SHA-256, and
+# asserts the candidate carries no CodeView (RSDS) record. Dispatch
+# maintenance.yml or wait for the weekly lane.
+```
+
 ## Release verification
 
 Run the local release check from a clean worktree:
@@ -131,7 +179,7 @@ QEMU qualification gate is added.
 
 ## Package contents
 
-`cargo package --locked` excludes: `plans/`, `data/`, `scripts/`, `packaging/`, `.github/`, `.opencode/`, `.agents/`, `deny.toml`, `AGENTS.md`.
+`cargo package --locked` excludes: `plans/`, `data/`, `scripts/`, `packaging/`, `.cargo/`, `.github/`, `.opencode/`, `.agents/`, `deny.toml`, `AGENTS.md`.
 
 Verify with:
 
@@ -153,6 +201,12 @@ GitHub Actions CI runs on push/PR to `main` (plus manual `workflow_dispatch`):
 **Supported-platform compilation** (matrix, scheduled/manual only):
 - Windows: `cargo check --locked --all-targets --all-features`
 - macOS: `cargo check --locked --all-targets --all-features`
+
+**Windows release reproducibility** (scheduled/manual only):
+- builds the `x86_64-pc-windows-msvc` release candidate twice from different
+  target directories and requires identical SHA-256 digests
+- requires the candidate to carry no CodeView (RSDS) debug record
+- fails if `RUSTFLAGS` is set in the job environment
 
 MSRV, cargo-deny, parity, latest-compatible, and fuzz/sanitizer checks are scheduled/manual (not merge-blocking). See `docs/verification.md`.
 

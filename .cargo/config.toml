@@ -1,0 +1,47 @@
+# Cargo configuration for the published release candidates.
+#
+# Everything here is release-determinism policy for one target. There is no
+# general build tuning: the release profile stays in `Cargo.toml`.
+#
+# Windows MSVC link determinism (distribution milestone 005a)
+# ==========================================================
+#
+# `x86_64-pc-windows-msvc` is the only one of the five published targets
+# whose candidate is not byte-reproducible from a fixed source revision
+# and toolchain. `link.exe` stamps the PE COFF header, the import
+# descriptors, and the bound-import directory with wall-clock time, and
+# emits a CodeView debug directory whose RSDS GUID is a fresh random value
+# on every link. Between two attempts of release run `36652731202` the
+# `eggsact-x86_64-pc-windows-msvc.exe` candidates differed in exactly 24
+# bytes (2 + 3x2 timestamps, 16-byte RSDS GUID and age), which is why
+# Eggpack correctly refused to clobber the differing staged asset.
+#
+# Two independent linker flags remove both classes of input:
+#
+# `/BREPRO` makes the linker derive the image time-date-stamp (and, when a
+# PDB is produced, its GUID) from a hash of the content instead of the
+# clock and a random value.
+#
+# `/DEBUG:NONE` suppresses the PDB and the whole debug directory, which
+# removes the RSDS GUID and any PDB path from the candidate. rustc always
+# passes `/DEBUG` for MSVC targets and discards `-C strip` for them
+# (`MsvcLinker::debuginfo` ignores its `Strip` argument, and
+# `strip_with_external_utility` has no `is_like_windows` branch), so
+# `[profile.release] strip = "symbols"` cannot do this job. rustc emits
+# user `-C link-arg` values last, after its own `/DEBUG`, so this
+# overrides it. `/BREPRO` alone is also sufficient for byte equality;
+# dropping the debug directory additionally makes the candidate
+# independent of the build directory, which the release pipeline varies
+# per run as `${{ runner.temp }}/eggpack/<run_id>-<run_attempt>`.
+#
+# Guarded by `windows_release_link_flags_are_deterministic` in
+# `src/update.rs` and by `scripts/check-release-contract.py`. The
+# double-build proof lives in the `windows-reproducibility` job of
+# `.github/workflows/maintenance.yml`.
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+    # Content-derived image time-date-stamp instead of wall-clock time.
+    "-C", "link-arg=/BREPRO",
+    # No PDB and no PE debug directory: no random RSDS GUID, no PDB path.
+    "-C", "link-arg=/DEBUG:NONE",
+]

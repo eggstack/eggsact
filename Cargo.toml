@@ -17,6 +17,7 @@ exclude = [
     "data/",
     "scripts/",
     "packaging/",
+    ".cargo/",
     ".github/",
     ".opencode/",
     ".agents/",
@@ -73,6 +74,10 @@ name = "performance"
 harness = false
 
 [profile.release]
+# `strip` is honored for the ELF and Mach-O candidates. It is a no-op for
+# `x86_64-pc-windows-msvc`: rustc always passes `/DEBUG` to the MSVC linker
+# and discards `-C strip` for that target. The Windows release link flags live
+# in `.cargo/config.toml`; see that file for the full rationale.
 strip = "symbols"
 lto = "thin"
 codegen-units = 1
