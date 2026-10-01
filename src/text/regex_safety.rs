@@ -1,5 +1,11 @@
 use fancy_regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
+
+static BACKREF_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\\([1-9])|\\g<").expect("static backreference regex"));
+static DOT_STAR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\.\*").expect("static dot-star regex"));
 
 const MAX_PATTERN_LENGTH: usize = 1000;
 const MAX_PATTERN_NESTING: usize = 5;
@@ -288,8 +294,7 @@ pub fn regex_safety_check(pattern: &str) -> RegexSafetyResult {
         i += 1;
     }
 
-    let backref_re = Regex::new(r"\\([1-9])|\\g<").unwrap();
-    if let Ok(Some(_)) = backref_re.find(pattern) {
+    if let Ok(Some(_)) = BACKREF_RE.find(pattern) {
         findings.push(RegexSafetyFinding {
             kind: "backreference".to_string(),
             span: vec![0, pattern.chars().count() as i32],
@@ -297,8 +302,7 @@ pub fn regex_safety_check(pattern: &str) -> RegexSafetyResult {
         });
     }
 
-    let dot_star_re = Regex::new(r"\.\*").unwrap();
-    for cap in dot_star_re.find_iter(pattern) {
+    for cap in DOT_STAR_RE.find_iter(pattern) {
         let cap = cap.expect("find_iter should always return a match");
         let byte_range = cap.range();
         // Convert byte offsets to codepoint indices

@@ -183,7 +183,15 @@ pub(crate) fn require_non_negative_int_arg(
         )));
     }
 
-    Ok(value_i64 as usize)
+    usize::try_from(value_i64).map_err(|_| {
+        Box::new(ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            &format!("{} is too large for this platform", field),
+            None,
+            Some(tool),
+        ))
+    })
 }
 
 // ---------------------------------------------------------------------------

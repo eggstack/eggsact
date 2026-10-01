@@ -72,6 +72,8 @@ enum LimitedLine {
     /// observed before the limit was exceeded. The remainder of the line
     /// (through the next newline) has been drained.
     TooLarge { observed_at_least: usize },
+    /// The complete frame was not valid UTF-8 and cannot be JSON-RPC input.
+    InvalidUtf8,
     /// End of input (clean EOF with no buffered data).
     Eof,
 }
@@ -87,7 +89,7 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
     reader: &mut R,
     max_bytes: usize,
 ) -> LimitedLine {
-    let mut buf: Vec<u8> = Vec::with_capacity(max_bytes);
+    let mut buf: Vec<u8> = Vec::new();
     // Every byte consumed before the terminating LF, including bytes no
     // longer retained in `buf`.
     let mut bytes_before_lf: usize = 0;
@@ -156,7 +158,10 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
                 buf.extend_from_slice(&chunk[..can_take]);
             }
             reader.consume(pos + 1);
-            return LimitedLine::Line(string_from_utf8_lossy(&buf));
+            return match String::from_utf8(buf) {
+                Ok(line) => LimitedLine::Line(line),
+                Err(_) => LimitedLine::InvalidUtf8,
+            };
         }
 
         // No newline in this chunk. Count the entire chunk, but retain only
@@ -183,13 +188,11 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
     } else if buf.is_empty() {
         LimitedLine::Eof
     } else {
-        LimitedLine::Line(string_from_utf8_lossy(&buf))
+        match String::from_utf8(buf) {
+            Ok(line) => LimitedLine::Line(line),
+            Err(_) => LimitedLine::InvalidUtf8,
+        }
     }
-}
-
-fn string_from_utf8_lossy(bytes: &[u8]) -> String {
-    String::from_utf8(bytes.to_vec())
-        .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned())
 }
 
 fn write_json_line(value: &Value, scratch: &mut Vec<u8>) -> std::io::Result<()> {
@@ -1202,6 +1205,7 @@ pub async fn main() -> ! {
                 continue;
             }
             LimitedLine::Eof => break,
+            LimitedLine::InvalidUtf8 => break,
         };
 
         let trimmed = line.trim();
@@ -1959,6 +1963,15 @@ mod truncate_utf8_bytes_tests {
         let mut cursor = std::io::Cursor::new(data);
         let result = read_bounded_line(&mut cursor, 1000).await;
         assert!(matches!(result, LimitedLine::Eof));
+    }
+
+    #[tokio::test]
+    async fn bounded_line_rejects_invalid_utf8() {
+        use super::*;
+        let data = b"{\xff}\n";
+        let mut cursor = std::io::Cursor::new(data);
+        let result = read_bounded_line(&mut cursor, 100);
+        assert!(matches!(result.await, LimitedLine::InvalidUtf8));
     }
 
     /// Reader serving its data in small chunks, then erroring instead of

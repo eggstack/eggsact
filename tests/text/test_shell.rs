@@ -61,6 +61,20 @@ fn test_shell_split_features_pipe() {
 }
 
 #[test]
+fn quoted_operators_are_not_reported_as_shell_syntax() {
+    let result = shell_split(r#"echo 'a|b' "a>b" 'a&&b'"#, "posix", true);
+    assert!(!result.features.has_pipe);
+    assert!(!result.features.has_redirection);
+    assert!(!result.features.has_control_operator);
+}
+
+#[test]
+fn backslash_before_nonspecial_double_quote_character_is_preserved() {
+    let result = shell_split(r#"echo "\a""#, "posix", false);
+    assert_eq!(result.argv, vec!["echo", r#"\a"#]);
+}
+
+#[test]
 fn test_shell_split_features_redirection() {
     let result = shell_split("echo hello > out.txt", "posix", true);
     assert!(result.features.has_redirection);

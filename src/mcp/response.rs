@@ -584,7 +584,7 @@ pub fn preflight_block(
 /// Truncate a `ToolResponse` to fit within the given budget limits.
 ///
 /// This applies deterministic truncation rules:
-/// - `findings` array is capped at `budget.max_findings` (highest-severity first).
+/// - `findings` array is capped at `budget.max_findings`, preserving input order.
 /// - `result` string representation is capped at `budget.max_output_bytes`.
 /// - `limits_applied` is populated with any truncation that occurred.
 ///
@@ -599,21 +599,6 @@ pub fn truncate_response(response: &mut ToolResponse, budget: &crate::mcp::budge
     // never exceeding `max_findings` total.
     if let Some(ref mut findings) = response.findings {
         if findings.len() > budget.max_findings {
-            // Sort by severity (highest first) before truncating. This
-            // intentionally changes the ordering of the truncated response.
-            let severity_order = |s: &str| match s {
-                "critical" => 0,
-                "high" => 1,
-                "medium" => 2,
-                "low" => 3,
-                "info" => 4,
-                _ => 5,
-            };
-            findings.sort_by(|a, b| {
-                let sev_a = a.get("severity").and_then(|v| v.as_str()).unwrap_or("info");
-                let sev_b = b.get("severity").and_then(|v| v.as_str()).unwrap_or("info");
-                severity_order(sev_a).cmp(&severity_order(sev_b))
-            });
             let original_len = findings.len();
             // When max_findings >= 1, reserve one slot for the truncation
             // notice; real findings are capped at max_findings - 1.
@@ -892,9 +877,9 @@ mod tests {
         truncate_response(&mut resp, &budget);
         let findings = resp.findings.as_ref().unwrap();
         // Total findings length must not exceed max_findings: keep
-        // highest-severity (critical, high) + truncation notice.
+        // first two findings in input order + truncation notice.
         assert_eq!(findings.len(), 3);
-        assert_eq!(findings[0]["severity"], "critical");
+        assert_eq!(findings[0]["severity"], "low");
         assert_eq!(findings[1]["severity"], "high");
         assert_eq!(findings[2]["code"], "OUTPUT_TOO_LARGE");
     }
@@ -1131,7 +1116,7 @@ mod tests {
         truncate_response(&mut resp, &budget);
         let findings = resp.findings.as_ref().unwrap();
         assert_eq!(findings.len(), 2);
-        assert_eq!(findings[0]["severity"], "critical");
+        assert_eq!(findings[0]["severity"], "low");
         assert_eq!(findings[1]["code"], "OUTPUT_TOO_LARGE");
         // 4 original - 1 real cap = 3 omitted
         assert_eq!(

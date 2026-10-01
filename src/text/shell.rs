@@ -48,10 +48,8 @@ fn is_glob_char(c: char) -> bool {
 }
 
 fn detect_features(argv: &[String], raw: &str, unbalanced: bool) -> ShellFeatures {
-    let joined = argv.join(" ");
-
-    let has_pipe = joined.contains('|');
-    let has_redirection = joined.contains('<') || joined.contains('>');
+    let has_pipe = contains_unquoted_operator(raw, "|");
+    let has_redirection = contains_unquoted_operator(raw, "<>");
     let has_command_substitution = COMMAND_SUB_PATTERN.is_match(raw);
     // Strip single-quoted sections before checking for variable expansion
     // Single quotes prevent variable expansion in POSIX shells. Use proper
@@ -93,12 +91,12 @@ fn detect_features(argv: &[String], raw: &str, unbalanced: bool) -> ShellFeature
 
     let mut has_control_operator = false;
     for op in &["&&", "||"] {
-        if joined.contains(op) {
+        if contains_unquoted_sequence(raw, op) {
             has_control_operator = true;
             break;
         }
     }
-    if !has_control_operator && (joined.contains(';') || joined.contains('&')) {
+    if !has_control_operator && contains_unquoted_operator(raw, ";&") {
         has_control_operator = true;
     }
 
@@ -116,6 +114,33 @@ fn detect_features(argv: &[String], raw: &str, unbalanced: bool) -> ShellFeature
         has_background,
         has_unbalanced_quotes: unbalanced,
     }
+}
+
+fn contains_unquoted_operator(raw: &str, operators: &str) -> bool {
+    let mut quote = QuoteState::None;
+    let mut escaped = false;
+    for c in raw.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match quote {
+            QuoteState::None if c == '\\' => escaped = true,
+            QuoteState::None if c == '\'' => quote = QuoteState::Single,
+            QuoteState::None if c == '"' => quote = QuoteState::Double,
+            QuoteState::Single if c == '\'' => quote = QuoteState::None,
+            QuoteState::Double if c == '"' => quote = QuoteState::None,
+            QuoteState::Double if c == '\\' => escaped = true,
+            QuoteState::None if operators.contains(c) => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+fn contains_unquoted_sequence(raw: &str, sequence: &str) -> bool {
+    raw.match_indices(sequence)
+        .any(|(at, _)| contains_unquoted_operator(&raw[..at + sequence.len()], &sequence[..1]))
 }
 
 static VARIABLE_PATTERN: LazyLock<Regex> =
@@ -298,9 +323,9 @@ fn posix_shell_split(command: &str) -> (Vec<String>, bool, Option<String>) {
                             i += 2;
                             continue;
                         } else {
-                            // POSIX: inside double quotes, backslash before
-                            // non-special characters loses the backslash
-                            // (e.g. "\a" -> "a"). Preserve only the char.
+                            // POSIX double quotes preserve backslash before
+                            // characters other than $, `, ", \, and newline.
+                            current.push('\\');
                             current.push(next);
                             token_started = true;
                             i += 2;

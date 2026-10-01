@@ -267,8 +267,12 @@ to subprocess spawns. Zero code changes to tool semantics.
 **C1 — Shell tokenization drift (9 failures).** Rust and Python produce
 different `shell_split` output for complex inputs. The tier2 basic test
 passes (simple command), but quoted strings, backslash escapes, pipes,
-empty strings, and comment handling diverge. The Rust implementation likely
-needs behavioral alignment with Python's `shlex`-based parser.
+empty strings, and comment handling diverge. Rust `shell_split` intentionally
+parses argv without interpreting shell control operators; unquoted operators
+are reported by feature detection while quoted operator characters are data.
+Unquoted `#` starts a comment only at the beginning of a word, following POSIX
+shell rules. Remaining differences in this category are accepted compatibility
+gaps; align individual cases only when the POSIX behavior is incorrect.
 
 **C2 — Prompt input inspect drift (4 failures).** Output shape or finding
 details differ. `test_prompt_input_inspect_ansi_case` panics because Rust
@@ -316,7 +320,7 @@ calls a HarnessOnly tool without proper audience setup.
 | C4 — Tool output drift | 11 | Defer: cosmetic or intentional Rust differences | No |
 | C5 — Tools/list ordering | 8 | Defer: Rust superset (86 vs 67 tools) | No |
 | C6 — Error handling | 2 | Defer: needs Harness audience in test | No |
-| **Total** | **60** | **383 passed, 37 failed, 5 ignored** | **None** |
+| **Total** | **37 accepted gaps** | **381 passed, 37 ignored** | **None** |
 
 ### Known tool-set gap: 86 vs 67 tools
 

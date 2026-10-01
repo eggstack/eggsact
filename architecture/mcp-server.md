@@ -766,12 +766,13 @@ The MCP server applies per-tool resource budgets during `tools/call` dispatch:
 - **`BudgetContext`**: runtime context passed into tool handlers — holds a deadline (`Instant`), a `cancelled` flag, and `should_stop()` which checks both deadline expiry and cancellation. Helper methods: `check_not_cancelled(tool_name)`, `check_deadline(tool_name)`, `check_text_bytes(field, text, tool_name)`, `check_list_len(field, len, tool_name)`, `remaining_time_ms()`. `check_text_len` is retained as a deprecated alias for `check_text_bytes` (renamed in 1.1.4 because enforcement is byte-based, not character-based).
 - **`for_handler(budget)`**: convenience constructor that picks up the thread-local cancellation flag. Recommended for handler functions with signature `fn(&Value) -> ToolResponse` that cannot receive context directly.
 - **Composite sub-budgets**: `SubBudget` and `CompositeBudgetAllocator` allow composite tools (e.g., `edit_preflight`, `command_preflight`) to split their parent budget across child tool calls via `sub_budget_context()`. The allocator divides input/output/text/findings limits evenly across `N` sub-tools, sharing the parent deadline.
+- Heavy tools may allocate a 2,000,000-byte output budget, but the MCP transport still enforces the 1,000,000-byte `MAX_OUTPUT_BYTES` hard cap.
 
 ### Response Truncation (`src/mcp/response.rs`)
 
 `truncate_response()` enforces budget limits on completed tool responses. When a tool produces more findings, output bytes, or text characters than its budget allows, the response is truncated and `limits_applied` is populated with descriptions of what was capped.
 
-- **Findings cap** (`max_findings`): when findings exceed the cap, excess entries are dropped (sorted by severity, highest kept) and a synthetic `OUTPUT_TOO_LARGE` notice is appended as the final entry. One slot is always reserved for the notice, so the total findings length is ≤ `max_findings` — real findings are capped at `max_findings - 1` plus the notice.
+- **Findings cap** (`max_findings`): when findings exceed the cap, entries after the first `max_findings - 1` are dropped and a synthetic `OUTPUT_TOO_LARGE` notice is appended as the final entry. Input order is preserved. One slot is always reserved for the notice, so the total findings length is ≤ `max_findings`.
 - **Result truncation** (`max_output_bytes`): when the serialized `result` object exceeds the cap, it is **replaced** with a summary object containing only `machine_code`, `verdict`, `ok`, and any caller-supplied `summary` key, plus `truncated: true`, `original_size_bytes`, `max_output_bytes`. This guarantees the wire payload fits the budget while preserving route-critical fields. Caller-supplied `summary` strings are preserved rather than overwritten.
 - `limits_applied` in the response envelope reports what was truncated.
 

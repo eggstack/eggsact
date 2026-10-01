@@ -606,7 +606,7 @@ pub fn sub_budget_context(parent: &BudgetContext, sub: &SubBudget) -> BudgetCont
             max_list_items: sub.max_list_items,
             max_regex_pattern_chars: parent.budget.max_regex_pattern_chars,
             max_regex_samples: parent.budget.max_regex_samples,
-            max_elapsed_ms: 0,
+            max_elapsed_ms: parent.budget.max_elapsed_ms,
             max_spawned_workers: parent.budget.max_spawned_workers,
             max_findings: sub.max_findings,
         },
@@ -789,6 +789,15 @@ mod tests {
         let ctx = sub_budget_context(&parent, &sub);
         assert!(ctx.is_cancelled());
         assert!(ctx.should_stop());
+    }
+
+    #[test]
+    fn sub_budget_context_preserves_elapsed_tier() {
+        let parent = BudgetContext::new(ToolBudget::HEAVY);
+        let mut alloc = CompositeBudgetAllocator::new(&parent, 2);
+        let ctx = sub_budget_context(&parent, &alloc.allocate());
+        assert_eq!(ctx.budget.max_elapsed_ms, ToolBudget::HEAVY.max_elapsed_ms);
+        assert_eq!(ctx.budget.tier(), BudgetTier::Moderate);
     }
 
     #[test]

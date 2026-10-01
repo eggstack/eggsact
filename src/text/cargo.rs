@@ -17,6 +17,9 @@ const CARGO_PACKAGE_FIELDS: [&str; 6] = [
 
 const EDITION_VALUES: [&str; 4] = ["2015", "2018", "2021", "2024"];
 
+static NORMALIZE_IDENT_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"[\-_.]+").expect("static identifier regex"));
+
 static SUSPICIOUS_NAME_PATTERNS: LazyLock<Vec<fancy_regex::Regex>> = LazyLock::new(|| {
     vec![
         fancy_regex::Regex::new(r"^\d").unwrap(),
@@ -40,10 +43,7 @@ fn detect_suspicious_name(name: &str) -> bool {
 fn normalize_ident(name: &str) -> String {
     let normalized: String = name.nfkc().collect();
     let casefolded = normalized.to_lowercase();
-    regex::Regex::new(r"[\-_.]+")
-        .unwrap()
-        .replace_all(&casefolded, "_")
-        .to_string()
+    NORMALIZE_IDENT_RE.replace_all(&casefolded, "_").to_string()
 }
 
 fn detect_duplicates(names: &[String]) -> Vec<String> {
