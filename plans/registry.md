@@ -34,14 +34,13 @@ retained only for traceability.
 | Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | Guard only; no open milestone | 008 closed the post-007 wire-cardinality/guard-coverage corrective without reopening 007 architecture; workstream is guard-only. |
 | MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c blocked (deterministic prep re-verified 2026-09-30; external evidence blocked; closure `plans/closure/mcp-presentation-surface/003c-status.md`) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
-| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M001-M005 closed; M005a ready | Eggpack is producer authority (cutover at `d8014cf`, pinned to Eggpack M003g `e5c81f2`); v1.2.7 live draft/release qualification is complete. M005a is dependency-ready and owns the sole remaining Windows byte-reproducibility condition. |
+| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | Maintenance-only; no open milestone | Eggpack is producer authority (cutover at `d8014cf`, pinned to Eggpack M003g `e5c81f2`); v1.2.7 live draft/release qualification is complete; M005a closed the Windows byte-reproducibility condition with real rerun-reuse evidence. Workstream is guard/maintenance-only. |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Implementation plan | Dependencies / handoff note |
 |---|---|---|---|---|
-| Distribution, update, and release | M005a deterministic Windows artifacts | ready | `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md` | No hard blocker; implement with the next release. Prove two fixed-input Windows builds are byte-identical and same-tag rerun reuses all five staged assets without weakening Eggpack digest refusal. |
-| Distribution, update, and release | M005 Eggpack producer adoption | closed (conditionally) | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | Closure `plans/closure/distribution-update-release/005-status.md`; cutover `d8014cf`; live draft run 36652731202 (15 assets, receipt `RE_kwDOTGg0Mc4X0gk6`); v1.2.7 published with installer/latest/update smoke verified. Open condition: M005a (Windows byte-reproducibility) |
+| Distribution, update, and release | M005 Eggpack producer adoption | closed | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | Closure `plans/closure/distribution-update-release/005-status.md`; cutover `d8014cf`; live draft run 36652731202 (15 assets, receipt `RE_kwDOTGg0Mc4X0gk6`); v1.2.7 published with installer/latest/update smoke verified. Its one open condition, Windows byte-reproducibility, is discharged by M005a. |
 | Deterministic tool substrate | 008 prompt wire compatibility and layering-guard corrective | closed | `plans/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md` | Implemented in `475fc19`; closure `plans/closure/deterministic-tool-substrate/008-status.md`. Pre-007 null/string/array projection restored; generic 86-handler guard green. |
 | Deterministic tool substrate | 007 typed-core ownership and adapter deduplication | closed | `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | Implemented in `237afb5` + `7176857`; closure `plans/closure/deterministic-tool-substrate/007-status.md`. Zero handler-to-handler composition; typed prompt core authoritative. |
 | MCP presentation surface | 03c evaluation closure corrective | blocked | `plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md` | Closure `plans/closure/mcp-presentation-surface/003c-status.md` (blocked). Deterministic Parts A-C + G1 re-verified 2026-09-30 (76/76 targets, 88+9 fixtures, top-1 96.59%, 48+4 scenarios, 5.44% bytes). Parts D-F blocked on model credentials/budget. Do not fabricate traces; do not mark complete without OpenAI + Anthropic pairs and instructions A/B. |
@@ -54,6 +53,7 @@ retained only for traceability.
 
 | Subsystem | Milestone | Status | Controlling evidence |
 |---|---|---|---|
+| Distribution, update, and release | M005a deterministic Windows artifacts | closed | `plans/closure/distribution-update-release/005a-status.md`; implementation `f135210`; maintenance run `36880110434` (two builds from different target directories, identical SHA-256 `dc1eda1f…`); pipeline rehearsal run `36886042696` attempts 1-2 (same draft 401132612, 15 assets reused, zero refusals; rehearsal draft/tag/branch deleted afterwards). |
 | Distribution, update, and release | Eggfetch 0.1.7 updater bump | closed | Archive: `plans/archive/eggfetch-0.1.7-updater-dependency-bump.md` (plan + closure in file). Roadmap history in `plans/archive/roadmap.md`. |
 | Distribution, update, and release | Eggfetch 0.2.0 updater adoption | closed | Archive: `plans/archive/eggfetch-0.2.0-updater-adoption.md`; implementation `bfe12d7`; ordinary CI `35734609288`; maintenance `35740940881`. |
 | Distribution, update, and release | Eggfetch 0.2.0 adoption closeout corrective | closed | Archive: `plans/archive/eggfetch-0.2.0-adoption-closeout-corrective.md`; implementation `bfe12d7`; maintenance `35740940881` green (MSRV, cargo-deny, native Windows, native macOS). |
@@ -72,8 +72,8 @@ retained only for traceability.
   (`35f7dc2e`, `a5c00b8d`, `77ff57a5`, `121babde`, `40222999`); only the
   `03c` external evidence closure remains blocked
   (`plans/closure/mcp-presentation-surface/003c-status.md`; deterministic
-  prep re-verified 2026-09-30, no future plan unblocked — M005a stays
-  independent).
+  prep re-verified 2026-09-30). M005a closed 2026-10-01 without unblocking
+  `03c`, which stays blocked on provider credentials.
 - Deterministic tool substrate Milestones 003, 004, 005, 006, 007, and 008 remain
   closed historical control points. The Unicode workstream (003 semantic
   hardening + 004 data qualification + 005 standards-conformance corrective
@@ -87,8 +87,11 @@ retained only for traceability.
   handwritten release workflow with Eggpack-generated CI (producer authority
   pinned to Eggpack M003g `e5c81f2`), qualified a real draft for v1.2.7, and
   that release was published with public installer, latest/download, and
-  `eggsact update` smoke all verified. The single open condition is M005a
-  (deterministic Windows artifacts for byte-identical rerun reuse);
+  `eggsact update` smoke all verified. Its one open condition is now closed:
+  M005a made the Windows release candidate byte-reproducible (target-scoped
+  `/BREPRO` + `/DEBUG:NONE` in `.cargo/config.toml`) and proved same-tag rerun
+  reuse of all fifteen staged assets, so a rerun no longer fails closed on the
+  Windows asset. The distribution workstream is maintenance-only;
   self-update semantics remain eggsact/Eggup-owned and were not migrated.
 - The durable rollout gates for `03c` remain: 100% stable-Model coverage,
   retrieval top-1 >=90% / top-3 >=98% / top-5 100%, 0 Model->HarnessOnly

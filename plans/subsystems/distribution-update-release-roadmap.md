@@ -1,6 +1,6 @@
 # Distribution, Update, and Release Roadmap
 
-Status: active; M005 Eggpack producer adoption closed conditionally; M005a ready
+Status: active; M005a closed; distribution is maintenance-only
 
 Long-term references:
 
@@ -69,7 +69,7 @@ capability semantics, harness API selection, or MCP defaults.
 
 ## 4. Current state
 
-M001-M004 remain closed historical control points. M005 replaced duplicated producer release construction with Eggpack while preserving eggsact-owned installer, updater, crates.io, tag, and publication policy; it is now conditionally closed after the v1.2.7 live qualification. M005a is the only open distribution milestone and is dependency-ready, but should be sequenced with the next release rather than executed mid-release.
+M001-M004 remain closed historical control points. M005 replaced duplicated producer release construction with Eggpack while preserving eggsact-owned installer, updater, crates.io, tag, and publication policy, and qualified a real draft for v1.2.7. M005a then closed the one condition M005 was waiting on: the Windows release candidate is byte-reproducible, proven both by an independent double build and by a full pipeline rerun that reused all fifteen staged assets. No open distribution milestone remains; the workstream is maintenance-only.
 
 Binary distribution qualified (C8 Zig correction `6658702`,
 v1.2.4 matrix, workflow `33944943782`, exact-tag installer checks).
@@ -82,7 +82,7 @@ dependency reaches users with the next normal release.
 
 ## 5. Target architecture
 
-M005 established Eggpack as producer authority while keeping eggsact as product-policy authority. The public installers and self-update semantics remain local; only build/qualification/artifact/checksum/generated-CI/draft-staging authority migrated. M005a corrects the remaining Windows byte-reproducibility condition without changing that ownership boundary. M001-M004 remain historical closed evidence.
+M005 established Eggpack as producer authority while keeping eggsact as product-policy authority. The public installers and self-update semantics remain local; only build/qualification/artifact/checksum/generated-CI/draft-staging authority migrated. M005a closed the remaining Windows byte-reproducibility condition without changing that ownership boundary, entirely product-side: the determinism policy is a checked-in `.cargo/config.toml`, so the generated workflow and Eggpack configuration are untouched. M001-M004 remain historical closed evidence.
 
 ## 6. Dependency graph
 
@@ -100,17 +100,17 @@ Binary distribution (closed)
 
 Historical M001-M004 dependencies are closed. Eggpack CI M003d, Build M005, Build M006, and the CI M003e/M003f/M003g corrective chain are also closed. The ADR-0005 and Build M006 hard dependencies that once blocked M005 are resolved; M005 is implemented and its live draft qualification ran on release v1.2.7.
 
-The active tail of the dependency graph is:
+The tail of the dependency graph is closed:
 
 ```text
-M005 Eggpack producer adoption (closed conditionally)
+M005 Eggpack producer adoption (closed)
     |
-    `--> M005a deterministic Windows artifacts (ready)
+    `--> M005a deterministic Windows artifacts (closed)
 ```
 
 ### M005a — Deterministic Windows release artifacts
 
-Status: ready
+Status: closed
 
 Class: corrective
 
@@ -118,7 +118,11 @@ Objective: make the `x86_64-pc-windows-msvc` candidate byte-reproducible for a f
 
 Implementation plan: `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md`.
 
-Dependencies: none hard; sequence with the next release rather than mid-release.
+Dependencies: none hard; implemented in `f135210`, ahead of the next release.
+
+Closure: `plans/closure/distribution-update-release/005a-status.md`. Landed in `f135210` as target-scoped MSVC linker flags in `.cargo/config.toml` (`/BREPRO` for content-derived time-date-stamps, `/DEBUG:NONE` to drop the debug directory holding the random RSDS GUID), guarded by a binary unit test, the release-contract script, and a `windows-reproducibility` maintenance job. Evidence: maintenance run `36880110434` (two builds from different target directories, identical SHA-256) and pipeline rehearsal run `36886042696` attempts 1-2 (same draft, 15 assets reused, zero refusals). Root-cause refinement: `[profile.release] strip` is a no-op for `windows-msvc`, so debug-info removal had to be an explicit linker flag.
+
+No open dependency. The workstream is maintenance-only.
 
 ## 7. Milestones
 
@@ -208,9 +212,9 @@ Implementation plan: `plans/implementation/distribution-update-release/005-eggpa
 
 Exit conditions: generated workflow parity, exact five-target/toolchain coverage, MCP candidate validation, public wrapper/updater parity, real draft + rerun evidence, and no automatic publication. Closure record: `plans/closure/distribution-update-release/005-status.md`.
 
-Met on release `v1.2.7`: cutover at `d8014cf`, Eggpack producer pin M003g `e5c81f2`, live run 36652731202 (all 20 jobs, 15-asset draft, receipt `RE_kwDOTGg0Mc4X0gk6`), rerun reused the draft and every asset except the Windows binary, which Eggpack correctly refused to clobber because MSVC embeds a build timestamp and a random PDB GUID (24 bytes, proven). Release published by the maintainer; public installer, `latest/download`, and `eggsact update` smoke all verified. M005 therefore closes **conditionally** on M005a.
+Met on release `v1.2.7`: cutover at `d8014cf`, Eggpack producer pin M003g `e5c81f2`, live run 36652731202 (all 20 jobs, 15-asset draft, receipt `RE_kwDOTGg0Mc4X0gk6`), rerun reused the draft and every asset except the Windows binary, which Eggpack correctly refused to clobber because MSVC embeds a build timestamp and a random PDB GUID (24 bytes, proven). Release published by the maintainer; public installer, `latest/download`, and `eggsact update` smoke all verified. M005 closed **conditionally** on M005a, and that condition is now discharged: M005a closed with real rerun-reuse evidence (`plans/closure/distribution-update-release/005a-status.md`), so M005 is closed outright.
 
-Deferred work: M005a deterministic Windows release artifacts (byte-reproducible MSVC link/PDB so reruns reuse all five assets). Also deferred, unchanged: deeper manifest-driven updater mapping and automatic tag-trigger ergonomics (the generated workflow stays `workflow_dispatch` with the exact tag for now).
+Deferred work: none outstanding from M005. Still deferred, unchanged: deeper manifest-driven updater mapping and automatic tag-trigger ergonomics (the generated workflow stays `workflow_dispatch` with the exact tag for now).
 
 ## 8. Cross-cutting requirements
 
@@ -253,7 +257,7 @@ M005 must not generalize eggsact-specific release selection/fallback policy into
 
 ## 11. Completion definition
 
-M001-M004 stay closed historical milestones. M005 is conditionally closed with Eggpack producer authority qualified against a real draft/release and all eggsact-owned installer/updater/release-order semantics preserved. The workstream returns to maintenance-only after M005a closes the remaining Windows byte-reproducibility condition.
+M001-M004 stay closed historical milestones. M005 is closed with Eggpack producer authority qualified against a real draft/release, all eggsact-owned installer/updater/release-order semantics preserved, and its one conditional condition discharged by M005a. No open distribution milestone remains; the workstream is maintenance-only (weekly MSRV/cargo-deny/platform checks, the Windows release reproducibility job, the Eggpack drift guard, and the release-contract guard).
 
 ## 12. Milestone status
 
@@ -264,5 +268,5 @@ M001-M004 stay closed historical milestones. M005 is conditionally closed with E
 | M003 0.1.7 bump | closed | `plans/archive/eggfetch-0.1.7-updater-dependency-bump.md` | in-file closure | — |
 | M004 0.2.0 adoption | closed | `plans/archive/eggfetch-0.2.0-updater-adoption.md` | in-file closure | — |
 | M004 corrective closeout | closed | `plans/archive/eggfetch-0.2.0-adoption-closeout-corrective.md` | in-file closure | — |
-| M005 Eggpack producer adoption + live draft qualification | closed (conditionally) | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | `plans/closure/distribution-update-release/005-status.md` | M005a is the sole remaining condition (Windows byte-reproducibility); all former hard dependencies are closed |
-| M005a Deterministic Windows release artifacts | ready | `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md` | — | No hard blocker; sequence with the next release rather than mid-release |
+| M005 Eggpack producer adoption + live draft qualification | closed | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | `plans/closure/distribution-update-release/005-status.md` | Condition discharged by M005a; all former hard dependencies closed |
+| M005a Deterministic Windows release artifacts | closed | `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md` | `plans/closure/distribution-update-release/005a-status.md` | None; workstream is maintenance-only |

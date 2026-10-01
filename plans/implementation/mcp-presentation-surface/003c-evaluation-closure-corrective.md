@@ -89,7 +89,9 @@ drift. Measured values are unchanged from 2026-09-11:
 - Formal closure record: `plans/closure/mcp-presentation-surface/003c-status.md`
   (Status: blocked). Generated integrations stay on direct; discovery stays
   explicitly selectable. No future plan is unblocked by this disposition
-  (M005a remains independent; see closure §11).
+  (M005a was independent and later closed in
+  `plans/closure/distribution-update-release/005a-status.md`, which unblocked
+  nothing here; see closure §11).
 
 ## Objective
 

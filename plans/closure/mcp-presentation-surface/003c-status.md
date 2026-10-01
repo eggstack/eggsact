@@ -278,7 +278,9 @@ budget/approval, nothing fabricated).
   M005a); M005a (deterministic Windows artifacts) is `planned`/`blocked` on
   release sequencing, not on 03c. It remains implementable alongside the next
   release and is **not** unblocked or blocked by this record — explicitly
-  independent.
+  independent. (Factual correction 2026-10-01: M005a closed in
+  `plans/closure/distribution-update-release/005a-status.md`, which unblocked
+  nothing in this subsystem; 03c's own blocker is unchanged.)
 - No proposed/ready plan lists 03c Parts D–F as a hard or interface
   dependency; the only sequencing constraint 03c imposes is the one it states
   itself: generated integrations stay on direct until the evidence gates pass.
@@ -304,6 +306,7 @@ Only then is 03c eligible for `closed` and pruning per the plan.
   header `active` → `blocked` with closure link; Progress (2026-09-30) added.
   Body retained unwritten per migration (authoritative work specification).
 - No other registry/roadmap rows change: substrate stays guard-only,
-  harness stays guard-only, distribution M005 (conditionally closed) + M005a
-  (planned) untouched. Original closure records (003–008, M005) untouched as
-  immutable history.
+  harness stays guard-only, distribution untouched by this record
+  (M005 was conditionally closed and M005a planned at the time of writing;
+  M005a has since closed). Original closure records (003–008, M005) untouched
+  as immutable history.

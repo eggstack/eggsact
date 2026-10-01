@@ -1,6 +1,6 @@
 # Distribution, Update, and Release Milestone 005 — Eggpack Producer Adoption and Live Draft Qualification
 
-Status: closed (conditionally on M005a) — see `plans/closure/distribution-update-release/005-status.md`
+Status: closed (conditionally on M005a, since discharged) — see `plans/closure/distribution-update-release/005-status.md` and `plans/closure/distribution-update-release/005a-status.md`
 
 Reviewed repository baseline: `34aed3ab36da2637c22412f7ca65d35f1ca5021d`
 

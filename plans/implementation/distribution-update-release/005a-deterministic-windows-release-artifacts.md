@@ -1,6 +1,6 @@
 # Distribution, Update, and Release Milestone 005a — Deterministic Windows Release Artifacts
 
-Status: ready
+Status: closed — see `plans/closure/distribution-update-release/005a-status.md`
 
 Source finding: `plans/closure/distribution-update-release/005-status.md` ("Rerun reuse"), live run `36652731202` attempt 2.
 
