@@ -47,9 +47,10 @@ caseless = "0.2"
 toml = "0.8"
 toml_edit = "0.22"
 tokio = { version = "1", features = ["rt", "macros", "io-std", "io-util", "sync", "time", "fs", "net"] }
-eggup-acquisition = "0.1.0"
-eggup-core = "0.1.0"
-eggup-eggfetch = "0.1.0"
+eggup-acquisition = { git = "https://github.com/eggstack/eggup.git", rev = "e336b3203183aa84d174e7d7bfa087ce4b61b077" }
+eggup-core = { git = "https://github.com/eggstack/eggup.git", rev = "e336b3203183aa84d174e7d7bfa087ce4b61b077" }
+eggup-eggfetch = { git = "https://github.com/eggstack/eggup.git", rev = "e336b3203183aa84d174e7d7bfa087ce4b61b077" }
+eggup-eggpack = { git = "https://github.com/eggstack/eggup.git", rev = "e336b3203183aa84d174e7d7bfa087ce4b61b077" }
 
 [dev-dependencies]
 url = "2"

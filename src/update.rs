@@ -1,9 +1,17 @@
-//! Binary-first self-update support and deterministic release-contract helpers.
+//! Manifest-first self-update support and deterministic release-contract helpers.
 //!
-//! Local verified-transaction mechanics are owned by `eggup-core` 0.1.0 and
-//! network acquisition by `eggup-eggfetch` 0.1.0 (strict Eggfetch policy).
-//! The updater keeps all release/update policy (version selection, asset
-//! naming, Cargo fallback, checksum sidecar parsing, CLI presentation).
+//! Local verified-transaction mechanics are owned by `eggup-core` and network
+//! acquisition by `eggup-eggfetch` (strict Eggfetch policy); manifest
+//! parse/project/materialization is owned by `eggup-eggpack`. The updater
+//! keeps all release/update policy (version selection, release origin,
+//! manifest/legacy source selection, Cargo fallback, install destination,
+//! candidate identity, CLI presentation).
+//!
+//! Source policy: the producer-owned `release-manifest.json` is fetched as
+//! bounded metadata after Eggsact selects and authorizes the release. Exact
+//! 404 enters the legacy checksum-sidecar compatibility path for releases
+//! that predate manifests; every other manifest failure is hard, and a valid
+//! manifest whose artifact is absent never falls back.
 //!
 //! Transport policy (single configuration point in `eggup_transport()`):
 //! - user agent `eggsact-self-update`;
@@ -19,9 +27,11 @@
 //! Local safety (owned by Eggup): private staging, SHA-256 integrity
 //! verification, bounded `--version` candidate validation with cleared
 //! environment, explicit current-executable ownership proof, mutation locking
-//! with backup/rollback, and structured receipts. Checksum/TLS/timeout/5xx
-//! failures never become Cargo fallback; only a genuine 404 (or unsupported
-//! host target) does.
+//! with backup/rollback, and structured receipts. Manifest size/digest
+//! evidence replaces manifest-branch sidecar parsing; checksum/TLS/timeout/5xx
+//! failures never become Cargo fallback. Only a genuine selected-binary 404
+//! (or unsupported host target) reaches Cargo, and only an exact manifest 404
+//! reaches the legacy sidecar path.
 
 #[cfg(test)]
 use eggfetch_core::{Client, HttpVersionPolicy, ProxyEnvironment, RedirectPolicy, Timeout};
@@ -30,12 +40,13 @@ use eggup_acquisition::{
 };
 use eggup_core::{
     AbsentPolicy, ArtifactMember, ArtifactSet, CommitOwnership, ExactIdentityValidator,
-    InstallPlan, IntegrityRequirement, MemberId, Ownership, OwnershipVerifier, ProductId,
-    ReleaseId, TransactionDisposition,
+    InstallPlan, IntegrityRequirement, MemberId, Ownership, OwnershipVerifier, PermissionsIntent,
+    ProductId, ReleaseId, TransactionDisposition,
 };
 use eggup_eggfetch::{EggfetchConfig, EggfetchTransport, ProxyDecision};
 #[cfg(test)]
 use futures_util::StreamExt;
+use std::collections::HashMap;
 use std::env;
 use std::fs::{self};
 use std::io::{self};
@@ -65,6 +76,14 @@ pub const METADATA_MAX_BYTES: usize = 1_048_576;
 /// Conservative bound for the tiny SHA-256 sidecar (normally ~100 bytes:
 /// 64 hex digits plus whitespace/filename).
 pub const CHECKSUM_MAX_BYTES: usize = 65_536;
+/// Finite Eggsact-owned ceiling for release artifact downloads. The current
+/// Eggup default (128 MiB) is sufficient for the observed ~11-17 MiB release
+/// binaries; the manifest path tightens this per artifact to the manifest
+/// exact size via `bind_requests` and never widens it.
+pub const ARTIFACT_MAX_BYTES: u64 = 128 * 1024 * 1024;
+/// Producer-owned manifest asset name published at every release root since
+/// the Eggpack Ecosystem M001 / Eggsact Distribution M005 cutover.
+pub const MANIFEST_FILE_NAME: &str = "release-manifest.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StableVersion {
@@ -163,11 +182,9 @@ pub fn asset_name(target: &str) -> String {
     }
 }
 
+#[allow(dead_code)] // Documents the production release-asset URL contract.
 pub fn release_asset_url(version: &StableVersion, target: &str) -> String {
-    format!(
-        "https://github.com/{REPOSITORY}/releases/download/v{version}/{}",
-        asset_name(target)
-    )
+    origin_asset_url(RELEASE_ORIGIN, version, &asset_name(target))
 }
 
 #[allow(dead_code)] // Documents and tests the installer URL contract.
@@ -180,6 +197,38 @@ pub fn latest_asset_url(target: &str) -> String {
 
 pub fn checksum_url(binary_url: &str) -> String {
     format!("{binary_url}.sha256")
+}
+
+/// Release origin authority: this repository's GitHub releases. The
+/// release/tag and origin are chosen by Eggsact policy before any manifest
+/// or artifact URL is constructed; `eggup-eggpack` never sees origins.
+pub const RELEASE_ORIGIN: &str = "https://github.com/eggstack/eggsact/releases";
+
+fn origin_asset_url(origin: &str, version: &StableVersion, name: &str) -> String {
+    format!("{origin}/download/v{version}/{name}")
+}
+
+/// Exact producer-owned manifest URL under an already-authorized release
+/// origin. The filename is the producer convention established by the
+/// Eggpack Ecosystem M001 / Eggsact Distribution M005 cutover.
+fn manifest_url_for_origin(origin: &str, version: &StableVersion) -> String {
+    origin_asset_url(origin, version, MANIFEST_FILE_NAME)
+}
+
+#[allow(dead_code)] // Documents the production manifest URL contract.
+pub fn manifest_url(version: &StableVersion) -> String {
+    manifest_url_for_origin(RELEASE_ORIGIN, version)
+}
+
+/// Exact artifact URL under an already-authorized release origin using the
+/// manifest-provided artifact name. Only constructed after product/release
+/// binding accepts the manifest.
+fn manifest_artifact_url_for_origin(
+    origin: &str,
+    version: &StableVersion,
+    artifact_name: &str,
+) -> String {
+    origin_asset_url(origin, version, artifact_name)
 }
 
 pub fn parse_stable_version(raw: &str) -> Result<StableVersion, String> {
@@ -550,7 +599,7 @@ impl PipeTransport for EggfetchConfig {
 fn eggup_limits(max_metadata: usize) -> FetchLimits {
     FetchLimits {
         max_metadata_bytes: max_metadata,
-        max_artifact_bytes: None,
+        max_artifact_bytes: ARTIFACT_MAX_BYTES,
         connect_timeout: CONNECT_TIMEOUT,
         total_timeout: TOTAL_TIMEOUT,
     }
@@ -574,9 +623,22 @@ fn map_eggup_error(e: eggup_acquisition::AcquisitionError, url: &str, what: &str
     }
 }
 
-/// Fetch a small text document via the Eggup seam (runs the sync adapter on a
-/// blocking thread so the current-thread runtime is never blocked).
-async fn eggup_get_text(url: &str, max_bytes: usize, what: &str) -> Result<String, String> {
+/// Structural metadata outcome: `Absent` is an exact transport 404, never
+/// inferred from formatted error text. Only an `Absent` manifest may enter
+/// the legacy sidecar compatibility path; every other failure is hard.
+enum MetadataFetch {
+    Present(Vec<u8>),
+    Absent,
+}
+
+/// Fetch a small document via the Eggup seam with a structural outcome (runs
+/// the sync adapter on a blocking thread so the current-thread runtime is
+/// never blocked).
+async fn eggup_fetch_metadata(
+    url: &str,
+    max_bytes: usize,
+    what: &str,
+) -> Result<MetadataFetch, String> {
     let url = url.to_string();
     let what = what.to_string();
     tokio::task::spawn_blocking(move || {
@@ -587,16 +649,27 @@ async fn eggup_get_text(url: &str, max_bytes: usize, what: &str) -> Result<Strin
             .fetch_metadata(&req, eggup_limits(max_bytes), &CancelFlag::new())
             .map_err(|e| map_eggup_error(e, &url, &what))?
         {
-            FetchOutcome::Success(b) => String::from_utf8(b.bytes().to_vec())
-                .map_err(|e| format!("invalid UTF-8 in {what} from {url}: {e}")),
-            FetchOutcome::NotFound => Err(format!(
-                "HTTP 404 from {} while fetching {what}",
-                redact_url_for_error(&url)
-            )),
+            FetchOutcome::Success(b) => Ok(MetadataFetch::Present(b.bytes().to_vec())),
+            FetchOutcome::NotFound => Ok(MetadataFetch::Absent),
         }
     })
     .await
     .map_err(|e| format!("update task failed: {e}"))?
+}
+
+/// Fetch a small text document (crates.io metadata, checksum sidecar) with an
+/// explicit byte bound. Absence keeps the historical 404 message so existing
+/// policy text is unchanged.
+async fn eggup_get_text(url: &str, max_bytes: usize, what: &str) -> Result<String, String> {
+    let what_owned = what.to_string();
+    match eggup_fetch_metadata(url, max_bytes, what).await? {
+        MetadataFetch::Present(bytes) => String::from_utf8(bytes)
+            .map_err(|e| format!("invalid UTF-8 in {what_owned} from {url}: {e}")),
+        MetadataFetch::Absent => Err(format!(
+            "HTTP 404 from {} while fetching {what_owned}",
+            redact_url_for_error(url)
+        )),
+    }
 }
 
 /// Download a release binary via the Eggup seam. Returns `NotFound` only for a
@@ -623,6 +696,177 @@ async fn eggup_download(url: &str, destination: &Path) -> Result<DownloadStatus,
     })
     .await
     .map_err(|e| format!("update task failed: {e}"))?
+}
+
+// ── Release-manifest consumer path (Eggpack Interop M003) ──────────────
+
+/// Fetch the producer-owned release manifest as bounded metadata with a
+/// structural outcome. `Absent` (exact 404) is the sole entry to the legacy
+/// sidecar compatibility path; every other failure is a hard error.
+async fn fetch_release_manifest(
+    origin: &str,
+    version: &StableVersion,
+) -> Result<MetadataFetch, String> {
+    let url = manifest_url_for_origin(origin, version);
+    eggup_fetch_metadata(&url, eggup_eggpack::MAX_MANIFEST_BYTES, "release manifest").await
+}
+
+/// Project the manifest and bind product/release/target identity to the
+/// release already selected by Eggsact. The manifest never selects a
+/// newer/different release: product, release, or target mismatch is a hard
+/// error. Diagnostics never echo manifest contents.
+fn resolve_manifest_projection(
+    manifest_bytes: &[u8],
+    target: &ReleaseTarget,
+    latest: StableVersion,
+) -> Result<eggup_eggpack::ManifestProjection, String> {
+    let projection =
+        eggup_eggpack::project_json(manifest_bytes, target.rust_target).map_err(|e| {
+            format!(
+                "release manifest is not usable for {}: {e}",
+                target.rust_target
+            )
+        })?;
+    let (product, release) = eggup_eggpack::install_ids(&projection)
+        .map_err(|e| format!("release manifest projection is not installable: {e}"))?;
+    if product.as_str() != "eggsact" {
+        return Err("release manifest product mismatch: expected 'eggsact'".into());
+    }
+    if release.as_str() != latest.to_string() {
+        return Err(
+            "release manifest release mismatch: manifest does not describe the authorized release"
+                .into(),
+        );
+    }
+    Ok(projection)
+}
+
+/// Manifest-selected artifacts acquired under the already-authorized release
+/// origin, plus the accepted projection that describes them.
+#[derive(Debug)]
+struct ManifestAcquired {
+    paths: HashMap<String, PathBuf>,
+    projection: eggup_eggpack::ManifestProjection,
+    member: MemberId,
+}
+
+/// Acquire one manifest-planned artifact to an explicit staging path. The
+/// adapter has already tightened the caller ceiling to the manifest exact
+/// size. A manifest-backed artifact NotFound is a hard incomplete-release
+/// failure: it never becomes Cargo or legacy-sidecar fallback.
+async fn acquire_manifest_artifact(
+    staging: &Path,
+    origin: &str,
+    version: StableVersion,
+    planned: &eggup_eggpack::PlannedAcquisition,
+) -> Result<PathBuf, String> {
+    let url = manifest_artifact_url_for_origin(origin, &version, &planned.artifact_name);
+    let destination = staging.join(&planned.artifact_name);
+    let request = planned.request.clone();
+    let limits = planned.limits;
+    let name = planned.artifact_name.clone();
+    tokio::task::spawn_blocking(move || {
+        let transport = eggup_transport()?;
+        match transport
+            .fetch_artifact(&request, &destination, limits, &CancelFlag::new())
+            .map_err(|e| map_eggup_error(e, &url, "release manifest artifact"))?
+        {
+            FetchOutcome::Success(_) => Ok(destination),
+            FetchOutcome::NotFound => Err(format!(
+                "release manifest artifact '{name}' is absent from the authorized release; refusing fallback to legacy evidence"
+            )),
+        }
+    })
+    .await
+    .map_err(|e| format!("update task failed: {e}"))?
+}
+
+/// Run the manifest path: project/bind against the authorized release, then
+/// acquire every planned artifact. Eggsact is a direct single-binary release,
+/// so the projection must select exactly one installable artifact; bundle and
+/// archive forms contradict the producer contract and fail closed here.
+async fn prepare_manifest_candidate_async(
+    staging: &Path,
+    origin: &str,
+    target: &ReleaseTarget,
+    latest: StableVersion,
+    manifest_bytes: &[u8],
+) -> Result<ManifestAcquired, String> {
+    let projection = resolve_manifest_projection(manifest_bytes, target, latest)?;
+    let (artifact_name, member) = match &projection {
+        eggup_eggpack::ManifestProjection::Installable { artifacts, .. } => {
+            if artifacts.len() != 1 {
+                return Err(format!(
+                    "release manifest selects {} artifacts; this updater deploys exactly one binary",
+                    artifacts.len()
+                ));
+            }
+            (
+                artifacts[0].artifact_name.clone(),
+                artifacts[0].member_id.clone(),
+            )
+        }
+        eggup_eggpack::ManifestProjection::Archive { .. } => {
+            return Err(
+                "release manifest selects an archive artifact; the adapter requires separately qualified extraction"
+                    .into(),
+            );
+        }
+    };
+    // Exact artifact request under the already-authorized release origin; the
+    // adapter tightens the caller ceiling to the manifest exact size and
+    // never widens it.
+    let url = manifest_artifact_url_for_origin(origin, &latest, &artifact_name);
+    let request = AcquisitionRequest::new(url.clone())
+        .map_err(|e| map_eggup_error(e, &url, "release manifest artifact"))?;
+    let planned = projection
+        .bind_requests(
+            HashMap::from([(artifact_name, request)]),
+            eggup_limits(METADATA_MAX_BYTES),
+        )
+        .map_err(|e| format!("release manifest acquisition binding failed: {e}"))?;
+    let mut paths = HashMap::with_capacity(planned.len());
+    for item in &planned {
+        let path = acquire_manifest_artifact(staging, origin, latest, item).await?;
+        paths.insert(item.artifact_name.clone(), path);
+    }
+    Ok(ManifestAcquired {
+        paths,
+        projection,
+        member,
+    })
+}
+
+/// Materialize the accepted manifest projection with caller-bound
+/// destinations and commit through the Eggup verified transaction. The
+/// projected member binds to the exact basename of the running executable
+/// under its existing installation root, preserving canonical and renamed
+/// update-in-place behavior. Size/digest evidence comes only from the
+/// adapter; no manifest-branch checksum parsing exists.
+fn commit_manifest_candidate(
+    manifest: &ManifestAcquired,
+    current: &Path,
+    latest: StableVersion,
+) -> Result<ReplacementOutcome, String> {
+    let file_name = current
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "cannot locate executable file name".to_string())?;
+    let (product, release) = eggup_eggpack::install_ids(&manifest.projection)
+        .map_err(|e| format!("release manifest projection is not installable: {e}"))?;
+    let mut destinations = HashMap::with_capacity(1);
+    destinations.insert(manifest.member.clone(), file_name.to_string());
+    let mut permissions = HashMap::with_capacity(1);
+    permissions.insert(manifest.member.clone(), PermissionsIntent::Executable);
+    let set = manifest
+        .projection
+        .materialize_artifact_set_with_destinations(
+            manifest.paths.clone(),
+            destinations,
+            permissions,
+        )
+        .map_err(|e| format!("release manifest materialization failed: {e}"))?;
+    commit_artifact_set(&set, &manifest.member, product, release, current, latest)
 }
 
 /// Ownership proof using eggsact's known executable identity and path.
@@ -707,18 +951,55 @@ fn cargo_candidate(staging: &Path, version: StableVersion) -> Result<PathBuf, St
 /// (release policy; Eggup never selects it). For Cargo builds the digest is
 /// self-measured (stability across validation/commit); for release assets it
 /// is the sidecar digest (independent integrity evidence).
+#[derive(Debug)]
 struct AcquiredCandidate {
     path: PathBuf,
     digest: [u8; 32],
 }
 
+/// Prepared update source: the manifest path carries adapter-accepted
+/// projection inputs; the legacy path carries sidecar-verified inputs.
+/// Construction of legacy inputs lives only behind the manifest-absent
+/// branch of `prepare_candidate_async`, so a present-but-invalid manifest
+/// can never enter the legacy path.
+#[derive(Debug)]
+enum PreparedUpdate {
+    Manifest(ManifestAcquired),
+    Legacy(AcquiredCandidate),
+}
+
+/// Manifest dispatch: fetch the producer-owned manifest with a structural
+/// outcome, then run the manifest path or the explicit legacy compatibility
+/// branch. Any non-404 manifest failure is a hard error.
 async fn prepare_candidate_async(
     staging: &Path,
+    origin: &str,
+    target: &ReleaseTarget,
+    latest: StableVersion,
+) -> Result<PreparedUpdate, String> {
+    match fetch_release_manifest(origin, &latest).await? {
+        MetadataFetch::Present(bytes) => {
+            let manifest =
+                prepare_manifest_candidate_async(staging, origin, target, latest, &bytes).await?;
+            Ok(PreparedUpdate::Manifest(manifest))
+        }
+        MetadataFetch::Absent => {
+            // Explicit backwards-compatibility policy for releases that
+            // predate manifests; entered only on exact manifest 404.
+            let acquired = prepare_legacy_candidate_async(staging, origin, target, latest).await?;
+            Ok(PreparedUpdate::Legacy(acquired))
+        }
+    }
+}
+
+async fn prepare_legacy_candidate_async(
+    staging: &Path,
+    origin: &str,
     target: &ReleaseTarget,
     latest: StableVersion,
 ) -> Result<AcquiredCandidate, String> {
     let binary = staging.join(target.asset_name);
-    let binary_url = release_asset_url(&latest, target.rust_target);
+    let binary_url = origin_asset_url(origin, &latest, target.asset_name);
     match eggup_download(&binary_url, &binary).await? {
         DownloadStatus::NotFound => {
             let path = cargo_candidate(staging, latest)?;
@@ -789,9 +1070,6 @@ fn commit_candidate(
     current: &Path,
     latest: StableVersion,
 ) -> Result<ReplacementOutcome, String> {
-    let root = current
-        .parent()
-        .ok_or_else(|| "cannot locate installation directory".to_string())?;
     let file_name = current
         .file_name()
         .ok_or_else(|| "cannot locate executable file name".to_string())?;
@@ -799,15 +1077,31 @@ fn commit_candidate(
     let member = ArtifactMember::new(member_id.clone(), acquired.path.clone(), file_name)
         .map_err(|e| format!("invalid update plan: {e}"))?
         .with_integrity(IntegrityRequirement::Sha256(acquired.digest))
-        .with_permissions(eggup_core::PermissionsIntent::Executable);
-    let plan = InstallPlan::new(
-        ProductId::new("eggsact").map_err(|e| format!("invalid product: {e}"))?,
-        ReleaseId::new(latest.to_string()).map_err(|e| format!("invalid release: {e}"))?,
-        root,
-        ArtifactSet::single(member).map_err(|e| format!("invalid update plan: {e}"))?,
-    )
-    .map_err(|e| format!("invalid update plan: {e}"))?;
-    let validator = ExactIdentityValidator::new(member_id, format!("eggsact {latest}\n"))
+        .with_permissions(PermissionsIntent::Executable);
+    let product = ProductId::new("eggsact").map_err(|e| format!("invalid product: {e}"))?;
+    let release =
+        ReleaseId::new(latest.to_string()).map_err(|e| format!("invalid release: {e}"))?;
+    let set = ArtifactSet::single(member).map_err(|e| format!("invalid update plan: {e}"))?;
+    commit_artifact_set(&set, &member_id, &product, &release, current, latest)
+}
+
+/// Shared Eggup commit tail for both update sources: locked revalidation,
+/// candidate validation, ownership proof, replacement, and disposition
+/// mapping are identical; only the ArtifactSet construction differs.
+fn commit_artifact_set(
+    set: &ArtifactSet,
+    member_id: &MemberId,
+    product: &ProductId,
+    release: &ReleaseId,
+    current: &Path,
+    latest: StableVersion,
+) -> Result<ReplacementOutcome, String> {
+    let root = current
+        .parent()
+        .ok_or_else(|| "cannot locate installation directory".to_string())?;
+    let plan = InstallPlan::new(product.clone(), release.clone(), root, set.clone())
+        .map_err(|e| format!("invalid update plan: {e}"))?;
+    let validator = ExactIdentityValidator::new(member_id.clone(), format!("eggsact {latest}\n"))
         .timeout(Duration::from_secs(10));
     let validated = plan
         .prepare()
@@ -854,7 +1148,7 @@ fn commit_candidate(
     #[cfg(windows)]
     {
         let staged = validated
-            .staged_path(&MemberId::new("main").map_err(|e| format!("invalid member: {e}"))?)
+            .staged_path(member_id)
             .map_err(|e| format!("cannot locate staged update: {e}"))?;
         windows_replace_current(&staged, current)
     }
@@ -910,32 +1204,52 @@ pub fn run() -> Result<(), String> {
     runtime.block_on(run_async())
 }
 
+/// Release-selection predicate: an already-current install performs no
+/// manifest/artifact download.
+fn is_already_current(current: StableVersion, latest: StableVersion) -> bool {
+    latest <= current
+}
+
 async fn run_async() -> Result<(), String> {
     let current =
         env::current_exe().map_err(|error| format!("cannot locate current executable: {error}"))?;
     let current_version = parse_stable_version(env!("CARGO_PKG_VERSION"))?;
     let latest = crates_latest_version_async().await?;
-    if latest <= current_version {
+    if is_already_current(current_version, latest) {
         println!("eggsact {current_version} is already current (latest stable: {latest})");
         return Ok(());
     }
     let staging = unique_temp_dir("eggsact-update")?;
     let result: Result<ReplacementOutcome, String> = async {
-        // Release selection and Cargo-fallback policy stay here; Eggup owns
-        // only the verified local mechanics below.
-        let acquired = if let Some(target) = target_for_host(env::consts::OS, env::consts::ARCH) {
-            prepare_candidate_async(&staging, target, latest).await?
+        // Release selection, manifest/legacy source policy, and Cargo-fallback
+        // policy stay here; Eggup owns only the verified local mechanics below.
+        let replacement = if let Some(target) = target_for_host(env::consts::OS, env::consts::ARCH)
+        {
+            match prepare_candidate_async(&staging, RELEASE_ORIGIN, target, latest).await? {
+                PreparedUpdate::Manifest(manifest) => {
+                    // Staging, integrity, bounded --version validation,
+                    // ownership proof, locking, replacement, and rollback are
+                    // owned by Eggup.
+                    tokio::task::spawn_blocking(move || {
+                        commit_manifest_candidate(&manifest, &current, latest)
+                    })
+                    .await
+                    .map_err(|e| format!("update task failed: {e}"))??
+                }
+                PreparedUpdate::Legacy(acquired) => tokio::task::spawn_blocking(move || {
+                    commit_candidate(&acquired, &current, latest)
+                })
+                .await
+                .map_err(|e| format!("update task failed: {e}"))??,
+            }
         } else {
             let path = cargo_candidate(&staging, latest)?;
             let digest = eggup_hash(&path)?;
-            AcquiredCandidate { path, digest }
-        };
-        // Staging, integrity, bounded --version validation, ownership proof,
-        // locking, replacement, and rollback are owned by Eggup.
-        let replacement =
+            let acquired = AcquiredCandidate { path, digest };
             tokio::task::spawn_blocking(move || commit_candidate(&acquired, &current, latest))
                 .await
-                .map_err(|e| format!("update task failed: {e}"))??;
+                .map_err(|e| format!("update task failed: {e}"))??
+        };
         let _ = fs::remove_dir_all(&staging);
         Ok(replacement)
     }
@@ -1914,5 +2228,802 @@ mod tests {
             manifest.contains("eggup-eggfetch"),
             "consumer depends on versioned eggup-eggfetch"
         );
+    }
+
+    // ── Release-manifest consumer path (M003 behavior matrix) ──
+    //
+    // Row references below are M003 §9 Eggsact matrix rows. Every networked
+    // test serves a deterministic local HTTP fixture; no public endpoint is
+    // contacted. Tests that execute a candidate or commit run only on Unix:
+    // they rely on shebang execution and in-place replacement, and there is
+    // no Windows CI lane for this consumer (recorded in the M003 closure).
+
+    fn host_release_target() -> &'static ReleaseTarget {
+        target_for_host(env::consts::OS, env::consts::ARCH).expect("host has a release target")
+    }
+
+    /// Fake candidate executable: prints the exact identity the Eggup
+    /// exact-identity validator expects, with no arguments and empty stderr.
+    fn candidate_script(version: StableVersion) -> Vec<u8> {
+        format!("#!/bin/sh\necho \"eggsact {version}\"\n").into_bytes()
+    }
+
+    fn sha256_hex(bytes: &[u8]) -> String {
+        use sha2::Digest;
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    }
+
+    /// Minimal producer-shaped ReleaseManifest v1 document (same schema the
+    /// Eggup adapter qualifies against).
+    #[allow(clippy::too_many_arguments)]
+    fn manifest_bytes(
+        product: &str,
+        version: StableVersion,
+        target: &str,
+        asset: &str,
+        size: u64,
+        sha_hex: &str,
+        install: &str,
+    ) -> String {
+        format!(
+            "{{\"schema_version\":1,\"product_id\":\"{product}\",\"release_id\":\"{version}\",\"source_revision\":\"{}\",\"targets\":[{{\"target\":\"{target}\",\"form\":{{\"kind\":\"direct\",\"artifact\":{{\"name\":\"{asset}\",\"size\":{size},\"sha256\":\"{sha_hex}\"}},\"install\":\"{install}\"}}}}]}}",
+            "b".repeat(40)
+        )
+    }
+
+    struct ManifestFixture {
+        manifest_status: u16,
+        manifest_body: Vec<u8>,
+        artifact_status: u16,
+        artifact_body: Vec<u8>,
+        sidecar_status: u16,
+        sidecar_body: Vec<u8>,
+    }
+
+    fn content_length(body: &[u8]) -> Vec<(String, String)> {
+        vec![("Content-Length".into(), body.len().to_string())]
+    }
+
+    /// Route fixture responses by request path: manifest, then checksum
+    /// sidecar, then artifact bytes.
+    fn serve_manifest_fixture(fixture: ManifestFixture) -> (String, tokio::task::JoinHandle<()>) {
+        serve(move |request| {
+            let head = request.lines().next().unwrap_or_default().to_owned();
+            if head.contains(MANIFEST_FILE_NAME) {
+                (
+                    fixture.manifest_status,
+                    content_length(&fixture.manifest_body),
+                    vec![fixture.manifest_body.clone()],
+                    false,
+                )
+            } else if head.contains(".sha256") {
+                (
+                    fixture.sidecar_status,
+                    content_length(&fixture.sidecar_body),
+                    vec![fixture.sidecar_body.clone()],
+                    false,
+                )
+            } else {
+                (
+                    fixture.artifact_status,
+                    content_length(&fixture.artifact_body),
+                    vec![fixture.artifact_body.clone()],
+                    false,
+                )
+            }
+        })
+    }
+
+    /// Fresh install root holding a stale executable under `file_name`.
+    fn fake_installation(file_name: &str) -> (PathBuf, PathBuf) {
+        let root = unique_temp_dir("eggsact-manifest-install").expect("temp install root");
+        let current = root.join(file_name);
+        std::fs::write(&current, b"stale-bytes").expect("write stale executable");
+        (root, current)
+    }
+
+    fn fixture_origin(base: &str) -> String {
+        format!("{base}releases")
+    }
+
+    /// Matrix row 1: already-current installs perform no download.
+    #[test]
+    fn already_current_predicate_is_exact() {
+        let current = StableVersion::new(1, 2, 7);
+        assert!(is_already_current(current, current));
+        assert!(is_already_current(current, StableVersion::new(1, 2, 6)));
+        assert!(!is_already_current(current, StableVersion::new(1, 2, 8)));
+    }
+
+    /// Matrix row 15 (unchanged) + manifest URL convention: the exact
+    /// producer filename sits under the authorized release origin.
+    #[test]
+    fn manifest_url_uses_producer_filename_under_authorized_origin() {
+        let version = StableVersion::new(1, 2, 7);
+        assert_eq!(
+            manifest_url(&version),
+            "https://github.com/eggstack/eggsact/releases/download/v1.2.7/release-manifest.json"
+        );
+        assert_eq!(
+            manifest_url_for_origin("http://127.0.0.1:9/releases", &version),
+            "http://127.0.0.1:9/releases/download/v1.2.7/release-manifest.json"
+        );
+        assert_eq!(MANIFEST_FILE_NAME, "release-manifest.json");
+    }
+
+    /// Matrix rows 3-5: product, release, and target mismatch are hard
+    /// errors that never mention legacy compatibility.
+    #[test]
+    fn manifest_binding_rejects_identity_mismatch() {
+        let target = host_release_target();
+        let version = StableVersion::new(9, 9, 9);
+        let body = candidate_script(version);
+        let digest = sha256_hex(&body);
+        let asset = asset_name(target.rust_target);
+        let valid = manifest_bytes(
+            "eggsact",
+            version,
+            target.rust_target,
+            &asset,
+            body.len() as u64,
+            &digest,
+            "eggsact",
+        );
+        resolve_manifest_projection(valid.as_bytes(), target, version)
+            .expect("valid manifest resolves");
+
+        let wrong_product = manifest_bytes(
+            "other",
+            version,
+            target.rust_target,
+            &asset,
+            body.len() as u64,
+            &digest,
+            "eggsact",
+        );
+        let error = resolve_manifest_projection(wrong_product.as_bytes(), target, version)
+            .expect_err("product mismatch is hard");
+        assert!(error.contains("product mismatch"), "got: {error}");
+        assert!(!error.contains("legacy"), "got: {error}");
+
+        let wrong_release = manifest_bytes(
+            "eggsact",
+            StableVersion::new(9, 9, 8),
+            target.rust_target,
+            &asset,
+            body.len() as u64,
+            &digest,
+            "eggsact",
+        );
+        let error = resolve_manifest_projection(wrong_release.as_bytes(), target, version)
+            .expect_err("release mismatch is hard");
+        assert!(error.contains("release mismatch"), "got: {error}");
+        assert!(!error.contains("legacy"), "got: {error}");
+
+        let other_triple = if target.rust_target == "x86_64-unknown-linux-gnu" {
+            "aarch64-apple-darwin"
+        } else {
+            "x86_64-unknown-linux-gnu"
+        };
+        let wrong_target = manifest_bytes(
+            "eggsact",
+            version,
+            other_triple,
+            &asset,
+            body.len() as u64,
+            &digest,
+            "eggsact",
+        );
+        let error = resolve_manifest_projection(wrong_target.as_bytes(), target, version)
+            .expect_err("target mismatch is hard");
+        assert!(error.contains("not usable"), "got: {error}");
+        assert!(!error.contains("legacy"), "got: {error}");
+    }
+
+    /// Matrix row 6: malformed, unsupported-schema, oversized, and
+    /// non-UTF-8 manifests are hard errors.
+    #[test]
+    fn manifest_binding_rejects_unusable_documents() {
+        let target = host_release_target();
+        let version = StableVersion::new(9, 9, 9);
+        for (name, document) in [
+            ("malformed", b"{not json".to_vec()),
+            (
+                "unsupported-schema",
+                manifest_bytes(
+                    "eggsact",
+                    version,
+                    target.rust_target,
+                    "eggsact-x",
+                    1,
+                    &"c".repeat(64),
+                    "eggsact",
+                )
+                .replace("schema_version\":1", "schema_version\":2")
+                .into_bytes(),
+            ),
+            (
+                "oversized",
+                vec![b' '; eggup_eggpack::MAX_MANIFEST_BYTES + 1],
+            ),
+            ("non-utf8", vec![0xff, 0xfe, 0x00, 0x41]),
+        ] {
+            let error = resolve_manifest_projection(&document, target, version)
+                .expect_err(&format!("{name} manifest is hard"));
+            assert!(!error.contains("legacy"), "{name} got: {error}");
+        }
+    }
+
+    /// Matrix row 18: the caller artifact ceiling is finite, never widened,
+    /// and tightened to the manifest exact size.
+    #[test]
+    fn manifest_artifact_ceiling_is_tightened_never_widened() {
+        let target = host_release_target();
+        let version = StableVersion::new(9, 9, 9);
+        let body = candidate_script(version);
+        let digest = sha256_hex(&body);
+        let asset = asset_name(target.rust_target);
+        let document = manifest_bytes(
+            "eggsact",
+            version,
+            target.rust_target,
+            &asset,
+            body.len() as u64,
+            &digest,
+            "eggsact",
+        );
+        let projection = resolve_manifest_projection(document.as_bytes(), target, version)
+            .expect("valid resolves");
+        let baseline = eggup_limits(METADATA_MAX_BYTES);
+        assert_eq!(baseline.max_artifact_bytes, ARTIFACT_MAX_BYTES);
+        let url = manifest_artifact_url_for_origin("http://127.0.0.1:9/releases", &version, &asset);
+        let request = AcquisitionRequest::new(url).expect("fixture request builds");
+        let planned = projection
+            .bind_requests(HashMap::from([(asset.clone(), request)]), baseline)
+            .expect("binding succeeds");
+        assert_eq!(planned.len(), 1);
+        assert_eq!(planned[0].limits.max_artifact_bytes, body.len() as u64);
+        assert!(planned[0].limits.max_artifact_bytes <= baseline.max_artifact_bytes);
+
+        let tight = FetchLimits {
+            max_artifact_bytes: 1,
+            ..baseline
+        };
+        let url = manifest_artifact_url_for_origin("http://127.0.0.1:9/releases", &version, &asset);
+        let request = AcquisitionRequest::new(url).expect("fixture request builds");
+        let error = projection
+            .bind_requests(HashMap::from([(asset, request)]), tight)
+            .expect_err("a ceiling below the manifest size fails closed");
+        assert!(
+            error.to_string().contains("caller byte limit is below"),
+            "got: {error}"
+        );
+    }
+
+    /// Matrix rows 8-9 + §8G guard: exact manifest 404 is the only legacy
+    /// entry; a present-but-unusable manifest never reaches legacy code.
+    #[test]
+    fn legacy_construction_lives_only_behind_manifest_absence() {
+        let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/update.rs"));
+        let dispatch = source
+            .split("async fn prepare_candidate_async")
+            .nth(1)
+            .expect("manifest dispatch exists")
+            .split("async fn ")
+            .next()
+            .unwrap_or_default();
+        assert!(
+            dispatch.contains("MetadataFetch::Absent"),
+            "dispatch branches on structural absence"
+        );
+        assert_eq!(
+            dispatch.matches("prepare_legacy_candidate_async").count(),
+            1,
+            "legacy construction has exactly one call site, in the Absent arm"
+        );
+    }
+
+    /// Matrix row 7: manifest 5xx and transport failures are hard errors.
+    #[tokio::test]
+    async fn manifest_transport_failures_are_hard() {
+        let target = host_release_target();
+        let version = StableVersion::new(9, 9, 9);
+        let (base, handle) = serve_manifest_fixture(ManifestFixture {
+            manifest_status: 503,
+            manifest_body: b"error".to_vec(),
+            artifact_status: 404,
+            artifact_body: vec![],
+            sidecar_status: 404,
+            sidecar_body: vec![],
+        });
+        let staging = unique_temp_dir("eggsact-manifest-hard").expect("staging");
+        let error = prepare_candidate_async(&staging, &fixture_origin(&base), target, version)
+            .await
+            .expect_err("manifest 503 is hard");
+        assert!(error.contains("release manifest"), "got: {error}");
+        handle.abort();
+
+        let error = prepare_candidate_async(&staging, "http://127.0.0.1:1", target, version)
+            .await
+            .expect_err("refused connection is hard");
+        assert!(error.contains("release manifest"), "got: {error}");
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+
+    /// Matrix row 9: a valid manifest whose artifact is absent is a hard
+    /// incomplete-release failure, never Cargo fallback.
+    #[tokio::test]
+    async fn manifest_artifact_absence_is_hard_without_cargo_fallback() {
+        let target = host_release_target();
+        let version = StableVersion::new(9, 9, 9);
+        let body = candidate_script(version);
+        let digest = sha256_hex(&body);
+        let asset = asset_name(target.rust_target);
+        let manifest = manifest_bytes(
+            "eggsact",
+            version,
+            target.rust_target,
+            &asset,
+            body.len() as u64,
+            &digest,
+            "eggsact",
+        );
+        let (base, handle) = serve_manifest_fixture(ManifestFixture {
+            manifest_status: 200,
+            manifest_body: manifest.into_bytes(),
+            artifact_status: 404,
+            artifact_body: vec![],
+            sidecar_status: 404,
+            sidecar_body: vec![],
+        });
+        let staging = unique_temp_dir("eggsact-manifest-absent").expect("staging");
+        let error = prepare_candidate_async(&staging, &fixture_origin(&base), target, version)
+            .await
+            .expect_err("manifest-backed artifact 404 is hard");
+        assert!(
+            error.contains("absent from the authorized release"),
+            "got: {error}"
+        );
+        assert!(!error.contains("cargo"), "got: {error}");
+        let _ = std::fs::remove_dir_all(&staging);
+        handle.abort();
+    }
+
+    /// Matrix row 10: size mismatch fails before the Eggup commit. An
+    /// undersized release passes acquisition and fails closed at adapter
+    /// materialization; an oversized release is rejected by the tightened
+    /// transport ceiling during acquisition.
+    #[tokio::test]
+    async fn manifest_size_mismatch_fails_before_commit() {
+        let target = host_release_target();
+        let version = StableVersion::new(9, 9, 9);
+        let body = candidate_script(version);
+        let digest = sha256_hex(&body);
+        let asset = asset_name(target.rust_target);
+        // Manifest claims more bytes than the release serves.
+        let manifest = manifest_bytes(
+            "eggsact",
+            version,
+            target.rust_target,
+            &asset,
+            body.len() as u64 + 16,
+            &digest,
+            "eggsact",
+        );
+        let (base, handle) = serve_manifest_fixture(ManifestFixture {
+            manifest_status: 200,
+            manifest_body: manifest.into_bytes(),
+            artifact_status: 200,
+            artifact_body: body,
+            sidecar_status: 404,
+            sidecar_body: vec![],
+        });
+        let staging = unique_temp_dir("eggsact-manifest-size").expect("staging");
+        let (root, current) = fake_installation("eggsact");
+        let prepared = prepare_candidate_async(&staging, &fixture_origin(&base), target, version)
+            .await
+            .expect("undersized release still acquires");
+        let PreparedUpdate::Manifest(acquired) = prepared else {
+            panic!("valid manifest must take the manifest path");
+        };
+        let error = commit_manifest_candidate(&acquired, &current, version)
+            .expect_err("undersized release fails at materialization");
+        assert!(error.contains("materialization failed"), "got: {error}");
+        assert_eq!(
+            std::fs::read(&current).expect("read stale"),
+            b"stale-bytes",
+            "no commit was attempted"
+        );
+        handle.abort();
+
+        // Manifest claims fewer bytes than the release serves: the tightened
+        // ceiling rejects the body during acquisition.
+        let body = candidate_script(version);
+        let digest = sha256_hex(&body);
+        let manifest = manifest_bytes(
+            "eggsact",
+            version,
+            target.rust_target,
+            &asset,
+            body.len() as u64 - 4,
+            &digest,
+            "eggsact",
+        );
+        let (base, handle) = serve_manifest_fixture(ManifestFixture {
+            manifest_status: 200,
+            manifest_body: manifest.into_bytes(),
+            artifact_status: 200,
+            artifact_body: body,
+            sidecar_status: 404,
+            sidecar_body: vec![],
+        });
+        let error = prepare_candidate_async(&staging, &fixture_origin(&base), target, version)
+            .await
+            .expect_err("oversized release fails at acquisition");
+        assert!(error.contains("release manifest artifact"), "got: {error}");
+        assert_eq!(
+            std::fs::read(&current).expect("read stale"),
+            b"stale-bytes",
+            "no commit was attempted"
+        );
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_dir_all(&root);
+        handle.abort();
+    }
+
+    /// Matrix row 2: a producer-valid manifest flows through real update code
+    /// to acquisition, caller-bound materialization, validation, and commit.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn manifest_path_commits_selected_artifact() {
+        let version = StableVersion::new(9, 9, 9);
+        let target = host_release_target();
+        let body = candidate_script(version);
+        let digest = sha256_hex(&body);
+        let asset = asset_name(target.rust_target);
+        let manifest = manifest_bytes(
+            "eggsact",
+            version,
+            target.rust_target,
+            &asset,
+            body.len() as u64,
+            &digest,
+            "eggsact",
+        );
+        let (base, handle) = serve_manifest_fixture(ManifestFixture {
+            manifest_status: 200,
+            manifest_body: manifest.into_bytes(),
+            artifact_status: 200,
+            artifact_body: body.clone(),
+            sidecar_status: 404,
+            sidecar_body: vec![],
+        });
+        let staging = unique_temp_dir("eggsact-manifest-e2e").expect("staging");
+        let (root, current) = fake_installation("eggsact");
+        let prepared = prepare_candidate_async(&staging, &fixture_origin(&base), target, version)
+            .await
+            .expect("manifest path prepares");
+        let PreparedUpdate::Manifest(acquired) = prepared else {
+            panic!("valid manifest must take the manifest path");
+        };
+        let outcome = commit_manifest_candidate(&acquired, &current, version)
+            .expect("manifest commit succeeds");
+        assert_eq!(outcome, ReplacementOutcome::Complete);
+        assert_eq!(std::fs::read(&current).expect("read updated"), body);
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_dir_all(&root);
+        handle.abort();
+    }
+
+    /// Matrix row 17: a renamed running executable is updated in place; the
+    /// manifest default basename is never created.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn manifest_path_updates_renamed_executable_in_place() {
+        let version = StableVersion::new(9, 9, 9);
+        let target = host_release_target();
+        let body = candidate_script(version);
+        let digest = sha256_hex(&body);
+        let asset = asset_name(target.rust_target);
+        let manifest = manifest_bytes(
+            "eggsact",
+            version,
+            target.rust_target,
+            &asset,
+            body.len() as u64,
+            &digest,
+            "eggsact",
+        );
+        let (base, handle) = serve_manifest_fixture(ManifestFixture {
+            manifest_status: 200,
+            manifest_body: manifest.into_bytes(),
+            artifact_status: 200,
+            artifact_body: body.clone(),
+            sidecar_status: 404,
+            sidecar_body: vec![],
+        });
+        let staging = unique_temp_dir("eggsact-manifest-renamed").expect("staging");
+        let (root, current) = fake_installation("my-tool");
+        let prepared = prepare_candidate_async(&staging, &fixture_origin(&base), target, version)
+            .await
+            .expect("manifest path prepares");
+        let PreparedUpdate::Manifest(acquired) = prepared else {
+            panic!("valid manifest must take the manifest path");
+        };
+        let outcome = commit_manifest_candidate(&acquired, &current, version)
+            .expect("renamed commit succeeds");
+        assert_eq!(outcome, ReplacementOutcome::Complete);
+        assert_eq!(std::fs::read(&current).expect("read updated"), body);
+        assert!(
+            !root.join("eggsact").exists(),
+            "manifest default basename must not be created"
+        );
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_dir_all(&root);
+        handle.abort();
+    }
+
+    /// Matrix row 11: digest mismatch fails before commit; stale bytes stay.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn manifest_digest_mismatch_fails_before_commit() {
+        let version = StableVersion::new(9, 9, 9);
+        let target = host_release_target();
+        let served = candidate_script(version);
+        // Manifest digest describes unrelated bytes of the same length, so
+        // size checks pass and only integrity evidence disagrees.
+        let digest = sha256_hex(&vec![0x55; served.len()]);
+        let asset = asset_name(target.rust_target);
+        let manifest = manifest_bytes(
+            "eggsact",
+            version,
+            target.rust_target,
+            &asset,
+            served.len() as u64,
+            &digest,
+            "eggsact",
+        );
+        let (base, handle) = serve_manifest_fixture(ManifestFixture {
+            manifest_status: 200,
+            manifest_body: manifest.into_bytes(),
+            artifact_status: 200,
+            artifact_body: served,
+            sidecar_status: 404,
+            sidecar_body: vec![],
+        });
+        let staging = unique_temp_dir("eggsact-manifest-digest").expect("staging");
+        let (root, current) = fake_installation("eggsact");
+        let prepared = prepare_candidate_async(&staging, &fixture_origin(&base), target, version)
+            .await
+            .expect("size matches so acquisition succeeds");
+        let PreparedUpdate::Manifest(acquired) = prepared else {
+            panic!("valid manifest must take the manifest path");
+        };
+        commit_manifest_candidate(&acquired, &current, version)
+            .expect_err("digest mismatch fails before commit");
+        assert_eq!(std::fs::read(&current).expect("read stale"), b"stale-bytes");
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_dir_all(&root);
+        handle.abort();
+    }
+
+    /// Matrix row 12: wrong candidate identity fails before commit.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn manifest_wrong_candidate_identity_fails_before_commit() {
+        let version = StableVersion::new(9, 9, 9);
+        let target = host_release_target();
+        let body = candidate_script(StableVersion::new(1, 2, 3));
+        let digest = sha256_hex(&body);
+        let asset = asset_name(target.rust_target);
+        let manifest = manifest_bytes(
+            "eggsact",
+            version,
+            target.rust_target,
+            &asset,
+            body.len() as u64,
+            &digest,
+            "eggsact",
+        );
+        let (base, handle) = serve_manifest_fixture(ManifestFixture {
+            manifest_status: 200,
+            manifest_body: manifest.into_bytes(),
+            artifact_status: 200,
+            artifact_body: body,
+            sidecar_status: 404,
+            sidecar_body: vec![],
+        });
+        let staging = unique_temp_dir("eggsact-manifest-identity").expect("staging");
+        let (root, current) = fake_installation("eggsact");
+        let prepared = prepare_candidate_async(&staging, &fixture_origin(&base), target, version)
+            .await
+            .expect("evidence matches so acquisition succeeds");
+        let PreparedUpdate::Manifest(acquired) = prepared else {
+            panic!("valid manifest must take the manifest path");
+        };
+        let error = commit_manifest_candidate(&acquired, &current, version)
+            .expect_err("wrong candidate identity fails");
+        assert!(
+            error.contains("candidate validation failed"),
+            "got: {error}"
+        );
+        assert_eq!(std::fs::read(&current).expect("read stale"), b"stale-bytes");
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_dir_all(&root);
+        handle.abort();
+    }
+
+    /// Matrix rows 13-14: an ownership conflict fails closed with a rolled
+    /// back receipt and no mutation (behavioral proof of the RolledBack
+    /// mapping; RecoveryRequired cannot be forced deterministically).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn manifest_ownership_conflict_fails_closed_without_mutation() {
+        let version = StableVersion::new(9, 9, 9);
+        let target = host_release_target();
+        let body = candidate_script(version);
+        let digest = sha256_hex(&body);
+        let asset = asset_name(target.rust_target);
+        let manifest = manifest_bytes(
+            "eggsact",
+            version,
+            target.rust_target,
+            &asset,
+            body.len() as u64,
+            &digest,
+            "eggsact",
+        );
+        let (base, handle) = serve_manifest_fixture(ManifestFixture {
+            manifest_status: 200,
+            manifest_body: manifest.into_bytes(),
+            artifact_status: 200,
+            artifact_body: body,
+            sidecar_status: 404,
+            sidecar_body: vec![],
+        });
+        let staging = unique_temp_dir("eggsact-manifest-owned").expect("staging");
+        let root = unique_temp_dir("eggsact-manifest-foreign").expect("install root");
+        let real = root.join("real-binary");
+        std::fs::write(&real, b"real-bytes").expect("write target");
+        let current = root.join("eggsact");
+        std::os::unix::fs::symlink(&real, &current).expect("link current");
+        let prepared = prepare_candidate_async(&staging, &fixture_origin(&base), target, version)
+            .await
+            .expect("manifest path prepares");
+        let PreparedUpdate::Manifest(acquired) = prepared else {
+            panic!("valid manifest must take the manifest path");
+        };
+        let error = commit_manifest_candidate(&acquired, &current, version)
+            .expect_err("foreign destination fails closed");
+        assert!(error.contains("rolled back"), "got: {error}");
+        assert_eq!(std::fs::read(&real).expect("read target"), b"real-bytes");
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_dir_all(&root);
+        handle.abort();
+    }
+
+    /// Matrix row 8: exact manifest 404 enters the legacy sidecar path, which
+    /// still verifies and commits through the shared tail.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn manifest_absence_uses_legacy_sidecar_path() {
+        let version = StableVersion::new(9, 9, 9);
+        let target = host_release_target();
+        let body = candidate_script(version);
+        let digest = sha256_hex(&body);
+        let sidecar = format!("{digest}  {}\n", target.asset_name);
+        let (base, handle) = serve_manifest_fixture(ManifestFixture {
+            manifest_status: 404,
+            manifest_body: b"not found".to_vec(),
+            artifact_status: 200,
+            artifact_body: body.clone(),
+            sidecar_status: 200,
+            sidecar_body: sidecar.into_bytes(),
+        });
+        let staging = unique_temp_dir("eggsact-legacy-compat").expect("staging");
+        let (root, current) = fake_installation("eggsact");
+        let prepared = prepare_candidate_async(&staging, &fixture_origin(&base), target, version)
+            .await
+            .expect("legacy compatibility prepares");
+        let PreparedUpdate::Legacy(acquired) = prepared else {
+            panic!("exact manifest 404 must take the legacy path");
+        };
+        let outcome =
+            commit_candidate(&acquired, &current, version).expect("legacy commit succeeds");
+        assert_eq!(outcome, ReplacementOutcome::Complete);
+        assert_eq!(std::fs::read(&current).expect("read updated"), body);
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_dir_all(&root);
+        handle.abort();
+    }
+
+    /// Matrix row 16: one immutable Eggup source identity, no direct Eggpack
+    /// producer crates.
+    #[test]
+    fn eggup_dependency_identities_are_single_git_source() {
+        let manifest = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"));
+        let mut revs = Vec::new();
+        for line in manifest.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("eggup-") {
+                let rev = trimmed
+                    .split("rev =")
+                    .nth(1)
+                    .expect("every eggup dependency pins an exact rev")
+                    .trim()
+                    .trim_matches(|c| c == '"' || c == '}' || c == ' ')
+                    .to_owned();
+                assert_eq!(rev.len(), 40, "rev is a full commit SHA, not a branch");
+                revs.push(rev);
+            }
+        }
+        assert_eq!(revs.len(), 4, "core, acquisition, eggfetch, and eggpack");
+        assert!(
+            revs.windows(2).all(|pair| pair[0] == pair[1]),
+            "one Eggup revision, no mixed sources: {revs:?}"
+        );
+        assert!(
+            !manifest.contains("eggpack-manifest"),
+            "no direct producer-schema dependency"
+        );
+    }
+
+    #[test]
+    fn eggup_tree_has_single_source_per_package_and_no_direct_producer_edge() {
+        let direct = std::process::Command::new("cargo")
+            .args([
+                "tree",
+                "--offline",
+                "--depth",
+                "1",
+                "--prefix",
+                "none",
+                "-e",
+                "normal",
+            ])
+            .output()
+            .expect("cargo tree runs offline");
+        assert!(direct.status.success(), "cargo tree succeeds");
+        let direct = String::from_utf8_lossy(&direct.stdout);
+        assert!(
+            !direct.lines().any(|line| line.starts_with("eggpack-")),
+            "no direct Eggpack producer edge"
+        );
+        assert!(
+            direct
+                .lines()
+                .any(|line| line.starts_with("eggup-eggpack ")),
+            "direct eggup-eggpack edge present"
+        );
+
+        let full = std::process::Command::new("cargo")
+            .args(["tree", "--offline", "--prefix", "none", "--no-dedupe"])
+            .output()
+            .expect("cargo tree runs offline");
+        assert!(full.status.success(), "cargo tree succeeds");
+        let full = String::from_utf8_lossy(&full.stdout);
+        for package in [
+            "eggup-core",
+            "eggup-acquisition",
+            "eggup-eggfetch",
+            "eggup-eggpack",
+        ] {
+            let mut identities: Vec<&str> = full
+                .lines()
+                .filter(|line| line.starts_with(package))
+                .filter(|line| line.get(package.len()..package.len() + 1) == Some(" "))
+                .collect();
+            identities.sort_unstable();
+            identities.dedup();
+            assert_eq!(
+                identities.len(),
+                1,
+                "{package} must resolve to one source identity, got {identities:?}"
+            );
+            assert!(
+                identities[0].contains("https://github.com/eggstack/eggup.git?rev="),
+                "{package} resolves to the pinned Eggup revision"
+            );
+        }
     }
 }
