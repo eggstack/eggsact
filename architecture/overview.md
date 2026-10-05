@@ -235,9 +235,10 @@ prompt-injection detection, and the regex engine selector that chooses `regex` v
 Two large `include!`d data files, currently **Unicode 18.0.0**, with SHA-256 checksums
 pinned in their headers and asserted by unit tests. `confusables_generated.rs` holds
 6,712 confusable mappings. Both are produced by checked-in generators and must never be
-hand-edited. (Note: `scripts/generate_confusables.py` still writes a hardcoded
-`# Version: 17.0.0` header line while pinning 18.0.0 data — a cosmetic generator bug
-tracked as drift, not a data problem.)
+hand-edited. Every version string in `scripts/generate_confusables.py` — including the
+offline self-test fixture header — is derived from the single
+`UNICODE_SECURITY_VERSION` pin, so the script cannot imply an epoch other than the one
+it actually downloads and verifies.
 
 → Deep dive: [generated-assets.md](generated-assets.md).
 

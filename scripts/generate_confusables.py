@@ -285,7 +285,11 @@ def run_self_test() -> int:
             return
         failures.append(f"{name}: parsed without error, want failure")
 
-    header = "# confusables.txt\n# Version: 17.0.0\n"
+    # Fixture header for the strict-parser tests below. `parse_confusables`
+    # ignores the version line (only `verify_version` checks it, and that runs
+    # against the real download), but bind it to the pin anyway so this fixture
+    # can never imply an epoch other than the one actually shipped.
+    header = f"# confusables.txt\n# Version: {UNICODE_SECURITY_VERSION}\n"
     expect_ok(
         "known-good miniature",
         header + "0041 ; 0061 ; MA # A -> a\n00E6 ; 0041 0045 ; MA # AE -> AE\n",
