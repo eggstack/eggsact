@@ -45,7 +45,7 @@ MCP transport eras, or release publishing.
 ### Infrastructure
 
 - `generate-docs` pipeline with `--check`; confusables pinning
-  (Unicode 17.0.0 + SHA).
+  (Unicode 18.0.0 + SHA).
 
 ### Polish
 

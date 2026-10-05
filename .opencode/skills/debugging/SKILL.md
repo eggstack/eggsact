@@ -36,7 +36,7 @@ python3 scripts/generate_confusables.py  # regenerate from Unicode.org
 ```
 Never edit `src/text/confusables_generated.rs` directly.
 The generator is pinned to
-`https://www.unicode.org/Public/17.0.0/security/confusables.txt` and verifies
+`https://www.unicode.org/Public/18.0.0/security/confusables.txt` and verifies
 the expected SHA-256 and header before writing; ordinary CI is offline.
 
 For bounded JSONL failures, inspect `read_bounded_line()` in
