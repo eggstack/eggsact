@@ -30,7 +30,8 @@ in CI with the exact declared toolchain.
 - An MSRV increase requires at least Rust 1.89.0+ and must be justified by
   a dependency requirement or language feature need.
 - The locked dependency graph must resolve on MSRV.
-- CI blocks on MSRV test failures.
+- MSRV is checked weekly by the scheduled `maintenance.yml` workflow; it is not
+  a merge-blocking gate.
 
 **Rationale for 1.89.0**: hashbrown 0.17.1 requires Rust 1.85.0, but test
 code uses temporary lifetime extension that stabilized in Rust 1.89.0.
@@ -72,8 +73,8 @@ other harnesses). Once a tool ships in a release:
 - **Adding** a tool is a MINOR change.
 - **Marking a tool `deprecated: true`** in its `ToolSpec` is a MINOR change
   (tool still exists and functions).
-- **Actually removing a deprecated tool** is a MAJOR change (requires one full
-  minor release as deprecated before removal).
+- **Actually removing a deprecated tool** is a MAJOR change (requires two full
+  minor releases as deprecated before removal, per the Deprecation Policy below).
 
 Tool aliases (`ToolSpec.aliases`) provide alternate names. Adding an alias is
 MINOR. Removing an alias is MAJOR if any known client depends on it.
@@ -154,9 +155,12 @@ response envelopes. They are the machine-readable contract for harnesses.
 - **Deprecating a code** (keeping it but adding a preferred alternative) is
   MINOR. The old code must continue to work.
 
-The `ALL` array in `machine_codes.rs` is the canonical registry. A test
-(`machine_code_table_is_synchronized`) verifies that the `ALL` set matches
-the declared constants.
+The `ALL` array in `machine_codes.rs` is the canonical registry.
+`test_machine_code_all_contains_key_codes` in `tests/mcp/test_machine_codes.rs`
+verifies that `ALL` contains the key codes, and
+`test_route_critical_finding_codes_are_enumerated` in
+`tests/mcp/test_route_contracts.rs` verifies that every UPPERCASE_SNAKE finding
+`code` emitted by a route-critical tool is present in `ALL`.
 
 ## Profile and Audience Compatibility
 
@@ -265,7 +269,7 @@ compatible behavioral extension:
   should not assume a specific engine, only that the engine is chosen
   automatically to support the pattern's features.
 
-### Registry Audience Enforcement (v1.3.0)
+### Registry Audience Enforcement
 
 `get_tool` and `has_tool` now enforce audience/exposure restrictions in
 addition to profile membership. Previously these methods only checked

@@ -1,6 +1,20 @@
 # eggsact MCP Tool Reference
 
-Complete reference for all registered tools exposed by the `eggsact` MCP server.
+Reference for the 86 tools registered in the `eggsact` MCP server (23
+categories). All 86 appear in the summary table below; 73 additionally have a
+per-tool `###` section with arguments and response shape. The 13 tools that
+currently have summary-table coverage only are the repo/analysis/patch
+aggregates: `code_block_map`, `config_file_inspect`, `dependency_edit_preflight`,
+`diff_risk_classify`, `import_export_inspect`, `lockfile_inspect`,
+`patch_contract_check`, `path_batch_scope_check`, `repo_language_detect`,
+`repo_manifest_inspect`, `repo_tree_summarize`, `symbol_name_diff`, and
+`test_command_suggest`. Their input and output schemas are authoritative in
+`src/mcp/schemas/` and rendered per profile in
+[`generated/tool-cards.md`](../generated/tool-cards.md).
+
+Unlike `architecture/mcp-server.md` and `architecture/overview.md`, this file is
+**hand-maintained** — `generate-docs` does not write it, so it has no automated
+freshness gate. Re-verify counts against `src/mcp/specs/` when editing.
 
 See also: [Math Features](math-features.md), [Library API](library-api.md), [MCP Server Architecture](../architecture/mcp-server.md)
 
@@ -23,7 +37,7 @@ Legacy clients (`2025-11-25`, `2024-11-05`) use `initialize` → `notifications/
 Successful modern `tools/call` responses add schema-conforming `structuredContent` (= `ToolResponse.result`, which the tool `outputSchema` already describes) plus `resultType: complete` and `_meta.io.modelcontextprotocol/serverInfo`, while retaining the text JSON fallback:
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","content":[{"type":"text","text":"{\"ok\": true, ...}"}],"structuredContent":{"value":"5","type":"int"},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"eggsact","version":"1.2.6"}}}}
+{"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","content":[{"type":"text","text":"{\"ok\": true, ...}"}],"structuredContent":{"value":"5","type":"int"},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"eggsact","version":"1.2.7"}}}}
 ```
 
 Tool-level errors keep `isError: true` with no `structuredContent`. Modern `tools/list` adds `resultType`, `ttlMs: 3600000`, `cacheScope: public`, standard `annotations` (`readOnlyHint: true`, `openWorldHint: false`), and namespaced `_meta` (`io.github.eggstack/eggsact` with `tier`, `tags`, `category`, `llm_exposure`, `cost`); legacy shapes are unchanged. `ping` is legacy-only (removed in modern).

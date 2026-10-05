@@ -47,7 +47,7 @@ architecture before `--version`, `--help`, or MCP smoke.
 
 The canonical release gate (including the full test suite) is defined in `docs/release.md` — do not duplicate it here.
 
-CI runs on push/PR to `main` (plus `workflow_dispatch`) via `.github/workflows/ci.yml` — one Linux correctness job. Supported-platform compilation checks run in scheduled `maintenance.yml`. MSRV and cargo-deny are scheduled maintenance checks (Tier 2), not ordinary merge gates. Parity tests require Python `eggcalc` at `../eggcalc` and are local-only.
+CI runs on push/PR to `main` (plus `workflow_dispatch`) via `.github/workflows/ci.yml` — one Linux correctness job. `.github/workflows/release-drift.yml` also runs on push/PR to `main` and gates the Eggpack-generated release workflow against `release/eggpack/` plus the eggsact-owned installer/updater contract. Supported-platform compilation, MSRV, cargo-deny, and the `windows-reproducibility` byte proof are scheduled `maintenance.yml` checks (Tier 2), not ordinary merge gates. Parity tests need Python `eggcalc`; locally that means a sibling `../eggcalc` checkout, and the scheduled `parity.yml` workflow installs it from PyPI instead.
 
 ## Test Structure
 
@@ -62,7 +62,7 @@ tests/
     test_units.rs            # unit conversion tests
     test_bug_regression.rs   # regression tests for bugs
   mcp/
-    mod.rs                   # re-exports 32 test modules + support
+    mod.rs                   # re-exports 34 test modules + support.rs
     test_protocol.rs         # JSON-RPC protocol tests (legacy lifecycle)
     test_modern_protocol.rs  # 2026-07-28 dual-era tests: discover, modern list/call, _meta validation, -32022, cache hints, deterministic order, structuredContent, cross-era goldens, annotation invariants
     test_mcp_tools.rs        # tool behavior tests
@@ -95,6 +95,8 @@ tests/
     test_schema_boundaries.rs
     test_discovery.rs        # discovery surface gate: advertised counts, byte budgets, containment, retrieval
     test_era_pinning.rs      # single-process protocol-era pinning, cross-era rejection
+    test_substrate_007.rs    # typed-core ownership: no handler-to-handler composition
+    test_substrate_008.rs    # layering guard across all 86 handlers + prompt wire compatibility
   parity/
     mod.rs                   # ParityTestResult, run_python_request, run_rust_tool helpers
     test_tools_core.rs       # core tool parity with Python
@@ -109,8 +111,9 @@ tests/
     test_semantic_parity.rs  # semantic equivalence
     test_error_handling.rs   # error handling parity
   text/
-    mod.rs                   # re-exports 24 modules
-    test_<module>.rs         # one file per text module (24 files)
+    mod.rs                   # re-exports 27 modules
+    test_<module>.rs         # 27 files; not every text module has one (regex_engine is
+                             # covered by tests/property/test_regex_properties.rs)
   property/
     mod.rs                   # re-exports 11 property test modules
     test_calculator_properties.rs
@@ -143,7 +146,21 @@ cargo test --locked --test lib parity
 
 ## Machine Code Enforcement
 
-The test `test_all_tool_responses_have_machine_code` verifies that every non-OK `ToolResponse` includes a `machine_code` field. If you add a new error path, ensure it uses `error_with_code()` or `.with_machine_code()` — the test will catch missing codes.
+Machine-code enforcement is split across three places, and a new error path must
+satisfy all of them:
+
+- `test_all_route_critical_tools_have_non_empty_machine_code_and_verdict` in
+  `tests/mcp/test_route_contracts.rs` — the 5 route-critical tools must emit a
+  non-empty `machine_code` **and** `verdict` on success.
+- `test_all_route_critical_handler_errors_have_machine_code_and_findings` in the
+  same file — handler error paths for those tools must carry a `machine_code`.
+- `tests/mcp/test_machine_codes.rs` — the constant/constructor surface:
+  `test_machine_code_all_contains_key_codes`, `test_error_with_code_sets_machine_code`,
+  `test_error_without_code_has_no_machine_code`, and the per-tool
+  `test_*_has_machine_code` cases.
+
+If you add a new error path, use `error_with_code()` or `.with_machine_code()` and
+add the constant to `machine_codes::ALL`; the tests will catch a missing code.
 
 ## Route-Critical Fixture Tests
 
@@ -210,7 +227,7 @@ Verify that:
 
 ## Property Tests
 
-`tests/property/` contains 61 property-based tests across 11 modules. These verify algebraic invariants (round-trip, idempotence, determinism, symmetry, span validity) using a deterministic xorshift64 PRNG for input generation — no external property-test framework required. The utility expansion adds deterministic network, codec/radix, datetime, and cron invariants in `test_utility_properties.rs`.
+`tests/property/` contains 69 property-based tests across 11 modules. These verify algebraic invariants (round-trip, idempotence, determinism, symmetry, span validity) using a deterministic xorshift64 PRNG for input generation — no external property-test framework required. The utility expansion adds deterministic network, codec/radix, datetime, and cron invariants in `test_utility_properties.rs`.
 
 ```bash
 cargo test --locked --test lib property              # all property tests

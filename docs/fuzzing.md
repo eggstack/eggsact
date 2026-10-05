@@ -29,6 +29,12 @@ Fuzz targets require the nightly toolchain because libFuzzer uses unstable Rust 
 | `unicode_inspection` | `src/text/unicode_*.rs`, `confusables.rs`, `script.rs`, `unicode_properties.rs` | Unicode policy/profile matrix, internal-skeleton determinism/idempotence (UTS #39-guaranteed), public/bidi-skeleton determinism (no bidi idempotence claim), resolved script-set determinism with Common/Inherited neutrality and Unknown/Zzzz constraint, central hazard agreement, ordered Bidi_Class `@missing` defaults (R/AL/ET/L spot assertions), paragraph-local bidi levels (multi-paragraph RTL reorder seeds), seeded bidi/RTL-mirror/Default-Ignorable/homoglyph/Jpan-Kore-Hanb-Hntl/private-use/casefold/supplementary-plane/variation-selector corpus |
 | `markdown_fences` | `src/text/markdown.rs` | Markdown structure extraction |
 | `glob_matching` | `src/text/glob.rs`, `path.rs` | Glob and path operations |
+| `cron_inspection` | `src/temporal/cron.rs` via `tools::cron_inspect` | Cron field parsing and bounded next-match search (fixed `after` input, so fully deterministic) |
+
+There are 13 fuzz targets in `fuzz/fuzz_targets/`. The `fuzz-matrix` job in
+`fuzz-scheduled.yml` currently exercises 12 of them and the `fuzz-sanitizers`
+job 7; `cron_inspection` is built and runnable locally but is in neither
+scheduled matrix.
 
 ## Running Fuzz Targets
 

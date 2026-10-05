@@ -220,7 +220,10 @@ remain eggsact-owned, as does `eggsact update` (eggsact/Eggup-owned
 self-update); Eggpack never publishes the draft and never touches
 self-update policy.
 
-Parity tests are excluded from CI because Python `eggcalc` is not available in the CI environment. Run parity locally with `cargo test --test lib parity`.
+Parity tests are excluded from the merge-blocking `ci.yml` job. They are still
+verified weekly by `.github/workflows/parity.yml`, which installs `eggcalc` from
+PyPI; the local suite instead expects a sibling `../eggcalc` checkout. Run parity
+locally with `cargo test --locked --test lib parity`.
 
 GitHub CI verifies merge correctness but does **not** publish to crates.io. The maintainer publishes manually per this document.
 

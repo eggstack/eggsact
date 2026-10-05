@@ -723,7 +723,7 @@ always pass `--locked`.
 | `data/confusables.rs` | Confusables source data for the generator |
 | `deny.toml` | `cargo-deny` license/advisory policy |
 | `.cargo/config.toml` | The only release link flags (`/BREPRO`, `/DEBUG:NONE`) — load-bearing, never set `RUSTFLAGS` |
-| `Cargo.toml` | 22 runtime dependencies; `Cargo.lock` is tracked — always pass `--locked` |
+| `Cargo.toml` | 25 runtime dependencies; `Cargo.lock` is tracked — always pass `--locked` |
 
 ---
 
@@ -800,8 +800,9 @@ cargo test --locked --doc
 ```
 
 `--test-threads=4` is required for integration tests because of Tokio blocking-pool
-starvation; it is not a product budget. Parity is excluded from CI because the Python
-`eggcalc` reference is not available there — run it locally with
+starvation; it is not a product budget. Parity is excluded from the
+merge-blocking `ci.yml` job (the scheduled `parity.yml` workflow still verifies
+it weekly from PyPI) — run it locally with
 `cargo test --locked --test lib parity` when you have `../eggcalc` checked out.
 
 The full local gate is `scripts/release-check.sh` (requires a clean tree and
@@ -874,6 +875,7 @@ MSRV is **1.89.0** (`rust-version` in `Cargo.toml`).
 | Fuzzing | `docs/fuzzing.md` |
 | Milestone status | `plans/registry.md` |
 | Agent skills | `.opencode/skills/*/SKILL.md` |
+| Planning system | `plans/README.md` |
 
 ---
 

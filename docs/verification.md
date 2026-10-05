@@ -173,16 +173,17 @@ cargo build --locked --release
 python3 scripts/smoke-mcp-binary.py ./target/release/eggsact
 ```
 
-The tag-only `release-binaries.yml` workflow repeats candidate `--version`,
-`--help`, and MCP stdio smoke checks on every staged target, then creates only a
-draft GitHub Release. It does not rerun the ordinary correctness matrix. The
-workflow downloads Zig 0.14.1 with a pinned SHA-256 and installs
-cargo-zigbuild 0.23.3 only in release jobs. Linux x86-64 targets the
-documented glibc 2.17 floor; AArch64 uses the native `ubuntu-24.04-arm` runner
-for both build and executable smoke. ARMv7 qualification remains a separate
-claim. The v1.2.4 release is the first published binary-bearing release; its
-exact-tag and `releases/latest/download` Unix installer paths were verified
-after publication. ARMv7 remains Cargo fallback only.
+The dispatch-only `release-binaries.yml` workflow (which requires an existing
+`release_tag` input) repeats candidate `--version`, `--help`, and MCP stdio smoke
+checks on every staged target, then creates only a draft GitHub Release. It does
+not rerun the ordinary correctness matrix. The workflow downloads Zig 0.14.1
+with a pinned SHA-256 and installs cargo-zigbuild 0.23.3 only in release jobs.
+Linux x86-64 targets the documented glibc 2.17 floor; AArch64 uses the native
+`ubuntu-24.04-arm` runner for both build and executable smoke. ARMv7
+qualification remains a separate claim. v1.2.4 was the first published
+binary-bearing release; v1.2.7 is the current one, and its exact-tag and
+`releases/latest/download` Unix installer paths were verified after publication.
+ARMv7 remains Cargo fallback only.
 
 ## Failure Ownership
 

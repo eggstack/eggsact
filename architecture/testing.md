@@ -51,7 +51,7 @@ Tests call `eggsact::calc::run()` or `eggsact::calc::evaluate()` directly — no
 
 ## MCP Tests (`tests/mcp/`)
 
-32 test files covering the MCP server, protocol, tool execution, and contract enforcement.
+34 test files covering the MCP server, protocol, tool execution, and contract enforcement.
 
 ### Important Test Files
 
@@ -306,7 +306,10 @@ GitHub Actions CI runs on push/PR to `main` (plus manual `workflow_dispatch`):
 
 MSRV, cargo-deny, parity, latest-compatible, and fuzz/sanitizer checks are scheduled/manual (not merge-blocking). See `docs/verification.md`.
 
-Parity tests are excluded from CI because Python `eggcalc` is not available in the CI environment. Run locally with `cargo test --locked --test lib parity`.
+Parity tests are excluded from the merge-blocking `ci.yml` job; they are verified
+weekly by the scheduled `parity.yml` workflow, which installs `eggcalc` from PyPI.
+The local suite instead expects a sibling `../eggcalc` checkout — run it with
+`cargo test --locked --test lib parity`.
 
 `--test-threads=4` is required for the integration suites: without the cap,
 short-lived MCP subprocess tests starve the Tokio blocking pool. It is not a

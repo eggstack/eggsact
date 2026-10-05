@@ -2,17 +2,17 @@
 
 ## Current installation path
 
-The latest binary-bearing release is v1.2.6. For supported hosts, use the
+The latest binary-bearing release is v1.2.7. For supported hosts, use the
 verified Unix installer:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
   https://github.com/eggstack/eggsact/releases/latest/download/install.sh \
-  | bash -s -- --version 1.2.6
+  | bash -s -- --version 1.2.7
 ```
 
 The exact-tag form is also available at
-`https://github.com/eggstack/eggsact/releases/download/v1.2.6/install.sh`.
+`https://github.com/eggstack/eggsact/releases/download/v1.2.7/install.sh`.
 The script requires Bash, verifies the SHA-256 sidecar, and checks the
 candidate's reported version before installation.
 
@@ -23,7 +23,7 @@ cargo install eggsact
 ```
 
 Operators who prefer to inspect first can download `install.sh`, review it, and
-run `bash install.sh --version 1.2.6`. It does not invoke `sudo` or edit shell
+run `bash install.sh --version 1.2.7`. It does not invoke `sudo` or edit shell
 startup files.
 
 The Windows PowerShell fast path is:
@@ -35,12 +35,12 @@ irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | i
 The inspect-first form is:
 
 ```powershell
-Invoke-WebRequest https://github.com/eggstack/eggsact/releases/download/v1.2.6/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/eggstack/eggsact/releases/download/v1.2.7/install.ps1 -OutFile install.ps1
 Get-Content .\install.ps1
 . .\install.ps1
 ```
 
-Use `-Version 1.2.6` for a pinned install. The PowerShell installer maps
+Use `-Version 1.2.7` for a pinned install. The PowerShell installer maps
 Windows x86-64 to the prebuilt asset and uses the same Cargo fallback for
 Windows ARM64 and other unsupported architectures.
 
@@ -48,11 +48,11 @@ Windows ARM64 and other unsupported architectures.
 
 | Host | Asset | Status |
 |---|---|---|
-| Linux x86-64 / amd64 | `eggsact-x86_64-unknown-linux-gnu` | published in v1.2.6; glibc 2.17 build floor |
-| Linux AArch64 / arm64 | `eggsact-aarch64-unknown-linux-gnu` | published in v1.2.6; native ARM smoke passed |
-| macOS Intel | `eggsact-x86_64-apple-darwin` | published in v1.2.6; unsigned/not notarized |
-| macOS Apple Silicon | `eggsact-aarch64-apple-darwin` | published in v1.2.6; unsigned/not notarized |
-| Windows x86-64 | `eggsact-x86_64-pc-windows-msvc.exe` | published in v1.2.6; no code-signing claim |
+| Linux x86-64 / amd64 | `eggsact-x86_64-unknown-linux-gnu` | published in v1.2.7; glibc 2.17 build floor |
+| Linux AArch64 / arm64 | `eggsact-aarch64-unknown-linux-gnu` | published in v1.2.7; native ARM smoke passed |
+| macOS Intel | `eggsact-x86_64-apple-darwin` | published in v1.2.7; unsigned/not notarized |
+| macOS Apple Silicon | `eggsact-aarch64-apple-darwin` | published in v1.2.7; unsigned/not notarized |
+| Windows x86-64 | `eggsact-x86_64-pc-windows-msvc.exe` | published in v1.2.7; no code-signing claim |
 | Linux ARMv7 | `armv7-unknown-linux-gnueabihf` | recognized, Cargo fallback only until qualification |
 
 Raw executables use stable, versionless asset names. Each published executable
@@ -86,11 +86,12 @@ matching GitHub Release asset and checksum. It validates the checksum and exact
 asset 404s use a staged exact-version `cargo install`; all other failures stop.
 
 `eggsact update` is self-contained after install: it uses in-process HTTP/1 +
-TLS (`eggfetch-core` with native roots plus WebPKI fallback, strict HTTPS
-downgrade rejection, explicit environment proxy routing, 10s connect / 120s
-total timeouts, streamed binary downloads) and does not require external
-`curl`. Bootstrap installers still require `curl`/PowerShell because they run
-before Eggsact exists.
+TLS through the `eggup` transport stack (`eggup-core`, `eggup-eggfetch`,
+`eggup-acquisition`, `eggup-eggpack` 0.1.2) over `eggfetch-core`, with native
+roots plus WebPKI fallback, strict HTTPS downgrade rejection, explicit
+environment proxy routing, 10s connect / 120s total timeouts, and streamed
+binary downloads. It does not require external `curl`. Bootstrap installers
+still require `curl`/PowerShell because they run before Eggsact exists.
 
 Permission errors print an elevated retry command. Eggsact never kills or
 enumerates other processes. Unix replacement completes before `updated` is

@@ -14,7 +14,7 @@ cargo test --locked --doc
 
 Notes:
 - `--test-threads=4` is required for integration tests (Tokio blocking-pool starvation), not a product budget. `--lib`/doc tests don't need it.
-- Parity is excluded from CI (Python `eggcalc` not in CI). Full local gate: `scripts/release-check.sh` (requires clean tree + `cargo-deny`; never publishes/tags).
+- Parity is excluded from the merge-blocking `ci.yml` job (the scheduled `parity.yml` workflow still verifies it weekly from PyPI). Full local gate: `scripts/release-check.sh` (requires clean tree + `cargo-deny`; never publishes/tags).
 
 Focused runs:
 
@@ -71,6 +71,7 @@ Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_fai
 - `eggsact update` / `eggsact integrate list|detect|<client>` are verified/read-only; they never install a daemon or edit client config.
 - Self-update transport is `eggup-core`/`eggup-eggfetch`/`eggup-acquisition`/`eggup-eggpack` 0.1.2 over `eggfetch-core` (in-process HTTP/1 + TLS, strict HTTPS-downgrade rejection, explicit env proxy, no external `curl` after install). `eggfetch-core` and `futures-util` are dev-dependencies. Bootstrap `packaging/install.*` still uses external download tooling. Do not add HTTP to the library/MCP API, retries, or extra fetch features without measurement.
 - Release candidates: `.cargo/config.toml` holds the only release link flags (`/BREPRO`, `/DEBUG:NONE` for `x86_64-pc-windows-msvc`) and is load-bearing for byte-identical rerun reuse. `[profile.release] strip` is a no-op for `windows-msvc` (rustc discards `-C strip` there). Never set `RUSTFLAGS` — it replaces, not extends, target rustflags. Guards: `check-release-contract.py` + `windows_release_link_flags_are_deterministic`; byte proof: `windows-reproducibility` in `maintenance.yml`. See `docs/release.md`.
+- Binary releases are Eggpack-produced, not hand-written: `release-binaries.yml` is generated from `release/eggpack/` and is `workflow_dispatch`-only (requires an existing `release_tag`), not tag-triggered. Never hand-edit it — change the Eggpack config and regenerate, or `release-drift.yml` fails on push. Only the `stage` job holds `contents: write`; nothing publishes crates, tags, or the draft. See [cli-binaries.md](architecture/cli-binaries.md).
 
 ## Planning
 
@@ -84,4 +85,14 @@ the legacy single-doc era for traceability. See ADR-0001 for the adoption record
 
 ## Skills
 
-`.opencode/skills/` (`.agents/skills/` symlinks to it): `mcp-tools`, `testing`, `debugging`, `release`, `text-processing`. Load the matching skill before those tasks.
+`.opencode/skills/` (`.agents/skills/` symlinks to it): `mcp-tools`, `testing`, `debugging`, `release`, `text-processing`. Load the matching skill before those tasks. Each skill is scoped to one architecture deep dive:
+
+| Skill | Read with |
+|---|---|
+| `mcp-tools` | [tools.md](architecture/tools.md), [registry-profiles.md](architecture/registry-profiles.md), [machine-codes.md](architecture/machine-codes.md), [preflight.md](architecture/preflight.md) |
+| `testing` | [testing.md](architecture/testing.md), [compatibility.md](architecture/compatibility.md) |
+| `debugging` | [overview.md](architecture/overview.md) gotchas, [generated-assets.md](architecture/generated-assets.md) |
+| `release` | [cli-binaries.md](architecture/cli-binaries.md), [self-update.md](architecture/self-update.md) |
+| `text-processing` | [text-library.md](architecture/text-library.md) |
+
+Skills hold the operational detail (exact commands, file inventories, gotcha tables); the architecture deep dives own the contracts. When you change one, check the other: a stale count in a skill is as wrong as a stale contract in a deep dive, and `architecture/overview.md` is the master index for both.

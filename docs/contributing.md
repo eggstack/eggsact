@@ -29,7 +29,7 @@ path, so run `cargo build` before running parity tests.
 ```sh
 cargo fmt --all -- --check     # formatting gate (CI-equivalent)
 cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-features      # all tests (unit, integration, parity)
+cargo test --locked --all-features -- --skip parity --test-threads=4  # CI-equivalent test run
 cargo run --locked --features dev-tools --bin generate-docs -- --check  # generated docs freshness
 cargo package --locked --verbose        # crates.io package verification
 cargo test --locked --lib                # unit tests within src/ only
@@ -137,8 +137,10 @@ eggsact/
    ```bash
    cargo run --locked --features dev-tools --bin generate-docs
    ```
-   This updates the profile reference block in `architecture/mcp-server.md`
-   and `generated/tool-cards.md`. README is hand-maintained and not touched.
+   This updates the profile reference block in `architecture/mcp-server.md`,
+   the `Generated Registry Facts` block in `architecture/overview.md`, and
+   `generated/tool-cards.md`. `README.md` and `docs/` are hand-maintained and
+   not touched.
 
 5. **Prefer reusable library code** under `src/text/` or `src/calc/` for business
    logic. Keep `src/tools/*.rs` wrappers thin so the same behavior is testable
@@ -214,9 +216,12 @@ dependency hygiene:
 cargo deny check advisories bans licenses sources  # license, advisory, ban, and source checks
 ```
 
-Allowed licenses: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, Unlicense,
-Unicode-DFS-2016, Unicode-3.0, Zlib. All are permissive and compatible with
-the project's MIT license.
+Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
+Unlicense, Unicode-DFS-2016, Unicode-3.0, Zlib, ISC, BSD-3-Clause,
+CDLA-Permissive-2.0. The last three cover the TLS stack behind in-process
+self-update (rustls/ring/webpki-roots): all OSI-approved or standard
+trust-root-data licenses. All are permissive and compatible with the project's
+MIT license.
 
 ## Release Process
 

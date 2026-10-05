@@ -6,16 +6,17 @@
 
 ```toml
 [dependencies]
-eggsact = "1.2.6"
+eggsact = "1.2.7"
 ```
 
-The crate exposes six public modules:
+The crate exposes seven public modules:
 
 - `eggsact::calc` -- math evaluation (natural language and direct expressions)
 - `eggsact::text` -- text processing utilities (measurement, diff, validation, transforms)
 - `eggsact::mcp` -- MCP server for AI tool integration
 - `eggsact::agent` -- in-process `ToolRegistry`, profiles, execution contexts
 - `eggsact::preflight` -- typed preflight wrappers (edit/command/config/dependency checks)
+- `eggsact::services` -- typed composite facts (`RepoFacts`, `PatchAnalysis`, `SecurityInspection`, `FingerprintFacts`, `NewlineFacts`)
 - `eggsact::tools` -- tool handler implementations by category
 
 Core functions are re-exported at the crate root:

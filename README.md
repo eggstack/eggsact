@@ -8,13 +8,13 @@ Deterministic MCP and in-process utility tools for coding agents. 86 tools acros
 
 ## Installation
 
-The latest release is v1.2.6. The verified binary installer is the recommended
+The latest release is v1.2.7. The verified binary installer is the recommended
 path for supported hosts:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
   https://github.com/eggstack/eggsact/releases/latest/download/install.sh \
-  | bash -s -- --version 1.2.6
+  | bash -s -- --version 1.2.7
 ```
 
 On Windows, run the published PowerShell installer:
@@ -23,7 +23,7 @@ On Windows, run the published PowerShell installer:
 irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | iex
 ```
 
-Pin the Windows installer with `-Version 1.2.6`. Both installers verify the
+Pin the Windows installer with `-Version 1.2.7`. Both installers verify the
 downloaded binary's checksum and reported version. Cargo remains available as
 the fallback for unsupported hosts and source builds:
 
@@ -104,9 +104,10 @@ eggsact integrate codex    # zed, claude, cursor, vscode, or opencode
 
 Update an installed binary with `eggsact update`. It verifies the crates.io
 stable version, GitHub asset checksum, and candidate `--version` before
-replacement. The updater is self-contained (in-process HTTP/1 + TLS via
-`eggfetch-core`; no external `curl` required after install). Bootstrap
-installers still use `curl`/PowerShell because they run before Eggsact exists.
+replacement. The updater is self-contained (in-process HTTP/1 + TLS via the
+`eggup` transport stack over `eggfetch-core`; no external `curl` required after
+install). Bootstrap installers still use `curl`/PowerShell because they run
+before Eggsact exists.
 Existing MCP sessions continue until their owning client
 reconnects. Eggsact does not install a daemon or edit client configuration.
 

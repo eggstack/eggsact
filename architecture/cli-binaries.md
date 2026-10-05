@@ -121,13 +121,29 @@ installer-recognized Cargo fallback only.
 
 ## Release workflow
 
-`.github/workflows/release-binaries.yml` is tag-driven and is the only workflow
-with `contents: write`. It requires an existing `vX.Y.Z` tag, an exact tagged
-checkout, a clean tree, and matching crates.io metadata before any build. It
-never publishes crates, creates or moves tags, pushes source commits, or
-publishes a GitHub release. Assembly creates or updates only a draft release.
+`.github/workflows/release-binaries.yml` is **Eggpack-generated and
+`workflow_dispatch`-only** — it is not tag-triggered. It takes one required
+input, `release_tag`, naming an already-pushed tag, and requires an exact tagged
+checkout and a clean tree before any build. Top-level `permissions` is
+`contents: read`; only the `stage` job holds `contents: write`. It never
+publishes crates, creates or moves tags, pushes source commits, or publishes a
+GitHub release. Assembly creates or updates only a draft release.
+
+Eggpack is producer authority: the five-target set, artifact names, checksums,
+and installer presentation all come from `release/eggpack/` (`distribution.toml`,
+`pack.toml`, `build-bindings.toml`, `qualification-bindings.toml`,
+`consumer-validators.json`, `github-policy.json`, `github-template.json`,
+`installer-presentation.json`, `install-policy.toml`, `workflow-shape.json`).
+Do not hand-edit the generated workflow — change the Eggpack configuration and
+regenerate. `.github/workflows/release-drift.yml` ("Release drift guard") runs on
+push/PR to `main` and fails the build if the checked-in workflow diverges from
+that configuration (`eggpack ci check`) or from the eggsact-owned installer and
+updater invariants (`scripts/check-release-contract.py`).
+
 The first successful five-target run was workflow `33944943782` for tag
-`v1.2.4`; the draft was inspected and published after all jobs passed.
+`v1.2.4`; the draft was inspected and published after all jobs passed. v1.2.7 was
+later published through the Eggpack line with installer, `latest/download`, and
+`eggsact update` smokes verified.
 
 Linux release tooling uses an explicitly downloaded and SHA-256-pinned Zig
 release plus a pinned `cargo-zigbuild` version. The workflow checks the runner

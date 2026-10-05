@@ -1,13 +1,20 @@
 # Release Evidence Archive
 
-Historical verification ledgers for the v1.2.0 release cycle (July 2026).
-Kept for provenance only — they do not describe the current release process.
+This directory is intentionally empty. The per-release verification ledgers that
+used to live here (the v1.2.0 release cycle, July 2026) were removed: they were
+three minor versions stale, described a superseded release process, and carried
+links to plan documents that no longer exist. Their content remains in git
+history up to the commit that removed them.
 
-- `2026-07-final-closure-evidence.md` — runtime correctness closure evidence
-- `release-4-status-v1.2.0.md` — Release 4 (verification infrastructure) status
-- `release-5-status-v1.2.0.md` — Release 5 (fuzzing/property testing) status and fuzz findings
-- `release-readiness-v1.2.0.md` — final v1.2.0 readiness, publication record
+Durable release records live elsewhere:
 
-The canonical, current process is `docs/release.md` with the verification
-doctrine in `docs/verification.md`. Subsequent releases are recorded in
-`CHANGELOG.md` and annotated git tags rather than evidence ledgers.
+- [docs/release.md](../release.md) — the canonical release checklist and policy
+- [docs/verification.md](../verification.md) — verification doctrine and failure
+  ownership
+- [CHANGELOG.md](../../CHANGELOG.md) — per-version change and evidence summary
+- [plans/registry.md](../../plans/registry.md) and
+  [plans/closure/](../../plans/closure/) — milestone closure records
+- Annotated git tags (`git tag -l 'v*'`) and their commit messages
+
+Do not add new per-release ledgers here. Add release notes to `CHANGELOG.md` and,
+for a milestone, a closure record under `plans/closure/`.

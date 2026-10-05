@@ -31,7 +31,7 @@ cargo +1.89.0 test --locked --doc
 
 | Date | Commit | MSRV | Result |
 |------|--------|------|--------|
-| 2026-07-21 | 536c380 | 1.89.0 | CI passes (Ubuntu, Windows, macOS) |
+| 2026-07-21 | 536c380 | 1.89.0 | CI passes (Ubuntu); Windows/macOS compile checks pass in the weekly `maintenance.yml` lane |
 
 ## MSRV policy
 
