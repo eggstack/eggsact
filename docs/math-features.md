@@ -31,7 +31,12 @@ See also: [Library API](library-api.md), [Calculator Core](../architecture/calcu
 
 ### Logarithmic / Exponential
 
-`log(x)` / `ln(x)`, `log(x, base)`, `log10(x)`, `log2(x)`, `log1p(x)`, `exp(x)`, `expm1(x)`
+`log(x)` / `ln(x)`, `log(x, base)`, `exp(x)`, `expm1(x)`
+
+`log10(x)`, `log2(x)`, and `log1p(x)` are implemented in the expression
+evaluator but currently fail through `run()` — the natural-language path used
+by the CLI and the `math_eval` tool — with `Error: Unknown constant: log`. Use
+`log(x, base)` instead. See [docs/cli.md](cli.md).
 
 ### Power / Root
 
@@ -135,15 +140,19 @@ Filler phrases are stripped: "what is", "calculate", "the value of", "tell me", 
 ## Unit Conversions
 
 ```bash
-eggsact "30m to ft"       # 98.4251968503937
-eggsact "1km in miles"    # 0.621371...
-eggsact "72F in C"        # 22.2222...
-eggsact "1024KB in MB"    # 1
-eggsact "1gal in L"       # 3.78541...
-eggsact "30m + 100ft"     # 60.480000000000004 m
+eggsact "30m to ft"                     # 98.42519685039369 ft
+eggsact "1km in miles"                  # 0.621371192237334 mi
+eggsact "72F in C"                      # 22.22222222222222 C
+eggsact "1024 kilobytes in megabytes"   # 1 MB
+eggsact "1gal in L"                     # 3.785411784 L
+eggsact "30m + 100ft"                   # 60.480000000000004 m
 ```
 
 Temperature conversions use offset math, not multiplicative factors.
+
+Data units use spelled-out names (`kilobyte`, `megabyte`, `gigabyte`, `byte`,
+`bit`). The short symbols are not accepted from the CLI — `eggsact "1024KB in
+MB"` returns `Error: Unknown unit: kb`.
 
 ### Supported Unit Categories
 

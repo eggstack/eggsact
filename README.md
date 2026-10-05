@@ -1,131 +1,77 @@
 # eggsact
 
 [![Crates.io](https://img.shields.io/crates/v/eggsact)](https://crates.io/crates/eggsact)
-[![Downloads](https://img.shields.io/crates/d/eggsact)](https://crates.io/crates/eggsact)
+[![Downloads](https://img.shields.io/crates/d/eggsact)](https://crates.io/crates/d/eggsact)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Deterministic MCP and in-process utility tools for coding agents. 86 tools across 23 categories: math, text, JSON, regex, path, shell, config, patch, dependency, analysis, network, encoding, temporal, and more. Includes a natural language math evaluator that parses expressions like "thirty plus five" or "30m + 100ft".
+Deterministic MCP server and in-process utility library for coding agents.
+**86 tools across 23 categories** — math, text, JSON, regex, path, shell,
+config, patch, dependency, analysis, network, encoding, and time — with no
+network, clock, or filesystem state in the tool cores.
 
-## Installation
-
-The latest release is v1.2.7. The verified binary installer is the recommended
-path for supported hosts:
+## Install
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
-  https://github.com/eggstack/eggsact/releases/latest/download/install.sh \
-  | bash -s -- --version 1.2.7
+  https://github.com/eggstack/eggsact/releases/latest/download/install.sh | bash
 ```
 
-On Windows, run the published PowerShell installer:
+Windows:
 
 ```powershell
 irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | iex
 ```
 
-Pin the Windows installer with `-Version 1.2.7`. Both installers verify the
-downloaded binary's checksum and reported version. Cargo remains available as
-the fallback for unsupported hosts and source builds:
+Or via Cargo (any host, needs Rust 1.89.0+):
 
 ```bash
 cargo install eggsact
 ```
 
-See [Installation](docs/installation.md) for the target matrix, fallback, and
-validation contract.
+## Quick start
 
-Maintainers can reproduce the release-mode performance evidence matrix with
-`cargo bench --locked --bench performance`; it is non-gating and intended for
-same-host baseline/candidate comparisons. See
-[Performance](architecture/performance.md) for the measured contracts and
-hot-path invariants.
-
-Or from source:
+### Calculator from the shell
 
 ```bash
-git clone https://github.com/eggstack/eggsact
-cd eggsact
-cargo install --path .
+$ eggsact "thirty plus five"
+35
+$ eggsact "2 ** 10"
+1024
+$ eggsact "30m to ft"
+98.42519685039369 ft
 ```
 
-**Minimum Rust version**: 1.89.0.
+It also parses natural language, unit conversions, and ~90 math functions.
+Note `^` is XOR (use `**` for power) and `g` means gram — use `gravity` for
+standard gravity. Full example set:
+[docs/cli.md](docs/cli.md).
 
-## Quick Start
-
-### CLI
+### MCP server
 
 ```bash
-# Natural language
-eggsact "thirty plus five"            # 35
-
-# Standard math
-eggsact "2 ** 10"                     # 1024
-
-# Unit conversions
-eggsact "30m to ft"                   # 98.425...
-
-# MCP server mode (stdio JSON-RPC, connection-pinned dual-era: 2026-07-28 + 2025-11-25/2024-11-05 legacy; one process serves one era)
-eggsact --mcp
-# Low-context discovery surface (pinned front doors + tool_search/tool_invoke)
-eggsact --mcp --mcp-surface discovery
+eggsact --mcp                              # stdio JSON-RPC, full catalog
+eggsact --mcp --mcp-surface discovery      # low-context: 7 front doors + search/invoke
+eggsact --diagnostics                      # tool counts per profile, versions, limits
 ```
 
-Each stdio process is pinned to one protocol era by its first classifiable
-message: an enveloped modern claim selects `2026-07-28`; `initialize` or any
-claim-less opening selects the legacy path. The official SDK's automatic
-modern probe is enveloped and runs in a disposable sibling process. A
-claim-less `server/discover` is therefore legacy traffic, not an era-neutral
-probe. Cross-era requests return `-32022 Unsupported protocol version`, while
-mismatched notifications are dropped before side effects.
-
-Discovery is an explicit low-context presentation option, not a capability
-reduction: full/Model direct definitions are 77 tools / 111,911 serialized
-bytes, while discovery advertises 7 / 6,088 bytes (5.44%). Deterministic
-retrieval and policy-containment gates live in `tests/mcp/test_discovery.rs`
-(76 stable Model tools at 100% semantic coverage with 88 task intents,
-top-1 >=90% / top-3 >=98% / top-5 100%, zero Model-audience leaks; 48 Model
-task scenarios plus 4 containment cases). Paired provider/client traces can
-be scored offline with `scripts/score-discovery-traces.py --pair
-direct.json discovery.json` (plural `expected_tools` contract, 2pp
-noninferiority gates); see `tests/fixtures/discovery_traces/README.md`.
-External OpenAI/Anthropic evidence is still pending, so generated
-integrations stay on direct while discovery remains explicitly selectable.
-
-### MCP client setup
-
-Render a read-only, absolute-path registration instruction for a client-owned
-stdio process:
+Point your client at it — `eggsact integrate <client>` renders a read-only
+config snippet for `zed`, `codex`, `claude`, `cursor`, `vscode`, or `opencode`:
 
 ```bash
-eggsact integrate list
-eggsact integrate detect
-eggsact integrate codex    # zed, claude, cursor, vscode, or opencode
+eggsact integrate detect    # which clients are installed
+eggsact integrate codex     # config snippet
 ```
-
-Update an installed binary with `eggsact update`. It verifies the crates.io
-stable version, GitHub asset checksum, and candidate `--version` before
-replacement. The updater is self-contained (in-process HTTP/1 + TLS via the
-`eggup` transport stack over `eggfetch-core`; no external `curl` required after
-install). Bootstrap installers still use `curl`/PowerShell because they run
-before Eggsact exists.
-Existing MCP sessions continue until their owning client
-reconnects. Eggsact does not install a daemon or edit client configuration.
 
 ### Library
 
 ```rust
 use eggsact::{run, evaluate};
 
-// Natural language
-let (result, _typ) = run("thirty plus five").unwrap();
-assert_eq!(result, "35");
-
-// Direct math
-let (result, _typ) = evaluate("2 ** 10").unwrap();
-assert_eq!(result, "1024");
+assert_eq!(run("thirty plus five").unwrap().0, "35");
+assert_eq!(evaluate("2 ** 10").unwrap().0, "1024");
 ```
 
-### In-Process Agent API
+In-process tool dispatch through the typed agent API:
 
 ```rust
 use eggsact::agent::{ToolRegistry, ExecutionContext, Profile, ToolAudience};
@@ -137,74 +83,65 @@ let response = registry.call_json_with_execution_context(
     serde_json::json!({"expression": "2 + 3"}),
     &ctx,
 ).unwrap();
+
 assert!(response.ok);
+// result: {"value": "5", "type": "int"}
 ```
-
-### Typed Preflight Wrappers
-
-```rust
-use eggsact::preflight::{DependencyPreflight, DependencyPreflightInput};
-
-let input = DependencyPreflightInput {
-    file_path: "Cargo.toml".to_string(),
-    old_text: "[dependencies]\n".to_string(),
-    new_text: "[dependencies]\nserde = \"1\"\n".to_string(),
-    ..Default::default()
-};
-let output = DependencyPreflight::run(&input).unwrap();
-assert!(!output.machine_code.is_empty());
-```
-
-For new Rust integrations prefer `calc`/root functions, then typed `text`
-primitives, then `ToolRegistry`, then typed `preflight` wrappers — raw
-`tools::*` handlers are adapter internals kept `pub` for 1.x compatibility.
-See [docs/library-api.md](docs/library-api.md) for the full hierarchy.
-
-## Supported Platforms
-
-| Tier | Platform | Status |
-|------|----------|--------|
-| 1 | Ubuntu latest (x86_64) | Full CI gate |
-| 2 | Windows latest (x86_64) | Compile check |
-| 2 | macOS latest (ARM64) | Compile check |
 
 ## Documentation
 
 | Topic | Link |
 |-------|------|
-| CLI usage | [docs/cli.md](docs/cli.md) |
-| Installation, updates, and client setup | [docs/installation.md](docs/installation.md) |
-| Library API | [docs/library-api.md](docs/library-api.md) |
+| **Getting started** | |
+| CLI usage, all flags, worked examples | [docs/cli.md](docs/cli.md) |
+| Installation, updates, target matrix | [docs/installation.md](docs/installation.md) |
+| MCP client setup | [architecture/coding-agent-integration.md](architecture/coding-agent-integration.md) |
+| **Using the tools** | |
 | MCP tool reference (86 tools) | [docs/mcp-tools.md](docs/mcp-tools.md) |
 | Math features, functions, constants, units | [docs/math-features.md](docs/math-features.md) |
-| Architecture overview | [architecture/overview.md](architecture/overview.md) |
-| Calculator core | [architecture/calculator.md](architecture/calculator.md) |
-| MCP server internals | [architecture/mcp-server.md](architecture/mcp-server.md) |
-| Agent API deep dive | [architecture/agent-api.md](architecture/agent-api.md) |
-| Preflight wrappers | [architecture/preflight.md](architecture/preflight.md) |
-| Machine codes | [architecture/machine-codes.md](architecture/machine-codes.md) |
-| Profiles and audiences | [architecture/registry-profiles.md](architecture/registry-profiles.md) |
-| Text processing library | [architecture/text-library.md](architecture/text-library.md) |
-| Budget and concurrency | [architecture/budget-concurrency.md](architecture/budget-concurrency.md) |
-| Performance evidence | [architecture/performance.md](architecture/performance.md) |
+| Library API hierarchy | [docs/library-api.md](docs/library-api.md) |
+| **Reference** | |
 | Compatibility policy | [docs/compatibility-policy.md](docs/compatibility-policy.md) |
-| Verification doctrine | [docs/verification.md](docs/verification.md) |
+| Python `eggcalc` parity status | [docs/parity.md](docs/parity.md) |
+| **Architecture** | |
+| Overview (start here) | [architecture/overview.md](architecture/overview.md) |
+| MCP server and protocol eras | [architecture/mcp-server.md](architecture/mcp-server.md) |
+| Registry, profiles, audiences | [architecture/registry-profiles.md](architecture/registry-profiles.md) |
+| Tool adapters | [architecture/tools.md](architecture/tools.md) |
+| Text processing library | [architecture/text-library.md](architecture/text-library.md) |
+| Calculator core | [architecture/calculator.md](architecture/calculator.md) |
+| Agent API | [architecture/agent-api.md](architecture/agent-api.md) |
+| Typed preflight wrappers | [architecture/preflight.md](architecture/preflight.md) |
+| Machine codes | [architecture/machine-codes.md](architecture/machine-codes.md) |
+| Budget and concurrency | [architecture/budget-concurrency.md](architecture/budget-concurrency.md) |
+| Binary distribution | [architecture/cli-binaries.md](architecture/cli-binaries.md) |
+| Self-update | [architecture/self-update.md](architecture/self-update.md) |
+| **Contributing** | |
+| Contributing guide | [docs/contributing.md](docs/contributing.md) |
 | Testing patterns | [architecture/testing.md](architecture/testing.md) |
-| Contributing | [docs/contributing.md](docs/contributing.md) |
+| Verification doctrine | [docs/verification.md](docs/verification.md) |
 | Fuzzing | [docs/fuzzing.md](docs/fuzzing.md) |
+| Performance evidence | [architecture/performance.md](architecture/performance.md) |
 | Release process | [docs/release.md](docs/release.md) |
+| Minimum supported Rust version | [docs/msrv.md](docs/msrv.md) |
 
-## Key Gotchas
+`AGENTS.md` and `.opencode/skills/` hold agent-facing conventions and per-task
+playbooks.
 
-- **`^` is XOR, not exponentiation.** Use `**` for power. Matches Python.
-- **`g` means gram** in unit expressions. Use `gravity` for standard gravity.
-- `serde_json` uses `preserve_order` — key order is intentional in serialized JSON.
-- Network, encoding, datetime, and cron utilities are deterministic and use no system/network state; temporal conversions accept fixed offsets only. IPv6 CIDR counts are exact decimal powers of two, mapped-IPv6 metadata is limited to `::ffff:0:0/96`, and cron DOM/DOW matching follows Vixie/Cronie star syntax (either field starting with `*`, including `*/n` steps, requires both fields to match; otherwise either may match; explicit full ranges are not star syntax).
+## Supported platforms
+
+| Tier | Platform | Status |
+|------|----------|--------|
+| 1 | Ubuntu latest (x86_64) | Full CI gate |
+| 2 | Windows latest (x86_64) | Compile check + byte-reproducible release build |
+| 2 | macOS latest (ARM64) | Compile check + release build |
 
 ## Relationship to Python eggcalc
 
-`eggsact` is a Rust reimplementation of the Python `eggcalc` project. The two projects are functionally equivalent for core math, unit conversion, and text processing operations. See [docs/parity.md](docs/parity.md) for known differences.
+`eggsact` is a Rust reimplementation of the Python `eggcalc` project. Core math,
+unit conversion, and text operations are equivalent; 37 known behavioral
+differences are tracked in [docs/parity.md](docs/parity.md).
 
 ## License
 
-MIT -- see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).

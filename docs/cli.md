@@ -84,14 +84,43 @@ eggsact --mcp
 The server reads requests from stdin and writes responses to stdout. This mode is intended for integration with AI agent frameworks.
 
 ```bash
-eggsact --mcp --mcp-surface discovery
+eggsact --mcp                                  # full catalog (77 tools at the default Model audience)
+eggsact --mcp --mcp-surface discovery          # 7 front doors + tool_search/tool_invoke
 # or: EGGSACT_MCP_SURFACE=discovery eggsact --mcp
 ```
 
+The registry declares 86 tools. A `tools/list` response is filtered by the
+active profile and audience, so a default Model-audience session sees 77; the
+`full` profile exposes all 86. Run `eggsact --diagnostics` for the per-profile
+counts.
+
 Discovery mode advertises only the pinned front doors plus
-`tool_search`/`tool_invoke`; all profile/audience-allowed capabilities
-stay reachable through the facades. Direct mode (default) preserves the
-full catalog for clients that implement their own deferred loading.
+`tool_search`/`tool_invoke`; all profile/audience-allowed capabilities stay
+reachable through the facades. Direct mode (default) preserves the full catalog
+for clients that implement their own deferred loading.
+
+A legacy session requires `initialize` -> `notifications/initialized` before
+`tools/list` or `tools/call`:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1.0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"text_measure","arguments":{"text":"the quick brown fox"}}}' \
+  | eggsact --mcp
+```
+
+The `tools/call` response carries the tool's result as text content:
+
+```json
+{"ok": true, "tool": "text_measure", "result": {"bytes_utf8": 19, "words": 4, ...}}
+```
+
+Each stdio process is pinned to one protocol era by its first classifiable
+message: an enveloped modern claim selects `2026-07-28`, while `initialize` or
+any claim-less opening selects the legacy path. See
+[MCP server internals](../architecture/mcp-server.md) for the era rules and the
+modern handshake.
 
 ### Help and Version
 
@@ -118,15 +147,15 @@ eggsact --diagnostics --format json
 eggsact
 # Output:
 # Usage: eggsact [--mcp [--mcp-surface direct|discovery] | --diagnostics [--format json|text] | update | integrate <client> [--discovery] | expression]
-#   --mcp          Start MCP server mode
-#   --mcp-surface  Presentation surface: direct (default) or discovery (pinned front doors + tool_search/tool_invoke)
-#   --diagnostics  Print diagnostic information
-#   --format       Output format for --diagnostics (default: text)
-#   -h, --help     Print this help message
-#   -V, --version  Print version information
-#   update         Update from the latest stable crates.io release
-#   integrate      Render MCP setup for a client (or list/detect)
-#   expression     Evaluate math expression
+#   --mcp              Start MCP server mode
+#   --mcp-surface      Presentation surface: direct (default) or discovery (pinned front doors + tool_search/tool_invoke)
+#   --diagnostics      Print diagnostic information
+#   --format json|text Output format for --diagnostics (default: text)
+#   -h, --help         Print this help message
+#   -V, --version      Print version information
+#   update             Update from the latest stable crates.io release
+#   integrate <name>   Render MCP setup for a client (or list/detect) [--discovery renders --mcp-surface discovery args]
+#   expression         Evaluate math expression
 ```
 
 ## Examples
@@ -159,10 +188,19 @@ eggsact "3**2 + 4**2"                        # 25
 
 ```bash
 eggsact "30m + 100ft"                        # 60.480000000000004 m
-eggsact "1km in miles"                       # 0.621371...
-eggsact "72F in C"                           # 22.2222...
-eggsact "1024KB in MB"                       # 1
-eggsact "1gal in L"                          # 3.78541...
+eggsact "1km in miles"                       # 0.621371192237334 mi
+eggsact "72F in C"                           # 22.22222222222222 C
+eggsact "1024 kilobytes in megabytes"        # 1 MB
+eggsact "8 bits in bytes"                   # 1 B
+eggsact "1gal in L"                          # 3.785411784 L
+```
+
+Data units use spelled-out names (`kilobyte`, `megabyte`, `gigabyte`, `byte`,
+`bit`). The short symbols `KB`/`MB` are not accepted from the CLI:
+
+```bash
+eggsact "1024KB in MB"
+# Error: Unknown unit: kb
 ```
 
 ### Functions
@@ -170,22 +208,34 @@ eggsact "1gal in L"                          # 3.78541...
 ```bash
 eggsact "sqrt(256)"                          # 16
 eggsact "abs(-42)"                           # 42
-eggsact "log10(1000)"                        # 3
-eggsact "log2(1024)"                         # 10
-eggsact "sin(pi)"                            # ~0
+eggsact "log(1024, 2)"                       # 10
+eggsact "log(1000, 10)"                      # 2.9999999999999996
+eggsact "log(e)"                             # 1
+eggsact "sin(pi)"                            # 0.00000000000000012246467991473532
 eggsact "ceil(3.2)"                          # 4
 eggsact "floor(3.8)"                         # 3
 ```
 
+`log(x)` is the natural logarithm; `log(x, base)` takes an explicit base.
+
+> **Known limitation:** `log10(x)`, `log2(x)`, and `log1p(x)` are implemented in
+> the expression parser but currently fail on the natural-language path used by
+> this CLI and by the `math_eval` tool, which reports
+> `Error: Unknown constant: log`. Use the two-argument `log(x, base)` form until
+> this is fixed.
+
 ### Constants
 
 ```bash
-eggsact "pi"                                 # 3.14159...
-eggsact "e"                                  # 2.71828...
-eggsact "c"                                  # speed of light
+eggsact "pi"                                 # 3.141592653589793
+eggsact "e"                                  # 2.718281828459045
+eggsact "c"                                  # 299792458 m/s
 eggsact "gravity"                            # 9.80665
-eggsact "na"                                 # Avogadro's number
+eggsact "na"                                 # 602214076000000000000000
 ```
+
+`g` is gram, not gravity. Use `gravity` or `standardgravity` for standard
+gravity.
 
 ## Error Output
 
@@ -197,9 +247,17 @@ eggsact "1 / 0"
 # exit code: 1
 
 eggsact "sqrt(-1)"
-# stderr: Error: ...
+# stderr: Error: Invalid operation: square root of negative number
+# exit code: 1
+
+eggsact "1024KB in MB"
+# stderr: Error: Unknown unit: kb
 # exit code: 1
 ```
+
+MCP tool errors return `ok: false` in a JSON body with a stable `machine_code`
+rather than a non-zero process exit. See
+[Machine codes](../architecture/machine-codes.md).
 
 ## Piping
 

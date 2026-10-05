@@ -114,7 +114,9 @@ Direct mathematical expression evaluation. Parses Python-style math syntax witho
 **Supported syntax:**
 - Arithmetic: `+`, `-`, `*`, `/`, `%`, `**` (power)
 - Parentheses for grouping
-- Functions: `sin()`, `cos()`, `sqrt()`, `abs()`, `log()`, `log2()`, `log10()`, etc.
+- Functions: `sin()`, `cos()`, `sqrt()`, `abs()`, `log()`, `log(x, base)`, `exp()`, etc.
+  (`log10()`/`log2()`/`log1p()` exist in the expression parser but currently fail
+  on the `run()` path — see [docs/cli.md](cli.md).)
 - Constants: `pi`, `e`, `tau`, `c`, `gravity`, `na`, `h`, etc.
 - Comparison: `<`, `>`, `<=`, `>=`, `==`, `!=`
 - Complex numbers: `3+4j`
@@ -689,7 +691,7 @@ fn main() {
         "30m + 100ft",        // meters + feet
         "1km in miles",       // km to miles
         "72F in C",           // Fahrenheit to Celsius
-        "1024KB in MB",       // kilobytes to megabytes
+        "1024 kilobytes in megabytes",  // kilobytes to megabytes
         "1gal in L",          // gallons to liters
     ];
 
