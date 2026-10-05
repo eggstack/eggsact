@@ -76,7 +76,18 @@ Cancellation is cooperative, not forceful. On timeout:
 3. When detected, the handler returns a timeout error response
 4. The handler may continue running on the blocking thread — the pool does not kill threads
 
-Handlers that check cancellation: `edit_preflight`, `command_preflight`, `config_preflight`, `config_file_inspect`, `dependency_edit_preflight`, `text_security_inspect`.
+Handlers that check cancellation: **20 handlers across ten tool files**. The composite and
+route-critical tools — `edit_preflight`, `command_preflight`, `config_preflight`,
+`patch_apply_check`, `patch_summary`, `patch_contract_check`,
+`dependency_edit_preflight` — plus the heavy analysis tools
+`config_file_inspect`, `text_security_inspect`, `text_diff_explain`,
+`structured_data_compare`, `regex_finditer`, `identifier_table_inspect`,
+`import_export_inspect`, `code_block_map`, `symbol_name_diff`, `lockfile_inspect`,
+`repo_tree_summarize`, `test_command_suggest`, and `repo_language_detect`.
+
+Two further handlers are cancellation-aware without declaring a tier in
+`src/tools/`: `temporal::cron::search_next` builds a `MODERATE` budget and
+`temporal::cron::satisfiable` a `CHEAP` one. See [temporal.md](temporal.md).
 
 ---
 

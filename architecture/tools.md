@@ -50,7 +50,7 @@ Typed deterministic core (`text/`, `calc/`)
 
 ### Dependency rules
 
-- `services/*` never touch `ToolResponse`, the MCP registry, profile/audience policy, or JSON-schema validation (only `serde`/`BTreeMap`/typed cores + `super::repo` for patch roles). Verified: no such imports in `src/services/*.rs`.
+- `services/*` never touch `ToolResponse`, the MCP registry, profile/audience policy, or JSON-schema validation. Their only external imports are `serde`, `std::collections::BTreeMap`, `unicode_normalization` (`security.rs`), and sibling `super::` fact modules for patch roles. Verified: no `ToolResponse`/registry/profile imports in `src/services/*.rs` — the only textual matches are prose in doc comments.
 - `tools/*` adapters parse/validate their own input, call typed cores/services, and build the response once. Never call a sibling `tools::*` handler for an internal result — there are no production handler-to-handler compositions under `src/tools/` (enforced by the repository-wide discovered handler-graph guard `substrate_008_generic_handler_graph_has_no_handler_to_handler_edges` in `tests/mcp/test_substrate_008.rs`; the four-edge `adapter_layering_has_no_handler_to_handler_composition` in `tests/mcp/test_substrate_007.rs` remains as supplemental diagnostics).
 - Orchestration pattern (confirmed by the `patch.rs` module header): each patch-family tool projects a different answer from one `PatchAnalysis` — `patch_summary` neutral presentation, `patch_contract_check` contract policy, `diff_risk_classify` review-routing policy — with path roles from the canonical repository classifier so bucket facts cannot drift. Same shape holds for repo tools over `RepoFacts` and `edit_preflight` over fingerprint/newline/security facts.
 
@@ -131,7 +131,7 @@ randomness.
 - `codec_convert` converts bytes among UTF-8, strict hex, standard Base64, and unpadded Base64URL with canonical output.
 - `radix_convert` converts signed-magnitude integers in bases 2–36 using checked `u128` arithmetic; it does not guess widths or interpret two’s complement.
 - `datetime_convert` converts RFC 3339 and Unix second/millisecond/nanosecond strings using caller-selected fixed offsets. Negative fractional instants use floor whole-unit values; nanoseconds remain authoritative.
-- `cron_inspect` parses bounded five-field Vixie/Cronie-style schedules and searches no more than one Gregorian 400-year cycle. It uses the offset carried by `after`, has no DST/IANA behavior, and applies Vixie star-syntax DOM/DOW matching: when neither field starts with `*`, either parsed field may match; when either field starts with `*`, including supported `*/n` step forms, both parsed predicates must match. Bare `*` behaves as the familiar wildcard because its value set already contains every value; explicit full ranges/lists are not equivalent to star syntax. Step syntax is the Vixie/Cronie extension, not POSIX-defined.
+- `cron_inspect` parses bounded five-field Vixie/Cronie-style schedules and searches no more than one Gregorian 400-year cycle (the bounded loop examines 146,098 candidate dates). It uses the offset carried by `after`, has no DST/IANA behavior, and applies Vixie star-syntax DOM/DOW matching: when neither field starts with `*`, either parsed field may match; when either field starts with `*`, including supported `*/n` step forms, both parsed predicates must match. Bare `*` behaves as the familiar wildcard because its value set already contains every value; explicit full ranges/lists are not equivalent to star syntax. Step syntax is the Vixie/Cronie extension, not POSIX-defined.
 
 ## Shared Helpers (`helpers.rs`)
 
@@ -290,7 +290,7 @@ Pre-checks an edit operation before applying it. Supports three replacement mode
 3. **Fingerprint check** — if `expected_fingerprint` is provided, uses the SHA-256/newline facts for the relevant text (original for literal via `services::fingerprint_facts`, `result_fingerprint`/`newline_style_after` from the patch core for patch, `fingerprint`/`newline_style` from the line-range core for line_range). Emits `FINGERPRINT_MISMATCH` finding if mismatch.
 4. **Path scope check** — if `file_path` + `workspace_root` are provided, calls `text::path_scope_check`. Emits `PATH_SCOPE_ESCAPE` finding if target is outside workspace root.
 5. **Newline style detection** — if `newline_policy != "skip"`, calls `services::newline_facts` on original + replacement text. Emits `NEWLINE_INCONSISTENCY` finding if mixed styles.
-6. **Unicode security check** — if `unicode_policy != "skip"`, calls `services::inspect_text_security` on the replacement text. Emits `UNICODE_RISK` finding if verdict is `block` or `review`.
+6. **Unicode security check** — if `unicode_policy != "skip"`, calls `services::inspect_text_security` on `inspect_text`, which is `new` for `literal`/`line_range` mode and the raw `patch` for `patch` mode. Emits `UNICODE_RISK` finding if verdict is `block` or `review`.
 7. **Verdict derivation** — `derive_primary_machine_code()` selects the highest-priority code from findings (PATH_SCOPE_ESCAPE > LINE_RANGE_INVALID > PATCH_FAILED > AMBIGUOUS_REPLACEMENT > FINGERPRINT_MISMATCH > UNICODE_RISK > NEWLINE_INCONSISTENCY > EDIT_OK). `derive_verdict()` maps to allow/review/block.
 
 ### command_preflight
@@ -603,8 +603,12 @@ bytes, list 10k, pattern 1k chars, samples 100, request 1M, output 1M except
 
 No `BudgetContext`: `repo_manifest_inspect` and `diff_risk_classify` (pure
 `services/` projections), plus leaf utilities without a tier (math, list,
-path, encoding, network, temporal, unicode, version, cargo, markdown,
-diagnostics, and most text/json/validation/config handlers).
+path, encoding, network, unicode, version, cargo, markdown,
+diagnostics, and most text/json/validation/config handlers). The `temporal`
+tools are the exception in that group: `temporal::cron::search_next` builds a
+`MODERATE` budget and `temporal::cron::satisfiable` builds a `CHEAP` one, so the
+cron path is cancellation-aware even though `tools/temporal.rs` declares no
+`for_handler` of its own. See [temporal.md](temporal.md).
 
 Handlers call `budget_ctx.should_stop()` at key pipeline stages. If it returns true, they return `budget_ctx.check_should_stop("tool_name").unwrap_err()` which produces a timeout error response with the appropriate machine code.
 

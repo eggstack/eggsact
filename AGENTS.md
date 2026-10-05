@@ -51,7 +51,7 @@ Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_fai
 
 - One `ToolSpec` in `src/mcp/specs/<category>.rs` is the single source of truth. Test `tool_registration_tables_are_in_sync` catches drift.
 - After any registry/profile/exposure change: `cargo run --locked --features dev-tools --bin generate-docs` (CI checks with `-- --check`).
-- Never hand-edit: `src/text/confusables_generated.rs` (from `scripts/generate_confusables.py`, pinned Unicode 17.0.0 + SHA), `generated/tool-cards.md`, profile block in `architecture/mcp-server.md`, registry block in `architecture/overview.md`.
+- Never hand-edit: `src/text/confusables_generated.rs` (from `scripts/generate_confusables.py`, pinned Unicode 18.0.0 + SHA), `src/text/unicode_properties_generated.rs`, `generated/tool-cards.md`, profile block in `architecture/mcp-server.md`, registry block in `architecture/overview.md`.
 - New Rust code: `calc`/root → typed `text` → `agent::ToolRegistry` → typed `preflight` → MCP server. Raw `tools::*`, `services::*` internals, and `mcp` sub-modules beyond `server` are `pub` for 1.x compat, not the import surface.
 
 ## Gotchas
@@ -69,7 +69,7 @@ Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_fai
 - Limits: text 100k, expr 10k, list 10k, regex samples 100, pattern 1k, request/output 1M each. Check `limits_applied`; truncation is automatic.
 - Env: `EGGCALC_MCP_PROFILE`, `EGGCALC_MCP_AUDIENCE` (`Model` default, case-insensitive), `EGGCALC_MCP_SCHEMA_DETAIL` (`compact`/`normal`/`full`), `EGGSACT_MCP_SURFACE` (`direct`/`discovery`). `EGGCALC_NO_CONFIG=1` is for Python-`eggcalc` callers.
 - `eggsact update` / `eggsact integrate list|detect|<client>` are verified/read-only; they never install a daemon or edit client config.
-- Self-update transport is `eggup-core`/`eggup-eggfetch`/`eggup-acquisition` 0.1.0 over `eggfetch-core` (in-process HTTP/1 + TLS, strict HTTPS-downgrade rejection, explicit env proxy, no external `curl` after install). Bootstrap `packaging/install.*` still uses external download tooling. Do not add HTTP to the library/MCP API, retries, or extra fetch features without measurement.
+- Self-update transport is `eggup-core`/`eggup-eggfetch`/`eggup-acquisition`/`eggup-eggpack` 0.1.2 over `eggfetch-core` (in-process HTTP/1 + TLS, strict HTTPS-downgrade rejection, explicit env proxy, no external `curl` after install). `eggfetch-core` and `futures-util` are dev-dependencies. Bootstrap `packaging/install.*` still uses external download tooling. Do not add HTTP to the library/MCP API, retries, or extra fetch features without measurement.
 - Release candidates: `.cargo/config.toml` holds the only release link flags (`/BREPRO`, `/DEBUG:NONE` for `x86_64-pc-windows-msvc`) and is load-bearing for byte-identical rerun reuse. `[profile.release] strip` is a no-op for `windows-msvc` (rustc discards `-C strip` there). Never set `RUSTFLAGS` — it replaces, not extends, target rustflags. Guards: `check-release-contract.py` + `windows_release_link_flags_are_deterministic`; byte proof: `windows-reproducibility` in `maintenance.yml`. See `docs/release.md`.
 
 ## Planning

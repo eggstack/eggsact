@@ -61,5 +61,5 @@ false. CRLF source lines retain CRLF style for emitted additions.
 
 The three performance plans were execution records until their benchmark,
 focused-test, merge-gate, and release-contract evidence was captured in
-`plans/roadmap.md`; they were then pruned. Git history retains the detailed
-implementation discussion.
+[plans/002-long-term-roadmap.md](../plans/002-long-term-roadmap.md); they were then
+pruned. Git history retains the detailed implementation discussion.

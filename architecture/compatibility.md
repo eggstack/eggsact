@@ -1,6 +1,6 @@
 # Compatibility Mode
 
-`CompatibilityMode` (defined in `src/mcp/compat.rs:21-36`) controls whether tool call validation and error messages use Python-parity behavior or strict JSON Schema behavior. It exists because the eggsact codebase serves two distinct audiences:
+`CompatibilityMode` (defined in `src/mcp/compat.rs:22-36`) controls whether tool call validation and error messages use Python-parity behavior or strict JSON Schema behavior. It exists because the eggsact codebase serves two distinct audiences:
 
 - **MCP server boundary** — must preserve Python `eggcalc` error message wording for backward compatibility with existing MCP clients and parity tests.
 - **In-process Rust API** — should use standard JSON Schema conventions that Rust consumers expect.
@@ -46,7 +46,7 @@ The mapping is implemented in `json_type_name()` (`src/mcp/schema_validation.rs:
 
 | Consumer | Mode | File | Reason |
 |----------|------|------|--------|
-| MCP `tools/call` handler | `EggcalcPython` | `src/mcp/server.rs:589` | Preserves Python-parity error messages for existing MCP clients |
+| MCP `tools/call` handler | `EggcalcPython` | `src/mcp/server.rs:592` | Preserves Python-parity error messages for existing MCP clients |
 | `ToolRegistry::new()` | `StrictNative` | `src/agent/mod.rs:346-352` | Rust-native consumers expect standard JSON Schema names |
 | `ToolRegistry::with_profile()` | `StrictNative` | `src/agent/mod.rs:357-363` | Same |
 | `ToolRegistry::with_profile_and_audience()` | `StrictNative` | `src/agent/mod.rs:368-374` | Same |
@@ -115,7 +115,7 @@ The mode propagates recursively through nested object/array validation — every
 ## Propagation Through the System
 
 ```
-MCP Server (server.rs:589, direct tools/call; server.rs:778, tool_invoke routing)
+MCP Server (server.rs:592, direct tools/call; server.rs:781, tool_invoke routing)
   └─ ToolRegistry::with_profile_and_audience(profile, audience)
        └─ .with_compat_mode(CompatibilityMode::EggcalcPython)
             └─ prepare_tool_call(name, args)
@@ -143,7 +143,7 @@ ExecutionContext::agent_default(profile, audience)
             └─ validate_arguments(name, args, ctx.compatibility_mode)
 ```
 
-The MCP server applies the mode at both dispatch sites (`server.rs:589` for direct `tools/call`, `server.rs:778` for `tool_invoke` routing):
+The MCP server applies the mode at both dispatch sites (`server.rs:592` for direct `tools/call`, `server.rs:781` for `tool_invoke` routing):
 
 ```rust
 let registry = ToolRegistry::with_profile_and_audience(profile, get_active_audience())
@@ -248,7 +248,7 @@ The `schema_validation::tests` module (`src/mcp/schema_validation.rs:486-751`) c
 
 ### Integration Tests
 
-The MCP server handler tests (the `#[cfg(test)] mod tests` in `src/mcp/server.rs`, starting line 1576) exercise the full `ToolRegistry::call_json()` path with `EggcalcPython` mode (matching the MCP server default):
+The MCP server handler tests (the `#[cfg(test)] mod tests` in `src/mcp/server.rs`, starting line 1580) exercise the full `ToolRegistry::call_json()` path with `EggcalcPython` mode (matching the MCP server default):
 
 | Test | What It Verifies |
 |------|-----------------|
@@ -313,5 +313,5 @@ No other changes are required — the mode only affects validation error message
 
 - **Both modes reject bools for numeric fields** — this is not configurable via compat mode.
 - **The mode is per-registry or per-context** — there is no global static. Each `ToolRegistry` or `ExecutionContext` carries its own mode.
-- **The MCP server always uses EggcalcPython** — this is hardcoded at both dispatch sites (`server.rs:589` for direct `tools/call`, `server.rs:778` for `tool_invoke` routing) and is not configurable via environment variable.
+- **The MCP server always uses EggcalcPython** — this is hardcoded at both dispatch sites (`server.rs:592` for direct `tools/call`, `server.rs:781` for `tool_invoke` routing) and is not configurable via environment variable.
 - **Preflight wrappers always use StrictNative** — they construct `ToolRegistry::default()` internally, which uses the default mode.

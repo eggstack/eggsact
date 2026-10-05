@@ -121,7 +121,7 @@ A test (`tool_registration_tables_are_in_sync` in `src/mcp/server.rs`) verifies 
 
 ### Named Profiles
 
-11 named profiles control which tools are exposed to which consumers. Counts are what `tools/list` returns per audience (measured on v1.2.6):
+11 named profiles control which tools are exposed to which consumers. Counts are what `tools/list` returns per audience (regenerate with `cargo run --locked --features dev-tools --bin generate-docs` rather than editing them by hand):
 
 | Profile | Purpose | Model | Harness | Debug |
 |---------|---------|-------|---------|-------|

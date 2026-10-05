@@ -1118,9 +1118,9 @@ Deterministic utils take explicit inputs only — no clock, no TZ database, no e
 
 ### Cron semantics (Vixie/Cronie star syntax)
 
-- Exactly five fields (`minute hour DOM month DOW`); `@nicknames` (`@daily`, …) and `CRON_TZ` / `TZ=` prefixes are rejected. Ranges do not wrap; steps must be positive. Month (`JAN`–`DEC`) and weekday (`SUN`–`SAT`) names are accepted; Sunday `7` aliases to `0`.
-- DOM/DOW matching follows Vixie/Cronie: each field records `star_syntax = input.starts_with('*')`, so bare `*` and `*/n` count as star-syntax but explicit full ranges (e.g. `1-31`, `0-6`) do **not**. If either DOM or DOW is star-syntax, **both** must match; otherwise **either** may match (`cron.rs: day_matches`).
-- `search_next` / `satisfiable` scan a bounded 146,097-day (≈400-year) window under a handler budget; exhaustion returns a deterministic error (`invalid_arguments` / budget stop), never an unbounded loop.
+- Exactly five fields (`minute hour DOM month DOW`); `@nicknames` (`@daily`, …) are rejected, as are `CRON_TZ` / `TZ=` prefixes. Note the ordering: the five-field check runs **first**, so a prefixed expression such as `CRON_TZ=UTC 0 0 * * *` (six fields) reports the five-field error, not the timezone error. Ranges do not wrap; steps must be positive. Month (`JAN`–`DEC`) and weekday (`SUN`–`SAT`) names are accepted; Sunday `7` aliases to `0`.
+- DOM/DOW matching follows Vixie/Cronie: each field records `star_syntax = input.starts_with('*')`, so bare `*` and `*/n` count as star-syntax but explicit full ranges (e.g. `1-31`, `0-6`) do **not**. If either DOM or DOW is star-syntax, **both** must match; otherwise **either** may match (`cron.rs: day_matches`). The practical trap: `*/1` and `1-31` have identical value sets but are not equivalent, so `0 0 * * 1` and `0 0 */1 * 1` are Mondays-only while `0 0 1-31 * 1` matches every day.
+- `search_next` / `satisfiable` scan a bounded 146,098-day (≈400-year) window under a handler budget; exhaustion returns a deterministic error (`invalid_arguments` / budget stop), never an unbounded loop. See [temporal.md](temporal.md).
 
 ### Config-file YAML note
 

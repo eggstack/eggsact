@@ -1,6 +1,6 @@
 # Testing
 
-The eggsact test suite spans 90 Rust files across 5 integration suites, plus unit tests in `src/` and doc tests. All integration tests compile into a single test crate via `tests/lib.rs`.
+The eggsact test suite spans 95 Rust files across 5 integration suites, plus unit tests in `src/` and doc tests. All integration tests compile into a single test crate via `tests/lib.rs`.
 
 See also: [Calculator](calculator.md), [MCP Server](mcp-server.md), [Agent API](agent-api.md), [Preflight](preflight.md)
 
@@ -11,10 +11,10 @@ tests/
   lib.rs                          # single test crate root, declares 5 modules
   test_context_isolation.rs       # context isolation integration tests (2143 lines)
   calc/                           # calculator tests (4 files + shared mod.rs)
-  mcp/                            # MCP protocol + tool tests (32 files + mod.rs + support.rs)
-  text/                           # text processing tests (24 files + mod.rs)
+  mcp/                            # MCP protocol + tool tests (34 files + mod.rs + support.rs)
+  text/                           # text processing tests (27 files + mod.rs)
   parity/                         # Python/Rust parity tests (11 files + mod.rs)
-  property/                       # property-based tests (11 files + mod.rs, 61 tests)
+  property/                       # property-based tests (11 files + mod.rs, 69 tests)
   fixtures/
     accepted_parity_failures.txt  # 37 accepted parity failures for regression detection
 fuzz/
@@ -148,6 +148,8 @@ Walks every tool's input schema recursively and collects violations. This preven
 | `test_era_pinning.rs` | Single-process protocol-era pinning (legacy vs `2026-07-28`), cross-era rejection, generic-invoke output contract |
 | `test_modern_protocol.rs` | Modern-protocol handshake, `server/discover`, `_meta`/cache hints, `structuredContent`, cross-era semantic parity |
 | `test_shared_analysis.rs` | Shared repo/patch analysis consolidation: classification drift guards across repo and patch tools |
+| `test_substrate_007.rs` | Typed-core ownership: `adapter_layering_has_no_handler_to_handler_composition` (four historical sites) plus adapter-dedup contracts |
+| `test_substrate_008.rs` | **Primary layering guard:** `substrate_008_generic_handler_graph_has_no_handler_to_handler_edges`, a repository-wide walk of the discovered handler graph across all 86 handlers × 24 files, plus prompt wire-compatibility and null/string/array projection |
 
 ## Text Tests (`tests/text/`)
 
@@ -179,6 +181,9 @@ Walks every tool's input schema recursively and collects violations. This preven
 | `test_cargo.rs` | Cargo.toml inspection |
 | `test_version.rs` | Semver constraint checking |
 | `test_bug_regression.rs` | Regression tests for text bugs |
+| `test_unicode_conformance_005.rs` | Unicode security standards-conformance corrective (historical control point) |
+| `test_unicode_conformance_006.rs` | Unicode conformance edge cases: ordered `Bidi_Class` @missing defaults, paragraph-local bidi levels, Zzzz-as-constraint resolved sets |
+| `test_unicode_hardening.rs` | Unicode hardening: the substantive tests behind the Unicode 18.0.0 security-data epoch |
 
 ## Parity Tests (`tests/parity/`)
 
@@ -491,7 +496,7 @@ cargo test --locked --test lib mcp -- --skip parity
 
 ## Property Tests (`tests/property/`)
 
-11 test files containing 61 property-based tests that verify algebraic invariants across all major surfaces. Property tests run in ordinary CI via `cargo test --test lib property`.
+11 test files containing 69 property-based tests that verify algebraic invariants across all major surfaces. Property tests run in ordinary CI via `cargo test --test lib property`.
 
 | File | Tests | Properties Verified |
 |------|-------|-------------------|
@@ -540,7 +545,7 @@ cargo test --locked --test lib property -- calculator  # calculator properties o
 | `unicode_inspection` | Unicode normalization, policy, confusables |
 | `markdown_fences` | Markdown structure, code fence extraction |
 | `glob_matching` | Glob matching, path normalization idempotence |
-| `cron_inspection` | Bounded cron parser, DOM/DOW star-syntax rules |
+| `cron_inspection` | Bounded cron parser smoke coverage — exercises the parser and search path but asserts nothing, so it catches panics/hangs only, **not** DOM/DOW rule regressions. Those are pinned by the ordinary tests in `tests/` and documented in [temporal.md](temporal.md). |
 
 ### How to Run Fuzz Targets
 

@@ -31,13 +31,35 @@ crates.io max_stable_version
   -> executable replacement
 ```
 
-Only stable `major.minor.patch` versions are accepted. Local
-verified-transaction mechanics are owned by `eggup-core` 0.1.0 and network
-acquisition by `eggup-eggfetch` 0.1.0 over `eggfetch-core` 0.2.0
+Only stable `major.minor.patch` versions are accepted. After
+`crates.io max_stable_version` selects a release, the download source is chosen
+first: `fetch_release_manifest` GETs
+`{RELEASE_ORIGIN}/download/v{version}/release-manifest.json` through
+`eggup-eggpack` and projects it for the host triple. The presence or absence of
+that manifest is a **structural** outcome (`MetadataFetch::Present` vs `Absent`),
+never an inference from error text. See [self-update.md](self-update.md) for the
+full mapping and the manifest schema.
+
+The two authority chains are therefore:
+
+```text
+manifest present:                      legacy 404 only:
+release-manifest.json                  exact GitHub vX.Y.Z asset
+  -> host-triple asset projection        -> SHA-256 sidecar
+  -> manifest-declared exact size
+  -> SHA-256 verification
+  -> candidate eggsact X.Y.Z --version
+  -> executable replacement
+```
+
+Verified-transaction mechanics are owned by `eggup-core` 0.1.2, network
+acquisition by `eggup-eggfetch` 0.1.2, manifest handling by `eggup-eggpack`
+0.1.2, and all four sit over `eggfetch-core` 0.2.0
 (`http1,tls-rustls,tls-native-roots,proxy`); direct `eggfetch-core` use remains
 only in the policy test harness. `src/update.rs` keeps release/update policy
-(version selection, asset naming, Cargo fallback, checksum sidecar parsing, CLI
-presentation). Transport policy (single configuration point):
+(version selection, asset naming, manifest/legacy source selection, Cargo
+fallback, checksum sidecar parsing, CLI presentation). Transport policy (single
+configuration point):
 HTTP/1 only, redirects followed with strict HTTPS -> HTTP downgrade rejection,
 native roots with packaged WebPKI fallback and full certificate/hostname
 verification, explicit opt-in environment proxy routing (invalid proxy fails
@@ -50,9 +72,10 @@ candidate `--version` validation with cleared environment and exact
 with backup/rollback, and structured receipts are owned by Eggup. No external
 `curl` is required after install. Bootstrap installers (`packaging/install.*`)
 still use external download tooling because they run before Eggsact exists. A
-supported target with a genuine asset HTTP 404, or an unsupported host, uses a
-staged exact-version `cargo install` fallback. Checksum/TLS/timeout/5xx
-failures never fall back; HTTP errors, TLS/DNS failures, missing checksums,
+genuine asset HTTP 404 **on the legacy path only** falls back to a staged
+exact-version `cargo install`; on the manifest path a 404 is a hard error that
+refuses fallback to legacy evidence. Checksum/TLS/timeout/5xx failures never
+fall back under either path; HTTP errors, TLS/DNS failures, missing checksums,
 checksum mismatches, and wrong candidate identities are hard failures.
 
 On Unix, the validated candidate is committed through the Eggup verified

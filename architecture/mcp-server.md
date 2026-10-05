@@ -251,7 +251,7 @@ The `initialized_before_initialize` helper (`INITIALIZED_BEFORE_INITIALIZE` data
 
 ## Tool Registration (Single Registry)
 
-All tool registration lives in `src/mcp/specs/<category>.rs` as `ToolSpec` declarations — one file per tool category. `src/mcp/registry/all_tools.rs` aggregates them into the combined `ALL_TOOLS` using `LazyLock`. Adding a new tool requires editing only the relevant category file in `specs/`.
+All tool registration lives in `src/mcp/specs/<category>.rs` as `ToolSpec` declarations — one file per tool category. `src/mcp/registry/all_tools.rs` aggregates them into the combined `ALL_TOOLS_VEC` using `LazyLock`, exposed publicly as `all_tools_vec()`. Adding a new tool requires editing only the relevant category file in `specs/`.
 
 ### ToolSpec
 
@@ -731,7 +731,7 @@ Tool handler functions retain the signature `fn(&Value) -> ToolResponse` for com
 | `ACTIVE_PROFILE`, `ACTIVE_AUDIENCE`, `ACTIVE_SCHEMA_DETAIL` RwLock | Set once at startup, read-only after init |
 | `CURRENT_CANCEL_FLAG` thread-local | Properly scoped per-dispatch via guard-owned restoration |
 | `CURRENT_EVAL_CONTEXT` thread-local | Set by `with_eval_context()` during calculator-backed tool dispatch; accessed via closure-scoped `with_current_eval_context()` |
-| 36+ LazyLock immutable caches | Regex, tables, tool definitions — immutable after init |
+| 100+ LazyLock immutable caches (113 at HEAD, 55 of them in `calc/normalize.rs`) | Regex, tables, tool definitions — immutable after init |
 | Request-scoped Arc objects | Cloned per-request, not shared |
 | `MEMORY_REGISTERS`, `USER_VARIABLES`, `PRNG_STATE`, `GAUSS_SPARE` LazyLock | Legacy mutable state. Context-aware APIs use `EvalContext` fields instead; globals remain for legacy `evaluate()` path. |
 
