@@ -34,7 +34,7 @@ with the same host and toolchain; never add host-specific timing thresholds to
 ordinary tests. See `architecture/performance.md` for the boundary and patch
 contracts.
 
-Parity has 37 accepted failures (C1–C6) in `tests/fixtures/accepted_parity_failures.txt` / `docs/parity.md`. Only failures NOT in that list are regressions.
+Parity has 39 accepted failures (C1–C6) documented in `tests/fixtures/accepted_parity_failures.txt` / `docs/parity.md`. That fixture is documentation only — the enforcing mechanism is `#[ignore]` on the parity tests, so a failure NOT in the list is not automatically caught by the file.
 
 ## Structure
 

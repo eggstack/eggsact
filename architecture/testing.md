@@ -16,7 +16,7 @@ tests/
   parity/                         # Python/Rust parity tests (11 files + mod.rs)
   property/                       # property-based tests (11 files + mod.rs, 69 tests)
   fixtures/
-    accepted_parity_failures.txt  # 37 accepted parity failures for regression detection
+    accepted_parity_failures.txt  # 39 accepted parity failures (documentation; #[ignore] is the gate)
 fuzz/
   Cargo.toml                      # isolated fuzz workspace (libfuzzer-sys)
   fuzz_targets/                   # 13 fuzz targets
@@ -218,9 +218,9 @@ Each parity helper spawns a fresh MCP process per call (single-request sessions)
 
 ### Known Failures
 
-There are **37 accepted parity failures**. These are accepted behavioral differences, not regressions. See `docs/parity.md` for the full breakdown.
+There are **39 accepted parity failures** (40 ignored test instances; `test_shell_split_basic` exists in two modules). These are accepted behavioral differences, not regressions. See `docs/parity.md` for the full breakdown.
 
-The fixture file `tests/fixtures/accepted_parity_failures.txt` lists all 37 test names:
+The fixture file `tests/fixtures/accepted_parity_failures.txt` lists all 39 test names. It is documentation only — no code reads it; `#[ignore]` is what actually skips these tests:
 
 ```
 # Accepted parity failures (categories C1–C6 from docs/parity.md decision table).

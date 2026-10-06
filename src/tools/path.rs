@@ -424,6 +424,26 @@ pub fn glob_match_tool(args: &Value) -> ToolResponse {
         );
     }
 
+    // A pattern deep enough in `**` segments would recurse the matcher out of
+    // the stack. Reject it here so the caller gets an error rather than a
+    // non-match verdict the matcher never actually evaluated.
+    let double_star_segments = crate::text::glob::double_star_segment_count(pattern, platform);
+    if double_star_segments > crate::text::glob::MAX_DOUBLE_STAR_SEGMENTS {
+        return ToolResponse::error_with_code(
+            "invalid_arguments",
+            machine_codes::INVALID_ARGUMENTS,
+            &format!(
+                "Pattern has {} `**` segments; at most {} are supported",
+                double_star_segments,
+                crate::text::glob::MAX_DOUBLE_STAR_SEGMENTS
+            ),
+            Some(vec![
+                "Collapse redundant `**` segments; `**/**` matches the same as `**`".to_string(),
+            ]),
+            Some("glob_match"),
+        );
+    }
+
     let result = crate::text::glob::glob_match(pattern, path, platform, case_sensitive);
 
     ToolResponse::success(

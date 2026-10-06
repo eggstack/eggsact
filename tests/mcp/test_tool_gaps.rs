@@ -380,6 +380,55 @@ fn test_validate_schema_light_violation() {
 }
 
 #[test]
+fn test_validate_schema_light_uncompilable_pattern_is_reported() {
+    // A pattern the engine cannot compile used to be skipped silently, turning
+    // the constraint into a no-op that reported success. It must surface.
+    let result = call_tool(
+        "validate_schema_light",
+        serde_json::json!({
+            "text": "{\"name\": \"abc\"}",
+            "schema": {"type": "object", "properties": {"name": {"type": "string", "pattern": "^[\\1]+$"}}}
+        }),
+    );
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("valid"), Some(&Value::Bool(false)));
+    let violations = inner.get("violations").unwrap().as_array().unwrap();
+    assert!(
+        violations.iter().any(|v| v["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("could not be compiled")),
+        "expected an uncompilable-pattern violation, got: {:?}",
+        violations
+    );
+}
+
+#[test]
+fn test_validate_schema_light_compilable_pattern_still_enforced() {
+    // Control for the case above: a compilable pattern must still report the
+    // ordinary mismatch, not the compile failure.
+    let result = call_tool(
+        "validate_schema_light",
+        serde_json::json!({
+            "text": "{\"name\": \"abc\"}",
+            "schema": {"type": "object", "properties": {"name": {"type": "string", "pattern": "^[A-Z]+$"}}}
+        }),
+    );
+    let inner = result.get("result").unwrap();
+    assert_eq!(inner.get("valid"), Some(&Value::Bool(false)));
+    let violations = inner.get("violations").unwrap().as_array().unwrap();
+    assert!(
+        violations.iter().any(|v| v["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("does not match pattern")),
+        "expected a pattern mismatch, got: {:?}",
+        violations
+    );
+}
+
+#[test]
 fn test_validate_schema_light_missing_required() {
     let result = call_tool(
         "validate_schema_light",

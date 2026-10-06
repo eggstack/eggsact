@@ -82,8 +82,10 @@ static TEMP_CONVERSION_RE: LazyLock<Regex> = LazyLock::new(|| {
     let temp_unit = r"(?:[cfk]|celsius|fahrenheit|kelvin|rankine|degc|degf|degk|degr|ra)";
     // NOTE (BUG-007 / parity B7): \s* instead of \s+ so that compact forms
     // like "100c in f" trigger the canonicalization pass.
+    // The `-?` is required: without it "-40 c in f" matched no conversion
+    // pattern at all and surfaced as the evaluator's convert() stub error.
     Regex::new(&format!(
-        r"(?i)(\d+(?:\.\d+)?)\s*({temp_unit})\s+(in|to|as|into)\s+({temp_unit})\b"
+        r"(?i)(-?\d+(?:\.\d+)?)\s*({temp_unit})\s+(in|to|as|into)\s+({temp_unit})\b"
     ))
     .unwrap()
 });
@@ -196,13 +198,18 @@ static UNIT_INLINE_RE: LazyLock<Regex> = LazyLock::new(|| {
 static SAME_UNIT_DIV_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b([a-zA-Z]+)/(\d+(?:\.\d+)?)\*([a-zA-Z]+)\b").unwrap());
 
+// The numeric group must accept a leading `-`: without it `convert(-40*c,f)`
+// never matched here, fell through to the evaluator's `convert()` stub, and
+// surfaced as an internal invariant error instead of a temperature conversion.
 static CONVERT_SIMPLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^convert\((\d+(?:\.\d+)?)\*([a-zA-Z°][a-zA-Z0-9°/]*),([a-zA-Z°][a-zA-Z0-9°/]*)\)$")
-        .unwrap()
+    Regex::new(
+        r"^convert\((-?\d+(?:\.\d+)?)\*([a-zA-Z°][a-zA-Z0-9°/]*),([a-zA-Z°][a-zA-Z0-9°/]*)\)$",
+    )
+    .unwrap()
 });
 
 static CONVERT_BARE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^convert\((\d+(?:\.\d+)?),([a-zA-Z°][a-zA-Z0-9°/]*)\)$").unwrap()
+    Regex::new(r"^convert\((-?\d+(?:\.\d+)?),([a-zA-Z°][a-zA-Z0-9°/]*)\)$").unwrap()
 });
 
 static TEMP_HANDLE_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -256,7 +263,7 @@ static UNIT_SPELLED_RE: LazyLock<Regex> = LazyLock::new(|| {
     // so that the form inserted by BARE_SIMPLE_UNIT_RE / BARE_COMPOUND_UNIT_RE
     // also matches here.
     Regex::new(&format!(
-        r"(?i)(\d+(?:\.\d+)?)\s*\*?\s*({ua})\s+(?:in|to)\s+({ua})\b"
+        r"(?i)(-?\d+(?:\.\d+)?)\s*\*?\s*({ua})\s+(?:in|to)\s+({ua})\b"
     ))
     .unwrap()
 });
@@ -264,7 +271,7 @@ static UNIT_SPELLED_RE: LazyLock<Regex> = LazyLock::new(|| {
 static UNIT_COMPOUND_RE: LazyLock<Regex> = LazyLock::new(|| {
     let ua = &*UNIT_ALT;
     Regex::new(&format!(
-        r"(?i)(\d+(?:\.\d+)?)\s*\*?\s*({ua})\s*/\s*({ua})\s+(?:in|to)\s*({ua})\s*/\s*({ua})\b"
+        r"(?i)(-?\d+(?:\.\d+)?)\s*\*?\s*({ua})\s*/\s*({ua})\s+(?:in|to)\s*({ua})\s*/\s*({ua})\b"
     ))
     .unwrap()
 });

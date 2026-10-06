@@ -2175,11 +2175,11 @@ fn evaluate_function(
 
         // ── Convert / Temp: handled in normalize.rs run(), error stub here ──
         "convert" => Err(EvaluationError::InvalidOperation(
-            "convert() must be called through the run() pipeline, not evaluate() directly"
+            "convert() performs a unit conversion; use an expression such as '-40 c in f' or 'convert(1*km, m)' instead"
                 .to_string(),
         )),
         "temp" => Err(EvaluationError::InvalidOperation(
-            "temp() must be called through the run() pipeline, not evaluate() directly".to_string(),
+            "temp() converts a temperature; use an expression such as 'temp(-10, c, f)' instead".to_string(),
         )),
 
         _ => Err(EvaluationError::UnknownFunction(format!(
@@ -2918,11 +2918,11 @@ fn evaluate_function_with(
 
         // ── Convert / Temp: handled in normalize.rs run(), error stub here ──
         "convert" => Err(EvaluationError::InvalidOperation(
-            "convert() must be called through the run() pipeline, not evaluate() directly"
+            "convert() performs a unit conversion; use an expression such as '-40 c in f' or 'convert(1*km, m)' instead"
                 .to_string(),
         )),
         "temp" => Err(EvaluationError::InvalidOperation(
-            "temp() must be called through the run() pipeline, not evaluate() directly".to_string(),
+            "temp() converts a temperature; use an expression such as 'temp(-10, c, f)' instead".to_string(),
         )),
 
         _ => Err(EvaluationError::UnknownFunction(format!(

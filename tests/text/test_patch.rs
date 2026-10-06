@@ -144,8 +144,97 @@ fn crlf_output_and_fingerprint_follow_the_applied_result() {
     assert!(result.applies);
     assert_eq!(result.newline_style_before, "CRLF");
     assert_eq!(result.newline_style_after, "CRLF");
-    assert_eq!(result.result_text.as_deref(), Some("a\r\nB\r\nc"));
+    // The original's trailing CRLF is part of the file and must survive.
+    assert_eq!(result.result_text.as_deref(), Some("a\r\nB\r\nc\r\n"));
     assert!(!result.result_fingerprint.is_empty());
+}
+
+#[test]
+fn trailing_terminator_is_preserved_across_line_styles() {
+    let patch = "--- a/file.txt\n+++ b/file.txt\n@@ -2,1 +2,2 @@\n-beta\n+BETA\n+X\n";
+
+    // LF original keeps its final newline.
+    let lf = patch_apply_check("alpha\nbeta\ngamma\n", patch, true, false, true);
+    assert!(lf.applies);
+    assert_eq!(lf.result_text.as_deref(), Some("alpha\nBETA\nX\ngamma\n"));
+
+    // CRLF original keeps its final CRLF.
+    let crlf = patch_apply_check("alpha\r\nbeta\r\ngamma\r\n", patch, true, false, true);
+    assert!(crlf.applies);
+    assert_eq!(
+        crlf.result_text.as_deref(),
+        Some("alpha\r\nBETA\r\nX\r\ngamma\r\n")
+    );
+
+    // An original with no trailing newline must not gain one.
+    let bare = patch_apply_check("alpha\nbeta\ngamma", patch, true, false, true);
+    assert!(bare.applies);
+    assert_eq!(bare.result_text.as_deref(), Some("alpha\nBETA\nX\ngamma"));
+}
+
+#[test]
+fn trailing_terminator_of_a_lone_carriage_return_is_preserved() {
+    let patch = "--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-a\rb\n+A\rb\n";
+    let result = patch_apply_check("a\rb\r", patch, true, false, true);
+    assert!(result.applies);
+    assert_eq!(result.result_text.as_deref(), Some("A\rb\r"));
+}
+
+#[test]
+fn partially_applied_patch_returns_no_result_text() {
+    // Hunk 1 consumes lines 1-3, so hunk 2 (which starts inside them) fails.
+    // The spliced text used to be returned anyway, so a caller keying on
+    // `result_text.is_some()` wrote corrupt content from a patch the tool
+    // itself reported as failed.
+    let original = "alpha\nbeta\ngamma\ndelta\n";
+    let patch = "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n-alpha\n+ALPHA\n beta\n gamma\n@@ -2,1 +2,1 @@\n-beta\n+BETA\n";
+    let result = patch_apply_check(original, patch, false, false, true);
+
+    assert!(!result.applies);
+    assert_eq!(result.hunks_applied, 1);
+    assert_eq!(result.hunks_failed, 1);
+    assert_eq!(
+        result.result_text, None,
+        "a failed patch must not hand back partially-applied text"
+    );
+}
+
+#[test]
+fn fingerprint_does_not_depend_on_return_result_text() {
+    // A fingerprint must be a function of the result content alone; flipping
+    // an unrelated output-shaping flag used to change it.
+    let original = "a\nb\nc\n";
+    let patch = "--- a/file.txt\n+++ b/file.txt\n@@ -2,1 +2,1 @@\n-b\n+B\n";
+
+    // Patch that cannot apply at all: nothing was applied, so the result is
+    // the original either way.
+    let missing = "--- a/file.txt\n+++ b/file.txt\n@@ -2,1 +2,1 @@\n-zzz\n+Z\n";
+    let without = patch_apply_check(original, missing, true, true, false);
+    let with = patch_apply_check(original, missing, true, true, true);
+    assert!(!without.applies);
+    assert!(!with.applies);
+    assert_eq!(without.result_fingerprint, with.result_fingerprint);
+    assert!(!without.result_fingerprint.is_empty());
+
+    // And a patch that does apply: the flag must not change it either.
+    let applied_without = patch_apply_check(original, patch, true, true, false);
+    let applied_with = patch_apply_check(original, patch, true, true, true);
+    assert_eq!(
+        applied_without.result_fingerprint,
+        applied_with.result_fingerprint
+    );
+    assert_eq!(
+        applied_with.result_fingerprint,
+        eggsact::text::text_fingerprint(
+            applied_with.result_text.as_deref().unwrap(),
+            "raw",
+            "preserve",
+            false,
+            false
+        )
+        .sha256,
+        "fingerprint must be the hash of the returned result text"
+    );
 }
 
 #[test]

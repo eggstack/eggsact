@@ -282,6 +282,20 @@ fn text_to_lines(text: &str) -> Vec<&str> {
     end.split('\n').collect()
 }
 
+/// The terminator [`text_to_lines`] strips from the end of `text`.
+///
+/// Rebuilding the output must re-append it, otherwise a fully-applied patch
+/// turns `alpha\nbeta\n` into `alpha\nBETA` — a file that lost its final
+/// newline, which git renders as `\ No newline at end of file`.
+fn trailing_terminator(text: &str) -> &'static str {
+    match text.strip_suffix('\n') {
+        Some(head) if head.ends_with('\r') => "\r\n",
+        Some(_) => "\n",
+        None if text.ends_with('\r') => "\r",
+        None => "",
+    }
+}
+
 fn normalize_line(line: &str) -> &str {
     line.trim_end_matches('\r')
 }
@@ -456,6 +470,7 @@ pub fn patch_apply_check(
     }
 
     let original_lines = text_to_lines(original_text);
+    let terminator = trailing_terminator(original_text);
     let mut all_hunks: Vec<&PatchHunk> = vec![];
     for file_entry in &parse_result.files {
         for hunk in &file_entry.hunks {
@@ -593,18 +608,25 @@ pub fn patch_apply_check(
         for line in &original_lines[source_cursor..] {
             append_line(output, &mut has_output_line, line, false);
         }
+        output.push_str(terminator);
     }
     let applies = hunks_failed == 0;
     let built_result = result_text_builder;
-    let result_text = if return_result_text {
-        Some(built_result.as_deref().unwrap_or_default().to_string())
+
+    // A partially-applied patch has no defined result — the successful hunks are
+    // already spliced in but the failed ones were not, so the text is neither
+    // the original nor the patched file. Fall back to the untouched original so
+    // the result is a function of the content alone and never depends on
+    // `return_result_text`.
+    let result_text_ref: &str = if applies && hunks_applied > 0 {
+        built_result.as_deref().unwrap_or(original_text)
+    } else {
+        original_text
+    };
+    let result_text = if return_result_text && applies {
+        Some(result_text_ref.to_string())
     } else {
         None
-    };
-    let result_text_ref = if hunks_applied == 0 && !return_result_text {
-        original_text
-    } else {
-        built_result.as_deref().unwrap_or(original_text)
     };
     let newline_after = detect_newline_style(result_text_ref);
 

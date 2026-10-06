@@ -228,7 +228,28 @@ fn manifest_artifact_url_for_origin(
     version: &StableVersion,
     artifact_name: &str,
 ) -> String {
-    origin_asset_url(origin, version, artifact_name)
+    origin_asset_url(origin, version, &encode_url_segment(artifact_name))
+}
+
+/// Percent-encode a value for use as a single URL path segment.
+///
+/// The artifact name comes from the manifest, and `eggpack_manifest`'s
+/// `valid_name` does not reject `?` or `#`, so an unencoded name could
+/// rewrite the query or fragment of the download URL. The origin remains a
+/// compile-time constant and integrity still comes from the manifest, so this
+/// only keeps the request pointed at the intended release asset. Names made
+/// entirely of unreserved characters — every producer artifact today — encode
+/// to themselves.
+fn encode_url_segment(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
 }
 
 pub fn parse_stable_version(raw: &str) -> Result<StableVersion, String> {
@@ -560,8 +581,14 @@ fn unique_temp_dir(prefix: &str) -> Result<PathBuf, String> {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
-                    fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
-                        .map_err(|error| format!("cannot secure temporary directory: {error}"))?;
+                    if let Err(error) =
+                        fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+                    {
+                        // Do not leave a staging directory behind that we could
+                        // not secure: it would stay world-readable in /tmp.
+                        let _ = fs::remove_dir(&path);
+                        return Err(format!("cannot secure temporary directory: {error}"));
+                    }
                 }
                 return Ok(path);
             }
@@ -909,6 +936,19 @@ fn eggup_hash(path: &Path) -> Result<[u8; 32], String> {
     eggup_core::hash_file(path).map_err(|e| format!("cannot hash candidate: {e}"))
 }
 
+/// Compare two SHA-256 digests without an early exit.
+///
+/// Both operands are hashes of attacker-influenceable bytes, so compare in
+/// constant time rather than letting `==` leak the matching prefix through
+/// timing. Defense in depth: a mismatch is reported identically either way.
+fn digests_equal(expected: &[u8; 32], actual: &[u8; 32]) -> bool {
+    let mut difference = 0_u8;
+    for index in 0..expected.len() {
+        difference |= expected[index] ^ actual[index];
+    }
+    difference == 0
+}
+
 async fn crates_latest_version_async() -> Result<StableVersion, String> {
     let text = eggup_get_text(CRATES_API, METADATA_MAX_BYTES, "crates.io metadata").await?;
     let json: serde_json::Value = serde_json::from_str(&text)
@@ -1024,7 +1064,7 @@ async fn prepare_legacy_candidate_async(
     .await?;
     let expected = parse_checksum(&checksum_text)?;
     let actual = eggup_hash(&binary)?;
-    if expected != actual {
+    if !digests_equal(&expected, &actual) {
         return Err("release checksum does not match the downloaded executable".into());
     }
     Ok(AcquiredCandidate {
@@ -1034,12 +1074,25 @@ async fn prepare_legacy_candidate_async(
 }
 
 #[cfg(windows)]
-fn replace_current(candidate: &Path, current: &Path) -> Result<ReplacementOutcome, String> {
+fn replace_current(
+    candidate: &Path,
+    current: &Path,
+    expected_digest: &str,
+) -> Result<ReplacementOutcome, String> {
     let pid = std::process::id();
-    let adjacent = current.with_extension(format!("eggsact-update-{pid}.exe"));
+    // The adjacent name must not be predictable: `fs::copy` follows an existing
+    // symlink and a same-user attacker who can write the install directory
+    // could otherwise plant a file at a known name between the copy and the
+    // move. The pid alone is observable.
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_nanos())
+        .unwrap_or(0);
+    let tag = format!("eggsact-update-{pid}-{nonce}");
+    let adjacent = current.with_extension(format!("{tag}.exe"));
     fs::copy(candidate, &adjacent).map_err(|error| permission_error(current, error))?;
-    let status = current.with_extension(format!("eggsact-update-{pid}.status"));
-    let script = windows_replacement_script(pid, &adjacent, current, &status);
+    let status = current.with_extension(format!("{tag}.status"));
+    let script = windows_replacement_script(pid, &adjacent, current, &status, expected_digest);
     Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .stdout(std::process::Stdio::null())
@@ -1101,7 +1154,11 @@ fn commit_artifact_set(
         .ok_or_else(|| "cannot locate installation directory".to_string())?;
     let plan = InstallPlan::new(product.clone(), release.clone(), root, set.clone())
         .map_err(|e| format!("invalid update plan: {e}"))?;
+    // `--version` is required: with no argv the staged binary falls through to
+    // its usage block, whose bytes can never equal the expected identity, so
+    // every update failed candidate validation.
     let validator = ExactIdentityValidator::new(member_id.clone(), format!("eggsact {latest}\n"))
+        .args(["--version"])
         .timeout(Duration::from_secs(10));
     let validated = plan
         .prepare()
@@ -1150,13 +1207,32 @@ fn commit_artifact_set(
         let staged = validated
             .staged_path(member_id)
             .map_err(|e| format!("cannot locate staged update: {e}"))?;
-        windows_replace_current(&staged, current)
+        // The staged bytes were already verified by Eggup; hash them again here
+        // so the replacement script can compare the adjacent copy against a
+        // known-good digest at the moment it installs.
+        let staged_digest = hex_digest(&eggup_hash(&staged)?);
+        windows_replace_current(&staged, current, &staged_digest)
     }
 }
 
 #[cfg(windows)]
-fn windows_replace_current(staged: &Path, current: &Path) -> Result<ReplacementOutcome, String> {
-    replace_current(staged, current)
+fn windows_replace_current(
+    staged: &Path,
+    current: &Path,
+    expected_digest: &str,
+) -> Result<ReplacementOutcome, String> {
+    replace_current(staged, current, expected_digest)
+}
+
+/// Lowercase hex encoding of a SHA-256 digest.
+#[cfg_attr(not(test), allow(dead_code))] // Consumed by the Windows-only replacement path.
+fn hex_digest(digest: &[u8; 32]) -> String {
+    let mut hex = String::with_capacity(64);
+    for byte in digest {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
 }
 
 #[allow(dead_code)] // Used by the Windows-only replacement path.
@@ -1164,13 +1240,30 @@ fn powershell_quote(path: &Path) -> String {
     path.to_string_lossy().replace('\'', "''")
 }
 
+#[allow(dead_code)] // Used by the Windows-only replacement path.
+fn powershell_quote_str(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
 #[allow(dead_code)] // Used by the Windows-only replacement path and cross-platform tests.
-fn windows_replacement_script(pid: u32, source: &Path, target: &Path, status: &Path) -> String {
+fn windows_replacement_script(
+    pid: u32,
+    source: &Path,
+    target: &Path,
+    status: &Path,
+    expected_digest: &str,
+) -> String {
     let source = powershell_quote(source);
     let target = powershell_quote(target);
     let status = powershell_quote(status);
+    let expected_digest = powershell_quote_str(expected_digest);
+    // The digest is re-checked immediately before the move, not merely before
+    // the copy: without it, anything that can write the install directory could
+    // replace the adjacent file between `fs::copy` and `Move-Item` and have
+    // unverified bytes installed. A mismatch throws, so the existing retry
+    // path reports it as a failure and never installs.
     format!(
-        "$p={pid}; $source='{source}'; $target='{target}'; $status='{status}'; $status_tmp=\"$status.tmp\"; function Write-UpdateStatus([string]$value) {{ Set-Content -LiteralPath $status_tmp -Value $value -NoNewline; Move-Item -LiteralPath $status_tmp -Destination $status -Force }}; try {{ while (Get-Process -Id $p -ErrorAction SilentlyContinue) {{ Start-Sleep -Milliseconds 100 }}; $last_error='replacement did not complete'; for ($attempt=0; $attempt -lt 50; $attempt++) {{ try {{ Move-Item -LiteralPath $source -Destination $target -Force -ErrorAction Stop; Remove-Item -LiteralPath $status -Force -ErrorAction SilentlyContinue; exit 0 }} catch {{ $last_error=$_.Exception.Message; Start-Sleep -Milliseconds 100 }} }}; Write-UpdateStatus(\"failed: $last_error\"); exit 1 }} catch {{ try {{ Write-UpdateStatus(\"failed: $($_.Exception.Message)\") }} catch {{ }}; exit 1 }}"
+        "$p={pid}; $source='{source}'; $target='{target}'; $status='{status}'; $expected='{expected_digest}'; $status_tmp=\"$status.tmp\"; function Write-UpdateStatus([string]$value) {{ Set-Content -LiteralPath $status_tmp -Value $value -NoNewline; Move-Item -LiteralPath $status_tmp -Destination $status -Force }}; try {{ while (Get-Process -Id $p -ErrorAction SilentlyContinue) {{ Start-Sleep -Milliseconds 100 }}; $last_error='replacement did not complete'; for ($attempt=0; $attempt -lt 50; $attempt++) {{ try {{ if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne $expected) {{ throw \"staged file digest mismatch\" }}; Move-Item -LiteralPath $source -Destination $target -Force -ErrorAction Stop; Remove-Item -LiteralPath $status -Force -ErrorAction SilentlyContinue; exit 0 }} catch {{ $last_error=$_.Exception.Message; Start-Sleep -Milliseconds 100 }} }}; Write-UpdateStatus(\"failed: $last_error\"); exit 1 }} catch {{ try {{ Write-UpdateStatus(\"failed: $($_.Exception.Message)\") }} catch {{ }}; exit 1 }}"
     )
 }
 
@@ -1446,12 +1539,47 @@ mod tests {
             Path::new(r"C:\Program Files\Eggsact\candidate.exe"),
             Path::new(r"C:\Program Files\Eggsact\eggsact.exe"),
             Path::new(r"C:\Program Files\Eggsact\eggsact.status"),
+            &"a".repeat(64),
         );
         assert!(script.contains("Get-Process -Id $p"));
         assert!(script.contains("Move-Item -LiteralPath $source"));
         assert!(script.contains("Write-UpdateStatus(\"failed:"));
         assert!(!script.contains("Stop-Process"));
         assert!(!script.contains("taskkill"));
+        // The digest must be compared before the move, not only before the copy.
+        let hash_at = script.find("Get-FileHash").expect("digest check present");
+        let move_at = script
+            .find("Move-Item -LiteralPath $source")
+            .expect("move present");
+        assert!(
+            hash_at < move_at,
+            "digest must be verified before the file is installed"
+        );
+        assert!(script.contains("staged file digest mismatch"));
+    }
+
+    #[test]
+    fn hex_digest_is_lowercase_64_chars() {
+        assert_eq!(
+            hex_digest(&[0_u8; 32]),
+            "0".repeat(64),
+            "sha256 hex must match the sidecar token format parse_checksum accepts"
+        );
+        assert_eq!(hex_digest(&[0xff_u8; 32]), "f".repeat(64));
+        let mut mixed_digest = [0_u8; 32];
+        mixed_digest[0] = 0x00;
+        mixed_digest[1] = 0x0f;
+        mixed_digest[2] = 0xa0;
+        mixed_digest[3] = 0xff;
+        let mixed = hex_digest(&mixed_digest);
+        assert_eq!(
+            mixed,
+            "000fa0ff00000000000000000000000000000000000000000000000000000000"
+        );
+        assert!(
+            parse_checksum(&mixed).is_ok(),
+            "hex must round-trip through parse_checksum"
+        );
     }
 
     #[test]
@@ -2242,10 +2370,15 @@ mod tests {
         target_for_host(env::consts::OS, env::consts::ARCH).expect("host has a release target")
     }
 
-    /// Fake candidate executable: prints the exact identity the Eggup
-    /// exact-identity validator expects, with no arguments and empty stderr.
+    /// Fake candidate executable: mimics the real binary, printing the exact
+    /// identity the Eggup exact-identity validator expects on `--version` and
+    /// the usage block otherwise. It must honour argv — a fixture that always
+    /// prints the identity hides a validator that passes no arguments at all.
     fn candidate_script(version: StableVersion) -> Vec<u8> {
-        format!("#!/bin/sh\necho \"eggsact {version}\"\n").into_bytes()
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"eggsact {version}\"\nelse\n  echo \"Usage: eggsact [--mcp | update | expression]\"\nfi\n"
+        )
+        .into_bytes()
     }
 
     fn sha256_hex(bytes: &[u8]) -> String {
@@ -2349,6 +2482,50 @@ mod tests {
             "http://127.0.0.1:9/releases/download/v1.2.7/release-manifest.json"
         );
         assert_eq!(MANIFEST_FILE_NAME, "release-manifest.json");
+    }
+
+    #[test]
+    fn artifact_url_percent_encodes_the_manifest_supplied_name() {
+        let version = StableVersion::new(1, 2, 7);
+        let origin = "https://github.com/eggstack/eggsact/releases";
+
+        // Producer names are unreserved characters and encode to themselves.
+        let plain = "eggsact-1.2.7-x86_64-unknown-linux-gnu.tar.gz";
+        assert_eq!(encode_url_segment(plain), plain);
+        assert_eq!(
+            manifest_artifact_url_for_origin(origin, &version, plain),
+            format!("{origin}/download/v1.2.7/{plain}")
+        );
+
+        // A name carrying URL metacharacters must not escape its path segment.
+        for (name, encoded) in [
+            ("a?b=1", "a%3Fb%3D1"),
+            ("a#frag", "a%23frag"),
+            ("a/b", "a%2Fb"),
+            ("a%2e", "a%252e"),
+            ("a b", "a%20b"),
+        ] {
+            let url = manifest_artifact_url_for_origin(origin, &version, name);
+            assert_eq!(url, format!("{origin}/download/v1.2.7/{encoded}"), "{name}");
+            assert!(
+                !url[format!("{origin}/download/v1.2.7/").len()..].contains(['?', '#', '/', ' ']),
+                "artifact name escaped its path segment: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn digest_comparison_is_exact() {
+        let a = [1_u8; 32];
+        assert!(digests_equal(&a, &a));
+        let mut b = a;
+        b[31] = 2;
+        assert!(!digests_equal(&a, &b));
+        // A difference in the first byte must be caught too.
+        let mut c = a;
+        c[0] = 9;
+        assert!(!digests_equal(&a, &c));
+        assert!(digests_equal(&a, &[1_u8; 32]));
     }
 
     /// Matrix rows 3-5: product, release, and target mismatch are hard
@@ -2713,6 +2890,44 @@ mod tests {
         let _ = std::fs::remove_dir_all(&staging);
         let _ = std::fs::remove_dir_all(&root);
         handle.abort();
+    }
+
+    /// The candidate validator runs the staged binary with `--version`. With no
+    /// argv the real binary prints its usage block instead of its identity, so
+    /// candidate validation failed for every update on every platform. The
+    /// fixture honours argv precisely so this cannot regress unnoticed.
+    #[cfg(unix)]
+    #[test]
+    fn candidate_fixture_only_reports_identity_for_version_argv() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let version = StableVersion::new(9, 9, 9);
+        let dir = unique_temp_dir("eggsact-argv-fixture").expect("temp dir");
+        let script = dir.join("candidate.sh");
+        std::fs::write(&script, candidate_script(version)).expect("write fixture");
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod fixture");
+
+        let run = |argv: &[&str]| {
+            std::process::Command::new(&script)
+                .args(argv)
+                .output()
+                .expect("run fixture")
+        };
+
+        assert_eq!(
+            run(&["--version"]).stdout,
+            format!("eggsact {version}\n").as_bytes(),
+            "identity is only reported for --version"
+        );
+        assert_ne!(
+            run(&[]).stdout,
+            format!("eggsact {version}\n").as_bytes(),
+            "without argv the fixture must not report the identity, otherwise \
+             the test cannot detect a validator that passes no arguments"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Matrix row 17: a renamed running executable is updated in place; the

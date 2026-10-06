@@ -1001,7 +1001,30 @@ Supports:
 - `[abc]` / `[!abc]` — character classes
 - `**` — match zero or more path segments (recursive)
 
-Handles POSIX and Windows path separators. Converts glob patterns to regex for segment matching. The `**` matcher uses a recursive algorithm that tries all possible segment alignments.
+Handles POSIX and Windows path separators. On `platform: "windows"` a `\` is a
+separator in the **pattern** as well as the path, and a drive prefix or
+`\\server\share` UNC prefix forms one leading segment — the same way
+`split_path_windows` builds them — so a pattern and a path always split alike.
+On posix `\` stays a literal.
+
+`glob_match` is bounded on both axes, and both refusals are reported in
+`summary` rather than answered as a plain "no match":
+
+- **Depth.** The matcher recurses into the segment after every `**`, so N
+  `**` segments nest N frames deep with nothing bounding the depth: a ~9 KB
+  pattern overflowed the default thread stack and aborted the process. Adjacent
+  `**` runs are collapsed (`**/**` matches exactly what `**` matches) and a
+  pattern with more than `glob::MAX_DOUBLE_STAR_SEGMENTS` (64) effective `**`
+  segments is reported instead of recursed. `glob_match` additionally returns
+  `matches: false` for such a pattern, and the `glob_match` tool rejects it
+  with `INVALID_ARGUMENTS` before matching.
+- **Effort.** Each `**` tries every split point, so several `**` segments cost
+  O(path_segments × double_star_levels) trials — 36 s in release mode at 48
+  segments and 58 s at the 100 KB input cap. States are memoized on
+  `(pattern_idx, path_idx)` and segment regexes are compiled once per distinct
+  pattern, which makes ordinary globs linear; a remaining
+  `glob::MAX_MATCH_STEPS` (1,000,000) trial budget bounds the rest. Exhausting
+  it reports "exceed the maximum matching effort" in `summary`.
 
 ## Synthesis (`synthesis.rs`)
 

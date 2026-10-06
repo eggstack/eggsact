@@ -11,13 +11,26 @@ Four inputs are forbidden, and none of them appear anywhere in `src/temporal/`:
 | Forbidden | Consequence in this core |
 |-----------|---------------------------|
 | Wall clock | No function accepts or reads "now". `cron_inspect` has a **mandatory** `after` argument (`schemas/temporal.rs:12` `required: ["expression","after"]`) — there is no default and no fallback. |
-| TZ database | `parse_fixed_offset` accepts only a numeric offset or `Z`; IANA names are rejected by the schema `pattern` before the handler runs. No zone rules, no DST transitions, no leap seconds. |
+| TZ database | `parse_fixed_offset` accepts only a numeric offset or `Z`; IANA names are rejected by the schema `pattern` before the handler runs. No zone rules, no DST transitions, no leap-second *arithmetic*. See the leap-second note below. |
 | Environment | No `std::env` read anywhere in the core. The only env influence is the server-wide `EGGCALC_MCP_PROFILE` (see [mcp-server.md](mcp-server.md)), which selects tool visibility, not time behaviour. |
 | Network | No transport, no resolver. |
 
 Because the offset is fixed, a "local wall-clock time" derived from `after` is unambiguous: there is no instant at which it repeats or does not exist. This is why `search_next` can re-apply `after.offset()` to every generated result without any zone-transition handling.
 
 Identical `(expression, after, count)` therefore produce byte-identical output within one eggsact version.
+
+### Leap-second input is normalized, not rejected
+
+`parse_rfc3339` delegates to `time`'s `Rfc3339`, which accepts second `60` and
+normalizes it to the last representable sub-second instant of the same second.
+`datetime_convert {"value":"2016-12-31T23:59:60Z"}` therefore succeeds and
+returns `2016-12-31T23:59:59.999999999Z`. This is deliberate and safe: the
+mapping is injective with respect to real leap-second instants (it never
+collides with `1483228800`) and it keeps a single fixed timeline, which is what
+the bounded cron search relies on. Second `61` and above *are* rejected.
+
+Callers must not treat this as round-trip identity: formatting the result and
+parsing it again yields `:59.999999999`, not `:60`.
 
 ## Datetime Helpers (`mod.rs`)
 
@@ -171,10 +184,12 @@ Consequences of that bound:
 
 - **Fewer than `count` is normal.** `Ok(result)` is returned with fewer items, possibly zero, when the schedule cannot fill the request inside the window. `count` in the response is `next_runs.len()`, i.e. the number actually returned, **not** the number requested.
 - **An unsatisfiable schedule is a success, not an error.** `0 0 30 2 *` (February 30th) returns `ok: true` with `next_runs: []`, `count: 0`, and `satisfiable: false`. Use `satisfiable` to distinguish "no match inside the window" from "no match requested".
-- **Calendar-range exhaustion is an error.** If `date.next_day()` returns `None` (the `Date` ceiling), the call returns `ToolResponse::error_with_code("invalid_arguments", INVALID_ARGUMENTS, "cron search exceeded the supported calendar range", None, Some("cron_inspect"))`.
+- **Calendar-range exhaustion is an error only when nothing was found.** If `date.next_day()` returns `None` (the `Date` ceiling) with matches already collected, those matches are returned as `Ok(result)` with fewer than `count` items, per the rule above. Only an exhausted search that found nothing returns `ToolResponse::error_with_code("invalid_arguments", INVALID_ARGUMENTS, "cron search exceeded the supported calendar range", None, Some("cron_inspect"))`.
 - **Ordering is guaranteed.** Days ascend, and within a day hours then minutes ascend, so `next_runs` is strictly increasing. Combined with the strict `>` filter, no instant can repeat.
 
 `satisfiable(schedule, after) -> bool` is a lighter day-level probe: it uses a `ToolBudget::CHEAP` budget, scans the same 146,098-date bound, and returns `true` on the first day-level match. It ignores time-of-day entirely, so it answers "can this *day* predicate ever be satisfied from `after` onward", not "will `count` results be returned".
+
+Its `bool` cannot distinguish a budget stop from a genuine "no matching day" — both return `false`. That is not observable through `cron_inspect`, which calls `search_next` first and only reaches `satisfiable` after the search already succeeded, so the remaining budget is the one the probe would have had anyway.
 
 Both functions take a handler budget, which is why `temporal` appears as a narrow exception to the leaf-core layering rule recorded in [overview.md](overview.md) and [text-library.md](text-library.md).
 

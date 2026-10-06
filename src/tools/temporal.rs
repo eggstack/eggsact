@@ -247,6 +247,38 @@ mod tests {
     }
 
     #[test]
+    fn leap_second_input_normalizes_to_the_last_subsecond_instant() {
+        // Documented behaviour: `:60` is accepted and mapped to the last
+        // representable sub-second instant of the same second, keeping one
+        // fixed timeline. `:61` and above are rejected.
+        let result = datetime_convert(
+            &serde_json::json!({"value":"2016-12-31T23:59:60Z","format":"rfc3339"}),
+        );
+        assert!(result.ok);
+        assert_eq!(
+            result.result.unwrap()["rfc3339"],
+            "2016-12-31T23:59:59.999999999Z"
+        );
+
+        for rejected in [
+            "2016-12-31T23:59:61Z",
+            "2016-12-31T23:59:99Z",
+            "2016-12-31T23:60:00Z",
+        ] {
+            assert!(
+                !datetime_convert(&serde_json::json!({"value":rejected,"format":"rfc3339"})).ok,
+                "{rejected} must be rejected"
+            );
+        }
+
+        // An ordinary second must be untouched by the normalization.
+        let ordinary = datetime_convert(
+            &serde_json::json!({"value":"2016-12-31T23:59:59Z","format":"rfc3339"}),
+        );
+        assert_eq!(ordinary.result.unwrap()["rfc3339"], "2016-12-31T23:59:59Z");
+    }
+
+    #[test]
     fn cron_names_and_strict_after() {
         let result = cron_inspect(
             &serde_json::json!({"expression":"0 9 * * MON-FRI","after":"2026-09-03T11:00:00-04:00","count":2}),

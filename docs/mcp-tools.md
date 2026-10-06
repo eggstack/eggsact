@@ -1132,6 +1132,12 @@ Inspect a `Cargo.toml` file for package metadata, workspace configuration, and d
 
 Test whether a path matches a glob pattern.
 
+On `platform: "windows"` a `\` separates path segments in the **pattern** too,
+so `src\**\*.rs` and `C:\proj\*.rs` behave as they would natively; on posix `\`
+remains a literal. A pattern with more than 64 effective `**` segments is
+rejected with `INVALID_ARGUMENTS` (adjacent `**` runs are collapsed first, so
+`**/**` does not count twice).
+
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `pattern` | string | yes | -- | Glob pattern (e.g. `"src/**/*.rs"`) |
@@ -1140,6 +1146,10 @@ Test whether a path matches a glob pattern.
 | `case_sensitive` | boolean | no | `true` | Case-sensitive matching |
 
 **Return:** `{"matched": <boolean>}`
+
+`summary` also reports the two limits, so a limit is never mistaken for a
+verdict: `Pattern has N `**` segments; at most 64 are supported` and
+`Pattern and path exceed the maximum matching effort of 1000000 steps`.
 
 ```json
 // Request
@@ -1180,6 +1190,12 @@ lookups. The result includes lowercase address bytes, an exact decimal numeric
 form, and sorted explicit special-use tags such as `private`, `link_local`,
 `documentation`, `multicast`, `shared`, `unique_local`, and `ipv4_mapped`.
 
+The full tag vocabulary is `benchmarking`, `documentation`, `ietf_protocol_assignments`,
+`limited_broadcast`, `link_local`, `loopback`, `multicast`, `nat64`,
+`private`, `reserved`, `shared`, `unique_local`, `unspecified`, and
+`ipv4_mapped`. An empty list means no *recognized* special-purpose range
+matched — it is not a claim that the address is globally routable.
+
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `address` | string | yes | -- | Strict IPv4 or IPv6 address |
@@ -1192,6 +1208,11 @@ Normalize a CIDR and calculate exact network boundaries, masks, arithmetic IPv4
 broadcast, and address count. Counts are decimal strings derived only from the
 prefix length, including exact IPv6 `/0` and `/128` values. `contains` is
 optional but must be the same address family; no "usable host" count is inferred.
+
+`broadcast_address` is `null` when the prefix leaves one or fewer host bits
+(RFC 3021 point-to-point `/31` and single-host `/32`), which have no broadcast
+address. A prefix with a redundant leading zero (`/024`) is rejected, matching
+the address-side rejection of leading-zero octets.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|

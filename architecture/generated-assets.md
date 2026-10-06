@@ -323,10 +323,10 @@ cargo test --locked --all-features
 
 ### Known Failures
 
-There are **37 accepted parity failures**. These are accepted behavioral differences, not regressions. They are tracked in:
+There are **39 accepted parity failures** (40 ignored test instances). These are accepted behavioral differences, not regressions. They are tracked in:
 
 - `docs/parity.md` — full decision table with category definitions (C1–C6)
-- `tests/fixtures/accepted_parity_failures.txt` — 37 test names for regression detection
+- `tests/fixtures/accepted_parity_failures.txt` — 39 test names; documentation only, `#[ignore]` is the gate
 
 | Category | Count | Root Cause |
 |----------|-------|------------|

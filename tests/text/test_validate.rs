@@ -53,6 +53,53 @@ fn test_validate_brackets_mismatched_reports_opener_and_closer() {
 }
 
 #[test]
+fn test_validate_brackets_positions_are_line_and_column_accurate() {
+    // Positions come from one shared line/column table; check they still match
+    // a hand-computed expectation across lines.
+    let result = validate_brackets("ab\ncd)\nef(\n").unwrap();
+    let closer = &result.unmatched_closers[0];
+    assert_eq!((closer.line, closer.column), (2, 3));
+    let opener = &result.unmatched_openers[0];
+    assert_eq!((opener.line, opener.column), (3, 3));
+}
+
+#[test]
+fn test_validate_brackets_crlf_counts_as_one_line_break() {
+    // A `\r\n` is a single break; the delimiter after it must land on the next
+    // line, column 1.
+    let result = validate_brackets("ab\r\ncd)\r\n").unwrap();
+    let closer = &result.unmatched_closers[0];
+    assert_eq!((closer.line, closer.column), (2, 3));
+
+    let crlf = validate_brackets("ab\r\ncd)\r\nef)\r\n").unwrap();
+    let last = crlf.unmatched_closers.last().unwrap();
+    assert_eq!((last.line, last.column), (3, 3));
+}
+
+#[test]
+fn test_validate_brackets_handles_many_unmatched_delimiters() {
+    // Previously each unmatched delimiter rescanned the whole input, so this
+    // was quadratic (32k closers hit the 10 s budget). Positions must still be
+    // right for the first and last.
+    let n = 8_000;
+    let result = validate_brackets(&")".repeat(n)).unwrap();
+    assert!(!result.balanced);
+    assert_eq!(result.unmatched_closers.len(), n);
+    assert_eq!(
+        (
+            result.unmatched_closers[0].line,
+            result.unmatched_closers[0].column
+        ),
+        (1, 1)
+    );
+    assert_eq!(
+        result.unmatched_closers[n - 1].index as usize,
+        n - 1,
+        "byte index of the last closer must survive the lookup change"
+    );
+}
+
+#[test]
 fn test_validate_json_valid() {
     let result = validate_json("{}").unwrap();
     assert!(result.valid);

@@ -69,6 +69,12 @@ fn parse_field(
         }
         let (range_part, step) = match item.split_once('/') {
             Some((range, step)) if !step.is_empty() && !step.contains('/') => {
+                // Reject a leading `+` the way parse_number rejects it:
+                // `parse::<u32>()` accepts "+2", which made `*/+2` a valid
+                // step while "+2" was correctly rejected as a field value.
+                if !step.bytes().all(|byte| byte.is_ascii_digit()) {
+                    return Err(format!("invalid cron step: {step}"));
+                }
                 let step = step
                     .parse::<u32>()
                     .map_err(|_| format!("invalid cron step: {step}"))?;
@@ -245,6 +251,13 @@ pub fn search_next(
         date = match date.next_day() {
             Some(next) => next,
             None => {
+                // Matches already found are valid even when the calendar runs
+                // out before `count` is reached: `architecture/temporal.md`
+                // defines a short result as normal. Only a genuinely empty
+                // search is an error.
+                if !result.is_empty() {
+                    return Ok(result);
+                }
                 return Err(Box::new(
                     crate::mcp::response::ToolResponse::error_with_code(
                         "invalid_arguments",
@@ -253,13 +266,20 @@ pub fn search_next(
                         None,
                         Some("cron_inspect"),
                     ),
-                ))
+                ));
             }
         };
     }
     Ok(result)
 }
 
+/// Day-level satisfiability probe from `after` onward.
+///
+/// A budget stop and a genuine "no matching day" both return `false`; unlike
+/// [`search_next`] this bool cannot distinguish them. That is not observable
+/// through `cron_inspect`, which runs `search_next` first and only reaches this
+/// call after the search already succeeded, so the remaining budget is the one
+/// this probe would have had anyway.
 pub fn satisfiable(schedule: &CronSchedule, after: OffsetDateTime) -> bool {
     let budget_ctx: BudgetContext = budget::for_handler(ToolBudget::CHEAP);
     let mut date = after.date();
@@ -281,6 +301,7 @@ pub fn satisfiable(schedule: &CronSchedule, after: OffsetDateTime) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use time::format_description::well_known::Rfc3339;
     use time::{Date, Month};
 
     fn date(year: i32, month: Month, day: u8) -> Date {
@@ -404,5 +425,51 @@ mod tests {
             assert!(day_matches(&sunday, sun_feb1));
             assert!(!day_matches(&sunday, monday_jun1));
         }
+    }
+
+    #[test]
+    fn step_parsing_matches_value_strictness() {
+        // `parse::<u32>()` accepts a leading `+`, which made `*/+2` a valid
+        // step while `+2` was correctly rejected as a field value. Steps must
+        // be digits only, exactly like values.
+        assert!(parse("0 0 * * */2").is_ok());
+        assert!(parse("0 0 * * 5/2").is_ok(), "range with step stays valid");
+        assert!(parse("0 0 * * */+2").is_err());
+        assert!(parse("0 0 * * +2").is_err());
+        assert!(parse("0 0 * * 5/+2").is_err());
+        assert!(parse("0 0 * * */0").is_err());
+    }
+
+    #[test]
+    fn calendar_ceiling_keeps_already_found_matches() {
+        // Reaching the `Date` ceiling after collecting a match must return the
+        // match, not error: fewer than `count` is a documented normal outcome.
+        let schedule = parse("0 0 * * *").unwrap();
+        let after = OffsetDateTime::parse("9999-12-30T12:00:00Z", &Rfc3339).expect("parse after");
+
+        let one = search_next(&schedule, after, 1).unwrap();
+        assert_eq!(one.len(), 1);
+
+        // Asking for one more used to discard the found match and error.
+        let two = search_next(&schedule, after, 2).unwrap();
+        assert_eq!(two, one, "the found match must not depend on `count`");
+    }
+
+    #[test]
+    fn ceiling_reached_with_nothing_found_still_errors() {
+        // Past the last representable instant there is nothing to find, so the
+        // exhausted search is still the documented error.
+        let schedule = parse("0 0 * * *").unwrap();
+        let after = OffsetDateTime::parse("9999-12-31T23:59:59Z", &Rfc3339).expect("parse after");
+        assert!(search_next(&schedule, after, 1).is_err());
+    }
+
+    #[test]
+    fn unsatisfiable_schedule_is_an_empty_success() {
+        let schedule = parse("0 0 30 2 *").unwrap();
+        let after = OffsetDateTime::parse("2026-01-01T00:00:00Z", &Rfc3339).expect("parse after");
+        let runs = search_next(&schedule, after, 5).unwrap();
+        assert!(runs.is_empty());
+        assert!(!satisfiable(&schedule, after));
     }
 }

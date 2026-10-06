@@ -1,4 +1,15 @@
 use regex::Regex;
+use std::collections::HashMap;
+
+/// Maximum number of `**` segments accepted in a pattern.
+///
+/// [`match_from`] recurses into the segment after every `**`, so N segments
+/// nest N frames deep with nothing bounding the depth: a ~9 KB pattern
+/// (`"**/"` repeated) overflowed the default thread stack and aborted the whole
+/// process. Adjacent `**` runs are collapsed first, and rejecting above this
+/// bound keeps the recursion depth constant. The limit sits roughly 45x below
+/// the depth that overflowed, so no realistic pattern is refused.
+pub const MAX_DOUBLE_STAR_SEGMENTS: usize = 64;
 
 #[derive(Debug, Clone)]
 pub struct GlobMatchResult {
@@ -50,22 +61,61 @@ fn casefold(s: &str) -> String {
     s.to_lowercase()
 }
 
-fn fnmatch_segment(pattern: &str, segment: &str, case_sensitive: bool) -> bool {
-    let pattern = if case_sensitive {
-        pattern.to_string()
-    } else {
-        casefold(pattern)
-    };
-    let segment = if case_sensitive {
-        segment.to_string()
-    } else {
-        casefold(segment)
-    };
+/// Compiled segment patterns, keyed by `(pattern, case_sensitive)`.
+///
+/// The matcher visits one state per `**` split point, so the same handful of
+/// segment patterns is compiled tens of thousands of times per call. Compiling
+/// once per distinct pattern turns that into a hash lookup.
+type SegmentRegexCache = HashMap<(String, bool), Option<Regex>>;
 
-    let regex_pattern = fnmatch_to_regex(&pattern);
-    match Regex::new(&regex_pattern) {
-        Ok(re) => re.is_match(&segment),
-        Err(_) => false,
+/// Upper bound on `**` split-point trials per [`glob_match`] call.
+///
+/// Memoizing `(pattern_idx, path_idx)` makes ordinary patterns linear, but a
+/// pattern with several `**` segments still costs
+/// O(path_segments × double_star_levels) split-point trials, and that product
+/// is unbounded under the 100 KB input cap: `**/*` repeated six times against a
+/// 49,000-segment path was measured at 58 s in release mode. This budget caps
+/// the work so the call stays inside the tool time budget. Exhausting it is
+/// reported explicitly — it must never be answered as a plain "no match".
+const MAX_MATCH_STEPS: usize = 1_000_000;
+
+struct MatchContext {
+    memo: HashMap<(usize, usize), MatchState>,
+    segments: SegmentRegexCache,
+    steps_left: usize,
+    exhausted: bool,
+}
+
+impl MatchContext {
+    fn new() -> Self {
+        Self {
+            memo: HashMap::new(),
+            segments: HashMap::new(),
+            steps_left: MAX_MATCH_STEPS,
+            exhausted: false,
+        }
+    }
+}
+
+fn fnmatch_segment(
+    pattern: &str,
+    segment: &str,
+    case_sensitive: bool,
+    cache: &mut SegmentRegexCache,
+) -> bool {
+    let key = (pattern.to_string(), case_sensitive);
+    let compiled = cache.entry(key).or_insert_with(|| {
+        let effective = if case_sensitive {
+            pattern.to_string()
+        } else {
+            casefold(pattern)
+        };
+        Regex::new(&fnmatch_to_regex(&effective)).ok()
+    });
+    match compiled {
+        Some(regex) if case_sensitive => regex.is_match(segment),
+        Some(regex) => regex.is_match(&casefold(segment)),
+        None => false,
     }
 }
 
@@ -121,88 +171,202 @@ fn fnmatch_to_regex(pattern: &str) -> String {
     regex_parts
 }
 
-fn match_double_star(
-    pattern_parts: &[&str],
-    path_parts: &[String],
-    p_idx: usize,
-    mut path_idx: usize,
+/// Match `pattern_parts[pattern_idx..]` against `path_parts[path_idx..]`.
+///
+/// Returns the absolute `(pattern_idx, path_idx)` reached on success. Indexes
+/// are always into the full slices, never into a tail — that keeps the memo key
+/// meaningful across the whole match.
+type MatchState = Option<(usize, usize)>;
+
+fn match_from(
+    pattern_parts: &[String],
+    path_parts: &[&str],
+    pattern_idx: usize,
+    path_idx: usize,
     case_sensitive: bool,
-) -> (bool, usize, usize) {
-    let next_pattern_idx = p_idx + 1;
-
-    if next_pattern_idx >= pattern_parts.len() {
-        return (true, next_pattern_idx, path_parts.len());
+    ctx: &mut MatchContext,
+) -> MatchState {
+    if let Some(cached) = ctx.memo.get(&(pattern_idx, path_idx)) {
+        return *cached;
     }
-
-    while path_idx <= path_parts.len() {
-        let remaining_pattern = &pattern_parts[next_pattern_idx..];
-        let remaining_path: Vec<&str> = if path_idx < path_parts.len() {
-            path_parts[path_idx..].iter().map(|s| s.as_str()).collect()
-        } else {
-            vec![]
-        };
-
-        let (matched, consumed_p, consumed_path) =
-            match_segments(remaining_pattern, &remaining_path, case_sensitive);
-
-        if matched {
-            return (
-                true,
-                next_pattern_idx + consumed_p,
-                path_idx + consumed_path,
-            );
-        }
-
-        if path_idx < path_parts.len() {
-            path_idx += 1;
-        } else {
-            break;
-        }
-    }
-
-    (false, p_idx, p_idx)
+    let outcome = match_from_uncached(
+        pattern_parts,
+        path_parts,
+        pattern_idx,
+        path_idx,
+        case_sensitive,
+        ctx,
+    );
+    ctx.memo.insert((pattern_idx, path_idx), outcome);
+    outcome
 }
 
-fn match_segments(
-    pattern_parts: &[&str],
+fn match_from_uncached(
+    pattern_parts: &[String],
     path_parts: &[&str],
+    pattern_idx: usize,
+    path_idx: usize,
     case_sensitive: bool,
-) -> (bool, usize, usize) {
-    let mut p_idx = 0;
-    let mut path_idx = 0;
+    ctx: &mut MatchContext,
+) -> MatchState {
+    let mut p_idx = pattern_idx;
+    let mut path_idx = path_idx;
 
     while p_idx < pattern_parts.len() && path_idx < path_parts.len() {
-        let pattern_seg = pattern_parts[p_idx];
+        let pattern_seg: &str = pattern_parts[p_idx].as_str();
 
         if pattern_seg == "**" {
-            let path_strs: Vec<String> = path_parts.iter().map(|s| (*s).to_string()).collect();
-            let (matched, new_p_idx, new_path_idx) =
-                match_double_star(pattern_parts, &path_strs, p_idx, path_idx, case_sensitive);
-            if !matched {
-                return (false, p_idx, path_idx);
+            let next_pattern_idx = p_idx + 1;
+            // A trailing `**` swallows whatever path remains.
+            if next_pattern_idx >= pattern_parts.len() {
+                return Some((next_pattern_idx, path_parts.len()));
             }
-            p_idx = new_p_idx;
-            path_idx = new_path_idx;
-        } else if pattern_seg.contains("**") {
-            return (false, p_idx, path_idx);
-        } else {
-            if !fnmatch_segment(pattern_seg, path_parts[path_idx], case_sensitive) {
-                return (false, p_idx, path_idx);
+            // Try every split point for this `**`. Each candidate recurses into
+            // `match_from`, which memoizes on `(pattern_idx, path_idx)`, so a
+            // state is explored once instead of once per distinct route to it.
+            for candidate in path_idx..=path_parts.len() {
+                if ctx.steps_left == 0 {
+                    ctx.exhausted = true;
+                    return None;
+                }
+                ctx.steps_left -= 1;
+                if let Some(reached) = match_from(
+                    pattern_parts,
+                    path_parts,
+                    next_pattern_idx,
+                    candidate,
+                    case_sensitive,
+                    ctx,
+                ) {
+                    return Some(reached);
+                }
             }
-            p_idx += 1;
-            path_idx += 1;
+            return None;
         }
+
+        // A segment that merely *contains* `**` (e.g. `a**b`) is not a
+        // double-star; it can never match, matching prior behaviour.
+        if pattern_seg.contains("**") {
+            return None;
+        }
+
+        if !fnmatch_segment(
+            pattern_seg,
+            path_parts[path_idx],
+            case_sensitive,
+            &mut ctx.segments,
+        ) {
+            return None;
+        }
+        p_idx += 1;
+        path_idx += 1;
     }
 
+    // The path is exhausted: only trailing `**` segments may remain.
     while p_idx < pattern_parts.len() {
-        if pattern_parts[p_idx] == "**" {
-            p_idx += 1;
-        } else {
-            return (false, p_idx, path_idx);
+        if pattern_parts[p_idx].as_str() != "**" {
+            return None;
+        }
+        p_idx += 1;
+    }
+
+    Some((p_idx, path_idx))
+}
+
+/// Split a glob pattern into segments, keeping `**` as its own segment.
+///
+/// Separators are `/` everywhere; on Windows `\` separates too, so a pattern
+/// splits the same way [`split_path_windows`] splits the path. Without this the
+/// pattern stayed a single `src\*.rs` segment whose backslash
+/// [`fnmatch_to_regex`] escaped to a literal, and every native Windows pattern
+/// reported "does not match" — including one compared against itself.
+///
+/// A Windows drive prefix and a `\\server\share` UNC prefix each form one
+/// leading segment, mirroring [`split_path_windows`] so both sides line up.
+fn split_pattern(pattern: &str, windows: bool) -> Vec<String> {
+    let chars: Vec<char> = pattern.chars().collect();
+    let byte_at: Vec<usize> = pattern
+        .char_indices()
+        .map(|(byte_offset, _)| byte_offset)
+        .chain(std::iter::once(pattern.len()))
+        .collect();
+    let is_separator = |i: usize| chars[i] == '/' || (windows && chars[i] == '\\');
+
+    let mut parts: Vec<String> = vec![];
+    let mut i = 0;
+
+    if windows {
+        if chars.len() >= 2 && chars[1] == ':' {
+            parts.push(pattern[..byte_at[2]].to_string());
+            i = 2;
+        } else if pattern.starts_with("\\\\") {
+            let mut cursor = 2;
+            let mut host = String::new();
+            while cursor < chars.len() && !is_separator(cursor) {
+                host.push(chars[cursor]);
+                cursor += 1;
+            }
+            if cursor < chars.len() {
+                cursor += 1;
+            }
+            let mut share = String::new();
+            while cursor < chars.len() && !is_separator(cursor) {
+                share.push(chars[cursor]);
+                cursor += 1;
+            }
+            if !host.is_empty() {
+                if share.is_empty() {
+                    parts.push(format!("\\\\{}", host));
+                } else {
+                    parts.push(format!("\\\\{}\\{}", host, share));
+                }
+            }
+            i = cursor;
         }
     }
 
-    (p_idx == pattern_parts.len(), p_idx, path_idx)
+    while i < chars.len() {
+        if i + 1 < chars.len() && chars[i] == '*' && chars[i + 1] == '*' {
+            parts.push("**".to_string());
+            i += 2;
+            if i < chars.len() && is_separator(i) {
+                i += 1;
+            }
+        } else if is_separator(i) {
+            i += 1;
+        } else {
+            let mut j = i;
+            while j < chars.len() && !is_separator(j) {
+                if j + 1 < chars.len() && chars[j] == '*' && chars[j + 1] == '*' {
+                    break;
+                }
+                j += 1;
+            }
+            parts.push(pattern[byte_at[i]..byte_at[j]].to_string());
+            i = j;
+        }
+    }
+
+    // `**/**` matches exactly what `**` matches. Collapsing redundant runs keeps
+    // the segment count — and therefore the matcher recursion depth — honest.
+    parts.dedup_by(|a, b| a == "**" && b == "**");
+    parts
+}
+
+fn count_double_star_segments(pattern_parts: &[String]) -> usize {
+    pattern_parts
+        .iter()
+        .filter(|part| part.as_str() == "**")
+        .count()
+}
+
+/// Number of effective `**` segments in `pattern` for `platform`.
+///
+/// The tool adapter uses this to reject an over-deep pattern with
+/// `INVALID_ARGUMENTS` rather than let [`glob_match`] answer with a
+/// non-match verdict it could not actually evaluate.
+pub fn double_star_segment_count(pattern: &str, platform: &str) -> usize {
+    count_double_star_segments(&split_pattern(pattern, platform == "windows"))
 }
 
 pub fn glob_match(
@@ -223,47 +387,41 @@ pub fn glob_match(
             .collect()
     };
 
-    let mut pattern_parts: Vec<&str> = vec![];
-    let mut i = 0;
+    let pattern_parts = split_pattern(pattern, platform == "windows");
 
-    let chars: Vec<char> = pattern.chars().collect();
-    let char_to_byte: Vec<usize> = pattern
-        .char_indices()
-        .map(|(byte_offset, _)| byte_offset)
-        .chain(std::iter::once(pattern.len()))
-        .collect();
-
-    while i < chars.len() {
-        if i + 1 < chars.len() && chars[i] == '*' && chars[i + 1] == '*' {
-            if i + 2 < chars.len() && chars[i + 2] == '/' {
-                pattern_parts.push("**");
-                i += 3;
-            } else {
-                pattern_parts.push("**");
-                i += 2;
-            }
-        } else if chars[i] == '/' {
-            i += 1;
-        } else {
-            let mut j = i;
-            while j < chars.len() {
-                if chars[j] == '/' {
-                    break;
-                }
-                if j + 1 < chars.len() && chars[j] == '*' && chars[j + 1] == '*' {
-                    break;
-                }
-                j += 1;
-            }
-            let byte_start = char_to_byte[i];
-            let byte_end = char_to_byte[j];
-            pattern_parts.push(&pattern[byte_start..byte_end]);
-            i = j;
-        }
+    // Bound the recursion before it starts rather than trusting the input cap:
+    // MAX_TEXT_LENGTH is ~11x above the depth that overflowed the stack.
+    let double_star_segments = count_double_star_segments(&pattern_parts);
+    if double_star_segments > MAX_DOUBLE_STAR_SEGMENTS {
+        return GlobMatchResult {
+            matches: false,
+            normalized_pattern,
+            normalized_path,
+            matched_segment: None,
+            unmatched_segment: None,
+            summary: format!(
+                "Pattern has {} `**` segments; at most {} are supported",
+                double_star_segments, MAX_DOUBLE_STAR_SEGMENTS
+            ),
+        };
     }
 
     let path_strs: Vec<&str> = path_parts.iter().map(|s| s.as_str()).collect();
-    let (matched, _, _) = match_segments(&pattern_parts, &path_strs, case_sensitive);
+    let mut ctx = MatchContext::new();
+    let matched = match_from(&pattern_parts, &path_strs, 0, 0, case_sensitive, &mut ctx).is_some();
+    if ctx.exhausted {
+        return GlobMatchResult {
+            matches: false,
+            normalized_pattern,
+            normalized_path,
+            matched_segment: None,
+            unmatched_segment: None,
+            summary: format!(
+                "Pattern and path exceed the maximum matching effort of {} steps",
+                MAX_MATCH_STEPS
+            ),
+        };
+    }
 
     if matched {
         GlobMatchResult {

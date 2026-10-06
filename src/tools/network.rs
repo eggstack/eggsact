@@ -99,6 +99,23 @@ fn special_use_tags(ip: IpAddr) -> Vec<&'static str> {
             if (value & 0xffff_c000) == 0x6440_0000 {
                 tags.push("shared");
             }
+            // 192.0.0.0/24 — IETF protocol assignments (RFC 6890).
+            if (value & 0xffffff00) == 0xc000_0000 {
+                tags.push("ietf_protocol_assignments");
+            }
+            // 198.18.0.0/15 — benchmarking (RFC 2544).
+            if (value & 0xfffe_0000) == 0xc612_0000 {
+                tags.push("benchmarking");
+            }
+            // 240.0.0.0/4 — reserved for future use (RFC 1112). Excludes
+            // 255.255.255.255, the limited broadcast address, which is
+            // reported separately below.
+            if (value & 0xf000_0000) == 0xf000_0000 && value != 0xffff_ffff {
+                tags.push("reserved");
+            }
+            if value == 0xffff_ffff {
+                tags.push("limited_broadcast");
+            }
             tags
         }
         IpAddr::V6(address) => {
@@ -125,6 +142,11 @@ fn special_use_tags(ip: IpAddr) -> Vec<&'static str> {
             }
             if ipv4_mapped(address).is_some() {
                 tags.push("ipv4_mapped");
+            }
+            // 64:ff9b::/96 — NAT64 well-known prefix (RFC 6052).
+            if (value >> 32) == (u128::from(Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0, 0)) >> 32)
+            {
+                tags.push("nat64");
             }
             tags
         }
@@ -186,6 +208,14 @@ fn parse_cidr(value: &str) -> Result<ParsedCidr, String> {
             "CIDR prefix must be a non-negative integer, got {prefix}"
         ));
     }
+    // Leading-zero octets are rejected on the address side specifically to
+    // close the octal-ambiguity hole. Accepting "/024" reopens the same
+    // ambiguity on the prefix side, so reject it here too.
+    if prefix.len() > 1 && prefix.starts_with('0') {
+        return Err(format!(
+            "CIDR prefix must not have a redundant leading zero: {prefix}"
+        ));
+    }
     let ip = address
         .parse::<IpAddr>()
         .map_err(|_| format!("Invalid IP address: {address}"))?;
@@ -240,6 +270,13 @@ pub fn cidr_inspect(args: &Value) -> ToolResponse {
                 let network = value & mask;
                 let host_mask = !mask;
                 let last = network | host_mask;
+                // RFC 3021 /31 point-to-point links have no broadcast
+                // address, and /32 is a single host.
+                let broadcast = if 32 - parsed.prefix <= 1 {
+                    None
+                } else {
+                    Some(Ipv4Addr::from(last).to_string())
+                };
                 let contains = match args.get("contains") {
                     None => None,
                     Some(Value::String(candidate)) => match candidate.parse::<IpAddr>() {
@@ -274,7 +311,7 @@ pub fn cidr_inspect(args: &Value) -> ToolResponse {
                     Ipv4Addr::from(mask).to_string(),
                     Ipv4Addr::from(network).to_string(),
                     Ipv4Addr::from(last).to_string(),
-                    Some(Ipv4Addr::from(last).to_string()),
+                    broadcast,
                     (u64::from(host_mask) + 1).to_string(),
                     contains,
                 )
@@ -394,6 +431,50 @@ mod tests {
     }
 
     #[test]
+    fn classifies_reserved_and_special_purpose_ranges() {
+        // These all returned [] before: consumers treating an empty list as
+        // "definitely not special-purpose" would be misled.
+        for (address, expected) in [
+            ("255.255.255.255", "limited_broadcast"),
+            ("198.18.0.1", "benchmarking"),
+            ("198.19.255.255", "benchmarking"),
+            ("240.0.0.1", "reserved"),
+            ("192.0.0.1", "ietf_protocol_assignments"),
+            ("64:ff9b::1.2.3.4", "nat64"),
+        ] {
+            let tags = result(serde_json::json!({"address":address}))["special_use"]
+                .as_array()
+                .unwrap()
+                .clone();
+            assert!(
+                tags.iter().any(|tag| tag == expected),
+                "address={address} expected {expected}, got {tags:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reserved_range_excludes_the_limited_broadcast_address() {
+        let broadcast = result(serde_json::json!({"address":"255.255.255.255"}))["special_use"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            broadcast,
+            serde_json::json!(["limited_broadcast"])
+                .as_array()
+                .unwrap()
+                .clone()
+        );
+
+        // An ordinary public address stays untagged.
+        assert_eq!(
+            result(serde_json::json!({"address":"8.8.8.8"}))["special_use"],
+            serde_json::json!([])
+        );
+    }
+
+    #[test]
     fn special_use_tags_are_lexicographically_stable() {
         for address in [
             "10.0.0.1",
@@ -426,6 +507,45 @@ mod tests {
         let value = response.result.unwrap();
         assert_eq!(value["address_count"], IPV6_ADDRESS_COUNT);
         assert_eq!(value["cidr"], "::/0");
+    }
+
+    #[test]
+    fn rejects_cidr_prefix_with_a_redundant_leading_zero() {
+        // The address side rejects leading-zero octets to close the octal
+        // ambiguity; "/024" reopened it on the prefix side.
+        let response = cidr_inspect(&serde_json::json!({"cidr":"10.0.0.0/024"}));
+        assert!(!response.ok);
+        assert!(
+            response.error.unwrap().contains("leading zero"),
+            "unexpected error"
+        );
+
+        // "/00" is the same defect and "/0" stays valid.
+        assert!(!cidr_inspect(&serde_json::json!({"cidr":"10.0.0.0/00"})).ok);
+        let zero = cidr_inspect(&serde_json::json!({"cidr":"10.0.0.0/0"}));
+        assert!(zero.ok);
+        assert_eq!(zero.result.unwrap()["prefix_length"], 0);
+    }
+
+    #[test]
+    fn point_to_point_and_host_prefixes_have_no_broadcast_address() {
+        // RFC 3021 /31 links have no broadcast; /32 is a single host.
+        for (cidr, host_bits) in [("10.0.0.0/31", 1), ("10.0.0.0/32", 0)] {
+            let value = cidr_inspect(&serde_json::json!({"cidr":cidr}))
+                .result
+                .unwrap();
+            assert_eq!(value["host_bits"], host_bits, "cidr={cidr}");
+            assert!(
+                value["broadcast_address"].is_null(),
+                "cidr={cidr} must not report a broadcast address"
+            );
+        }
+
+        // Two or more host bits still report one.
+        let value = cidr_inspect(&serde_json::json!({"cidr":"10.0.0.0/30"}))
+            .result
+            .unwrap();
+        assert_eq!(value["broadcast_address"], "10.0.0.3");
     }
 
     #[test]

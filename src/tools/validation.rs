@@ -619,23 +619,41 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                     if !pattern_cache.contains_key(pattern) {
                         pattern_cache.insert(pattern.to_string(), regex::Regex::new(pattern).ok());
                     }
-                    if let Some(re) = pattern_cache.get(pattern).and_then(|r| r.as_ref()) {
-                        // Use find with start offset 0 to match Python's re.match behavior
-                        // (match at start of string only)
-                        let matched = re.find(str_val).map(|m| m.start() == 0).unwrap_or(false);
-                        if !matched {
-                            let display_val = if str_val.chars().count() > 20 {
-                                let truncated: String = str_val.chars().take(20).collect();
-                                format!("{}...", truncated)
-                            } else {
-                                str_val.clone()
-                            };
+                    match pattern_cache.get(pattern).and_then(|r| r.as_ref()) {
+                        Some(re) => {
+                            // Use find with start offset 0 to match Python's re.match behavior
+                            // (match at start of string only)
+                            let matched = re.find(str_val).map(|m| m.start() == 0).unwrap_or(false);
+                            if !matched {
+                                let display_val = if str_val.chars().count() > 20 {
+                                    let truncated: String = str_val.chars().take(20).collect();
+                                    format!("{}...", truncated)
+                                } else {
+                                    str_val.clone()
+                                };
+                                add_violation(
+                                    violations,
+                                    path,
+                                    &format!(
+                                        "string '{}' does not match pattern '{}'",
+                                        display_val, pattern
+                                    ),
+                                    Some("string"),
+                                    None,
+                                );
+                            }
+                        }
+                        // A pattern the engine cannot compile (PCRE-only syntax,
+                        // or a backreference) must not be skipped in silence:
+                        // that turned any such schema pattern into a no-op that
+                        // reported success without checking anything.
+                        None => {
                             add_violation(
                                 violations,
                                 path,
                                 &format!(
-                                    "string '{}' does not match pattern '{}'",
-                                    display_val, pattern
+                                    "schema pattern '{}' could not be compiled; this value was not checked against it",
+                                    pattern
                                 ),
                                 Some("string"),
                                 None,

@@ -89,37 +89,6 @@ pub struct JsonShapeResult {
     pub summary: String,
 }
 
-fn get_line_column(text: &str, index: usize) -> (i32, i32) {
-    let mut line = 1;
-    let mut column = 1;
-    let chars: Vec<(usize, char)> = text.char_indices().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        let (byte_idx, c) = chars[i];
-        if byte_idx >= index {
-            break;
-        }
-        if c == '\r' {
-            // CRLF is a single line break
-            if i + 1 < chars.len() && chars[i + 1].1 == '\n' {
-                line += 1;
-                column = 1;
-                i += 2;
-                continue;
-            }
-            line += 1;
-            column = 1;
-        } else if c == '\n' {
-            line += 1;
-            column = 1;
-        } else {
-            column += 1;
-        }
-        i += 1;
-    }
-    (line, column)
-}
-
 pub fn validate_brackets(text: &str) -> Result<CheckBracketsResult, String> {
     let text_length = text.chars().count();
     if text_length > MAX_INPUT_LENGTH {
@@ -142,26 +111,34 @@ pub fn validate_brackets_with_pairs(
     let openers: std::collections::HashSet<char> = pairs.keys().cloned().collect();
     let closers: std::collections::HashSet<char> = pairs.values().cloned().collect();
 
-    let mut stack: Vec<(char, usize)> = Vec::new();
+    // One `(line, column)` table for the whole input instead of a rescan per
+    // unmatched delimiter. `get_line_column` rebuilt a `Vec<(usize, char)>` over
+    // the entire text and restarted from offset 0 on every call, so N unmatched
+    // delimiters meant N full passes: 16k closers took 6.6 s, and 16 concurrent
+    // requests pinned every tool worker for the full budget window.
+    let mut table: Option<Vec<(i32, i32)>> = None;
+
+    let mut stack: Vec<(char, usize, usize)> = Vec::new();
     let mut unmatched_openers: Vec<BracketError> = Vec::new();
     let mut unmatched_closers: Vec<BracketError> = Vec::new();
 
-    for (index, c) in text.char_indices() {
+    for (char_index, (index, c)) in text.char_indices().enumerate() {
         if openers.contains(&c) {
-            stack.push((c, index));
+            stack.push((c, index, char_index));
         } else if closers.contains(&c) {
-            if let Some((opener, opener_index)) = stack.pop() {
+            if let Some((opener, opener_index, opener_char_index)) = stack.pop() {
                 if pairs.get(&opener) != Some(&c) {
                     // Mismatched pair: report both the opener and the closer
                     // as unmatched (matches Python eggcalc behavior).
-                    let (opener_line, opener_column) = get_line_column(text, opener_index);
+                    let (opener_line, opener_column) =
+                        lookup_line_column(text, &mut table, opener_char_index);
                     unmatched_openers.push(BracketError {
                         char: opener.to_string(),
                         index: opener_index as i32,
                         line: opener_line,
                         column: opener_column,
                     });
-                    let (line, column) = get_line_column(text, index);
+                    let (line, column) = lookup_line_column(text, &mut table, char_index);
                     unmatched_closers.push(BracketError {
                         char: c.to_string(),
                         index: index as i32,
@@ -170,7 +147,7 @@ pub fn validate_brackets_with_pairs(
                     });
                 }
             } else {
-                let (line, column) = get_line_column(text, index);
+                let (line, column) = lookup_line_column(text, &mut table, char_index);
                 unmatched_closers.push(BracketError {
                     char: c.to_string(),
                     index: index as i32,
@@ -181,8 +158,8 @@ pub fn validate_brackets_with_pairs(
         }
     }
 
-    for (opener, opener_index) in stack {
-        let (line, column) = get_line_column(text, opener_index);
+    for (opener, opener_index, opener_char_index) in stack {
+        let (line, column) = lookup_line_column(text, &mut table, opener_char_index);
         unmatched_openers.push(BracketError {
             char: opener.to_string(),
             index: opener_index as i32,
@@ -1348,6 +1325,19 @@ fn line_column_lookup(table: &[(i32, i32)], index: usize) -> (i32, i32) {
     } else {
         *table.last().unwrap_or(&(1, 1))
     }
+}
+
+/// `(line, column)` for a char index, building the table on first use.
+///
+/// Balanced input never needs a position lookup, so the table stays unbuilt
+/// rather than paying two extra allocations per call.
+fn lookup_line_column(
+    text: &str,
+    table: &mut Option<Vec<(i32, i32)>>,
+    char_index: usize,
+) -> (i32, i32) {
+    let table = table.get_or_insert_with(|| build_line_column_table(text));
+    line_column_lookup(table, char_index)
 }
 
 /// Map a byte offset to a char index via binary search on precomputed char

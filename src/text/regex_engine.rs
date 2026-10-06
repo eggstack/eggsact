@@ -419,6 +419,31 @@ pub fn classify_pattern(pattern: &str) -> RegexClassification {
     while i < len {
         let c = chars[i];
 
+        // Track character classes — contents are literal. This runs *before*
+        // escape handling so a backreference-looking sequence inside a class
+        // (`[\1]`) is not misrouted to fancy-regex; both engines reject it, but
+        // the misattributed `engine_used` was misleading. Inside a class only
+        // `\` is special, and it escapes exactly one following character so a
+        // `\]` does not close the class early.
+        if c == '[' && !in_char_class {
+            in_char_class = true;
+            i += 1;
+            continue;
+        }
+        if c == ']' && in_char_class {
+            in_char_class = false;
+            i += 1;
+            continue;
+        }
+        if in_char_class {
+            if c == '\\' && i + 1 < len {
+                i += 2;
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+
         // Skip escaped characters — the next char is literal
         if c == '\\' && i + 1 < len {
             let next = chars[i + 1];
@@ -449,23 +474,37 @@ pub fn classify_pattern(pattern: &str) -> RegexClassification {
                     "backslash_K".to_string(),
                 ));
             }
+            // \k<name>, \k'name' and \k{name} — named backreferences. Both
+            // engines reject them; classify explicitly so the error uses the
+            // structured vocabulary instead of a raw parse error.
+            else if next == 'k' && i + 2 < len {
+                let mut probe = i + 2;
+                while probe < len && chars[probe].is_whitespace() {
+                    probe += 1;
+                }
+                if probe < len
+                    && (chars[probe] == '<' || chars[probe] == '\'' || chars[probe] == '{')
+                {
+                    features.push(RegexFeature::Backreference);
+                    needs_fancy = true;
+                }
+            }
+            // \Z — PCRE "end of subject, allowing a trailing newline". Rust's
+            // regex crate spells that \z and rejects \Z outright.
+            else if next == 'Z' {
+                unsupported.push("backslash_Z".to_string());
+                features.push(RegexFeature::UnsupportedPcreConstruct(
+                    "backslash_Z".to_string(),
+                ));
+            }
+            // \g{1}, \g{-1}, \g{name} — subpattern call / recursion. PCRE-only.
+            else if next == 'g' && i + 2 < len && (chars[i + 2] == '{' || chars[i + 2] == '<') {
+                unsupported.push("subpattern_call_g".to_string());
+                features.push(RegexFeature::UnsupportedPcreConstruct(
+                    "subpattern_call_g".to_string(),
+                ));
+            }
             i += 2;
-            continue;
-        }
-
-        // Track character classes — contents are literal
-        if c == '[' && !in_char_class {
-            in_char_class = true;
-            i += 1;
-            continue;
-        }
-        if c == ']' && in_char_class {
-            in_char_class = false;
-            i += 1;
-            continue;
-        }
-        if in_char_class {
-            i += 1;
             continue;
         }
 
@@ -482,6 +521,13 @@ pub fn classify_pattern(pattern: &str) -> RegexClassification {
                     features.push(RegexFeature::LookAhead);
                     needs_fancy = true;
                 }
+                // Conditional group (?(1)yes|no) — PCRE-only.
+                '(' => {
+                    unsupported.push("conditional_group".to_string());
+                    features.push(RegexFeature::UnsupportedPcreConstruct(
+                        "conditional_group".to_string(),
+                    ));
+                }
                 // Lookbehind: (?<=...) or (?<!...)  — but NOT named group (?<name>...)
                 '<' => {
                     i += 1;
@@ -495,6 +541,13 @@ pub fn classify_pattern(pattern: &str) -> RegexClassification {
                 'i' | 'm' | 's' | 'x' => {
                     features.push(RegexFeature::InlineFlags);
                     // Inline flags alone don't force fancy-regex
+                }
+                // Comment group (?#...) — neither engine supports it.
+                '#' => {
+                    unsupported.push("comment_group".to_string());
+                    features.push(RegexFeature::UnsupportedPcreConstruct(
+                        "comment_group".to_string(),
+                    ));
                 }
                 // Branch reset: (?|...) — unsupported PCRE construct
                 '|' => {
@@ -663,6 +716,80 @@ mod tests {
             .features
             .iter()
             .any(|f| matches!(f, RegexFeature::Backreference)));
+    }
+
+    #[test]
+    fn classify_named_backreference_uses_fancy_regex() {
+        // `\k<name>` is supported by fancy-regex and rejected by rust-regex.
+        for pattern in [r"(?<x>a)\k<x>", r"(?<x>a)\k'x'", r"(?<x>a)\k{x}"] {
+            let c = classify_pattern(pattern);
+            assert_eq!(
+                c.preferred_engine,
+                RegexEngineUsed::FancyRegex,
+                "pattern={pattern}"
+            );
+            assert!(
+                c.features
+                    .iter()
+                    .any(|f| matches!(f, RegexFeature::Backreference)),
+                "pattern={pattern}"
+            );
+        }
+    }
+
+    #[test]
+    fn classify_backreference_inside_char_class_is_rust_regex() {
+        // `[\1]` is a character class containing an escaped literal, not a
+        // backreference. It used to be routed to fancy-regex first.
+        for pattern in [r"^[\1]+$", r"[a\1b]", r"[\1-\9]"] {
+            let c = classify_pattern(pattern);
+            assert_eq!(
+                c.preferred_engine,
+                RegexEngineUsed::RustRegex,
+                "pattern={pattern}"
+            );
+            assert!(
+                !c.features
+                    .iter()
+                    .any(|f| matches!(f, RegexFeature::Backreference)),
+                "pattern={pattern} must not be classified as a backreference"
+            );
+        }
+    }
+
+    #[test]
+    fn classify_escaped_bracket_inside_char_class_does_not_close_it() {
+        // `[a\]b]` must stay one class; an escaped `]` is not the terminator.
+        let c = classify_pattern(r"[a\]b]");
+        assert_eq!(c.preferred_engine, RegexEngineUsed::RustRegex);
+
+        // And `[\\d]` is a literal backslash plus `d`, not a digit class.
+        let literal = classify_pattern(r"[\\d]");
+        assert_eq!(literal.preferred_engine, RegexEngineUsed::RustRegex);
+        assert!(literal.unsupported_features.is_empty());
+    }
+
+    #[test]
+    fn classify_reports_missing_pcre_constructs_in_the_structured_vocabulary() {
+        // Each of these previously reached the `regex` crate and produced a
+        // raw "regex parse error" instead of an `unsupported_features` entry.
+        for (pattern, expected) in [
+            (r"\g{1}(a)", "subpattern_call_g"),
+            (r"(a)\g{1}", "subpattern_call_g"),
+            (r"(a)\g{-1}", "subpattern_call_g"),
+            (r"(?(1)yes|no)(a)", "conditional_group"),
+            (r"a(?#comment)b", "comment_group"),
+            (r"\Zfoo", "backslash_Z"),
+        ] {
+            let c = classify_pattern(pattern);
+            assert!(
+                c.unsupported_features
+                    .iter()
+                    .any(|feature| feature == expected),
+                "pattern={pattern} expected {expected}, got {:?}",
+                c.unsupported_features
+            );
+        }
     }
 
     #[test]

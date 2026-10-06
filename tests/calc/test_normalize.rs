@@ -809,6 +809,56 @@ fn test_nz2_lowercase_temperature_conversion() {
     );
 }
 
+// ─── Negative quantities in unit conversions ────────────────────────
+
+#[test]
+fn negative_temperature_conversion_is_supported() {
+    // The conversion patterns required digits with no sign, so "-40 c in f"
+    // matched nothing and reached the evaluator's convert() stub, surfacing an
+    // internal invariant message instead of the most ordinary negative
+    // conversion there is.
+    assert_eq!(run("-40 c in f").unwrap().0, "-40 F");
+    assert_eq!(run("-10 c in f").unwrap().0, "14 F");
+    assert_eq!(run("-273.15 c in f").unwrap().0, "-459.66999999999996 F");
+    assert_eq!(run("-10 c in k").unwrap().0, "263.15 K");
+}
+
+#[test]
+fn negative_unit_conversion_is_supported() {
+    assert_eq!(run("-10 km in m").unwrap().0, "-10000 m");
+    assert_eq!(
+        run("-60 mi/h in km/h").unwrap().0,
+        "-96.56063999999999 km/h"
+    );
+    assert_eq!(run("-5 kg in lb").unwrap().0, "-11.023113109243878 lb");
+}
+
+#[test]
+fn negative_zero_conversion_behaves_like_zero() {
+    assert_eq!(run("-0 c in f").unwrap().0, run("0 c in f").unwrap().0);
+}
+
+#[test]
+fn negative_arithmetic_is_unaffected_by_the_sign_fix() {
+    // The `-?` was added to conversion patterns only; ordinary signed
+    // arithmetic must keep its documented semantics.
+    assert_eq!(run("-5 + 3").unwrap().0, "-2");
+    assert_eq!(run("2 - -3").unwrap().0, "5");
+    assert_eq!(run("-1 + -2").unwrap().0, "-3");
+    assert_eq!(run("-40 * 2").unwrap().0, "-80");
+}
+
+#[test]
+fn convert_stub_error_is_user_facing() {
+    // The stub must not leak "must be called through the run() pipeline".
+    let err = run("convert(3*foo,bar)").unwrap_err().to_string();
+    assert!(
+        !err.contains("run() pipeline"),
+        "internal invariant leaked to users: {}",
+        err
+    );
+}
+
 // ─── NZ-6: Fraction multi-word numbers ──────────────────────────────
 
 #[test]

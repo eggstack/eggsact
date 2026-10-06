@@ -1,9 +1,16 @@
 # Accepted parity failures (categories C1–C6 from docs/parity.md decision table).
 # These are known behavioral differences between Python and Rust, not regressions.
-# Used by tests to detect future regressions: any parity failure NOT in this list
-# is an unexpected regression.
 #
-# 37 test functions as of 2026-08-14.
+# This file is DOCUMENTATION, not an enforced gate. The real mechanism is
+# `#[ignore = "..."]` on the parity tests themselves; no code reads this file.
+# Keep it in sync by listing every ignored test under `tests/parity/` — a
+# failure NOT listed here is not automatically caught by this file.
+#
+# Entries are bare test function names, so a name that appears in two modules
+# counts once (`test_shell_split_basic` lives in both `test_error_handling` and
+# `test_tools_tier2`). 40 ignored test instances map to the 39 names below.
+#
+# 39 test names as of 2026-10-06.
 test_shell_split_comment_handling
 test_shell_split_quoted_hash
 test_shell_split_single_quotes
@@ -41,3 +48,5 @@ test_validate_toml_invalid
 test_validate_toml_valid
 test_toml_shape_basic
 test_config_preflight_toml
+test_command_preflight_dangerous
+test_command_preflight_safe

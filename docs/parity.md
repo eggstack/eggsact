@@ -174,12 +174,15 @@ tests that previously differed (Python emitted only `valid_pattern`,
 `matches`, `truncated`, `match_count`, `error` while Rust also emits
 `engine_used`, `dialect`, `unsupported_features`) were resolved 2026-07-09
 by switching them to the existing superset comparator (`compare_tool_parity_superset`)
-in `tests/parity/mod.rs`. Categories C1–C6 (37 accepted failures) remain
-documented in `tests/fixtures/accepted_parity_failures.txt`.
+in `tests/parity/mod.rs`. Categories C1–C6 (39 accepted failures) remain
+documented in `tests/fixtures/accepted_parity_failures.txt`. That fixture is
+documentation only — the enforcing mechanism is `#[ignore]` on the parity
+tests, so no code reads it and a name missing from it is not automatically
+caught by the file.
 
 ## Known parity gaps
 
-The 37 remaining parity failures are classified below (down from 60 after
+The 39 remaining parity failures are classified below (down from 60 after
 fixing Category A). None are regressions from a single change; they
 accumulated across the phase 06–09 line of work. The concurrent-ordering
 failures (old Category D) were resolved 2026-07-07 by switching
@@ -282,11 +285,14 @@ tool handler.
 **C3 — Unicode policy check drift (3 failures).** Output shape or finding
 severity/details differ between Rust and Python for `unicode_policy_check`.
 
-**C4 — Tool output drift (11 failures).** Miscellaneous output differences:
+**C4 — Tool output drift (13 failures).** Miscellaneous output differences:
 `cargo_toml_inspect` shape, `constant_lookup` metadata ordering,
 `unit_info` error envelope, `text_security_inspect` finding shape,
 `edit_preflight` missing `match_codepoint_length` field in subtool output,
-`math_eval` power expression output, `version_compare` phase4 case output.
+`math_eval` power expression output, `version_compare` phase4 case output,
+and the two `command_preflight` cases (`test_command_preflight_dangerous`,
+`test_command_preflight_safe`) where Rust's policy engine reports extra
+findings with its own severity and disposition.
 
 **C5 — Tools/list ordering and tool-set gap (8 failures).** Rust ships 86
 tools in the full profile; Python defines 67. Nineteen extra Rust tools (the
@@ -317,10 +323,10 @@ calls a HarnessOnly tool without proper audience setup.
 | C1 — Shell tokenization | 9 | Defer: accepted Rust behavioral difference | No |
 | C2 — Prompt input inspect | 4 | Defer: Rust has richer findings | No |
 | C3 — Unicode policy check | 3 | Defer: Rust has different finding structure | No |
-| C4 — Tool output drift | 11 | Defer: cosmetic or intentional Rust differences | No |
+| C4 — Tool output drift | 13 | Defer: cosmetic or intentional Rust differences | No |
 | C5 — Tools/list ordering | 8 | Defer: Rust superset (86 vs 67 tools) | No |
 | C6 — Error handling | 2 | Defer: needs Harness audience in test | No |
-| **Total** | **37 accepted gaps** | **381 passed, 37 ignored** | **None** |
+| **Total** | **39 accepted gaps** | **381 passed, 40 ignored** | **None** |
 
 ### Known tool-set gap: 86 vs 67 tools
 
