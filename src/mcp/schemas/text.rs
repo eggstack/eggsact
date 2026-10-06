@@ -165,8 +165,8 @@ pub fn text_window_input() -> Value {
                     "grapheme_index": {"type": "integer", "description": "Grapheme index (alternative to value)"},
                     "line": {"type": "integer", "description": "Line number for line_column kind"},
                     "column": {"type": "integer", "description": "Column number for line_column kind"},
-                    "line_base": {"type": "integer", "default": 1, "description": "Base for line numbers (1 for 1-based)"},
-                    "column_base": {"type": "integer", "default": 1, "description": "Base for column numbers (1 for 1-based)"}
+                    "line_base": {"type": "integer", "default": 1, "minimum": 0, "maximum": 1, "description": "Base for line numbers (1 for 1-based)"},
+                    "column_base": {"type": "integer", "default": 1, "minimum": 0, "maximum": 1, "description": "Base for column numbers (1 for 1-based)"}
                 },
                 "required": ["kind"]
             },

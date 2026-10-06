@@ -256,7 +256,10 @@ fn filtered_specs(options: &ToolListOptions<'_>) -> Vec<&'static ToolSpec> {
             };
             let in_audience = match options.audience {
                 None | Some(ToolListAudience::Debug) => true,
-                Some(ToolListAudience::Model) => spec.exposure != ToolExposure::HarnessOnly,
+                Some(ToolListAudience::Model) => {
+                    spec.exposure != ToolExposure::HarnessOnly
+                        && spec.exposure != ToolExposure::Hidden
+                }
                 Some(ToolListAudience::Harness) => spec.exposure != ToolExposure::Hidden,
             };
             let name_matches = name_set
@@ -300,7 +303,9 @@ pub fn tools_for_profile_audience(
     match audience {
         ToolListAudience::Model => profile_tools
             .into_iter()
-            .filter(|t| t.exposure != ToolExposure::HarnessOnly)
+            .filter(|t| {
+                t.exposure != ToolExposure::HarnessOnly && t.exposure != ToolExposure::Hidden
+            })
             .collect(),
         ToolListAudience::Harness => profile_tools
             .into_iter()

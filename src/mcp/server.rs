@@ -270,9 +270,18 @@ fn parse_tools_list_params(
             }
         }
         if let Some(t) = p.get("tier") {
-            if !t.is_i64() && !t.is_u64() && !t.is_boolean() {
+            // Booleans stay accepted for Python parity (isinstance(True, int)).
+            // Numbers must be a non-negative integer inside the u8 tier domain:
+            // a negative or oversized value used to be silently dropped or
+            // truncated, which turned the filter into "no filter".
+            let in_range = match t {
+                Value::Number(n) => matches!(n.as_u64(), Some(v) if v <= u8::MAX as u64),
+                Value::Bool(_) => true,
+                _ => false,
+            };
+            if !in_range {
                 return Err(invalid_request(
-                    "Invalid 'tier' parameter: expected integer",
+                    "Invalid 'tier' parameter: expected integer in 0..=255",
                     id.clone(),
                 ));
             }
@@ -384,15 +393,28 @@ fn handle_tools_list_shared(
     let detail = filters.schema_detail.as_deref().unwrap_or(&default_detail);
     let active_profile = get_active_profile();
     let effective_profile = filters.profile.as_deref().unwrap_or(&active_profile);
-    let effective_audience_str =
-        filters
-            .audience
-            .as_deref()
-            .unwrap_or_else(|| match get_active_audience() {
-                ToolAudience::Model => "model",
-                ToolAudience::Harness => "harness",
-                ToolAudience::Debug => "debug",
-            });
+    let active_audience = get_active_audience();
+    // The `audience` request param may only *narrow* the server-wide audience
+    // (EGGCALC_MCP_AUDIENCE), never widen it. Without this clamp a `Model`
+    // server could be pushed to `harness`/`debug` listing and advertise
+    // `HarnessOnly` tools it refuses to execute.
+    let audience_rank = |a: ToolAudience| match a {
+        ToolAudience::Model => 0u8,
+        ToolAudience::Harness => 1,
+        ToolAudience::Debug => 2,
+    };
+    let requested_audience = filters.audience.as_deref().map(|a| match a {
+        "harness" => ToolAudience::Harness,
+        "debug" => ToolAudience::Debug,
+        _ => ToolAudience::Model,
+    });
+    let effective_audience = match requested_audience {
+        Some(requested) if audience_rank(requested) >= audience_rank(active_audience) => {
+            active_audience
+        }
+        Some(requested) => requested,
+        None => active_audience,
+    };
     // Leak effective strings so ToolListOptions can borrow them; the leak is
     // bounded to one small allocation per tools/list call and keeps the shared
     // validation path free of lifetime plumbing across eras.
@@ -409,11 +431,7 @@ fn handle_tools_list_shared(
             "id": id
         }));
     }
-    let audience_enum = match effective_audience_str {
-        "harness" => registry::ToolListAudience::Harness,
-        "debug" => registry::ToolListAudience::Debug,
-        _ => registry::ToolListAudience::Model,
-    };
+    let audience_enum = effective_audience.as_registry_audience();
     let audience = Some(audience_enum);
     // ── Discovery presentation (plan 02 Part B) ────────────────────────
     // Presentation only: the active profile/audience above remain the

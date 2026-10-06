@@ -546,6 +546,11 @@ pub struct TextWindowResult {
     pub warnings: Vec<String>,
 }
 
+/// Build a window of lines around a position.
+///
+/// `position.line_base`/`position.column_base` are 0/1 selectors; any other
+/// value is treated as 1. The `text_window` tool adapter rejects out-of-domain
+/// values with `invalid_arguments` before calling this.
 pub fn text_window(
     text: &str,
     position: &TextWindowPosition,
@@ -555,8 +560,11 @@ pub fn text_window(
     let mut warnings = Vec::new();
 
     let kind = &position.kind;
-    let line_base = position.line_base.unwrap_or(1);
-    let column_base = position.column_base.unwrap_or(1);
+    // Bases are 0/1 selectors. Anything else overflows the line accumulation in
+    // `get_line_col_for_cp`, so clamp here as well as in the tool adapter: this
+    // is a public library entry point.
+    let line_base = usize::from(position.line_base.unwrap_or(1) != 0);
+    let column_base = usize::from(position.column_base.unwrap_or(1) != 0);
     let total_codepoints = text.chars().count();
     let graphemes: Vec<(usize, &str)> = text.grapheme_indices(true).collect();
 

@@ -2067,6 +2067,26 @@ pub fn text_window(args: &Value) -> ToolResponse {
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
 
+    // `line_base`/`column_base` are 0/1 selectors. Unbounded values overflow the
+    // `current_line += 1` accumulation in `text::position::text_window` and were
+    // reported as an internal error instead of invalid arguments.
+    for (key, base) in [
+        ("line_base", pos_line_base),
+        ("column_base", pos_column_base),
+    ] {
+        if let Some(base) = base {
+            if base != 0 && base != 1 {
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
+                    &format!("position.{} must be 0 or 1, got {}", key, base),
+                    Some(vec![format!("Set position.{} to 0 or 1", key)]),
+                    Some("text_window"),
+                );
+            }
+        }
+    }
+
     let text_position = TextWindowPosition {
         kind: pos_kind.to_string(),
         value: pos_value,

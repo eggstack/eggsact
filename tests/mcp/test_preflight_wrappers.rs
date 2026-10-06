@@ -365,3 +365,50 @@ fn patch_apply_check_parse_response_rejects_tool_rejection() {
         result
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Regression: typed wrapper fields that no producer populated
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn command_preflight_argv_is_populated_from_shell_split() {
+    // `CommandPreflightOutput::argv` is documented as "Parsed argv if shell
+    // splitting succeeded", but the wrapper read a top-level `argv` field that
+    // `command_preflight` never emits — the argv lives under
+    // `subresults.shell_split.argv`.
+    let input = CommandPreflightInput {
+        command: "ls -la /tmp".to_string(),
+        platform: "auto".to_string(),
+        policy: CommandPolicy::Strict,
+        working_directory: None,
+        policy_config: None,
+    };
+    let output = CommandPreflight::run(&input).expect("run should succeed");
+    assert_eq!(
+        output.argv,
+        Some(vec![
+            "ls".to_string(),
+            "-la".to_string(),
+            "/tmp".to_string()
+        ]),
+        "argv must mirror subresults.shell_split.argv"
+    );
+    assert_eq!(output.program.as_deref(), Some("ls"));
+}
+
+#[test]
+fn text_security_inspect_input_default_is_a_valid_argument_set() {
+    // `..Default::default()` must produce arguments the tool accepts; the
+    // derived Default produced `policy: ""`, which the enum rejects.
+    let input = TextSecurityInspectInput {
+        text: "hello".to_string(),
+        ..Default::default()
+    };
+    assert_eq!(input.policy, "default");
+    let result = TextSecurityInspect::run(&input);
+    assert!(
+        result.is_ok(),
+        "default input should run: {:?}",
+        result.err()
+    );
+}

@@ -579,8 +579,10 @@ impl ToolRegistry {
     ) -> Result<PreparedToolCall, ToolCallError> {
         let spec =
             registry::get_tool(name).ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
-        let in_profile = effective_profile.as_str() == "full"
-            && spec.exposure != ToolExposure::Hidden
+        // Parenthesized: `a && b || c` would parse as `(a && b) || c` and let a
+        // `Hidden` spec through on profile membership alone.
+        let in_profile = (effective_profile.as_str() == "full"
+            && spec.exposure != ToolExposure::Hidden)
             || spec.profiles.contains(&effective_profile.as_str());
         if !in_profile {
             return Err(ToolCallError::ToolUnavailable {

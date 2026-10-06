@@ -51,16 +51,26 @@ impl Drop for RequestGuard {
             }
             return;
         }
-        // `try_lock` failed (contended). Fall back to a blocking lock so the
-        // slot is still freed even under contention. This blocks the current
-        // thread briefly, but the Drop path only runs on panic/unwind where
-        // leaking the slot (MAX_IN_FLIGHT_REQUESTS=32) is worse than blocking.
-        let mut map = self.active.blocking_lock();
-        if let Some(entry) = map.get(&self.request_id) {
-            if entry.generation == self.generation {
-                map.remove(&self.request_id);
+        // `try_lock` failed (contended). Hand the cleanup to a task on the
+        // current runtime. `blocking_lock()` here would panic inside a Tokio
+        // worker thread ("Cannot block the current thread from within a
+        // runtime"), and a panic raised while unwinding aborts the process.
+        let active = self.active.clone();
+        let request_id = self.request_id.clone();
+        let generation = self.generation;
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            // No runtime to defer to (e.g. dropped from a foreign thread);
+            // leave the entry for the awaited cleanup path.
+            return;
+        };
+        handle.spawn(async move {
+            let mut map = active.lock().await;
+            if let Some(entry) = map.get(&request_id) {
+                if entry.generation == generation {
+                    map.remove(&request_id);
+                }
             }
-        }
+        });
     }
 }
 

@@ -661,3 +661,67 @@ fn test_bug208_json_extract_accepts_slash_prefixed_pointer() {
         "BUG-208: /-prefixed pointer must resolve normally"
     );
 }
+
+// ─── BUG-209: regex_finditer re-anchored `^` when iterating ───────────
+// The rust-regex backend iterated with `captures(&text[start..])`. Slicing made
+// the remainder a new haystack, so `^`/`\A` re-anchored to `start` on every
+// iteration and produced false matches (the fancy-regex backend was already
+// correct because it uses `captures_from_pos`).
+
+#[test]
+fn test_bug209_regex_finditer_start_anchor_only_matches_at_subject_start() {
+    let result = regex_finditer(r"^a", "aa", None, 100, false, false);
+    assert!(result.valid_pattern);
+    assert!(result.error.is_none(), "{:?}", result.error);
+    assert_eq!(
+        result.matches.len(),
+        1,
+        "BUG-209: `^a` on 'aa' must match once, not once per position"
+    );
+    assert_eq!(result.matches[0].span, vec![0, 1]);
+    assert_eq!(result.matches[0].m, "a");
+}
+
+#[test]
+fn test_bug209_regex_finditer_bare_start_anchor_does_not_match_every_position() {
+    let result = regex_finditer(r"^", "abc", None, 100, false, false);
+    assert!(result.valid_pattern);
+    assert_eq!(
+        result.matches.len(),
+        1,
+        "BUG-209: `^` must match only at offset 0"
+    );
+    assert_eq!(result.matches[0].span, vec![0, 0]);
+}
+
+#[test]
+fn test_bug209_regex_finditer_end_anchor_matches_only_at_subject_end() {
+    let result = regex_finditer(r"a$", "aa", None, 100, false, false);
+    assert!(result.valid_pattern);
+    assert_eq!(
+        result.matches.len(),
+        1,
+        "BUG-209: `a$` on 'aa' must match once"
+    );
+    assert_eq!(result.matches[0].span, vec![1, 2]);
+}
+
+#[test]
+fn test_bug209_regex_finditer_absolute_anchor_is_not_re_anchored() {
+    let result = regex_finditer(r"\Aa", "aa", None, 100, false, false);
+    assert!(result.valid_pattern);
+    assert_eq!(result.matches.len(), 1, "BUG-209: `\\Aa` must match once");
+    assert_eq!(result.matches[0].span, vec![0, 1]);
+}
+
+#[test]
+fn test_bug209_regex_finditer_backends_agree_on_anchors() {
+    // `(?<=b)a` needs the fancy-regex backend (lookbehind) and is unaffected by
+    // re-anchoring; the point is that both backends now agree.
+    let rust = regex_finditer(r"^a", "aa", None, 100, false, false);
+    assert_eq!(rust.engine_used.as_deref(), Some("rust-regex"));
+    let fancy = regex_finditer(r"(?<=b)a", "abab", None, 100, false, false);
+    assert_eq!(fancy.engine_used.as_deref(), Some("fancy-regex"));
+    assert_eq!(fancy.matches.len(), 1);
+    assert_eq!(fancy.matches[0].span, vec![2, 3]);
+}

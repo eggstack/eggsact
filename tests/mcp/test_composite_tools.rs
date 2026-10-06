@@ -1086,3 +1086,65 @@ fn test_matched_rules_destructive() {
         "expected destructive:DestructiveRemove in matched_rules"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Regression: config_preflight dropped cargo findings and kept a clean verdict
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_config_preflight_cargo_findings_carry_messages() {
+    let cargo_text = "[workspace]\nmembers = []\n";
+    let escaped = cargo_text.replace('\n', "\\n");
+    let request = format!(
+        r#"{{"jsonrpc":"2.0","method":"tools/call","params":{{"name":"config_preflight","arguments":{{"text":"{}","format":"cargo_toml"}}}},"id":8}}"#,
+        escaped
+    );
+    let result = call_tool_and_get_result(&request);
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+
+    let findings = inner.get("findings").unwrap().as_array().unwrap();
+    assert!(
+        !findings.is_empty(),
+        "cargo findings should be surfaced: {inner}"
+    );
+    for finding in findings {
+        let message = finding
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("");
+        assert!(
+            !message.is_empty(),
+            "finding must carry the cargo message, got: {finding}"
+        );
+    }
+
+    // A document the leaf tool flags `review` must not be reported as plainly
+    // valid by the composite.
+    assert_ne!(
+        inner.get("verdict"),
+        Some(&Value::String("valid".to_string())),
+        "cargo findings must downgrade the verdict: {inner}"
+    );
+}
+
+#[test]
+fn test_config_preflight_cargo_clean_manifest_stays_valid() {
+    let cargo_text = "[package]\nname = \"x\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
+    let escaped = cargo_text
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n");
+    let request = format!(
+        r#"{{"jsonrpc":"2.0","method":"tools/call","params":{{"name":"config_preflight","arguments":{{"text":"{}","format":"cargo_toml"}}}},"id":9}}"#,
+        escaped
+    );
+    let result = call_tool_and_get_result(&request);
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(
+        inner.get("verdict"),
+        Some(&Value::String("valid".to_string())),
+        "a complete manifest must stay valid: {inner}"
+    );
+}

@@ -1506,7 +1506,10 @@ pub fn regex_finditer(
         byte_offset_to_char_index_sorted(&byte_starts, text.len(), byte_offset)
     };
     if compiled.is_rust() {
-        // Rust-regex path: manual iteration with text slicing
+        // Rust-regex path: manual iteration from an absolute offset.
+        // `captures_at` searches from `start` without making the remainder a new
+        // haystack, so `^`/`\A` stay anchored to the true start of the subject.
+        // Slicing (`captures(&text[start..])`) re-anchored them per iteration.
         let std_re = match &compiled {
             CompiledRegex::Rust(re) => re.clone(),
             _ => return regex_finditer_internal_error(&engine_name, policy_allowed),
@@ -1518,7 +1521,7 @@ pub fn regex_finditer(
         let mut start_pos = 0;
 
         while start_pos <= text.len() {
-            let caps_opt = std_re.captures(&text[start_pos..]);
+            let caps_opt = std_re.captures_at(text, start_pos);
             let caps = match caps_opt {
                 Some(c) => c,
                 None => break,
@@ -1529,8 +1532,8 @@ pub fn regex_finditer(
             }
 
             let first_match = caps.get(0).unwrap();
-            let abs_start = start_pos + first_match.start();
-            let abs_end = start_pos + first_match.end();
+            let abs_start = first_match.start();
+            let abs_end = first_match.end();
             start_pos = if abs_end == abs_start {
                 if abs_start >= text.len() {
                     text.len().saturating_add(1)

@@ -337,3 +337,34 @@ fn path_batch_scope_check_empty_targets_list() {
     assert_eq!(result.get("verdict").unwrap().as_str().unwrap(), "allow");
     assert_eq!(result.get("targets_checked").unwrap(), 0);
 }
+
+#[test]
+fn path_batch_scope_check_rejects_negative_max_targets() {
+    // A negative value used to saturate to `usize::MAX`, which silently
+    // disabled the documented cap for any request under the 1 MB limit.
+    let registry = preflight_harness_registry();
+    let err = registry
+        .call_json(
+            "path_batch_scope_check",
+            json!({"root": "/workspace", "targets": ["a", "b", "c"], "max_targets": -1}),
+        )
+        .expect_err("negative max_targets must be rejected");
+    let message = format!("{:?}", err);
+    assert!(
+        message.contains("max_targets"),
+        "Error should mention max_targets: {message}"
+    );
+}
+
+#[test]
+fn path_batch_scope_check_max_targets_zero_allows_nothing() {
+    let registry = preflight_harness_registry();
+    let resp = registry
+        .call_json(
+            "path_batch_scope_check",
+            json!({"root": "/workspace", "targets": ["a"], "max_targets": 0}),
+        )
+        .expect("registry call should return a response");
+    assert!(!resp.ok);
+    assert_eq!(resp.machine_code.as_deref(), Some("INPUT_TOO_LARGE"));
+}

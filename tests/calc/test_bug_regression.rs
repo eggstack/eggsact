@@ -520,3 +520,41 @@ fn test_round_and_seed_reject_non_finite_arguments() {
     let round_error = evaluate("round(1.5, 1.5)").expect_err("fractional ndigits must be rejected");
     assert!(round_error.contains("finite integer"), "got: {round_error}");
 }
+
+// ─── BUG-209: inverse trig / hyperbolic domain errors were reported as
+// "Value overflow". The stdlib returns NaN out of domain and `format_result`
+// classifies NaN as `ValueOverflow`, so the diagnostic was actively wrong
+// compared with sqrt/log, which reject their domains explicitly.
+
+#[test]
+fn test_bug209_inverse_trig_domain_errors() {
+    for expr in [
+        "asin(2)",
+        "asin(-2)",
+        "acos(2)",
+        "acos(-2)",
+        "acosh(0.5)",
+        "atanh(2)",
+        "atanh(1)",
+        "atanh(-1)",
+    ] {
+        let err = evaluate(expr).expect_err(&format!("{expr} must be rejected"));
+        assert!(
+            err.contains("Invalid operation"),
+            "{expr} should report an invalid operation, got: {err}"
+        );
+        assert!(
+            !err.contains("Value overflow"),
+            "{expr} must not be reported as an overflow, got: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_bug209_inverse_trig_accepts_in_domain_arguments() {
+    assert_eq!(typ("asin(1)"), "float");
+    assert_eq!(typ("acos(-1)"), "float");
+    assert_eq!(v("acosh(1)"), "0");
+    assert_eq!(typ("atanh(0.5)"), "float");
+    assert_eq!(typ("asinh(2)"), "float");
+}

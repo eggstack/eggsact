@@ -289,3 +289,48 @@ fn test_text_window_before_order_is_chronological() {
         vec![2, 3]
     );
 }
+
+// ─── BUG-209: text_window line_base/column_base domain ─────────────────
+// An unbounded `line_base` overflowed the `current_line += 1` accumulation in
+// `get_line_col_for_cp` and surfaced to the tool caller as an internal error.
+// The tool adapter now rejects it; the library entry point clamps to 0/1.
+
+#[test]
+fn test_bug209_text_window_rejects_out_of_domain_line_base() {
+    let pos = TextWindowPosition {
+        kind: "line_column".to_string(),
+        value: None,
+        byte_offset: None,
+        codepoint_index: None,
+        grapheme_index: None,
+        line: Some(2),
+        column: Some(1),
+        line_base: Some(usize::MAX),
+        column_base: None,
+    };
+    // Must not panic and must stay within the text.
+    let result = text_window("a\nb\nc\n", &pos, 2, false);
+    assert!(
+        result.position.line <= 3,
+        "BUG-209: line_base must be clamped, got line {}",
+        result.position.line
+    );
+}
+
+#[test]
+fn test_bug209_text_window_line_base_zero_is_respected() {
+    let pos = TextWindowPosition {
+        kind: "line_column".to_string(),
+        value: None,
+        byte_offset: None,
+        codepoint_index: None,
+        grapheme_index: None,
+        line: Some(2),
+        column: Some(1),
+        line_base: Some(0),
+        column_base: Some(0),
+    };
+    let result = text_window("a\nb\nc\n", &pos, 2, false);
+    assert_eq!(result.position.line, 2, "0-based line 2 is the third line");
+    assert_eq!(result.line_text, "c");
+}

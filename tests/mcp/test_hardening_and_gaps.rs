@@ -513,28 +513,53 @@ fn test_route_critical_tools_not_hidden() {
         "patch_apply_check",
         "text_security_inspect",
     ];
-    let full = list_tools_with_params(serde_json::json!({"profile": "full", "audience": "debug"}));
-    if let Some(tools) = full.get("tools").and_then(|t| t.as_array()) {
-        let tool_map: std::collections::HashMap<String, Value> = tools
-            .iter()
-            .filter_map(|t| {
-                t.get("name")
-                    .and_then(|n| n.as_str())
-                    .map(|n| (n.to_string(), t.clone()))
-            })
-            .collect();
-        for name in &route_critical {
-            if let Some(tool) = tool_map.get(*name) {
-                let exposure = tool.get("llm_exposure").and_then(|e| e.as_str());
-                assert_ne!(
-                    exposure,
-                    Some("hidden"),
-                    "route-critical tool '{}' should not be hidden",
-                    name
-                );
-            }
+    // The registry's widest audience is used directly here: `tools/list`'s
+    // `audience` param may only narrow the server-wide audience, so it can no
+    // longer be used to reach `HarnessOnly` tools.
+    let full =
+        eggsact::mcp::registry::list_tool_definitions(eggsact::mcp::registry::ToolListOptions {
+            profile: "full",
+            names: None,
+            tier: None,
+            tags: None,
+            schema_detail: "normal",
+            audience: Some(eggsact::mcp::registry::ToolListAudience::Debug),
+        });
+    let tool_map: std::collections::HashMap<String, String> = full
+        .iter()
+        .filter_map(|t| t.llm_exposure.clone().map(|e| (t.name.clone(), e)))
+        .collect();
+    for name in &route_critical {
+        if let Some(exposure) = tool_map.get(*name) {
+            assert_ne!(
+                exposure, "hidden",
+                "route-critical tool '{}' should not be hidden",
+                name
+            );
         }
     }
+}
+
+#[test]
+fn test_tools_list_audience_param_cannot_widen() {
+    // A Model-audience server must not be pushed into a wider listing by the
+    // `audience` request param (catalog leak of HarnessOnly tools).
+    let listed = list_tools_with_params(serde_json::json!({"audience": "debug"}));
+    let names: Vec<String> = listed["tools"]
+        .as_array()
+        .map(|tools| {
+            tools
+                .iter()
+                .filter_map(|t| t["name"].as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(!names.is_empty(), "tools/list returned no tools");
+    assert!(
+        !names.iter().any(|n| n == "patch_apply_check"),
+        "audience=debug must not widen a Model server's catalog: {:?}",
+        names
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════

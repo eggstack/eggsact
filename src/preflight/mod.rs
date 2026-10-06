@@ -1204,11 +1204,18 @@ impl CommandPreflight {
             .transpose()?
             .unwrap_or_default();
 
-        let argv = result.get("argv").and_then(|v| v.as_array()).map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        });
+        // `command_preflight` exposes argv only inside `subresults.shell_split.argv`;
+        // there is no top-level `argv` property.
+        let argv = result
+            .get("subresults")
+            .and_then(|subs| subs.get("shell_split"))
+            .and_then(|split| split.get("argv"))
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            });
 
         let program = result
             .get("program")
@@ -1532,11 +1539,26 @@ impl PatchApplyCheck {
 // ---------------------------------------------------------------------------
 
 /// Input for text security inspection.
-#[derive(Clone, Debug, Default)]
+///
+/// `policy` must be one of the tool's enum values (`default`, `source_code`,
+/// `prompt`, `markdown`, `identifier`). The manual `Default` below supplies
+/// `"default"` so `..Default::default()` produces a valid argument set — the
+/// derived one produced `""`, which the tool rejects.
+#[derive(Clone, Debug)]
 pub struct TextSecurityInspectInput {
     pub text: String,
     pub policy: String,
     pub detail: Option<String>,
+}
+
+impl Default for TextSecurityInspectInput {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            policy: "default".to_string(),
+            detail: None,
+        }
+    }
 }
 
 /// Output from text security inspection.

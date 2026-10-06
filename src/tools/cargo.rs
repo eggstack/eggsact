@@ -3,6 +3,45 @@ use crate::mcp::schemas::{disposition, finding, severity, verdict, ToolResponse}
 use crate::tools::helpers::*;
 use serde_json::Value;
 
+/// Classify one `cargo_toml_inspect` finding string into an envelope finding
+/// triple: `(code, severity, disposition)`.
+///
+/// `text::cargo_toml_inspect` reports plain strings, so the keyword table lives
+/// here. `config_preflight` reuses it so the composite and the standalone tool
+/// never disagree about a cargo finding.
+pub(crate) fn classify_cargo_finding(msg: &str) -> (&'static str, &'static str, &'static str) {
+    let lower = msg.to_lowercase();
+    if lower.contains("parse error") || lower.contains("not a table") {
+        ("CARGO_PARSE_ERROR", severity::HIGH, disposition::BLOCKING)
+    } else if lower.contains("missing") {
+        (
+            "CARGO_MISSING_FIELD",
+            severity::MEDIUM,
+            disposition::CAUTION,
+        )
+    } else if lower.contains("confusable") {
+        (
+            "CARGO_CONFUSABLE_NAMES",
+            severity::MEDIUM,
+            disposition::CAUTION,
+        )
+    } else if lower.contains("suspicious") {
+        (
+            "CARGO_SUSPICIOUS_NAME",
+            severity::MEDIUM,
+            disposition::CAUTION,
+        )
+    } else if lower.contains("unrecognized") {
+        (
+            "CARGO_UNRECOGNIZED_VALUE",
+            severity::MEDIUM,
+            disposition::CAUTION,
+        )
+    } else {
+        ("CARGO_NOTE", severity::INFO, disposition::INFORMATIONAL)
+    }
+}
+
 pub fn cargo_toml_inspect(args: &Value) -> ToolResponse {
     let text = match args.get("text").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -44,38 +83,7 @@ pub fn cargo_toml_inspect(args: &Value) -> ToolResponse {
         .findings
         .iter()
         .map(|msg| {
-            let (sev, disp, code) = {
-                let lower = msg.to_lowercase();
-                if lower.contains("parse error") || lower.contains("not a table") {
-                    (severity::HIGH, disposition::BLOCKING, "CARGO_PARSE_ERROR")
-                } else if lower.contains("missing") {
-                    (
-                        severity::MEDIUM,
-                        disposition::CAUTION,
-                        "CARGO_MISSING_FIELD",
-                    )
-                } else if lower.contains("confusable") {
-                    (
-                        severity::MEDIUM,
-                        disposition::CAUTION,
-                        "CARGO_CONFUSABLE_NAMES",
-                    )
-                } else if lower.contains("suspicious") {
-                    (
-                        severity::MEDIUM,
-                        disposition::CAUTION,
-                        "CARGO_SUSPICIOUS_NAME",
-                    )
-                } else if lower.contains("unrecognized") {
-                    (
-                        severity::MEDIUM,
-                        disposition::CAUTION,
-                        "CARGO_UNRECOGNIZED_VALUE",
-                    )
-                } else {
-                    (severity::INFO, disposition::INFORMATIONAL, "CARGO_NOTE")
-                }
-            };
+            let (code, sev, disp) = classify_cargo_finding(msg);
             finding(code, sev, msg, Some(disp), None)
         })
         .collect();

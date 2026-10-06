@@ -1,4 +1,84 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+
+/// Bounded user-variable store used by `setvar`/`getvar`/`delvar`/`listvars`.
+///
+/// `values` holds the bindings; `order` records insertion order so capacity
+/// eviction drops the *oldest* binding. Evicting by key order instead made the
+/// survivor set unpredictable: a freshly created low key (`v1`) became the
+/// minimum and was dropped on the very next insert.
+#[derive(Clone)]
+pub(crate) struct UserVarStore {
+    values: HashMap<String, f64>,
+    order: VecDeque<String>,
+}
+
+impl UserVarStore {
+    pub(crate) fn new() -> Self {
+        Self {
+            values: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    pub(crate) fn from_values(values: HashMap<String, f64>) -> Self {
+        // A caller-supplied map has no recorded order; seed it from the sorted
+        // key list so eviction stays deterministic.
+        let mut keys: Vec<String> = values.keys().cloned().collect();
+        keys.sort();
+        Self {
+            values,
+            order: keys.into(),
+        }
+    }
+
+    /// Insert or overwrite `key`, evicting the oldest bindings first so `len()`
+    /// never exceeds `capacity`.
+    pub(crate) fn insert(&mut self, key: String, value: f64, capacity: usize) {
+        if let Some(slot) = self.values.get_mut(&key) {
+            *slot = value;
+            return;
+        }
+        while self.values.len() >= capacity {
+            match self.order.pop_front() {
+                Some(oldest) => {
+                    self.values.remove(&oldest);
+                }
+                None => break,
+            }
+        }
+        self.order.push_back(key.clone());
+        self.values.insert(key, value);
+    }
+
+    pub(crate) fn get(&self, key: &str) -> Option<f64> {
+        self.values.get(key).copied()
+    }
+
+    pub(crate) fn remove(&mut self, key: &str) {
+        self.values.remove(key);
+        self.order.retain(|k| k != key);
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.values.clear();
+        self.order.clear();
+    }
+
+    /// Render the bindings as `{v1: 1, v2: 2}`, sorted by key so the string is
+    /// stable across processes (`HashMap` iteration order is randomized).
+    pub(crate) fn to_display_string(&self) -> String {
+        if self.values.is_empty() {
+            return "{}".to_string();
+        }
+        let mut entries: Vec<(&String, &f64)> = self.values.iter().collect();
+        entries.sort_by(|a, b| a.0.cmp(b.0));
+        let rendered: Vec<String> = entries
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k, v))
+            .collect();
+        format!("{{{}}}", rendered.join(", "))
+    }
+}
 
 /// Per-evaluation mutable state for context-aware calculator evaluation.
 ///
@@ -23,7 +103,7 @@ pub struct EvalContext {
     /// Memory registers for store/recall/mplus/mminus/mc/mr.
     pub(crate) memory_registers: HashMap<String, f64>,
     /// User variables for setvar/getvar/delvar/listvars/clearvars.
-    pub(crate) user_variables: HashMap<String, f64>,
+    pub(crate) user_variables: UserVarStore,
 }
 
 impl EvalContext {
@@ -35,7 +115,7 @@ impl EvalContext {
             prng_state: 123456789,
             gauss_spare: None,
             memory_registers: HashMap::new(),
-            user_variables: HashMap::new(),
+            user_variables: UserVarStore::new(),
         }
     }
 
@@ -47,7 +127,7 @@ impl EvalContext {
             prng_state: 123456789,
             gauss_spare: None,
             memory_registers: HashMap::new(),
-            user_variables: HashMap::new(),
+            user_variables: UserVarStore::new(),
         }
     }
 
@@ -70,7 +150,7 @@ impl EvalContext {
 
     /// Set the user variables.
     pub fn with_user_variables(mut self, variables: HashMap<String, f64>) -> Self {
-        self.user_variables = variables;
+        self.user_variables = UserVarStore::from_values(variables);
         self
     }
 }

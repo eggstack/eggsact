@@ -2286,3 +2286,122 @@ fn test_text_transform_no_change_after_ops() {
     assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
     assert_eq!(r["result"]["text"], "hello");
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Regression: tools/list tier filter range + schema-violation truncation
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_tools_list_rejects_out_of_range_tier() {
+    // `{"tier": -1}` used to parse to `None`, which silently dropped the
+    // filter and returned the whole catalog instead of an error.
+    for tier in ["-1", "256", "1000000"] {
+        let request = format!(
+            r#"{{"jsonrpc":"2.0","method":"tools/list","params":{{"tier":{tier}}},"id":1}}"#
+        );
+        let r = call_tool_raw(&request);
+        assert!(
+            r.get("error").is_some(),
+            "tier={tier} should be rejected, got: {r}"
+        );
+    }
+}
+
+#[test]
+fn test_tools_list_tier_in_range_is_accepted() {
+    for tier in ["0", "1"] {
+        let request = format!(
+            r#"{{"jsonrpc":"2.0","method":"tools/list","params":{{"tier":{tier}}},"id":1}}"#
+        );
+        let r = call_tool_raw(&request);
+        assert!(
+            r.get("result").is_some(),
+            "tier={tier} should be accepted, got: {r}"
+        );
+    }
+}
+
+#[test]
+fn test_validate_schema_light_truncated_only_when_violations_dropped() {
+    // `truncated` was computed as `violations.len() >= 100`, so a document with
+    // exactly 100 violations claimed truncation although nothing was dropped.
+    for n in [99usize, 100] {
+        let required: Vec<String> = (0..n).map(|i| format!("\"k{i}\"")).collect();
+        let r = call_tool(
+            "validate_schema_light",
+            serde_json::json!({
+                "text": "{}",
+                "schema": {"type": "object", "required": required}
+            }),
+        );
+        assert_eq!(r["result"]["valid"], false);
+        assert_eq!(
+            r["result"]["violations"].as_array().unwrap().len(),
+            n,
+            "expected {n} violations"
+        );
+        assert_eq!(
+            r["result"]["truncated"], false,
+            "{n} violations must not be reported as truncated"
+        );
+        assert!(
+            !r["result"]["summary"]
+                .as_str()
+                .unwrap()
+                .contains("truncated"),
+            "{n} violations must not claim truncation: {}",
+            r["result"]["summary"]
+        );
+    }
+
+    let required: Vec<String> = (0..150).map(|i| format!("\"k{i}\"")).collect();
+    let r = call_tool(
+        "validate_schema_light",
+        serde_json::json!({
+            "text": "{}",
+            "schema": {"type": "object", "required": required}
+        }),
+    );
+    assert_eq!(r["result"]["truncated"], true, "150 violations truncate");
+    assert_eq!(r["result"]["violations"].as_array().unwrap().len(), 100);
+}
+
+#[test]
+fn test_text_window_rejects_out_of_domain_line_base() {
+    // An unbounded `line_base` overflowed `current_line += 1` and surfaced as an
+    // internal error instead of invalid arguments.
+    let err = eggsact::agent::ToolRegistry::with_profile_and_audience(
+        Profile::Full,
+        ToolAudience::Harness,
+    )
+    .call_json(
+        "text_window",
+        serde_json::json!({
+            "text": "a\nb\nc\n",
+            "position": {"kind": "line_column", "line": 2, "column": 1, "line_base": 18446744073709551615u64}
+        }),
+    )
+    .expect_err("out-of-domain line_base must be rejected");
+    let message = format!("{:?}", err);
+    assert!(
+        message.contains("line_base"),
+        "error should mention line_base: {message}"
+    );
+}
+
+#[test]
+fn test_text_window_accepts_zero_bases() {
+    let r = call_tool(
+        "text_window",
+        serde_json::json!({
+            "text": "a\nb\nc\n",
+            "position": {"kind": "line_column", "line": 2, "column": 1, "line_base": 0, "column_base": 0}
+        }),
+    );
+    assert_eq!(
+        r.get("ok"),
+        Some(&Value::Bool(true)),
+        "0 bases are valid: {r}"
+    );
+    assert_eq!(r["result"]["line_text"], "c");
+}

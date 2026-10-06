@@ -479,10 +479,23 @@ pub fn path_batch_scope_check(args: &Value) -> ToolResponse {
         Err(resp) => return *resp,
     };
 
-    let max_targets = args
-        .get("max_targets")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(1000) as usize;
+    // `as usize` saturates, so a negative value used to become `usize::MAX` and
+    // silently disabled the cap below.
+    let max_targets = match args.get("max_targets") {
+        Some(v) => match v.as_i64() {
+            Some(n) if n >= 0 => n as usize,
+            _ => {
+                return ToolResponse::error_with_code(
+                    "invalid_arguments",
+                    machine_codes::INVALID_ARGUMENTS,
+                    "'max_targets' must be a non-negative integer",
+                    None,
+                    Some("path_batch_scope_check"),
+                )
+            }
+        },
+        None => 1000,
+    };
     let allow_absolute = args
         .get("allow_absolute")
         .and_then(|v| v.as_bool())

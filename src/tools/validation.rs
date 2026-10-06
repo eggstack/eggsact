@@ -378,6 +378,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
 
     fn add_violation(
         violations: &mut Vec<serde_json::Value>,
+        dropped: &mut bool,
         path: &str,
         message: &str,
         value_type: Option<&str>,
@@ -390,14 +391,21 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                 "value_type": value_type,
                 "expected_type": expected_type,
             }));
+        } else {
+            // The cap is reached: record that a violation was actually
+            // discarded, so `truncated` cannot claim truncation when the
+            // document happened to produce exactly MAX violations.
+            *dropped = true;
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn validate(
         path: &str,
         value: &serde_json::Value,
         schema_def: &serde_json::Value,
         violations: &mut Vec<serde_json::Value>,
+        dropped: &mut bool,
         depth: usize,
         elements: &mut usize,
         pattern_cache: &mut std::collections::HashMap<String, Option<regex::Regex>>,
@@ -406,13 +414,21 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
             return;
         }
         if depth > MAX_SCHEMA_DEPTH {
-            add_violation(violations, path, "schema depth limit exceeded", None, None);
+            add_violation(
+                violations,
+                dropped,
+                path,
+                "schema depth limit exceeded",
+                None,
+                None,
+            );
             return;
         }
         *elements += 1;
         if *elements > MAX_SCHEMA_ELEMENTS {
             add_violation(
                 violations,
+                dropped,
                 path,
                 "schema element limit exceeded",
                 None,
@@ -443,7 +459,14 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
 
             if !type_matches {
                 let msg = format!("expected {}, got {}", exp_type, actual_type);
-                add_violation(violations, path, &msg, Some(actual_type), Some(exp_type));
+                add_violation(
+                    violations,
+                    dropped,
+                    path,
+                    &msg,
+                    Some(actual_type),
+                    Some(exp_type),
+                );
                 return;
             }
         }
@@ -462,6 +485,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                                 };
                                 add_violation(
                                     violations,
+                                    dropped,
                                     &full_path,
                                     &format!("missing required key '{}'", req_key),
                                     None,
@@ -490,6 +514,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                                 };
                                 add_violation(
                                     violations,
+                                    dropped,
                                     &full_path,
                                     &format!("additional property '{}' not allowed", key),
                                     Some("string"),
@@ -513,6 +538,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                                 prop_value,
                                 prop_schema,
                                 violations,
+                                dropped,
                                 depth + 1,
                                 elements,
                                 pattern_cache,
@@ -531,6 +557,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                     if (arr_val.len() as u64) < min_items {
                         add_violation(
                             violations,
+                            dropped,
                             path,
                             &format!(
                                 "array has {} items, minimum is {}",
@@ -551,6 +578,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                     if arr_val.len() as u64 > max_items {
                         add_violation(
                             violations,
+                            dropped,
                             path,
                             &format!(
                                 "array has {} items, maximum is {}",
@@ -571,6 +599,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                             item,
                             items_schema,
                             violations,
+                            dropped,
                             depth + 1,
                             elements,
                             pattern_cache,
@@ -585,6 +614,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                     if (str_val.chars().count() as u64) < min_len {
                         add_violation(
                             violations,
+                            dropped,
                             path,
                             &format!(
                                 "string has length {}, minimum is {}",
@@ -601,6 +631,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                     if (str_val.chars().count() as u64) > max_len {
                         add_violation(
                             violations,
+                            dropped,
                             path,
                             &format!(
                                 "string has length {}, maximum is {}",
@@ -633,6 +664,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                                 };
                                 add_violation(
                                     violations,
+                                    dropped,
                                     path,
                                     &format!(
                                         "string '{}' does not match pattern '{}'",
@@ -650,6 +682,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                         None => {
                             add_violation(
                                 violations,
+                                dropped,
                                 path,
                                 &format!(
                                     "schema pattern '{}' could not be compiled; this value was not checked against it",
@@ -677,6 +710,7 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
                     let enum_str: Vec<String> = arr.iter().map(fmt_enum_value).collect();
                     add_violation(
                         violations,
+                        dropped,
                         path,
                         &format!(
                             "value {} is not in enum [{}]",
@@ -732,17 +766,19 @@ pub fn validate_schema_light_tool(args: &Value) -> ToolResponse {
 
     let mut pattern_cache: std::collections::HashMap<String, Option<regex::Regex>> =
         std::collections::HashMap::new();
+    let mut dropped = false;
     validate(
         "",
         &data,
         &schema_value,
         &mut violations,
+        &mut dropped,
         0,
         &mut 0usize,
         &mut pattern_cache,
     );
 
-    let truncated = violations.len() >= MAX_SCHEMA_VIOLATIONS;
+    let truncated = dropped;
     let valid = violations.is_empty();
 
     let summary = if violations.is_empty() {

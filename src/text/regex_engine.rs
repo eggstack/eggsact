@@ -194,9 +194,13 @@ impl CompiledRegex {
                 if pos >= text.len() {
                     return Ok(None);
                 }
+                // `captures_at` searches from `pos` without re-slicing, so `^`/`\A`
+                // stay anchored to the start of the subject instead of re-anchoring
+                // to `pos` on every iteration. Offsets are already absolute, hence
+                // the `0` offset base.
                 Ok(re
-                    .captures(&text[pos..])
-                    .map(|caps| convert_captures_std(&caps, text, pos)))
+                    .captures_at(text, pos)
+                    .map(|caps| convert_captures_std(&caps, text, 0)))
             }
             CompiledRegex::Fancy(re) => Ok(re
                 .captures_from_pos(text, pos)?
@@ -263,9 +267,10 @@ fn convert_captures_fancy<'t>(
 
 /// Convert regex::Captures to our backend-independent form.
 ///
-/// When called from `captures_from_pos`, `pos` is the byte offset added to
-/// every range so the result uses absolute positions into the original input.
-/// Names are populated separately by the caller.
+/// `pos` is the byte offset added to every range; pass `0` when `caps` were
+/// produced by `captures_at` (offsets are already absolute) and the real
+/// offset when they came from matching a slice. Names are populated separately
+/// by the caller.
 fn convert_captures_std<'t>(
     caps: &regex::Captures<'t>,
     text: &'t str,

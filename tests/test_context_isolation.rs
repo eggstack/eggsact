@@ -1240,10 +1240,12 @@ fn test_mutable_context_user_variable_capacity_limit() {
     let v1001 = evaluate_with_context("getvar(1001)", &mut ctx).unwrap().0;
     assert_eq!(v1001, "1001", "newest variable v1001 should exist");
 
-    // Some original variable should have been evicted (returns default 0)
-    // We can't predict which one due to HashMap ordering, but the map
-    // should still be bounded. Verify by checking that at least one of
-    // the first 1000 variables is gone.
+    // Eviction is FIFO by insertion, so the oldest binding (v1) is the one
+    // dropped and every later one survives.
+    let v1_after = evaluate_with_context("getvar(1)", &mut ctx).unwrap().0;
+    assert_eq!(v1_after, "0", "oldest variable v1 should have been evicted");
+    let v1000 = evaluate_with_context("getvar(1000)", &mut ctx).unwrap().0;
+    assert_eq!(v1000, "1000", "v1000 should not have been evicted");
     let mut evicted_count = 0;
     for i in 1..=1000 {
         let val = evaluate_with_context(&format!("getvar({})", i), &mut ctx)
@@ -1256,6 +1258,59 @@ fn test_mutable_context_user_variable_capacity_limit() {
     assert!(
         evicted_count >= 1,
         "at least one original variable should have been evicted"
+    );
+}
+
+#[test]
+fn test_user_variable_eviction_keeps_the_most_recent() {
+    // Regression: eviction used to pick `HashMap::keys().min()`, so a freshly
+    // created low key was dropped on the very next insert while far older
+    // bindings survived.
+    let mut ctx = EvalContext::new();
+    for i in 2000..=2999 {
+        let _ = evaluate_with_context(&format!("setvar({}, {})", i, i), &mut ctx);
+    }
+    // Both are *new* keys, so each insert evicts one of the 1000 pre-loaded
+    // bindings. Under the old key-ordered eviction, `setvar(1, 1)` made v1 the
+    // lexicographic minimum, so the following `setvar(2, 2)` evicted v1 — the
+    // most recently inserted variable — instead of an old one.
+    let _ = evaluate_with_context("setvar(1, 1)", &mut ctx);
+    let _ = evaluate_with_context("setvar(2, 2)", &mut ctx);
+
+    let v1 = evaluate_with_context("getvar(1)", &mut ctx).unwrap().0;
+    let v2 = evaluate_with_context("getvar(2)", &mut ctx).unwrap().0;
+    let v2000 = evaluate_with_context("getvar(2000)", &mut ctx).unwrap().0;
+    let v2001 = evaluate_with_context("getvar(2001)", &mut ctx).unwrap().0;
+    let v2002 = evaluate_with_context("getvar(2002)", &mut ctx).unwrap().0;
+    assert_eq!(v2, "2", "the newest variable must survive");
+    assert_eq!(v1, "1", "the newly created v1 must survive one more insert");
+    assert_eq!(v2000, "0", "the oldest binding (v2000) is evicted first");
+    assert_eq!(
+        v2001, "0",
+        "the second-oldest binding (v2001) is evicted next"
+    );
+    assert_eq!(
+        v2002, "2002",
+        "everything newer than the eviction point survives"
+    );
+}
+
+#[test]
+fn test_listvars_output_is_sorted_and_stable() {
+    // Regression: `listvars()` rendered `HashMap` iteration order, so the same
+    // input produced a different string on every process.
+    let render = || {
+        let mut ctx = EvalContext::new();
+        for i in 1..=12 {
+            let _ = evaluate_with_context(&format!("setvar({}, {})", i, i), &mut ctx);
+        }
+        evaluate_with_context("listvars()", &mut ctx).unwrap().0
+    };
+    let first = render();
+    assert_eq!(first, render(), "listvars() must be deterministic");
+    assert_eq!(
+        first, "{v1: 1, v10: 10, v11: 11, v12: 12, v2: 2, v3: 3, v4: 4, v5: 5, v6: 6, v7: 7, v8: 8, v9: 9}",
+        "listvars() must render sorted entries"
     );
 }
 

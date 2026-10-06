@@ -548,17 +548,16 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                     None,
                 ));
             } else {
-                // Preserve the adapter-result mapping exactly: cargo findings
-                // are strings, so severity/code/message lookups miss and each
-                // becomes an informational CARGO_NOTE with empty message.
-                for _f in &ct.findings {
-                    findings.push(finding(
-                        "CARGO_NOTE",
-                        severity::INFO,
-                        "",
-                        Some(disposition::INFORMATIONAL),
-                        None,
-                    ));
+                // Typed composition: classify each cargo finding string with the
+                // same keyword table the standalone `cargo_toml_inspect` adapter
+                // uses, so the composite never reports empty messages or a
+                // `valid` verdict for a document the leaf tool flags `review`.
+                for f in &ct.findings {
+                    let (code, sev, disp) = crate::tools::cargo::classify_cargo_finding(f);
+                    if sev != severity::INFO {
+                        config_verdict = verdict::VALID_WITH_WARNINGS;
+                    }
+                    findings.push(finding(code, sev, f, Some(disp), None));
                 }
             }
         }

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
 
-use crate::calc::context::EvalContext;
+use crate::calc::context::{EvalContext, UserVarStore};
 
 #[derive(Debug)]
 pub enum EvaluationError {
@@ -200,8 +200,8 @@ static MEMORY_REGISTERS: LazyLock<std::sync::Mutex<HashMap<String, f64>>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 /// User variables for setvar/getvar/delvar/listvars/clearvars.
-static USER_VARIABLES: LazyLock<std::sync::Mutex<HashMap<String, f64>>> =
-    LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+static USER_VARIABLES: LazyLock<std::sync::Mutex<UserVarStore>> =
+    LazyLock::new(|| std::sync::Mutex::new(UserVarStore::new()));
 
 /// PRNG state (xorshift64) and Box-Muller spare value for randn/gauss.
 /// Held under a single Mutex to enforce a global lock order and prevent
@@ -1474,8 +1474,24 @@ fn evaluate_function(
         "sin" if args.len() == 1 => Ok(args[0].sin()),
         "cos" if args.len() == 1 => Ok(args[0].cos()),
         "tan" if args.len() == 1 => Ok(args[0].tan()),
-        "asin" if args.len() == 1 => Ok(args[0].asin()),
-        "acos" if args.len() == 1 => Ok(args[0].acos()),
+        // Domain-checked like sqrt/log: the stdlib returns NaN out of domain and
+        // `format_result` then mislabels it "Value overflow".
+        "asin" if args.len() == 1 => {
+            if args[0].abs() > 1.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "asin argument must be in the range [-1, 1]".to_string(),
+                ));
+            }
+            Ok(args[0].asin())
+        }
+        "acos" if args.len() == 1 => {
+            if args[0].abs() > 1.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "acos argument must be in the range [-1, 1]".to_string(),
+                ));
+            }
+            Ok(args[0].acos())
+        }
         "atan" if args.len() == 1 => Ok(args[0].atan()),
         "atan2" if args.len() == 2 => Ok(args[0].atan2(args[1])),
 
@@ -1484,8 +1500,22 @@ fn evaluate_function(
         "cosh" if args.len() == 1 => Ok(args[0].cosh()),
         "tanh" if args.len() == 1 => Ok(args[0].tanh()),
         "asinh" if args.len() == 1 => Ok(args[0].asinh()),
-        "acosh" if args.len() == 1 => Ok(args[0].acosh()),
-        "atanh" if args.len() == 1 => Ok(args[0].atanh()),
+        "acosh" if args.len() == 1 => {
+            if args[0] < 1.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "acosh argument must be at least 1".to_string(),
+                ));
+            }
+            Ok(args[0].acosh())
+        }
+        "atanh" if args.len() == 1 => {
+            if args[0].abs() >= 1.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "atanh argument must be strictly between -1 and 1".to_string(),
+                ));
+            }
+            Ok(args[0].atanh())
+        }
 
         // ── Logarithmic / Exponential ──
         "log" | "ln" if args.len() == 1 => {
@@ -2126,25 +2156,20 @@ fn evaluate_function(
             let var_id = checked_i64(args[1], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
             let mut vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
-            if !vars.contains_key(&key) && vars.len() >= MAX_USER_VARIABLES {
-                if let Some(oldest) = vars.keys().min().cloned() {
-                    vars.remove(&oldest);
-                }
-            }
-            vars.insert(key, args[0]);
+            vars.insert(key, args[0], MAX_USER_VARIABLES);
             Ok(args[0])
         }
         "getvar" if args.len() == 1 => {
             let var_id = checked_i64(args[0], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
             let vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
-            Ok(*vars.get(&key).unwrap_or(&0.0))
+            Ok(vars.get(&key).unwrap_or(0.0))
         }
         "getvar" if args.len() == 2 => {
             let var_id = checked_i64(args[0], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
             let vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
-            Ok(*vars.get(&key).unwrap_or(&args[1]))
+            Ok(vars.get(&key).unwrap_or(args[1]))
         }
         "delvar" if args.len() == 1 => {
             let var_id = checked_i64(args[0], "variable id requires integer argument")?;
@@ -2155,16 +2180,9 @@ fn evaluate_function(
         }
         "listvars" if args.is_empty() => {
             let vars = USER_VARIABLES.lock().unwrap_or_else(|e| e.into_inner());
-            let s = if vars.is_empty() {
-                "{}".to_string()
-            } else {
-                let entries: Vec<String> =
-                    vars.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
-                format!("{{{}}}", entries.join(", "))
-            };
             Err(EvaluationError::InvalidOperation(format!(
                 "__string_result__{}",
-                s
+                vars.to_display_string()
             )))
         }
         "clearvars" if args.is_empty() => {
@@ -2208,8 +2226,24 @@ fn evaluate_function_with(
         "sin" if args.len() == 1 => Ok(args[0].sin()),
         "cos" if args.len() == 1 => Ok(args[0].cos()),
         "tan" if args.len() == 1 => Ok(args[0].tan()),
-        "asin" if args.len() == 1 => Ok(args[0].asin()),
-        "acos" if args.len() == 1 => Ok(args[0].acos()),
+        // Domain-checked like sqrt/log: the stdlib returns NaN out of domain and
+        // `format_result` then mislabels it "Value overflow".
+        "asin" if args.len() == 1 => {
+            if args[0].abs() > 1.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "asin argument must be in the range [-1, 1]".to_string(),
+                ));
+            }
+            Ok(args[0].asin())
+        }
+        "acos" if args.len() == 1 => {
+            if args[0].abs() > 1.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "acos argument must be in the range [-1, 1]".to_string(),
+                ));
+            }
+            Ok(args[0].acos())
+        }
         "atan" if args.len() == 1 => Ok(args[0].atan()),
         "atan2" if args.len() == 2 => Ok(args[0].atan2(args[1])),
 
@@ -2218,8 +2252,22 @@ fn evaluate_function_with(
         "cosh" if args.len() == 1 => Ok(args[0].cosh()),
         "tanh" if args.len() == 1 => Ok(args[0].tanh()),
         "asinh" if args.len() == 1 => Ok(args[0].asinh()),
-        "acosh" if args.len() == 1 => Ok(args[0].acosh()),
-        "atanh" if args.len() == 1 => Ok(args[0].atanh()),
+        "acosh" if args.len() == 1 => {
+            if args[0] < 1.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "acosh argument must be at least 1".to_string(),
+                ));
+            }
+            Ok(args[0].acosh())
+        }
+        "atanh" if args.len() == 1 => {
+            if args[0].abs() >= 1.0 {
+                return Err(EvaluationError::InvalidOperation(
+                    "atanh argument must be strictly between -1 and 1".to_string(),
+                ));
+            }
+            Ok(args[0].atanh())
+        }
 
         // ── Logarithmic / Exponential ──
         "log" | "ln" if args.len() == 1 => {
@@ -2869,25 +2917,19 @@ fn evaluate_function_with(
         "setvar" if args.len() == 2 => {
             let var_id = checked_i64(args[1], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
-            if !ctx.user_variables.contains_key(&key)
-                && ctx.user_variables.len() >= MAX_USER_VARIABLES_CTX
-            {
-                if let Some(oldest) = ctx.user_variables.keys().min().cloned() {
-                    ctx.user_variables.remove(&oldest);
-                }
-            }
-            ctx.user_variables.insert(key, args[0]);
+            ctx.user_variables
+                .insert(key, args[0], MAX_USER_VARIABLES_CTX);
             Ok(args[0])
         }
         "getvar" if args.len() == 1 => {
             let var_id = checked_i64(args[0], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
-            Ok(*ctx.user_variables.get(&key).unwrap_or(&0.0))
+            Ok(ctx.user_variables.get(&key).unwrap_or(0.0))
         }
         "getvar" if args.len() == 2 => {
             let var_id = checked_i64(args[0], "variable id requires integer argument")?;
             let key = format!("v{}", var_id);
-            Ok(*ctx.user_variables.get(&key).unwrap_or(&args[1]))
+            Ok(ctx.user_variables.get(&key).unwrap_or(args[1]))
         }
         "delvar" if args.len() == 1 => {
             let var_id = checked_i64(args[0], "variable id requires integer argument")?;
@@ -2896,19 +2938,9 @@ fn evaluate_function_with(
             Ok(0.0)
         }
         "listvars" if args.is_empty() => {
-            let s = if ctx.user_variables.is_empty() {
-                "{}".to_string()
-            } else {
-                let entries: Vec<String> = ctx
-                    .user_variables
-                    .iter()
-                    .map(|(k, v)| format!("{}: {}", k, v))
-                    .collect();
-                format!("{{{}}}", entries.join(", "))
-            };
             Err(EvaluationError::InvalidOperation(format!(
                 "__string_result__{}",
-                s
+                ctx.user_variables.to_display_string()
             )))
         }
         "clearvars" if args.is_empty() => {
