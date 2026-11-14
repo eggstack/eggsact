@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md`
+- `plans/archive/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md`
 
 Source subsystem roadmap:
 
@@ -369,6 +369,6 @@ needs a new implementation plan.
 - `plans/subsystems/deterministic-tool-substrate-roadmap.md`: status header →
   active (guard workstream); milestone 007 row → closed with closure link;
   dependency graph annotated closed.
-- `plans/implementation/deterministic-tool-substrate/007-*.md`: status header
+- `plans/archive/implementation/deterministic-tool-substrate/007-*.md`: status header
   → `closed` (implemented in `237afb5` + `7176857`, closed here).
 - 003/004/005/006 implementation and closure files: untouched (immutable history).

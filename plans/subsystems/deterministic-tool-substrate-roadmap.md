@@ -206,7 +206,7 @@ security findings and trustworthy regression/fuzz evidence without losing any
 existing tool.
 
 Exit conditions: implementation plan
-`plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md`
+`plans/archive/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md`
 is implemented and closed with focused Unicode evidence plus the ordinary merge
 gate.
 
@@ -232,7 +232,7 @@ provenance and no ambiguity about which Unicode version each security-relevant
 provider implements.
 
 Exit conditions: implementation plan
-`plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md`
+`plans/archive/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md`
 is implemented after 003 closure, generated assets reproduce exactly, relevant
 Unicode differences are reviewed, and the ordinary merge/release qualification
 gates are green.
@@ -263,7 +263,7 @@ and standards references say, including RTL/default-ignorable and
 Script_Extensions cases that the previous corrective still missed.
 
 Exit conditions: implementation plan
-`plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md`
+`plans/archive/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md`
 is implemented and 005 closure record
 `plans/closure/deterministic-tool-substrate/005-status.md` demonstrates
 normative/reference vectors, the ordinary merge gate, and green remote CI.
@@ -294,7 +294,7 @@ including default-only RTL code points, multiple paragraphs, and private-use or
 unassigned script values.
 
 Exit conditions: implementation plan
-`plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md`
+`plans/archive/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md`
 is implemented and a new 006 closure record demonstrates baseline-failing
 fixtures, generator freshness, the ordered merge gate, and green remote CI.
 
@@ -324,7 +324,7 @@ lower security/correctness drift risk, and simpler maintenance without changing
 the 86-tool/API surface.
 
 Exit conditions: implementation plan
-plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md
+plans/archive/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md
 is implemented; differential fixtures prove external compatibility; the zero
 handler-to-handler guard is green; the ordinary merge gate and remote CI pass;
 and plans/closure/deterministic-tool-substrate/007-status.md is accepted.
@@ -359,7 +359,7 @@ zero-handler-composition claim rather than only guarding four historical
 edges.
 
 Exit conditions: implementation plan
-plans/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md
+plans/archive/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md
 is implemented; baseline recommendation fixtures, typed non-regression, generic
 guard self-tests/live scan, merge gate, parity when available, and remote CI
 are green; and plans/closure/deterministic-tool-substrate/008-status.md is
@@ -444,9 +444,9 @@ via `closure/` records; the performance line is already closed.
 | Typed-first composition guard | closed (continuous guard) | — (legacy consolidation-01, pruned; history in git) | — | — |
 | Shared analysis anti-drift | closed | — (legacy consolidation-02, pruned; history in git) | — | — |
 | Performance campaign + corrective | closed | — (commits `85e10bf` + `e8067ae`) | — (detail in `plans/archive/roadmap.md`) | — |
-| 003 Unicode security semantic correctness hardening | closed | `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | `plans/closure/deterministic-tool-substrate/003-status.md` (`3d67807`) | — |
-| 004 Unicode 18 security data qualification | closed | `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | `plans/closure/deterministic-tool-substrate/004-status.md` (`2e3860c`) | — |
-| 005 Unicode security standards-conformance corrective | closed | `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | `plans/closure/deterministic-tool-substrate/005-status.md` | — |
-| 006 Unicode conformance edge-case corrective | closed | `plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | `plans/closure/deterministic-tool-substrate/006-status.md` (`83de61a`) | — |
-| 007 Typed-core ownership and adapter deduplication | closed | `plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | `plans/closure/deterministic-tool-substrate/007-status.md` (`237afb5` + `7176857`) | — |
-| 008 Prompt wire compatibility and layering-guard corrective | closed | `plans/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md` | `plans/closure/deterministic-tool-substrate/008-status.md` (`475fc19`) | — |
+| 003 Unicode security semantic correctness hardening | closed | `plans/archive/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md` | `plans/closure/deterministic-tool-substrate/003-status.md` (`3d67807`) | — |
+| 004 Unicode 18 security data qualification | closed | `plans/archive/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md` | `plans/closure/deterministic-tool-substrate/004-status.md` (`2e3860c`) | — |
+| 005 Unicode security standards-conformance corrective | closed | `plans/archive/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md` | `plans/closure/deterministic-tool-substrate/005-status.md` | — |
+| 006 Unicode conformance edge-case corrective | closed | `plans/archive/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | `plans/closure/deterministic-tool-substrate/006-status.md` (`83de61a`) | — |
+| 007 Typed-core ownership and adapter deduplication | closed | `plans/archive/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | `plans/closure/deterministic-tool-substrate/007-status.md` (`237afb5` + `7176857`) | — |
+| 008 Prompt wire compatibility and layering-guard corrective | closed | `plans/archive/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md` | `plans/closure/deterministic-tool-substrate/008-status.md` (`475fc19`) | — |

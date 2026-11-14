@@ -116,7 +116,7 @@ Class: corrective
 
 Objective: make the `x86_64-pc-windows-msvc` candidate byte-reproducible for a fixed source revision and toolchain, so a rerun of the same tag reuses all five staged assets instead of failing closed on the one asset whose bytes differ.
 
-Implementation plan: `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md`.
+Implementation plan: `plans/archive/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md`.
 
 Dependencies: none hard; implemented in `f135210`, ahead of the next release.
 
@@ -208,7 +208,7 @@ Objective: replace the hand-maintained five-target producer workflow with Eggpac
 
 Dependencies: historical prerequisites satisfied: Eggpack CI M003d, Build M005, ADR-0005 Option A, Build M006, and the M003e/M003f/M003g corrective chain are closed. The v1.2.7 maintainer-authorized release supplied the required live qualification evidence; no hard dependency remains.
 
-Implementation plan: `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`.
+Implementation plan: `plans/archive/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`.
 
 Exit conditions: generated workflow parity, exact five-target/toolchain coverage, MCP candidate validation, public wrapper/updater parity, real draft + rerun evidence, and no automatic publication. Closure record: `plans/closure/distribution-update-release/005-status.md`.
 
@@ -268,5 +268,5 @@ M001-M004 stay closed historical milestones. M005 is closed with Eggpack produce
 | M003 0.1.7 bump | closed | `plans/archive/eggfetch-0.1.7-updater-dependency-bump.md` | in-file closure | — |
 | M004 0.2.0 adoption | closed | `plans/archive/eggfetch-0.2.0-updater-adoption.md` | in-file closure | — |
 | M004 corrective closeout | closed | `plans/archive/eggfetch-0.2.0-adoption-closeout-corrective.md` | in-file closure | — |
-| M005 Eggpack producer adoption + live draft qualification | closed | `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | `plans/closure/distribution-update-release/005-status.md` | Condition discharged by M005a; all former hard dependencies closed |
-| M005a Deterministic Windows release artifacts | closed | `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md` | `plans/closure/distribution-update-release/005a-status.md` | None; workstream is maintenance-only |
+| M005 Eggpack producer adoption + live draft qualification | closed | `plans/archive/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | `plans/closure/distribution-update-release/005-status.md` | Condition discharged by M005a; all former hard dependencies closed |
+| M005a Deterministic Windows release artifacts | closed | `plans/archive/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md` | `plans/closure/distribution-update-release/005a-status.md` | None; workstream is maintenance-only |

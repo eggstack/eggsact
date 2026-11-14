@@ -1,22 +1,15 @@
 # eggsact MCP Tool Reference
 
-Reference for the 86 tools registered in the `eggsact` MCP server (23
-categories). All 86 appear in the summary table below; 73 additionally have a
-per-tool `###` section with arguments and response shape. The 13 tools that
-currently have summary-table coverage only are the repo/analysis/patch
-aggregates: `code_block_map`, `config_file_inspect`, `dependency_edit_preflight`,
-`diff_risk_classify`, `import_export_inspect`, `lockfile_inspect`,
-`patch_contract_check`, `path_batch_scope_check`, `repo_language_detect`,
-`repo_manifest_inspect`, `repo_tree_summarize`, `symbol_name_diff`, and
-`test_command_suggest`. Their input and output schemas are authoritative in
-`src/mcp/schemas/` and rendered per profile in
-[`generated/tool-cards.md`](../generated/tool-cards.md).
+This page summarizes the 86 tools in 23 categories. Most tools have a detailed
+entry with arguments and response shape. Thirteen repository, analysis, and
+patch tools have summary coverage only; their full schemas are available in the
+[generated tool cards](../generated/tool-cards.md).
 
-Unlike `architecture/mcp-server.md` and `architecture/overview.md`, this file is
-**hand-maintained** — `generate-docs` does not write it, so it has no automated
-freshness gate. Re-verify counts against `src/mcp/specs/` when editing.
+Tool specifications and schemas are maintained in `src/mcp/specs/` and
+`src/mcp/schemas/`.
 
-See also: [Math Features](math-features.md), [Library API](library-api.md), [MCP Server Architecture](../architecture/mcp-server.md)
+See also: [Math Features](math-features.md), [Library API](library-api.md),
+[MCP Server Architecture](../architecture/mcp-server.md)
 
 ## Overview
 
@@ -28,9 +21,9 @@ See also: [Math Features](math-features.md), [Library API](library-api.md), [MCP
 | Transport | stdio JSON-RPC 2.0 (no HTTP; header routing not implemented) |
 | Total tools | 86, registered in `src/mcp/specs/` (single source of truth; per-profile counts in `architecture/mcp-server.md`) |
 
-The server communicates over stdin/stdout using newline-delimited JSON-RPC 2.0 messages. `tools/call` responses follow MCP shape: JSON-RPC `result.content[0].text` contains a JSON-encoded `ToolResponse` envelope with an `ok` boolean field.
+The server communicates over stdin and stdout using newline-delimited JSON-RPC 2.0. In legacy responses, `result.content[0].text` contains a JSON-encoded `ToolResponse` envelope with an `ok` field.
 
-Legacy clients (`2025-11-25`, `2024-11-05`) use `initialize` → `notifications/initialized` before `tools/list` / `tools/call`, pinning the stdio connection to the legacy era. Modern clients (`2026-07-28`) send per-request `_meta` (`io.modelcontextprotocol/protocolVersion` + `clientCapabilities`, optional `clientInfo`) with no handshake, pinning the connection modern on the first valid envelope; `server/discover` advertises versions, capabilities, instructions, cache hints, and `_meta` server identity. The official stdio auto-negotiation probe is enveloped and runs in a disposable sibling process, so it is not a session-child message. Any claim-less opening, including `ping` and `server/discover`, pins Legacy under eggsact's compatibility-serving posture; claim-less `server/discover` follows legacy lifecycle/method semantics. One connection serves exactly one era: cross-era requests return `-32022 Unsupported protocol version` with the id preserved, while mismatched notifications are dropped before side effects. Malformed modern envelopes and unsupported claims do not pin. See `architecture/mcp-server.md` for the pinned lifecycle.
+Legacy clients (`2025-11-25` and `2024-11-05`) must complete `initialize` and `notifications/initialized` before calling tools. Modern clients (`2026-07-28`) do not use that handshake. Each request must include `_meta` values for `io.modelcontextprotocol/protocolVersion` and `io.modelcontextprotocol/clientCapabilities`. Each stdio process serves one protocol era. See [MCP server architecture](../architecture/mcp-server.md) for connection and version-selection details.
 
 ### Modern Structured Output (`2026-07-28`)
 
@@ -44,29 +37,27 @@ Tool-level errors keep `isError: true` with no `structuredContent`. Modern `tool
 
 ### Progressive Discovery Surface
 
-`EGGSACT_MCP_SURFACE=discovery` (or `--mcp-surface discovery`) switches
-only presentation: `tools/list` advertises the pinned front doors allowed
-by the active profile/audience plus two MCP-only facades (7 entries for
-`full`/Model). Direct mode (`direct`, the default) preserves the full
-profile/audience-filtered catalog. No capability requires the facade when
-direct mode is selected; omitted-from-list never means unauthorized.
+`EGGSACT_MCP_SURFACE=discovery` (or `--mcp-surface discovery`) changes only
+which tools appear in `tools/list`. It lists up to five pinned front doors
+allowed by the active profile and audience, plus the `tool_search` and
+`tool_invoke` facades. The `full` profile with the Model audience lists seven
+tools total. Direct mode (`direct`, the default) lists the full
+profile-and-audience-filtered catalog. A tool omitted from discovery is not
+necessarily unavailable; the active profile and audience determine access.
 
 | Facade | Input | Output |
 |--------|-------|--------|
-| `tool_search` | `query` (required), `limit` 1–10 (default 5), `detail` `summary\|schema` (default `summary`), `include_deprecated` (default false) | `{"matches": [{"name", "purpose", "category", "required_arguments", "match_reason"}], "query"}`; `inputSchema` per match when `detail="schema"`; deprecated hits carry `deprecated:true` + `replacement` where documented (`json_query` → `json_extract`) |
+| `tool_search` | `query` (required), `limit` 1-10 (default 5), `detail` `summary\|schema` (default `summary`), `include_deprecated` (default false) | `{"matches": [{"name", "purpose", "category", "required_arguments", "match_reason"}], "query"}`; `inputSchema` per match when `detail="schema"`; deprecated hits carry `deprecated:true` + `replacement` where documented (`json_query` → `json_extract`) |
 | `tool_invoke` | `name` (canonical target, required), `arguments` (object, default `{}`) | Target tool's `ToolResponse` envelope with the target name visible; recursive `tool_search`/`tool_invoke` targets rejected. Routing facade with target-specific results: intentionally no facade-level `outputSchema` (modern `structuredContent` is the target's normal result; get the target contract via `tool_search(detail="schema")` or direct/full mode) |
 
-Search is deterministic local lexical ranking (exact name > alias > name
-token > tag/category > description > typo recovery; ties by registry
-order) over the profile/audience-filtered catalog — no embeddings or
-network. Both facades enforce the same profile/audience rules as direct
-calls. See `architecture/mcp-server.md` (direct vs discovery flow) and
+Search uses deterministic local lexical ranking over the
+profile-and-audience-filtered catalog. Exact names rank above aliases, name
+tokens, tags or categories, descriptions, and typo recovery. Ties follow
+registry order. It uses no embeddings or network. Both facades enforce the
+same profile and audience rules as direct calls. See
+`architecture/mcp-server.md` (direct vs discovery flow) and
 `architecture/registry-profiles.md` (capability vs presentation).
 
-The current full/Model baseline is 77 direct Tool definitions (111,911
-serialized UTF-8 bytes) versus 7 discovery definitions (6,088 bytes, 5.44%).
-`tests/mcp/test_discovery.rs` enforces the byte and retrieval gates; the
-task-oriented corpus lives in `tests/fixtures/tool_discovery_intents.json`.
 
 ## Transport Protocol
 
@@ -90,7 +81,10 @@ task-oriented corpus lives in `tests/fixtures/tool_discovery_intents.json`.
 
 ### Machine Codes
 
-Every non-OK tool response includes a `machine_code` field with a stable, machine-readable code from `src/mcp/machine_codes.rs`. Codes enable programmatic routing (retry, skip, escalate) without parsing human-readable error messages. Structured findings use `code`, `severity`, and `message` fields — see `architecture/machine-codes.md` for the full code table, finding helpers, and design rationale.
+Every non-OK tool response includes a stable `machine_code` from
+`src/mcp/machine_codes.rs`. Use codes to route errors without parsing their
+messages. Structured findings use `code`, `severity`, and `message` fields.
+See `architecture/machine-codes.md` for the code table and finding helpers.
 
 ### Server Error Format (JSON-RPC level)
 
@@ -102,7 +96,7 @@ Every non-OK tool response includes a `machine_code` field with a stable, machin
 
 | Constant | Value | Applies to |
 |----------|-------|------------|
-| `MAX_TEXT_LENGTH` | 100,000 characters | All text/string inputs across all tools |
+| `MAX_TEXT_LENGTH` | 100,000 UTF-8 bytes | Shared limit for most text inputs; individual tools may define other limits |
 | `MAX_EXPRESSION_LENGTH` | 10,000 characters | `math_eval` expression parameter |
 | `MAX_LIST_ITEMS` | 10,000 items | Array parameters in `list_compare`, `list_dedupe`, `list_sort`, `identifier_inspect`, `identifier_table_inspect`, `shell_quote_join` |
 | `MAX_REGEX_SAMPLES` | 100 | `validate_regex` samples array |
@@ -253,7 +247,7 @@ Measure text properties with detailed breakdowns.
 {"jsonrpc": "2.0", "method": "tools/call", "id": 4, "params": {"name": "text_measure", "arguments": {"text": "Hello, world!\nSecond line.\n"}}}
 
 // Response
-{"jsonrpc": "2.0", "id": 4, "result": {"ok": true, "result": {"bytes_utf8": 27, "codepoints": 27, "graphemes": 27, "words": 3, "lines": 3, "nonempty_lines": 2, "blank_lines": 1, "warnings": []}}}
+{"jsonrpc": "2.0", "id": 4, "result": {"ok": true, "result": {"bytes_utf8": 27, "codepoints": 27, "graphemes": 27, "words": 4, "lines": 3, "nonempty_lines": 2, "blank_lines": 1, "warnings": []}}}
 ```
 
 ---
@@ -1194,7 +1188,7 @@ The full tag vocabulary is `benchmarking`, `documentation`, `ietf_protocol_assig
 `limited_broadcast`, `link_local`, `loopback`, `multicast`, `nat64`,
 `private`, `reserved`, `shared`, `unique_local`, `unspecified`, and
 `ipv4_mapped`. An empty list means no *recognized* special-purpose range
-matched — it is not a claim that the address is globally routable.
+matched; this does not mean the address is globally routable.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
@@ -1280,7 +1274,7 @@ values while nanoseconds remain authoritative.
 
 Parse a bounded five-field Vixie/Cronie-style schedule (`minute hour day-of-
 month month day-of-week`) and return strictly later runs. Names are English
-`JAN`–`DEC` and `SUN`–`SAT`, case-insensitive; seconds/year fields, Quartz
+`JAN`-`DEC` and `SUN`-`SAT`, case-insensitive; seconds/year fields, Quartz
 syntax, nicknames, locale names, and timezone prefixes are rejected. The
 schedule uses the fixed offset carried by mandatory `after`, never the host
 timezone. When neither DOM nor DOW starts with `*`, a date matches when
@@ -1294,7 +1288,7 @@ Step syntax follows the Vixie/Cronie extension.
 |-----------|------|----------|---------|-------------|
 | `expression` | string | yes | -- | Five-field cron expression |
 | `after` | string | yes | -- | RFC 3339 reference instant |
-| `count` | integer | no | `5` | Number of runs, bounded to 1–32 |
+| `count` | integer | no | `5` | Number of runs, bounded to 1-32 |
 
 **Return:** `{"expression": <string>, "normalized_expression": <string>, "parsed_values": <object>, "offset": <string>, "offset_seconds": <int>, "satisfiable": <boolean>, "next_runs": [<rfc3339_string>], "count": <int>}`
 
@@ -1373,7 +1367,7 @@ Validate a configuration file before writing: detect syntax errors, schema viola
 
 YAML is intentionally unsupported here: there is no YAML parser dependency.
 `config_file_inspect` accepts `.yaml`/`.yml` but performs a heuristic-only
-`key: value` line scan — its `analysis_mode` result field reports
+`key: value` line scan. Its `analysis_mode` result field reports
 `"heuristic"` (vs `"parser"` for JSON/TOML family formats) and YAML `parse_ok`
 must not be read as syntax validity.
 
@@ -1504,10 +1498,10 @@ Explain why a tool is or is not available for a given profile and audience, with
 | 58 | `glob_match` | Path | `pattern`, `path` |
 | 59 | `validate_brackets` | Validation | `text` |
 | 60 | `text_security_inspect` | Text | `text` |
-| 61 | `edit_preflight` | Patch | `file_path`, `old`, `new` |
+| 61 | `edit_preflight` | Patch | `original` (required); `old`, `new`, `patch_text` (mode-dependent) |
 | 62 | `command_preflight` | Shell | `command` |
-| 63 | `config_preflight` | Config | `file_path`, `text` |
-| 64 | `structured_data_compare` | JSON | `left`, `right` |
+| 63 | `config_preflight` | Config | `text` |
+| 64 | `structured_data_compare` | JSON | `a`, `b` |
 | 65 | `dependency_edit_preflight` | Dependency | `file_path`, `old_text`, `new_text` |
 | 66 | `repo_manifest_inspect` | Repo | `paths` |
 | 67 | `config_file_inspect` | Repo | `file_path`, `text` |
@@ -1520,10 +1514,10 @@ Explain why a tool is or is not available for a given profile and audience, with
 | 74 | `repo_tree_summarize` | Repo | `paths` |
 | 75 | `test_command_suggest` | Repo | `paths` |
 | 76 | `repo_language_detect` | Repo | `paths` |
-| 77 | `import_export_inspect` | Analysis | `text`, `language` |
-| 78 | `code_block_map` | Analysis | `text`, `source_type` |
-| 79 | `symbol_name_diff` | Analysis | `old_text`, `new_text` |
-| 80 | `lockfile_inspect` | Analysis | `before_text`, `after_text` |
+| 77 | `import_export_inspect` | Analysis | `source`, optional `language` |
+| 78 | `code_block_map` | Analysis | `source`, optional `language` |
+| 79 | `symbol_name_diff` | Analysis | `old_source`, `new_source` |
+| 80 | `lockfile_inspect` | Analysis | `before`, `after`, or `diff` (at least one); optional `path`, `ecosystem`, `max_packages` |
 | 81 | `ip_inspect` | Network | `address` |
 | 82 | `cidr_inspect` | Network | `cidr` |
 | 83 | `codec_convert` | Encoding | `value`, `from`, `to` |

@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md`
+- `plans/archive/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md`
 
 Source subsystem roadmap:
 
@@ -307,6 +307,6 @@ requiring product decisions, not corrective passes).
 - `plans/subsystems/deterministic-tool-substrate-roadmap.md`: status header →
   active (guard workstream); milestone 006 row → closed with closure link;
   dependency graph annotated closed; §4 corrected to past tense.
-- `plans/implementation/deterministic-tool-substrate/006-*.md`: status header
+- `plans/archive/implementation/deterministic-tool-substrate/006-*.md`: status header
   → `closed` (implemented in `83de61a`, closed here).
 - 003/004/005 implementation and closure files: untouched (immutable history).

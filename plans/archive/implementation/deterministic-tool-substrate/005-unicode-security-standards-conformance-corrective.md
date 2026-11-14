@@ -10,9 +10,9 @@ Source roadmap:
 
 Corrects:
 
-- `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md`
+- `plans/archive/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md`
 - `plans/closure/deterministic-tool-substrate/003-status.md`
-- `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md`
+- `plans/archive/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md`
 - `plans/closure/deterministic-tool-substrate/004-status.md`
 
 Long-term requirements:

@@ -2,7 +2,7 @@
 
 Status: closed (conditionally on the rerun-reuse condition in §Unresolved; see "Rerun reuse" below)
 
-Source plan: `plans/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`
+Source plan: `plans/archive/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md`
 
 Source roadmap: `plans/subsystems/distribution-update-release-roadmap.md`
 

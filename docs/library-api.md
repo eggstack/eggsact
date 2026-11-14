@@ -7,6 +7,8 @@
 ```toml
 [dependencies]
 eggsact = "1.2.7"
+serde_json = "1" # Used by the in-process tool-dispatch examples
+tokio = { version = "1", features = ["rt-multi-thread"] } # Needed only for the direct MCP server example
 ```
 
 The crate exposes seven public modules:
@@ -116,7 +118,7 @@ Direct mathematical expression evaluation. Parses Python-style math syntax witho
 - Parentheses for grouping
 - Functions: `sin()`, `cos()`, `sqrt()`, `abs()`, `log()`, `log(x, base)`, `exp()`, etc.
   (`log10()`/`log2()`/`log1p()` exist in the expression parser but currently fail
-  on the `run()` path — see [docs/cli.md](cli.md).)
+  on the `run()` path. See [docs/cli.md](cli.md).)
 - Constants: `pi`, `e`, `tau`, `c`, `gravity`, `na`, `h`, etc.
 - Comparison: `<`, `>`, `<=`, `>=`, `==`, `!=`
 - Complex numbers: `3+4j`
@@ -342,7 +344,7 @@ use eggsact::text::{resolved_script_set, is_mixed_script};
 | `bidi_skeleton_ltr` | `(text: &str) -> String` | UTS #39 `bidiSkeleton(LTR, X)`: UAX #9 L1/L2 applied paragraph-locally per paragraph (never a whole-text level vector) → L3 mark fixup → L4 mirroring → internal skeleton |
 | `confusable_skeleton` | `(text: &str) -> String` | Public UTS #39 `skeleton(X) = bidiSkeleton(LTR, X)` (Unicode 18.0.0); equal skeletons mean confusable |
 | `are_confusable` | `(a: &str, b: &str) -> bool` | True when two distinct strings share the exact public skeleton |
-| `resolved_script_set` | `(text: &str) -> BTreeSet<&str>` | UTS #39 §5.1 resolved script set (augmented Script_Extensions intersection; short codes; only Common/Inherited are ALL — Unknown/Zzzz constrains) |
+| `resolved_script_set` | `(text: &str) -> BTreeSet<&str>` | UTS #39 §5.1 resolved script set (augmented Script_Extensions intersection; short codes; only Common/Inherited are ALL; Unknown/Zzzz constrains) |
 | `is_mixed_script` | `(text: &str) -> bool` | UTS #39 §5.1 mixed-script verdict (true iff resolved set empty with script-bearing input; Latin + private-use/Unknown counts as mixed) |
 
 `lookup()`, `has_confusables()`, and `find_confusables()` report per-character
@@ -410,7 +412,9 @@ rt.block_on(eggsact::mcp::server::main());
 The server speaks MCP `2026-07-28` (preferred, modern stateless) with legacy
 `2025-11-25` / `2024-11-05` support on era-pinned connections.
 
-**Lifecycle**: Clients must complete the initialization handshake before calling tools:
+**Lifecycle:** Legacy clients using `2025-11-25` or `2024-11-05` must send
+`initialize`, wait for its response, then send `notifications/initialized`
+before calling tools. The example below shows a legacy connection:
 
 ```json
 → {"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"my-client"}}}
@@ -419,6 +423,14 @@ The server speaks MCP `2026-07-28` (preferred, modern stateless) with legacy
 → {"jsonrpc":"2.0","method":"tools/list","id":2}
 ← {"jsonrpc":"2.0","id":2,"result":{"tools":[...]}}
 ```
+
+Modern clients using `2026-07-28` do not send the initialization handshake.
+Each request must include `_meta` values for
+`io.modelcontextprotocol/protocolVersion` and
+`io.modelcontextprotocol/clientCapabilities`. The protocol version is a string,
+and client capabilities must be an object. `io.modelcontextprotocol/clientInfo`
+is optional. Each stdio process serves one protocol era and does not allow
+switching between them.
 
 The server dispatches requests **concurrently**. Responses may arrive out of request order. **Clients must correlate responses to requests by JSON-RPC `id`**, not by arrival position.
 
@@ -431,7 +443,7 @@ The server dispatches requests **concurrently**. Responses may arrive out of req
 | `tools/list` | Returns registered tool definitions (filtered by profile) |
 | `tools/call` | Executes a tool by name |
 | `profiles/list` | Lists all profiles and their tool counts |
-| `ping` | Returns empty response (health check) |
+| `ping` | Legacy-only empty health-check response |
 
 ### Response Contract
 
@@ -502,7 +514,7 @@ let registry = ToolRegistry::default();
 let response = registry.call_json("math_eval", serde_json::json!({"expression": "2 + 3"}))?;
 assert!(response.ok);
 
-// Context-aware call (recommended for new code, immutable — clones eval_ctx)
+// Context-aware call (recommended for new code; clones eval_ctx)
 let ctx = ExecutionContext::builder()
     .profile(Profile::Full)
     .audience(ToolAudience::Model)
@@ -521,7 +533,7 @@ let response = registry.call_json_with_execution_template(
     &ctx,
 )?;
 
-// Mutable context (DEPRECATED since 1.0.0 — see note below)
+// Mutable context (DEPRECATED since 1.0.0; see note below)
 // Handler state mutations persist back to ctx, but math_eval state
 // (PRNG, registers, variables) is NOT preserved through the evaluator.
 // Use evaluate_with_context() / run_with_context() for persistent
@@ -540,7 +552,7 @@ let response = registry.call_json_with_execution_context_mut(
 
 > **Deprecated since 1.0.0**: `call_json_with_execution_context_mut` does **not**
 > persist calculator state (PRNG seed, memory registers, variables) through
-> `math_eval` — the sole calculator-backed tool. For persistent calculator
+> `math_eval` is the sole calculator-backed tool. For persistent calculator
 > sessions, use `evaluate_with_context()` or `run_with_context()` directly. The
 > method is still useful for transaction safety on failure paths where mutations
 > should not be persisted.

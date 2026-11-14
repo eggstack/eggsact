@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md`
+- `plans/archive/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md`
 
 Source subsystem roadmap:
 
@@ -360,7 +360,7 @@ implementation plan.
 - `plans/subsystems/deterministic-tool-substrate-roadmap.md`: status header →
   active (guard workstream); milestone 008 row → closed with closure link;
   dependency graph annotated closed.
-- `plans/implementation/deterministic-tool-substrate/008-*.md`: status header
+- `plans/archive/implementation/deterministic-tool-substrate/008-*.md`: status header
   → `closed` (implemented in `475fc19`, closed here).
 - 003/004/005/006/007 implementation and closure files: untouched (immutable
   history).

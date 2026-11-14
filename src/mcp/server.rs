@@ -1024,7 +1024,6 @@ async fn handle_request_async(
     // malformed initialize cannot leave the connection open for takeover by a
     // modern claim.
     if method == "initialize" {
-        // Parse typed initialize parameters.
         let params = match request.params.as_ref() {
             Some(p) => {
                 if !p.is_object() {

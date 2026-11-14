@@ -12,7 +12,7 @@ traceability.
   edit archived files except for factual corrections; new work uses
   `plans/subsystems/`, `plans/implementation/`, and `plans/closure/`.
 
-Contents at adoption:
+## Archived contents
 
 - `roadmap.md` -- legacy single living planning document (superseded by
   `plans/000-003` + `plans/registry.md` + subsystem roadmaps).
@@ -22,3 +22,5 @@ Contents at adoption:
   (plan + closure in file).
 - `eggfetch-0.2.0-adoption-closeout-corrective.md` -- closed adoption
   closeout corrective (plan + closure in file).
+- `implementation/<subsystem>/` -- completed milestone plans retained by
+  subsystem, with closure evidence under `plans/closure/`.

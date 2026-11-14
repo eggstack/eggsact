@@ -1,9 +1,18 @@
 # Installation and Updates
 
-## Current installation path
+The current binary release is v1.2.7. Installers use the latest release by
+default. Pass a version to pin an installation.
 
-The latest binary-bearing release is v1.2.7. For supported hosts, use the
-verified Unix installer:
+## Install
+
+### macOS and Linux
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://github.com/eggstack/eggsact/releases/latest/download/install.sh | bash
+```
+
+To pin v1.2.7, append the installer argument:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
@@ -11,115 +20,108 @@ curl --proto '=https' --tlsv1.2 -fsSL \
   | bash -s -- --version 1.2.7
 ```
 
-The exact-tag form is also available at
-`https://github.com/eggstack/eggsact/releases/download/v1.2.7/install.sh`.
-The script requires Bash, verifies the SHA-256 sidecar, and checks the
-candidate's reported version before installation.
+The installer requires Bash and `curl`. It installs to `/usr/local/bin` when run
+as root and to `$HOME/.local/bin` for a regular user. It prints PATH guidance
+when needed and does not edit shell startup files.
 
-Cargo remains the fallback for unsupported hosts and source installs:
+### Windows
 
-```bash
-cargo install eggsact
-```
-
-Operators who prefer to inspect first can download `install.sh`, review it, and
-run `bash install.sh --version 1.2.7`. It does not invoke `sudo` or edit shell
-startup files.
-
-The Windows PowerShell fast path is:
+Run in PowerShell:
 
 ```powershell
 irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | iex
 ```
 
-The inspect-first form is:
+Pin a version with `-Version 1.2.7`. The installer uses
+`%ProgramFiles%\Eggsact` for administrator installs and
+`%LOCALAPPDATA%\Eggsact` for regular users. It prints PATH guidance when needed.
 
-```powershell
-Invoke-WebRequest https://github.com/eggstack/eggsact/releases/download/v1.2.7/install.ps1 -OutFile install.ps1
-Get-Content .\install.ps1
-. .\install.ps1
+### Cargo
+
+Use Cargo if you prefer a source install or your system has no published binary:
+
+```bash
+cargo install eggsact
 ```
 
-Use `-Version 1.2.7` for a pinned install. The PowerShell installer maps
-Windows x86-64 to the prebuilt asset and uses the same Cargo fallback for
-Windows ARM64 and other unsupported architectures.
+Cargo requires Rust 1.89.0 or newer. The installers use Cargo only when the host
+has no published binary or the expected binary asset returns HTTP 404. Checksum,
+version, and other transport errors stop installation instead of triggering a
+source build.
 
-## Published binary matrix
+## Inspect before installing
 
-| Host | Asset | Status |
+Both installers download binaries over HTTPS, verify the SHA-256 sidecar, and
+check the candidate's version before installation. The checksum sidecar comes
+from the same GitHub release, so it detects corruption but does not protect
+against a compromised release account. macOS binaries are not signed or
+notarized. Windows binaries are not code-signed.
+
+To inspect the Unix installer for v1.2.7 before running it:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://github.com/eggstack/eggsact/releases/download/v1.2.7/install.sh \
+  -o install.sh
+less install.sh
+bash install.sh --version 1.2.7
+```
+
+For Windows, download and inspect the script before invoking it:
+
+```powershell
+Invoke-WebRequest `
+  https://github.com/eggstack/eggsact/releases/download/v1.2.7/install.ps1 `
+  -OutFile .\install.ps1
+Get-Content .\install.ps1
+. .\install.ps1 -Version 1.2.7
+```
+
+## Published binaries
+
+| Platform | Binary | Notes |
 |---|---|---|
-| Linux x86-64 / amd64 | `eggsact-x86_64-unknown-linux-gnu` | published in v1.2.7; glibc 2.17 build floor |
-| Linux AArch64 / arm64 | `eggsact-aarch64-unknown-linux-gnu` | published in v1.2.7; native ARM smoke passed |
-| macOS Intel | `eggsact-x86_64-apple-darwin` | published in v1.2.7; unsigned/not notarized |
-| macOS Apple Silicon | `eggsact-aarch64-apple-darwin` | published in v1.2.7; unsigned/not notarized |
-| Windows x86-64 | `eggsact-x86_64-pc-windows-msvc.exe` | published in v1.2.7; no code-signing claim |
-| Linux ARMv7 | `armv7-unknown-linux-gnueabihf` | recognized, Cargo fallback only until qualification |
+| Linux x86-64 | Yes | glibc 2.17 or newer |
+| Linux AArch64 | Yes | |
+| macOS Intel | Yes | Unsigned and not notarized |
+| macOS Apple Silicon | Yes | Unsigned and not notarized |
+| Windows x86-64 | Yes | Not code-signed |
+| Linux ARMv7 | No | Installer uses Cargo fallback |
+| Windows ARM64 | No | Installer uses Cargo fallback |
 
-Raw executables use stable, versionless asset names. Each published executable
-has a matching `.sha256` sidecar. A sidecar detects corruption and accidental
-replacement; because it is fetched from the same GitHub release trust domain,
-it is not a defense against a compromised release account.
+Published binaries have stable asset names and matching `.sha256` files.
 
-Root Unix installs go to `/usr/local/bin/eggsact`. Ordinary users install to
-`$HOME/.local/bin/eggsact`. The script prints PATH advice when needed and never
-edits `.bashrc`, `.zshrc`, or another startup file. Administrator Windows
-installs go to `%ProgramFiles%\Eggsact\eggsact.exe`; ordinary users go to
-`%LOCALAPPDATA%\Eggsact\eggsact.exe`, with PATH advice only.
+## Update
 
-## Cargo and source fallback
-
-Cargo is used only when the host is outside the published binary matrix or the
-expected binary asset returns HTTP 404. Checksum, version, 5xx, TLS, DNS, and
-other transport failures are hard errors and are never hidden by compiling a
-different candidate. If Cargo is unavailable, the installer reports the
-detected host and gives the Rust/source path.
-
-## Self-update
+Run:
 
 ```bash
 eggsact update
 ```
 
-The command reads `max_stable_version` from crates.io, then requests the exact
-matching GitHub Release asset and checksum. It validates the checksum and exact
-`eggsact X.Y.Z` candidate version before replacement. Unsupported hosts and
-asset 404s use a staged exact-version `cargo install`; all other failures stop.
+The command checks crates.io for the latest stable version, then downloads and
+verifies the matching release binary when one is available. Unsupported hosts
+and missing binary assets use an exact-version Cargo install. Other failures
+stop the update.
 
-`eggsact update` is self-contained after install: it uses in-process HTTP/1 +
-TLS through the `eggup` transport stack (`eggup-core`, `eggup-eggfetch`,
-`eggup-acquisition`, `eggup-eggpack` 0.1.2) over `eggfetch-core`, with native
-roots plus WebPKI fallback, strict HTTPS downgrade rejection, explicit
-environment proxy routing, 10s connect / 120s total timeouts, and streamed
-binary downloads. It does not require external `curl`. Bootstrap installers
-still require `curl`/PowerShell because they run before Eggsact exists.
-
-Permission errors print an elevated retry command. Eggsact never kills or
-enumerates other processes. Unix replacement completes before `updated` is
-printed. Windows reports `update staged` because the running image must exit;
-the detached helper retries the move and removes its success marker, or leaves
-an adjacent status file containing the failure. Read that path, close active
-MCP clients, and retry from an Administrator PowerShell if needed. Existing
-MCP stdio sessions may continue running the old image until their client
-reconnects. There is no background updater or `restart` command.
+On Windows, the command may report `update staged`. Close the running process so
+the replacement can finish. MCP clients start a fresh process when they
+reconnect. If replacement fails, the command leaves a status file with the
+failure details and prints its path.
 
 ## MCP client setup
 
-Render a current, absolute-path setup instruction with:
+The `integrate` commands print setup instructions without editing client
+configuration:
 
 ```bash
 eggsact integrate list
 eggsact integrate detect
-eggsact integrate zed       # or codex, claude, cursor, vscode, opencode
-eggsact integrate zed --discovery  # discovery-mode args (--mcp --mcp-surface discovery)
+eggsact integrate codex
+eggsact integrate codex --discovery
 ```
 
-The command is read-only. It prints the exact current registration command or
-JSON/JSONC/TOML snippet and does not edit client files. See
-`architecture/coding-agent-integration.md` for the supported shapes.
-
-## Stdio lifecycle note
-
-`eggsact --mcp` is a client-owned stdio child process. Running it as a boot-time
-system service has no attached MCP protocol stream and normally exits on EOF,
-so this project intentionally ships no systemd, launchd, Windows SCM, cron, or
-singleton-daemon integration.
+Replace `codex` with `zed`, `claude`, `cursor`, `vscode`, or `opencode` for
+another supported client. See [CLI usage](cli.md) for all commands and
+[client integration details](../architecture/coding-agent-integration.md) for
+configuration formats.

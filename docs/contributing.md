@@ -123,7 +123,7 @@ eggsact/
    one exists, and return `ToolResponse`.
 
 2. **Add a `ToolSpec` entry** in `src/mcp/specs/<category>.rs`. This is the single
-   source of truth for tool registration — it defines the handler, category, tier,
+   source of truth for tool registration. It defines the handler, category, tier,
    tags, profiles, input schema, and output schema all in one place. Each category
    exports a `pub const <CATEGORY>_TOOLS: &[ToolSpec]` slice, which `all_tools.rs`
    aggregates into the combined `ALL_TOOLS`.
@@ -189,12 +189,11 @@ It requires Python 3.x and `eggcalc` at `../eggcalc` (sibling directory).
 cargo test --test lib parity
 ```
 
-As of 2026-09-11, the Rust parity suite has known gaps documented in `docs/parity.md`
-(`Verification status` and `Known parity gaps` sections). The 86-tool Rust superset
-passes for matching tools; the 37 remaining failures are categorized as accepted
-behavioral differences (shell tokenization, prompt input inspect, unicode policy check,
-tool output drift, tools/list ordering, and error handling drift). Closing these gaps
-is out of scope for release polish and is tracked for follow-up work.
+The Rust catalog contains 86 tools; the Python reference defines 67. The parity
+suite lists 39 accepted test cases across categories C1-C6, represented by 40
+ignored test instances. They cover shell tokenization, prompt inspection, Unicode
+policy, output shape, tool ordering, and error handling. These are documented
+differences, not current merge-gate failures. See [docs/parity.md](parity.md) for details.
 
 When changing behavior, verify parity tests for the affected tools still pass. If your
 change introduces a valid behavioral difference from Python, update the parity test to

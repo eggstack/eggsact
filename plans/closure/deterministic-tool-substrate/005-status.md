@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md`
+- `plans/archive/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md`
 
 Source subsystem roadmap:
 
@@ -323,6 +323,6 @@ requiring product decisions, not corrective passes).
 - `plans/subsystems/deterministic-tool-substrate-roadmap.md`: status header →
   active (guard workstream); milestone 005 row → closed with closure link;
   dependency graph annotated complete.
-- `plans/implementation/deterministic-tool-substrate/005-*.md`: status header
+- `plans/archive/implementation/deterministic-tool-substrate/005-*.md`: status header
   → `closed` (implemented in `cb0d743`, closed here).
 - 003/004 implementation and closure files: untouched (immutable history).

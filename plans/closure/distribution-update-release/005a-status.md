@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md`
+- `plans/archive/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md`
 
 Source subsystem roadmap:
 
@@ -329,7 +329,7 @@ are not registered as new milestones.
     status table.
   - §8 M005's deferred-work line: the M005a deferral is discharged; the other
     two deferrals stay.
-- `plans/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md`
+- `plans/archive/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md`
   - Status line points at this closure record.
 - `plans/closure/distribution-update-release/005-status.md` is left immutable;
   its one open condition is discharged by this record and by the registry.

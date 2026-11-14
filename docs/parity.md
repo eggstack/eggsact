@@ -151,8 +151,8 @@ This ensures clients see the same server regardless of which backend is running.
 
 ## Verification status
 
-The final parity workflow ran the Rust and Python servers together on the exact
-release-verification baseline:
+The following parity workflow result is retained as a historical record. It ran
+the Rust and Python servers together on the release-verification baseline:
 
 - **Workflow:** [Python Parity run 30138548267](https://github.com/eggstack/eggsact/actions/runs/30138548267)
 - **Date:** 2026-07-25 UTC
@@ -162,29 +162,30 @@ release-verification baseline:
 - **Artifact:** parity-report ID `8613698390`
 - **Artifact SHA-256:** `5df89518813d4ade61b6b9102b84b63f0223fc6faa313b25a7c622f044c1bd0d`
 
-The ignored cases are the accepted behavioral differences listed below, not
-new failures in the final candidate. The TOML invalid-input diagnostic remains
-an explicitly accepted Rust/Python wording difference.
+This v1.2.0 run recorded 37 ignored test instances. The current accepted set
+contains 39 unique test names across C1-C6, represented by 40 ignored instances
+because `test_shell_split_basic` appears in two modules. The TOML invalid-input
+diagnostic remains an explicitly accepted Rust/Python wording difference.
 
 The remaining parity gaps are now classified in the [decision table](#decision-table)
-below. They are not regressions — they accumulated across the phase 06–09
+below. They are not regressions: they accumulated across the phases 06 to 09
 line of work. Category A (23 failures) was fixed by adding `EGGCALC_MCP_AUDIENCE`
 env var support and updating test helpers. The six `regex_finditer` parity
 tests that previously differed (Python emitted only `valid_pattern`,
 `matches`, `truncated`, `match_count`, `error` while Rust also emits
 `engine_used`, `dialect`, `unsupported_features`) were resolved 2026-07-09
 by switching them to the existing superset comparator (`compare_tool_parity_superset`)
-in `tests/parity/mod.rs`. Categories C1–C6 (39 accepted failures) remain
+in `tests/parity/mod.rs`. Categories C1-C6 (39 accepted test names) remain
 documented in `tests/fixtures/accepted_parity_failures.txt`. That fixture is
-documentation only — the enforcing mechanism is `#[ignore]` on the parity
+documentation only: the enforcing mechanism is `#[ignore]` on the parity
 tests, so no code reads it and a name missing from it is not automatically
 caught by the file.
 
 ## Known parity gaps
 
-The 39 remaining parity failures are classified below (down from 60 after
-fixing Category A). None are regressions from a single change; they
-accumulated across the phase 06–09 line of work. The concurrent-ordering
+The 39 unique accepted test names are classified below (down from 60 failures
+before Category A was fixed). They accumulated across phases 06 to 09 rather
+than coming from one change. The concurrent-ordering
 failures (old Category D) were resolved 2026-07-07 by switching
 `mcp_request_multi()` to id-based correlation. Category A (23 failures)
 was resolved 2026-07-07 by adding `EGGCALC_MCP_AUDIENCE` env var and
@@ -257,7 +258,7 @@ updating all MCP test helpers to use `Harness` audience.
 
 ### Category definitions
 
-**A — Test-harness audience bug (23 failures, FIXED).** Rust-only MCP integration
+**A: Test-harness audience bug (23 failures, FIXED).** Rust-only MCP integration
 tests (`tests/mcp/test_comprehensive_parity.rs`) that spawn the binary with the
 default `ToolAudience::Model`. Tools declared `ToolExposure::HarnessOnly`
 were rejected by the audience filter before reaching the handler, so the
@@ -267,7 +268,7 @@ Fixed 2026-07-07 by adding `EGGCALC_MCP_AUDIENCE` env var to `src/mcp/runtime.rs
 and updating all 9 MCP test helper files to pass `EGGCALC_MCP_AUDIENCE=Harness`
 to subprocess spawns. Zero code changes to tool semantics.
 
-**C1 — Shell tokenization drift (9 failures).** Rust and Python produce
+**C1: Shell tokenization drift (9 failures).** Rust and Python produce
 different `shell_split` output for complex inputs. The tier2 basic test
 passes (simple command), but quoted strings, backslash escapes, pipes,
 empty strings, and comment handling diverge. Rust `shell_split` intentionally
@@ -277,15 +278,15 @@ Unquoted `#` starts a comment only at the beginning of a word, following POSIX
 shell rules. Remaining differences in this category are accepted compatibility
 gaps; align individual cases only when the POSIX behavior is incorrect.
 
-**C2 — Prompt input inspect drift (4 failures).** Output shape or finding
+**C2: Prompt input inspect drift (4 failures).** Output shape or finding
 details differ. `test_prompt_input_inspect_ansi_case` panics because Rust
-returns no text content for ANSI escape input — likely a Rust bug in the
+returns no text content for ANSI escape input: likely a Rust bug in the
 tool handler.
 
-**C3 — Unicode policy check drift (3 failures).** Output shape or finding
+**C3: Unicode policy check drift (3 failures).** Output shape or finding
 severity/details differ between Rust and Python for `unicode_policy_check`.
 
-**C4 — Tool output drift (13 failures).** Miscellaneous output differences:
+**C4: Tool output drift (13 failures).** Miscellaneous output differences:
 `cargo_toml_inspect` shape, `constant_lookup` metadata ordering,
 `unit_info` error envelope, `text_security_inspect` finding shape,
 `edit_preflight` missing `match_codepoint_length` field in subtool output,
@@ -294,7 +295,7 @@ and the two `command_preflight` cases (`test_command_preflight_dangerous`,
 `test_command_preflight_safe`) where Rust's policy engine reports extra
 findings with its own severity and disposition.
 
-**C5 — Tools/list ordering and tool-set gap (8 failures).** Rust ships 86
+**C5: Tools/list ordering and tool-set gap (8 failures).** Rust ships 86
 tools in the full profile; Python defines 67. Nineteen extra Rust tools (the
 thirteen below plus the six deterministic utilities `cidr_inspect`,
 `ip_inspect`, `codec_convert`, `radix_convert`, `datetime_convert`,
@@ -311,7 +312,7 @@ Fix options: (a) fix Rust tool registration order to match Python for the
 shared set, (b) exclude Rust-only tools from parity comparison assertions,
 or (c) add the missing tools to Python.
 
-**C6 — Error handling drift (2 failures).** `test_shell_split_basic` has
+**C6: Error handling drift (2 failures).** `test_shell_split_basic` has
 different error checking logic. `test_bug006_prompt_inspect_vt_ff_detected`
 calls a HarnessOnly tool without proper audience setup.
 
@@ -319,14 +320,14 @@ calls a HarnessOnly tool without proper audience setup.
 
 | Category | Count | Status | Release blocking? |
 |----------|-------|--------|-------------------|
-| A — Test-harness audience | 23 | **Fixed** (2026-07-07) | No |
-| C1 — Shell tokenization | 9 | Defer: accepted Rust behavioral difference | No |
-| C2 — Prompt input inspect | 4 | Defer: Rust has richer findings | No |
-| C3 — Unicode policy check | 3 | Defer: Rust has different finding structure | No |
-| C4 — Tool output drift | 13 | Defer: cosmetic or intentional Rust differences | No |
-| C5 — Tools/list ordering | 8 | Defer: Rust superset (86 vs 67 tools) | No |
-| C6 — Error handling | 2 | Defer: needs Harness audience in test | No |
-| **Total** | **39 accepted gaps** | **381 passed, 40 ignored** | **None** |
+| A: Test-harness audience | 23 | **Fixed** (2026-07-07) | No |
+| C1: Shell tokenization | 9 | Defer: accepted Rust behavioral difference | No |
+| C2: Prompt input inspect | 4 | Defer: Rust has richer findings | No |
+| C3: Unicode policy check | 3 | Defer: Rust has different finding structure | No |
+| C4: Tool output drift | 13 | Defer: cosmetic or intentional Rust differences | No |
+| C5: Tools/list ordering | 8 | Defer: Rust superset (86 vs 67 tools) | No |
+| C6: Error handling | 2 | Defer: needs Harness audience in test | No |
+| **Total** | **39 accepted test names** | **40 ignored test instances** | **None** |
 
 ### Known tool-set gap: 86 vs 67 tools
 
@@ -342,7 +343,7 @@ plus the six deterministic utilities `cidr_inspect`, `ip_inspect`,
 The three tools previously missing from Rust (`config_file_inspect`,
 `dependency_edit_preflight`, `repo_manifest_inspect`) were added in phase 09.
 
-### ~~D. Concurrent ordering in multi-request sessions (3 failures)~~ — Resolved 2026-07-07
+### ~~D. Concurrent ordering in multi-request sessions (3 failures)~~: Resolved 2026-07-07
 
 `mcp_request_multi()` now correlates responses by JSON-RPC `id` field
 instead of positional order. See `architecture/mcp-server.md` § Response

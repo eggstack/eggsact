@@ -12,7 +12,7 @@ Source roadmap:
 
 Corrects:
 
-- `plans/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md`
+- `plans/archive/implementation/deterministic-tool-substrate/005-unicode-security-standards-conformance-corrective.md`
 - `plans/closure/deterministic-tool-substrate/005-status.md`
 
 Historical dependencies:

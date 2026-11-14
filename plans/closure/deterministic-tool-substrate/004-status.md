@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md`
+- `plans/archive/implementation/deterministic-tool-substrate/004-unicode18-security-data-qualification.md`
 
 Source subsystem roadmap:
 
@@ -256,5 +256,5 @@ unless upstream providers release newer security-semantic data.
   current milestone returns to guard-only.
 - `plans/subsystems/deterministic-tool-substrate-roadmap.md`: 004 closed
   with closure link; roadmap status reflects completed Unicode workstream.
-- `plans/implementation/deterministic-tool-substrate/004-*.md`: status
+- `plans/archive/implementation/deterministic-tool-substrate/004-*.md`: status
   header → `closed` (implemented in `2e3860c`).

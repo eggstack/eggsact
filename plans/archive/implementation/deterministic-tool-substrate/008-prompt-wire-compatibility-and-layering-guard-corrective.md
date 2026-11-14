@@ -10,7 +10,7 @@ Source roadmap:
 
 Corrects:
 
-- plans/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md
+- plans/archive/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md
 - plans/closure/deterministic-tool-substrate/007-status.md
 
 Historical dependencies:

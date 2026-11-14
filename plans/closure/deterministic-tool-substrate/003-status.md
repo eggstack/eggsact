@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md`
+- `plans/archive/implementation/deterministic-tool-substrate/003-unicode-security-correctness-hardening.md`
 
 Source subsystem roadmap:
 
@@ -236,7 +236,7 @@ semantic pass).
   closure); dependency notes updated.
 - `plans/subsystems/deterministic-tool-substrate-roadmap.md`: milestone
   status table updated (003 closed with closure link; 004 ready).
-- `plans/implementation/deterministic-tool-substrate/003-*.md`: status
+- `plans/archive/implementation/deterministic-tool-substrate/003-*.md`: status
   header → `closed` (implemented in `3d67807`).
-- `plans/implementation/deterministic-tool-substrate/004-*.md`: status
+- `plans/archive/implementation/deterministic-tool-substrate/004-*.md`: status
   header → `ready` (hard dependency satisfied).

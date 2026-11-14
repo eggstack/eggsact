@@ -1058,7 +1058,6 @@ impl EditPreflight {
 
         let raw = response.result.unwrap_or(Value::Null);
 
-        // Parse secondary_machine_codes from result
         let secondary_machine_codes = raw
             .get("secondary_machine_codes")
             .and_then(|v| v.as_array())

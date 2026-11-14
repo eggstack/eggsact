@@ -8,16 +8,16 @@ what constitutes a breaking change and how transitions are managed.
 
 eggsact follows [Semantic Versioning 2.0.0](https://semver.org/):
 
-- **MAJOR** — incompatible API changes (breaking Rust API, tool removal, machine
-  code removal, schema-removing input change).
-- **MINOR** — backwards-compatible new functionality (new tools, new optional
-  fields, new machine codes, new profiles).
-- **PATCH** — backwards-compatible bug fixes (incorrect calculation, schema
-  tightening that rejects previously-invalid-but-undocumented inputs, doc fixes).
+- **MAJOR:** incompatible API changes, such as breaking Rust API changes, tool
+  or machine-code removal, and schema changes that remove accepted inputs.
+- **MINOR:** backwards-compatible functionality, such as new tools, optional
+  fields, machine codes, or profiles.
+- **PATCH:** backwards-compatible bug fixes, such as incorrect calculations,
+  schema tightening for undocumented invalid inputs, and documentation fixes.
 
-The crate is currently pre-1.0 in spirit (rapid iteration through phases 01–12)
-but uses a `1.x.y` version scheme. A future `2.0.0` bump will signal that the
-compatibility policy below is in full effect.
+eggsact publishes 1.x releases under Semantic Versioning. The rules below define
+which API and MCP changes are compatible within that series and which require a
+major version.
 
 ## Minimum Supported Rust Version (MSRV)
 
@@ -38,7 +38,13 @@ code uses temporary lifetime extension that stabilized in Rust 1.89.0.
 
 ## Public Rust API Stability
 
-The public Rust API consists of items re-exported from `src/lib.rs`:
+The crate exposes public modules and root-level re-exports. The supported
+integration surface is documented in the [Library API Reference](library-api.md).
+Other low-level public items remain available for 1.x source compatibility, but
+are not recommended for new integrations. Their visibility will not be reduced
+in a 1.x release; removing them requires a major release.
+
+Key supported entry points include:
 
 | Symbol | Module | Description |
 |--------|--------|-------------|
@@ -151,7 +157,7 @@ response envelopes. They are the machine-readable contract for harnesses.
 - **Removing a code** is MAJOR.
 - **Changing a code's string value** is MAJOR.
 - **Adding a category-prefixed alias** (e.g., `COMMON_INVALID_ARGUMENTS` for
-  `INVALID_ARGUMENTS`) is MINOR — the underlying value is identical.
+  `INVALID_ARGUMENTS`) is MINOR because the underlying value is identical.
 - **Deprecating a code** (keeping it but adding a preferred alternative) is
   MINOR. The old code must continue to work.
 
@@ -186,10 +192,10 @@ should be documented.
 `CompatibilityMode` (in `src/mcp/compat.rs`) controls validation and error
 message formatting:
 
-- **`EggcalcPython`** — MCP server default. Python-style type names in errors
+- **`EggcalcPython`:** MCP server default. Python-style type names in errors
   (`NoneType`, `int`, `float`, `str`, `list`, `dict`). Used at the MCP
   boundary for client compatibility.
-- **`StrictNative`** — In-process API default. Standard JSON Schema type names
+- **`StrictNative`:** In-process API default. Standard JSON Schema type names
   (`null`, `integer`, `number`, `string`, `array`, `object`). Used by
   `ToolRegistry::default()` and preflight wrappers.
 
@@ -265,7 +271,7 @@ compatible behavioral extension:
   handled by callers that support it or ignored by callers that do not.
 - The `dialect` field always reports `"eggsact-regex"` and is not expected
   to change. The `engine_used` field reflects backend selection between
-  `"rust-regex"` and `"fancy-regex"` based on pattern features — callers
+  `"rust-regex"` and `"fancy-regex"` based on pattern features. Callers
   should not assume a specific engine, only that the engine is chosen
   automatically to support the pattern's features.
 
@@ -273,7 +279,7 @@ compatible behavioral extension:
 
 `get_tool` and `has_tool` now enforce audience/exposure restrictions in
 addition to profile membership. Previously these methods only checked
-profile membership, which was an authorization-policy inconsistency — a
+profile membership, which created an authorization-policy inconsistency. A
 Model-audience registry could discover metadata for Harness-only tools it
 could never execute.
 
@@ -294,14 +300,14 @@ registered tools regardless of policy.
 3. If breaking changes exist, bump MAJOR. If only additions, bump MINOR. If
    only fixes, bump PATCH.
 4. Update `Cargo.toml` version.
-5. Run `cargo run --features dev-tools --bin generate-docs` to regenerate docs.
+5. Run `cargo run --locked --features dev-tools --bin generate-docs` to regenerate docs.
 6. Tag the release.
 
 ## References
 
-- `src/mcp/machine_codes.rs` — machine code registry
-- `src/mcp/registry/types.rs` — `ToolSpec`, `ToolExposure`, `ToolStability`
-- `src/mcp/compat.rs` — `CompatibilityMode`
-- `architecture/machine-codes.md` — machine code taxonomy
-- `architecture/compatibility.md` — CompatibilityMode usage details
-- `AGENTS.md` — tool counts, profiles, architecture overview
+- `src/mcp/machine_codes.rs`: machine-code registry
+- `src/mcp/registry/types.rs`: `ToolSpec`, `ToolExposure`, `ToolStability`
+- `src/mcp/compat.rs`: `CompatibilityMode`
+- `architecture/machine-codes.md`: machine-code taxonomy
+- `architecture/compatibility.md`: `CompatibilityMode` usage details
+- `AGENTS.md`: tool counts, profiles, and architecture overview

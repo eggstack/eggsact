@@ -33,10 +33,10 @@ See also: [Library API](library-api.md), [Calculator Core](../architecture/calcu
 
 `log(x)` / `ln(x)`, `log(x, base)`, `exp(x)`, `expm1(x)`
 
-`log10(x)`, `log2(x)`, and `log1p(x)` are implemented in the expression
-evaluator but currently fail through `run()` — the natural-language path used
-by the CLI and the `math_eval` tool — with `Error: Unknown constant: log`. Use
-`log(x, base)` instead. See [docs/cli.md](cli.md).
+The expression evaluator implements `log10(x)`, `log2(x)`, and `log1p(x)`, but
+the natural-language path used by `run()`, the CLI, and `math_eval` currently
+returns `Error: Unknown constant: log`. Use `log(x, base)` instead. See
+[CLI usage](cli.md).
 
 ### Power / Root
 
@@ -56,7 +56,7 @@ by the CLI and the `math_eval` tool — with `Error: Unknown constant: log`. Use
 
 ### GCD / LCM
 
-`gcd(a, b, ...)`, `lcm(a, b, ...)` — variadic, integer args required
+`gcd(a, b, ...)`, `lcm(a, b, ...)`: variadic, integer args required
 
 ### Aggregate
 
@@ -68,8 +68,8 @@ by the CLI and the `math_eval` tool — with `Error: Unknown constant: log`. Use
 
 ### Percentage
 
-`percentof(pct, value)` — `pct / 100 * value`
-`aspercent(part, whole)` — `part / whole * 100`
+`percentof(pct, value)`: `pct / 100 * value`
+`aspercent(part, whole)`: `part / whole * 100`
 
 ### Other
 
@@ -77,7 +77,7 @@ by the CLI and the `math_eval` tool — with `Error: Unknown constant: log`. Use
 
 ### Prime Number Functions
 
-`isprime(n)`, `nextprime(n)`, `prevprime(n)`, `primefactors(n)` — max n=10¹²
+`isprime(n)`, `nextprime(n)`, `prevprime(n)`, `primefactors(n)`: max n=10¹²
 
 ### Random Functions (not available in MCP mode)
 
@@ -151,7 +151,7 @@ eggsact "30m + 100ft"                   # 60.480000000000004 m
 Temperature conversions use offset math, not multiplicative factors.
 
 Data units use spelled-out names (`kilobyte`, `megabyte`, `gigabyte`, `byte`,
-`bit`). The short symbols are not accepted from the CLI — `eggsact "1024KB in
+`bit`). The short symbols are not accepted from the CLI: `eggsact "1024KB in
 MB"` returns `Error: Unknown unit: kb`.
 
 ### Supported Unit Categories
@@ -163,7 +163,7 @@ MB"` returns `Error: Unknown unit: kb`.
 | Time | `s`, `ms`, `us`, `ns`, `min`, `h`, `d`, `wk`, `yr` |
 | Volume | `L`, `mL`, `gal`, `qt`, `pt`, `cup`, `floz`, `tbsp`, `tsp` |
 | Temperature | `C`, `F`, `K` |
-| Data | `B`, `KB`, `MB`, `GB`, `TB` |
+| Data | `byte`, `bit`, `kilobyte`, `megabyte`, `gigabyte`, `terabyte` |
 | Pressure | `Pa`, `kPa`, `MPa`, `GPa`, `bar`, `atm`, `psi` |
 | Energy | `J`, `kJ`, `cal`, `kcal`, `Wh`, `kWh`, `BTU`, `eV` |
 | Power | `W`, `kW`, `MW`, `GW`, `hp` |
