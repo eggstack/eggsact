@@ -35,4 +35,9 @@ skip-tree = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+# Interim, exact-source exception: the four Eggup crates are pinned to one
+# reviewed commit until a registry release carries the ZIP security refresh
+# (plan 007). A repository URL admits every revision, so this entry must be
+# removed as soon as the registry versions land; any second git source is
+# still denied by `unknown-git`.
+allow-git = ["https://github.com/eggstack/eggup"]

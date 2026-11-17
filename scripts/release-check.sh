@@ -9,6 +9,15 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
+echo "release-check: dependency provenance"
+# Fails closed when python3 or tomllib (Python 3.11+) is unavailable; the
+# preflight must never be skipped.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 (3.11+ with tomllib) is required for the dependency provenance preflight" >&2
+  exit 1
+fi
+python3 scripts/check-dependency-provenance.py
+
 echo "release-check: formatting"
 cargo fmt --all -- --check
 

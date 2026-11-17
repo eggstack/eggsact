@@ -207,7 +207,7 @@ pub fn cargo_toml_inspect(
         };
     }
 
-    let parsed: Value = match text.parse() {
+    let parsed: Value = match toml::from_str(text) {
         Ok(v) => v,
         Err(e) => {
             return CargoInspectResult {
@@ -573,6 +573,18 @@ foo_bar = "1.0"
             .findings
             .iter()
             .any(|f| f.contains("TOML parse error")));
+    }
+
+    #[test]
+    fn test_invalid_toml_preserves_line_numbers_after_leading_blank_lines() {
+        let text = "\n\n[package]\nname = \"test\"\nversion = =";
+        let result = cargo_toml_inspect(text, true, true);
+        assert!(!result.parse_ok);
+        assert!(
+            result.findings[0].contains("line 5"),
+            "{:?}",
+            result.findings
+        );
     }
 
     #[test]

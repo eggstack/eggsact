@@ -122,6 +122,8 @@ eggsact integrate codex --discovery
 ```
 
 Replace `codex` with `zed`, `claude`, `cursor`, `vscode`, or `opencode` for
-another supported client. See [CLI usage](cli.md) for all commands and
+another supported client. On Windows, `integrate claude` and `integrate vscode`
+print a JSON configuration block and its target file rather than a shell
+command. See [CLI usage](cli.md) for all commands and
 [client integration details](../architecture/coding-agent-integration.md) for
 configuration formats.

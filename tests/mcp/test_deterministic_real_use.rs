@@ -1481,6 +1481,33 @@ fn test_regex_safety_exact_redos() {
     );
 }
 
+#[test]
+fn test_regex_test_backtrack_limit_is_an_error_not_a_no_match() {
+    // The named backreference is not caught by the advisory static scanner
+    // (`\\1`/`\\g<` only), so this reaches the backend and exceeds the
+    // configured backtrack limit at match time.
+    let sample = format!("{}cb", "a".repeat(1000));
+    let r = call_tool(
+        "validate_regex",
+        serde_json::json!({
+            "pattern": r"(?P<w>a+)(?P=w)b$",
+            "samples": [sample],
+        }),
+    );
+    assert_eq!(r.get("ok"), Some(&Value::Bool(true)));
+    assert_eq!(r["result"]["engine_used"], "fancy-regex");
+    assert!(r["result"]["results"].as_array().unwrap().is_empty());
+    let execution_error = r["result"]["execution_error"].as_str().unwrap();
+    assert!(
+        execution_error.contains("backtracking"),
+        "unexpected execution error: {execution_error}"
+    );
+    assert_eq!(
+        r["machine_code"], "INTERNAL_ERROR",
+        "a runtime limit must carry a stable machine code"
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // GLOB MATCH — exact deterministic results
 // ═══════════════════════════════════════════════════════════════════════

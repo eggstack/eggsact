@@ -14,7 +14,7 @@ cargo test --locked --doc
 
 Notes:
 - `--test-threads=4` is required for integration tests (Tokio blocking-pool starvation), not a product budget. `--lib`/doc tests don't need it.
-- Parity is excluded from the merge-blocking `ci.yml` job (the scheduled `parity.yml` workflow still verifies it weekly from PyPI). Full local gate: `scripts/release-check.sh` (requires clean tree + `cargo-deny`; never publishes/tags).
+- Parity is excluded from the merge-blocking `ci.yml` job (the scheduled `parity.yml` workflow still verifies it weekly from PyPI). Full local gate: `scripts/release-check.sh` (requires a clean tree, `cargo-deny`, and Python 3.11+; never publishes/tags). It fails fast on dependency provenance before running the test gate.
 
 Focused runs:
 
@@ -62,7 +62,8 @@ Parity has 39 accepted failures (C1–C6) documented in `tests/fixtures/accepted
 - No per-call profile: `tools/call` takes no `profile`; server-wide `EGGCALC_MCP_PROFILE` applies. `Profile::from_str_opt` is strict (`None` on unknown); use `Profile::custom(name)` for custom. Model-facing code uses `available_tools_model_safe()` (`Model` excludes `HarnessOnly`+`Hidden`).
 - `Discovery` surface (`EGGSACT_MCP_SURFACE=discovery`) is presentation-only; search/invoke enforce the same profile/audience rules. Facades aren't `ToolSpec`s. If touching it, update `tests/mcp/test_discovery.rs`.
 - Context APIs: `call_json_with_execution_context()` clones `eval_ctx` (mutations don't persist). Use `evaluate_with_context()`/`run_with_context()` for calculator state. `..._context_mut` is deprecated; `with_current_eval_context()` for closure scope. Re-entrant mutable access panics.
-- Regex is NOT PCRE2: `compile_regex()` (`src/text/regex_engine.rs`) picks `regex` vs `fancy-regex`; outputs report `engine_used`.
+- Regex is NOT PCRE2: `compile_regex()` (`src/text/regex_engine.rs`) picks `regex` vs `fancy-regex`; outputs report `engine_used`. Fancy construction is centralized in `compile_fancy` with explicit limits (`backtrack_limit` 250k, `delegate_size_limit` 4 MiB); a limit failure surfaces as `execution_error` + `INTERNAL_ERROR`, never a no-match. `regex_safety` is advisory only.
+- `[lints.rust] unsafe_code = "deny"` is package-wide. The only allows are the two documented sites (`src/mcp/budget.rs`, `src/mcp/execution.rs`); new `unsafe` fails the build.
 - YAML is heuristic-only: `config_file_inspect` has no YAML parser (`parse_ok` true if non-empty, naive `key: value` scan, `analysis_mode: "heuristic"`). Never treat as syntax validity; `config_preflight` excludes YAML.
 - Deterministic utils (`ip/cidr/codec/radix/datetime/cron`) use explicit inputs only — no clock, TZ db, env, net. Cron is Vixie/Cronie star syntax: if either DOM/DOW starts with `*` (incl. `*/n`) both must match, else either may; bare `*` is wildcard, explicit full ranges are not.
 - `serde_json` has `preserve_order` — key order is intentional.
@@ -71,6 +72,7 @@ Parity has 39 accepted failures (C1–C6) documented in `tests/fixtures/accepted
 - `eggsact update` / `eggsact integrate list|detect|<client>` are verified/read-only; they never install a daemon or edit client config.
 - Self-update transport is `eggup-core`/`eggup-eggfetch`/`eggup-acquisition`/`eggup-eggpack` 0.1.2 over `eggfetch-core` (in-process HTTP/1 + TLS, strict HTTPS-downgrade rejection, explicit env proxy, no external `curl` after install). `eggfetch-core` and `futures-util` are dev-dependencies. Bootstrap `packaging/install.*` still uses external download tooling. Do not add HTTP to the library/MCP API, retries, or extra fetch features without measurement.
 - Release candidates: `.cargo/config.toml` holds the only release link flags (`/BREPRO`, `/DEBUG:NONE` for `x86_64-pc-windows-msvc`) and is load-bearing for byte-identical rerun reuse. `[profile.release] strip` is a no-op for `windows-msvc` (rustc discards `-C strip` there). Never set `RUSTFLAGS` — it replaces, not extends, target rustflags. Guards: `check-release-contract.py` + `windows_release_link_flags_are_deterministic`; byte proof: `windows-reproducibility` in `maintenance.yml`. See `docs/release.md`.
+- Dependency provenance: publishable dependencies must be registry-sourced with a `version`. The four Eggup crates are an interim exact-SHA exception — `deny.toml` allow-lists exactly that repository, and `scripts/check-dependency-provenance.py` (invoked first by `scripts/release-check.sh`) fails the release path until plan 007 lands. `cargo package` fails by design in this state. Never add `version` to a git dependency to make packaging pass: `cargo publish` would resolve the registry release instead of the pinned revision.
 - Binary releases are Eggpack-produced, not hand-written: `release-binaries.yml` is generated from `release/eggpack/` and is `workflow_dispatch`-only (requires an existing `release_tag`), not tag-triggered. Never hand-edit it — change the Eggpack config and regenerate, or `release-drift.yml` fails on push. Only the `stage` job holds `contents: write`; nothing publishes crates, tags, or the draft. See [cli-binaries.md](architecture/cli-binaries.md).
 
 ## Planning

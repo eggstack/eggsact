@@ -753,7 +753,7 @@ pub fn json_canonicalize(args: &Value) -> ToolResponse {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(canonical_out.as_bytes());
-    let sha256_hash = format!("{:x}", hasher.finalize());
+    let sha256_hash = crate::text::validate::hex_encode(&hasher.finalize());
 
     ToolResponse::success(
         serde_json::json!({

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (Operator-surface hardening, distribution Milestone 009)
+
+- Windows `integrate claude` and `integrate vscode` now print a JSON
+  configuration block plus its target file instead of a `cmd.exe` one-liner.
+  `cmd.exe` does not honor backslash quote escapes and expands `%VAR%` inside
+  double quotes, so the previous rendering could misparse an executable path
+  containing `%PATH%`, `&`, or `^`. Unix output is unchanged.
+- The Windows update replacement now spawns PowerShell from the absolute
+  `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` path rather
+  than resolving `powershell.exe` through the OS search order. A missing
+  `SystemRoot` or PowerShell component fails closed with no `PATH` fallback.
+- Unix update staging directories are created with mode `0700` atomically,
+  removing the window between `create_dir` and `set_permissions`.
+
 ### Fixed (Deterministic Windows release artifacts, distribution Milestone 005a)
 
 - The `x86_64-pc-windows-msvc` release candidate is now byte-reproducible for

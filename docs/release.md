@@ -95,7 +95,28 @@ Run the local release check from a clean worktree:
 scripts/release-check.sh
 ```
 
-This runs formatting, generated-docs, Clippy, tests, cargo-deny, package, and publish dry-run. It refuses a dirty worktree and never publishes or tags.
+This runs dependency provenance, formatting, generated-docs, Clippy, tests, cargo-deny, package, and publish dry-run. It refuses a dirty worktree and never publishes or tags.
+
+## Dependency provenance
+
+Published artifacts must be registry-sourced: every publishable dependency
+carries a `version`, and `deny.toml` denies unknown registries and git
+sources. The release gate enforces this before formatting with
+`scripts/check-dependency-provenance.py`, which scans every dependency table
+(including dev, build, workspace, and target-specific tables) and fails when a
+dependency is declared with `git` and no `version`.
+
+The four Eggup crates are currently an interim, exact-SHA exception: they are
+pinned to one reviewed commit in `Cargo.toml`, and `deny.toml` allow-lists
+exactly that repository. That pin carries the ZIP security refresh. Until plan
+007 replaces the pins with a registry release whose dependency graph resolves
+`zip >= 9.6.1`, `cargo package` and `cargo publish --dry-run` fail by design,
+and the provenance preflight names the blocker in seconds.
+
+Do not "repair" packaging by adding `version` keys to the git declarations:
+`cargo publish` would resolve the registry release instead of the pinned
+revision, silently shipping the vulnerable dependency graph. The preflight's
+message points at the owning plan.
 
 Optional parity gate (requires Python `eggcalc` at `../eggcalc`):
 

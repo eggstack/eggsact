@@ -30,27 +30,27 @@ base64 = { version = "0.23", default-features = false, features = ["std"] }
 time = { version = "0.3", default-features = false, features = ["std", "parsing", "formatting"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
-fancy-regex = "0.18"
-sha2 = "0.10"
-sha1 = "0.10"
-md5 = "0.7"
+fancy-regex = "0.20"
+sha2 = "0.11"
+sha1 = "0.11"
+md5 = "0.8"
 crc32fast = "1.4"
 regex = "1.10"
 urlencoding = "2.1"
 unicode-normalization = "0.1"
 unicode-segmentation = "1.11"
 unicode-bidi = { version = "0.3", default-features = false, features = ["std"] }
-unicode_names2 = "3.1"
+unicode_names2 = "4.0"
 unicode-general-category = "1.1"
 unicode-ident = "1.0"
 caseless = "0.2"
-toml = "0.8"
-toml_edit = "0.22"
+toml = "1.2"
+toml_edit = "0.25"
 tokio = { version = "1", features = ["rt", "macros", "io-std", "io-util", "sync", "time", "fs", "net"] }
-eggup-acquisition = { git = "https://github.com/eggstack/eggup.git", rev = "e336b3203183aa84d174e7d7bfa087ce4b61b077" }
-eggup-core = { git = "https://github.com/eggstack/eggup.git", rev = "e336b3203183aa84d174e7d7bfa087ce4b61b077" }
-eggup-eggfetch = { git = "https://github.com/eggstack/eggup.git", rev = "e336b3203183aa84d174e7d7bfa087ce4b61b077" }
-eggup-eggpack = { git = "https://github.com/eggstack/eggup.git", rev = "e336b3203183aa84d174e7d7bfa087ce4b61b077" }
+eggup-acquisition = { git = "https://github.com/eggstack/eggup.git", rev = "fe763189e4cfe1e0e6d6c62d431717d82b69f9f5" }
+eggup-core = { git = "https://github.com/eggstack/eggup.git", rev = "fe763189e4cfe1e0e6d6c62d431717d82b69f9f5" }
+eggup-eggfetch = { git = "https://github.com/eggstack/eggup.git", rev = "fe763189e4cfe1e0e6d6c62d431717d82b69f9f5" }
+eggup-eggpack = { git = "https://github.com/eggstack/eggup.git", rev = "fe763189e4cfe1e0e6d6c62d431717d82b69f9f5" }
 
 [dev-dependencies]
 url = "2"
@@ -82,3 +82,8 @@ harness = false
 strip = "symbols"
 lto = "thin"
 codegen-units = 1
+
+# New `unsafe` is a reviewed event. The two sound sites carry narrow
+# `#[allow(unsafe_code)]` attributes instead of a package-wide exception.
+[lints.rust]
+unsafe_code = "deny"

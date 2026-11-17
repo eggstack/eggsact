@@ -359,9 +359,30 @@ pub fn config_preflight(args: &Value) -> ToolResponse {
                                     }
                                 }
                                 Err(e) => {
-                                    // Mirrors the adapter's invalid-schema path:
-                                    // no subresult, no verdict change.
-                                    let _ = e;
+                                    // An invalid schema or a pattern the engine
+                                    // could not evaluate must not be silently
+                                    // treated as "schema skipped": surface it
+                                    // through the existing findings/verdict
+                                    // shape so a runtime limit cannot become a
+                                    // false pass.
+                                    code_list
+                                        .push(machine_codes::CONFIG_SCHEMA_MISMATCH.to_string());
+                                    config_verdict = verdict::VALID_WITH_WARNINGS;
+                                    findings.push(finding(
+                                        "SCHEMA_ERROR",
+                                        if strict {
+                                            severity::HIGH
+                                        } else {
+                                            severity::MEDIUM
+                                        },
+                                        &format!("Schema validation failed: {e}"),
+                                        Some(if strict {
+                                            disposition::BLOCKING
+                                        } else {
+                                            disposition::CAUTION
+                                        }),
+                                        None,
+                                    ));
                                 }
                             }
                         }

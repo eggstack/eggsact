@@ -98,7 +98,11 @@ eggsact integrate codex
 eggsact integrate codex --discovery
 ```
 
-Replace `codex` with another supported client name. See
+Replace `codex` with another supported client name. On Unix, `claude` and
+`vscode` render a copy-paste shell command. On Windows they render a JSON
+configuration block plus its target file (`.claude.json` / `.mcp.json` for
+Claude, `.vscode\mcp.json` for VS Code) instead of a `cmd.exe` one-liner, so a
+path containing `%VAR%`, `&`, or `^` cannot be reinterpreted by the shell. See
 [client integration details](../architecture/coding-agent-integration.md).
 
 ## Diagnostics

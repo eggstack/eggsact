@@ -691,13 +691,19 @@ pub fn text_hash(text: &str, algorithms: &[String], encoding: &str) -> TextHashR
                 use sha2::{Digest, Sha256};
                 let mut hasher = Sha256::new();
                 hasher.update(&encoded);
-                hashes.insert("sha256".to_string(), format!("{:x}", hasher.finalize()));
+                hashes.insert(
+                    "sha256".to_string(),
+                    crate::text::validate::hex_encode(&hasher.finalize()),
+                );
             }
             "sha1" => {
                 use sha1::{Digest, Sha1};
                 let mut hasher = Sha1::new();
                 hasher.update(&encoded);
-                hashes.insert("sha1".to_string(), format!("{:x}", hasher.finalize()));
+                hashes.insert(
+                    "sha1".to_string(),
+                    crate::text::validate::hex_encode(&hasher.finalize()),
+                );
             }
             "md5" => {
                 let digest = md5::compute(&encoded);
@@ -798,7 +804,7 @@ pub fn text_fingerprint(
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(canonical.as_bytes());
-    let sha256_hash = format!("{:x}", hasher.finalize());
+    let sha256_hash = crate::text::validate::hex_encode(&hasher.finalize());
 
     let is_nfc = unescape_chars::normalize_nfc(text) == text;
 

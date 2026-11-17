@@ -606,7 +606,7 @@ const VALID_PROFILES: &[&str] = &[
 fn fingerprint(text: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(text.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::text::validate::hex_encode(&hasher.finalize())
 }
 
 pub fn canonicalize_text(
