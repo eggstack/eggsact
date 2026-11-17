@@ -1,6 +1,6 @@
 # Deterministic Tool Substrate Roadmap
 
-Status: active (guard workstream; Milestones 003–008 closed)
+Status: active (guard workstream; Milestones 003–008 closed; Milestone 009 implemented pending closure)
 
 Long-term references:
 
@@ -369,6 +369,43 @@ Deferred work: the 007 deferred inventory remains deferred (ConfigFacts,
 dependency-facts normalization, tools/helpers.rs drain-down, large-module
 decomposition, and ADR-gated transport-neutral catalog/runtime ownership).
 
+### Milestone 9 — Runtime safety guards
+
+Status: implemented (local merge gate green; closure record pending)
+
+Class: invariant
+
+Objective: make two implicit runtime-safety postures explicit: documented,
+intentionally chosen limits on the backtracking regex backend, and a
+package-level denial of `unsafe_code` with the two existing sound sites
+carrying narrow, justified allows.
+
+Dependencies: none; Milestones 003–008 remain closed and are not reopened.
+
+Deliverable boundary: one construction helper for the fancy engine with
+explicit `backtrack_limit` and `delegate_size_limit`; runtime-limit errors
+propagated as tool errors rather than no-match; package-level `unsafe_code`
+deny with targeted allows. No engine replacement, schema, registry, budget,
+or timeout change.
+
+User or operator value: pathological patterns fail deterministically and
+cheaply instead of consuming the execution budget, and any new `unsafe`
+becomes a reviewed event.
+
+Exit conditions: implementation plan
+`plans/implementation/deterministic-tool-substrate/009-runtime-safety-guards.md`
+is implemented; catastrophic-pattern tests return errors, accepted fixtures
+are unchanged, the unsafe-lint check is green, and the ordinary merge gate
+passes.
+
+Implementation note: the plan assumed exactly two `unsafe` sites. A third
+existed in `tests/mcp/test_composite_tools.rs` (`static mut` id counter); it
+was replaced with `AtomicU32` rather than allowed. The two documented sites
+retain narrow `#[allow(unsafe_code)]` attributes and their SAFETY comments.
+
+Deferred work: engine replacement, PCRE2 semantics, and performance work
+remain out of scope.
+
 ## 8. Cross-cutting requirements
 
 ### Determinism and bounded execution
@@ -431,6 +468,15 @@ wire outputs and synthetic positive/negative scanner tests are therefore
 closure requirements. Moving ToolSpec/catalog ownership out of mcp remains
 ADR-gated and out of scope.
 
+For Milestone 009, the principal risks are choosing limits that reject
+legitimately supported patterns, and allowing a backend runtime-limit error to
+be collapsed into a no-match result by an `ok()`/`unwrap_or` call site. The
+corrective records the chosen values and rationale, proves normal
+lookaround/backreference fixtures unchanged, and adds a tool-level
+error-propagation regression. The lint policy uses `deny` (not `forbid`) so the
+two reviewed `unsafe` sites can retain narrow allows; no new `unsafe` is in
+scope.
+
 ## 11. Completion definition
 
 This roadmap closes only if the substrate is intentionally superseded;
@@ -450,3 +496,4 @@ via `closure/` records; the performance line is already closed.
 | 006 Unicode conformance edge-case corrective | closed | `plans/archive/implementation/deterministic-tool-substrate/006-unicode-conformance-edge-case-corrective.md` | `plans/closure/deterministic-tool-substrate/006-status.md` (`83de61a`) | — |
 | 007 Typed-core ownership and adapter deduplication | closed | `plans/archive/implementation/deterministic-tool-substrate/007-typed-core-ownership-and-adapter-deduplication.md` | `plans/closure/deterministic-tool-substrate/007-status.md` (`237afb5` + `7176857`) | — |
 | 008 Prompt wire compatibility and layering-guard corrective | closed | `plans/archive/implementation/deterministic-tool-substrate/008-prompt-wire-compatibility-and-layering-guard-corrective.md` | `plans/closure/deterministic-tool-substrate/008-status.md` (`475fc19`) | — |
+| 009 Runtime safety guards | implemented | `plans/implementation/deterministic-tool-substrate/009-runtime-safety-guards.md` | — | Local merge gate green; closure record pending |

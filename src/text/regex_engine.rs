@@ -1,6 +1,32 @@
 use fancy_regex::Regex as FancyRegex;
+use fancy_regex::RegexBuilder as FancyRegexBuilder;
 use regex::Regex as StdRegex;
 use serde::{Deserialize, Serialize};
+
+/// Backtracking budget for one match attempt on the fancy backend.
+///
+/// The crate default is 1,000,000 steps; a quarter of that keeps a
+/// catastrophic pattern well inside the tool budget while leaving ample room
+/// for supported lookaround/backreference workloads. The limit is a constant,
+/// not load- or environment-dependent, so classification is deterministic.
+const FANCY_BACKTRACK_LIMIT: usize = 250_000;
+
+/// Approximate size limit for each regex program delegated to the linear
+/// `regex` engine. 4 MiB is far above any pattern admitted by the 1 KiB
+/// pattern cap, while still bounding compile-time memory for pathological
+/// character classes.
+const FANCY_DELEGATE_SIZE_LIMIT: usize = 4 * 1024 * 1024;
+
+/// The single construction point for the backtracking backend.
+///
+/// Every user-controlled fancy-regex instance must go through this helper so
+/// the runtime limits cannot be bypassed by a new call site.
+pub(crate) fn compile_fancy(full_pattern: &str) -> Result<FancyRegex, fancy_regex::Error> {
+    FancyRegexBuilder::new(full_pattern)
+        .backtrack_limit(FANCY_BACKTRACK_LIMIT)
+        .delegate_size_limit(FANCY_DELEGATE_SIZE_LIMIT)
+        .build()
+}
 
 /// Which backend compiled the pattern.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,7 +270,7 @@ impl CompiledRegex {
 /// fancy_regex returns absolute byte ranges into the original text, so no
 /// position adjustment is needed. Names are populated separately by the caller.
 fn convert_captures_fancy<'t>(
-    caps: &fancy_regex::Captures<'t>,
+    caps: &fancy_regex::Captures<'t, str>,
     text: &'t str,
 ) -> CompiledCaptures<'t> {
     let full = caps
@@ -374,7 +400,7 @@ pub fn compile_regex(
                 error: e.to_string(),
             }),
         },
-        RegexEngineUsed::FancyRegex => match FancyRegex::new(&full_pattern) {
+        RegexEngineUsed::FancyRegex => match compile_fancy(&full_pattern) {
             Ok(re) => Ok(CompiledRegex::Fancy(re)),
             Err(e) => Err(CompileError::Compile {
                 engine: RegexEngineUsed::FancyRegex,
@@ -1180,5 +1206,48 @@ mod normalize_flags_tests {
     fn mixed_bool_and_array() {
         let flags = vec!["M".to_string()];
         assert_eq!(normalize_flags(Some(&flags), true, false, false), "(?im)");
+    }
+}
+
+#[cfg(test)]
+mod runtime_limit_tests {
+    use super::*;
+
+    #[test]
+    fn backtrack_limit_stops_catastrophic_fancy_pattern() {
+        // The lookahead and backreference force the fancy backend, and the
+        // ambiguous alternation under `+` produces exponential backtracking
+        // when the trailing `b` is absent. The configured limit must stop it.
+        let compiled = compile_regex(r"(?=(a|a)+\1b)a", None, false, false, false).unwrap();
+        assert_eq!(compiled.engine_used(), RegexEngineUsed::FancyRegex);
+        let text = "a".repeat(20);
+        let error = compiled
+            .find(&text)
+            .expect_err("the configured backtrack limit must stop the match");
+        match error {
+            fancy_regex::Error::RuntimeError(fancy_regex::RuntimeError::BacktrackLimitExceeded) => {
+            }
+            other => panic!("expected backtrack-limit error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn normal_fancy_patterns_still_match_under_the_limits() {
+        let lookahead = compile_regex(r"(?=x)x", None, false, false, false).unwrap();
+        assert!(lookahead.is_match("x").unwrap());
+        let backreference =
+            compile_regex(r"(?P<w>\w+)\s+(?P=w)", None, false, false, false).unwrap();
+        assert_eq!(backreference.engine_used(), RegexEngineUsed::FancyRegex);
+        assert!(backreference.is_match("hello hello").unwrap());
+    }
+
+    #[test]
+    fn maximum_length_fancy_pattern_compiles_under_delegate_limit() {
+        // Stay just under the 1 KiB tool pattern cap while forcing the fancy
+        // backend, so the 4 MiB delegated-program ceiling is exercised.
+        let pattern = format!("(?=a){}", "a".repeat(990));
+        let compiled = compile_regex(&pattern, None, false, false, false).unwrap();
+        assert_eq!(compiled.engine_used(), RegexEngineUsed::FancyRegex);
+        assert!(compiled.is_match(&"a".repeat(991)).unwrap());
     }
 }

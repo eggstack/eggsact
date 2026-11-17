@@ -1308,7 +1308,7 @@ fn normalize_lowercase_temperature_conversion(expr: &str) -> Result<String, Stri
         "normalize_lowercase_temperature_conversion",
         &TEMP_CONVERSION_RE,
         expr,
-        |caps: &Captures| {
+        |caps: &Captures<'_, str>| {
             let from_unit = caps[2].to_uppercase();
             let to_unit = caps[4].to_uppercase();
             let conv_word = caps[3].to_uppercase();
@@ -1402,7 +1402,7 @@ pub fn normalize(expr: &str) -> Result<String, String> {
             "unit_caret_attach",
             unit_caret_attach_re(),
             &result,
-            |caps: &Captures| {
+            |caps: &Captures<'_, str>| {
                 let unit = &caps[2];
                 let power = &caps[3];
                 format!("{} {}{}", &caps[1], unit, power)
@@ -1413,7 +1413,7 @@ pub fn normalize(expr: &str) -> Result<String, String> {
             "unit_caret_denom",
             unit_caret_denom_re(),
             &result,
-            |caps: &Captures| {
+            |caps: &Captures<'_, str>| {
                 let unit = caps[1].to_lowercase();
                 format!("/{}**{}", unit, &caps[2])
             },
@@ -1423,7 +1423,7 @@ pub fn normalize(expr: &str) -> Result<String, String> {
             "unit_caret_paren",
             unit_caret_paren_re(),
             &result,
-            |caps: &Captures| {
+            |caps: &Captures<'_, str>| {
                 let unit = caps[1].to_lowercase();
                 format!("/({})**{}", unit, &caps[2])
             },
@@ -1432,7 +1432,7 @@ pub fn normalize(expr: &str) -> Result<String, String> {
 
     // M23: Handle "N thousand" scale words (evaluate to product)
     for (re, sv) in DIGIT_SCALE_PATTERNS.iter() {
-        result = try_replace_all("digit_scale", re, &result, |caps: &Captures| {
+        result = try_replace_all("digit_scale", re, &result, |caps: &Captures<'_, str>| {
             let v: f64 = caps[1].parse().unwrap_or(0.0);
             let product = v * sv;
             if product.fract() == 0.0 && product.abs() < 1e15 {
@@ -1466,7 +1466,7 @@ pub fn normalize(expr: &str) -> Result<String, String> {
         "number_words",
         &NUMBER_WORD_RE,
         &result,
-        |caps: &Captures| {
+        |caps: &Captures<'_, str>| {
             NUMBER_WORDS
                 .get(caps.get(1).map(|m| m.as_str()).unwrap_or(""))
                 .copied()
@@ -1504,27 +1504,32 @@ pub fn normalize(expr: &str) -> Result<String, String> {
     // Must run BEFORE the operator-word replacement (which converts "per"
     // into "/") and BEFORE the bare-unit "*" insertion below so the full
     // phrase is collapsed into a canonical compound unit first.
-    result = try_replace_all("per_unit", &PER_UNIT_RE, &result, |caps: &Captures| {
-        let num = &caps[1];
-        let distance = caps[2].to_lowercase();
-        let time = caps[3].to_lowercase();
-        let dist_unit: &str = match distance.as_str() {
-            "kilometer" | "kilometers" | "kilometre" | "kilometres" | "km" => "km",
-            "mile" | "miles" | "mi" => "mi",
-            "meter" | "meters" | "metre" | "metres" | "m" => "m",
-            "foot" | "feet" | "ft" => "ft",
-            "inch" | "inches" => "in",
-            "yard" | "yards" | "yd" => "yd",
-            _ => return caps[0].to_string(),
-        };
-        let time_unit: &str = match time.as_str() {
-            "hour" | "hours" | "hr" | "h" => "h",
-            "minute" | "minutes" | "min" => "min",
-            "second" | "seconds" | "sec" | "s" => "s",
-            _ => return caps[0].to_string(),
-        };
-        format!("{}*{}/{}", num, dist_unit, time_unit)
-    })?;
+    result = try_replace_all(
+        "per_unit",
+        &PER_UNIT_RE,
+        &result,
+        |caps: &Captures<'_, str>| {
+            let num = &caps[1];
+            let distance = caps[2].to_lowercase();
+            let time = caps[3].to_lowercase();
+            let dist_unit: &str = match distance.as_str() {
+                "kilometer" | "kilometers" | "kilometre" | "kilometres" | "km" => "km",
+                "mile" | "miles" | "mi" => "mi",
+                "meter" | "meters" | "metre" | "metres" | "m" => "m",
+                "foot" | "feet" | "ft" => "ft",
+                "inch" | "inches" => "in",
+                "yard" | "yards" | "yd" => "yd",
+                _ => return caps[0].to_string(),
+            };
+            let time_unit: &str = match time.as_str() {
+                "hour" | "hours" | "hr" | "h" => "h",
+                "minute" | "minutes" | "min" => "min",
+                "second" | "seconds" | "sec" | "s" => "s",
+                _ => return caps[0].to_string(),
+            };
+            format!("{}*{}/{}", num, dist_unit, time_unit)
+        },
+    )?;
 
     // BUG-009 / parity B9: "<num> <unit1> / <unit2>" split-rate forms.
     // "60 km / h" -> "(60*km)/h" so the right-hand unit isn't consumed as
@@ -1533,7 +1538,7 @@ pub fn normalize(expr: &str) -> Result<String, String> {
         "split_unit_div",
         &SPLIT_UNIT_DIV_RE,
         &result,
-        |caps: &Captures| {
+        |caps: &Captures<'_, str>| {
             let num = caps.get(1).map(|m| m.as_str()).unwrap_or("0");
             let u1 = caps.get(2).map(|m| m.as_str()).unwrap_or("");
             let u2 = caps.get(3).map(|m| m.as_str()).unwrap_or("");
@@ -1580,7 +1585,7 @@ pub fn normalize(expr: &str) -> Result<String, String> {
     // Convert "cbrt * 8" → "cbrt(8)" for known function names
     // For multi-arg functions like "mean * 1+2+3", convert +/- to commas: "mean(1,2,3)"
     for (re, is_multi, func) in FUNC_FIX_PATTERNS.iter() {
-        result = try_replace_all("func_fix", re, &result, |caps: &Captures| {
+        result = try_replace_all("func_fix", re, &result, |caps: &Captures<'_, str>| {
             let arg = caps[1].trim();
             if arg.is_empty() {
                 format!("{} *", func)
@@ -1648,15 +1653,20 @@ pub fn normalize(expr: &str) -> Result<String, String> {
 
     // NZ-9 + M25: Postfix unit power words: "m squared" -> "m2", "cm cubed" -> "cm3"
     // Uses full UNIT_ALIASES to match any known unit before "squared"/"cubed"
-    result = try_replace_all("unit_power", &UNIT_POWER_RE, &result, |caps: &Captures| {
-        let unit = &caps[1];
-        let power = if caps[2].eq_ignore_ascii_case("squared") {
-            "2"
-        } else {
-            "3"
-        };
-        format!("{}{}", unit, power)
-    })?;
+    result = try_replace_all(
+        "unit_power",
+        &UNIT_POWER_RE,
+        &result,
+        |caps: &Captures<'_, str>| {
+            let unit = &caps[1];
+            let power = if caps[2].eq_ignore_ascii_case("squared") {
+                "2"
+            } else {
+                "3"
+            };
+            format!("{}{}", unit, power)
+        },
+    )?;
 
     // BUG-009 / parity B9 patterns moved earlier in the pipeline (see the
     // pass inserted after `combine_consecutive_number_words()` above) so
@@ -1676,7 +1686,7 @@ pub fn normalize(expr: &str) -> Result<String, String> {
         "unit_compound",
         &UNIT_COMPOUND_RE,
         &result,
-        |caps: &Captures| {
+        |caps: &Captures<'_, str>| {
             let num = &caps[1];
             let from_num = &caps[2];
             let from_den = &caps[3];
@@ -1729,15 +1739,20 @@ pub fn normalize(expr: &str) -> Result<String, String> {
     // Iteratively handle nested factorial: "5!!" -> "factorial(5)!" -> "factorial(factorial(5))"
     // Also handles func(args)! e.g. "factorial(5)!" -> "factorial(factorial(5))"
     loop {
-        let next = try_replace_all("factorial", &FACTORIAL_RE, &result, |caps: &Captures| {
-            let content = &caps[1];
-            let bangs = &caps[2];
-            let mut out = format!("factorial({})", content);
-            if bangs.len() > 1 {
-                out.push_str(&"!".repeat(bangs.len() - 1));
-            }
-            out
-        })?;
+        let next = try_replace_all(
+            "factorial",
+            &FACTORIAL_RE,
+            &result,
+            |caps: &Captures<'_, str>| {
+                let content = &caps[1];
+                let bangs = &caps[2];
+                let mut out = format!("factorial({})", content);
+                if bangs.len() > 1 {
+                    out.push_str(&"!".repeat(bangs.len() - 1));
+                }
+                out
+            },
+        )?;
         if next == result {
             break;
         }
@@ -1984,7 +1999,7 @@ pub fn preprocess_units(tokens: &[String]) -> Result<(Vec<String>, Option<String
         "preprocess_units_convert",
         &UNIT_INLINE_RE,
         &joined,
-        |caps: &Captures| {
+        |caps: &Captures<'_, str>| {
             let num_str = caps.name("num").map(|m| m.as_str()).unwrap_or("0");
             let unit = caps.name("unit").map(|m| m.as_str()).unwrap_or("");
             match resolve_unit_alias(unit) {
@@ -2078,7 +2093,7 @@ pub fn add_same_unit_division_parens(expr: &str) -> Result<String, String> {
         "add_same_unit_division_parens",
         &SAME_UNIT_DIV_RE,
         expr,
-        |caps: &Captures| {
+        |caps: &Captures<'_, str>| {
             let left_unit = &caps[1];
             let denom = &caps[2];
             let right_unit = &caps[3];

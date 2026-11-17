@@ -287,6 +287,17 @@ pub fn validate_regex(args: &Value) -> ToolResponse {
             }
         }
     }
+    // A backend runtime error (including a backtrack-limit failure) uses the
+    // same stable code as regex_finditer. It must never look like a no-match.
+    if resp
+        .result
+        .as_ref()
+        .and_then(|r| r.get("execution_error"))
+        .is_some_and(|v| !v.is_null())
+        && resp.machine_code.is_none()
+    {
+        resp = resp.with_machine_code(machine_codes::INTERNAL_ERROR);
+    }
     resp
 }
 

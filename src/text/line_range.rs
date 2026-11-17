@@ -43,7 +43,7 @@ fn fingerprint(text: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(text.as_bytes());
     let result = hasher.finalize();
-    let hex = format!("{:x}", result);
+    let hex = crate::text::validate::hex_encode(&result);
     hex[..16].to_string()
 }
 

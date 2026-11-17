@@ -568,6 +568,21 @@ async fn download_to(
     Ok(DownloadStatus::Success)
 }
 
+/// Create a directory that is private from the moment it exists.
+///
+/// Unix applies the mode at creation, so there is no window in which a
+/// world-readable staging directory exists in the temp root.
+#[cfg(unix)]
+fn create_private_dir(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    fs::DirBuilder::new().mode(0o700).create(path)
+}
+
+#[cfg(not(unix))]
+fn create_private_dir(path: &Path) -> io::Result<()> {
+    fs::create_dir(path)
+}
+
 fn unique_temp_dir(prefix: &str) -> Result<PathBuf, String> {
     let base = env::temp_dir();
     let now = SystemTime::now()
@@ -576,27 +591,86 @@ fn unique_temp_dir(prefix: &str) -> Result<PathBuf, String> {
         .as_nanos();
     for attempt in 0..32_u32 {
         let path = base.join(format!("{prefix}-{}-{now}-{attempt}", std::process::id()));
-        match fs::create_dir(&path) {
-            Ok(()) => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    if let Err(error) =
-                        fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
-                    {
-                        // Do not leave a staging directory behind that we could
-                        // not secure: it would stay world-readable in /tmp.
-                        let _ = fs::remove_dir(&path);
-                        return Err(format!("cannot secure temporary directory: {error}"));
-                    }
-                }
-                return Ok(path);
-            }
+        match create_private_dir(&path) {
+            Ok(()) => return Ok(path),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(format!("cannot create temporary directory: {error}")),
         }
     }
     Err("could not create a unique temporary directory".into())
+}
+
+/// Whether a `SystemRoot` value is an absolute Windows path.
+///
+/// `Path::is_absolute` is host-dependent (and false for `C:\Windows` on Unix),
+/// so the Windows syntax is checked explicitly to keep the resolver testable
+/// everywhere. Drive-rooted (`C:\`, `C:/`) and UNC (`\\server\share`) roots
+/// are accepted; drive-relative (`C:Windows`), root-relative (`\Windows`), and
+/// plain relative values are rejected.
+#[cfg(any(windows, test))]
+fn is_absolute_windows_root(root: &str) -> bool {
+    let bytes = root.as_bytes();
+    let drive_rooted = bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/');
+    let normalized = root.replace('/', "\\");
+    // A UNC root is exactly two leading separators plus a server and a share.
+    // Extra separators, extended-length (`\\?\`), and device (`\\.\`) prefixes
+    // are rejected: `SystemRoot` is never one of those forms.
+    let unc = normalized.starts_with("\\\\") && !normalized.starts_with("\\\\\\") && {
+        let mut components = normalized
+            .trim_start_matches('\\')
+            .split('\\')
+            .filter(|component| !component.is_empty());
+        let server = components.next();
+        let share = components.next();
+        server.is_some_and(|server| server != "?" && server != ".") && share.is_some()
+    };
+    drive_rooted || unc
+}
+
+/// Absolute Windows PowerShell path under an explicit system root.
+///
+/// Pure path construction: it reads no environment and touches no filesystem,
+/// so the platform-independent tests can exercise it on any host.
+#[cfg(any(windows, test))]
+fn powershell_path_from(system_root: Option<&str>) -> Result<PathBuf, String> {
+    let root = system_root
+        .map(str::trim)
+        .filter(|root| !root.is_empty())
+        .ok_or_else(|| {
+            "cannot locate Windows PowerShell: the SystemRoot environment variable is not set or empty"
+                .to_string()
+        })?;
+    if !is_absolute_windows_root(root) {
+        return Err(format!(
+            "cannot locate Windows PowerShell: SystemRoot must be an absolute Windows path, got '{root}'"
+        ));
+    }
+    Ok(Path::new(root)
+        .join("System32")
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe"))
+}
+
+/// Resolve and validate the absolute PowerShell executable.
+///
+/// A missing component fails closed; there is deliberately no `PATH` fallback.
+#[cfg(any(windows, test))]
+fn resolve_powershell(
+    system_root: Option<&str>,
+    exists: impl Fn(&Path) -> bool,
+) -> Result<PathBuf, String> {
+    let path = powershell_path_from(system_root)?;
+    if !exists(&path) {
+        return Err(format!(
+            "cannot locate Windows PowerShell at {}; the Windows PowerShell 5.1 component is required",
+            path.display()
+        ));
+    }
+    Ok(path)
 }
 
 /// Single Eggup transport configuration point (mirrors the strict policy
@@ -645,7 +719,9 @@ fn map_eggup_error(e: eggup_acquisition::AcquisitionError, url: &str, what: &str
         E::Cancelled => format!("update cancelled while fetching {what} from {redacted}"),
         E::InvalidInput(d) => format!("invalid update request for {what} from {redacted}: {d}"),
         E::Transport(d) => format!("failed to download {what} from {redacted}: {d}"),
-        E::Io(d) => format!("failed while reading release asset ({what}) from {redacted}: {d}"),
+        error @ E::Io { .. } => {
+            format!("failed while reading release asset ({what}) from {redacted}: {error}")
+        }
         _ => format!("failed to download {what} from {redacted}: {e}"),
     }
 }
@@ -1093,7 +1169,12 @@ fn replace_current(
     fs::copy(candidate, &adjacent).map_err(|error| permission_error(current, error))?;
     let status = current.with_extension(format!("{tag}.status"));
     let script = windows_replacement_script(pid, &adjacent, current, &status, expected_digest);
-    Command::new("powershell.exe")
+    // Resolve PowerShell from the system directory, never the OS search order:
+    // Windows checks the application and current directories first, so a bare
+    // `powershell.exe` could be a planted executable.
+    let system_root = env::var("SystemRoot").ok();
+    let powershell = resolve_powershell(system_root.as_deref(), Path::is_file)?;
+    Command::new(&powershell)
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -1530,6 +1611,81 @@ mod tests {
         assert_eq!(classify_http_status(200), DownloadStatus::Success);
         assert!(parse_checksum("not-a-checksum").is_err());
         assert!(parse_checksum(&format!("{}  file", "a".repeat(64))).is_ok());
+    }
+
+    #[test]
+    fn powershell_path_is_built_from_the_system_root() {
+        let path = powershell_path_from(Some(r"C:\Windows")).unwrap();
+        assert_eq!(
+            path.to_string_lossy().replace('\\', "/"),
+            "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+        );
+        // Surrounding whitespace and separators do not change the target.
+        assert_eq!(powershell_path_from(Some("  C:\\Windows  ")).unwrap(), path);
+    }
+
+    #[test]
+    fn powershell_resolution_fails_closed_without_a_system_root() {
+        assert!(powershell_path_from(None).is_err());
+        assert!(powershell_path_from(Some("")).is_err());
+        assert!(powershell_path_from(Some("   ")).is_err());
+    }
+
+    #[test]
+    fn powershell_resolution_rejects_relative_system_roots() {
+        // A relative root would make `Command::new` resolve against the
+        // current directory, reintroducing the search-order risk.
+        for root in [r"Windows", r"\Windows", r".\Windows", r"C:Windows"] {
+            assert!(powershell_path_from(Some(root)).is_err(), "{root}");
+        }
+        // Drive-rooted and UNC roots are absolute and accepted.
+        assert!(powershell_path_from(Some(r"C:/Windows")).is_ok());
+        assert!(powershell_path_from(Some(r"\\server\share\Windows")).is_ok());
+        // Extended-length/device prefixes and malformed UNC roots fail closed.
+        for root in [
+            r"\\?\C:\Windows",
+            r"\\.\C:\Windows",
+            r"\\\server\share",
+            r"\\server",
+        ] {
+            assert!(powershell_path_from(Some(root)).is_err(), "{root}");
+        }
+    }
+
+    #[test]
+    fn powershell_resolution_rejects_a_missing_executable() {
+        assert!(resolve_powershell(Some(r"C:\Windows"), |_| false).is_err());
+        let resolved = resolve_powershell(Some(r"C:\Windows"), |_| true).unwrap();
+        assert!(resolved.ends_with("powershell.exe"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_resolver_uses_the_real_windows_environment() {
+        let system_root = env::var("SystemRoot").expect("SystemRoot must be set on Windows");
+        let resolved = resolve_powershell(Some(&system_root), Path::is_file)
+            .expect("Windows PowerShell 5.1 is present on supported Windows");
+        assert!(resolved.is_absolute());
+        assert!(resolved.ends_with("powershell.exe"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staging_directories_are_private_from_creation() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = unique_temp_dir("eggsact-private").expect("temp dir");
+        let mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(mode, 0o700, "staging directory must be private at creation");
+    }
+
+    #[test]
+    fn spawn_site_never_uses_a_bare_powershell_name() {
+        let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/update.rs"));
+        assert!(
+            !source.contains("Command::new(\"powershell.exe\")"),
+            "the replacement script must use the absolute PowerShell path"
+        );
     }
 
     #[test]
@@ -2383,7 +2539,10 @@ mod tests {
 
     fn sha256_hex(bytes: &[u8]) -> String {
         use sha2::Digest;
-        format!("{:x}", sha2::Sha256::digest(bytes))
+        sha2::Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
     }
 
     /// Minimal producer-shaped ReleaseManifest v1 document (same schema the

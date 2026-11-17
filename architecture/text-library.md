@@ -383,6 +383,22 @@ pub enum CompileError {
 
 `CompiledRegex` provides `find()`, `captures()`, `captures_from_pos()`, `capture_names()`, `is_match()`, and `engine_used()` — all returning backend-independent types.
 
+### Runtime limits
+
+Fancy-engine construction goes through one helper (`compile_fancy`) so no
+call site can bypass the explicit limits:
+
+| Limit | Value | Rationale |
+|-------|-------|-----------|
+| `backtrack_limit` | 250,000 steps | A quarter of the crate default (1,000,000). Bounds catastrophic backtracking well inside the tool budget while leaving room for supported lookaround/backreference workloads. |
+| `delegate_size_limit` | 4 MiB per delegated program | Far above any pattern admitted by the 1 KiB pattern cap, while bounding compile-time memory. |
+
+Limit failures are errors, never silent no-matches: `find()`, `captures()`,
+`captures_from_pos()`, and `is_match()` propagate the backend error, and the
+tool layer reports it as `execution_error` with the stable `INTERNAL_ERROR`
+machine code. `regex_safety` remains advisory static analysis (nesting,
+adjacent quantifiers, backreferences); it does not enforce these limits.
+
 ### `normalize_flags(flags, ignore_case, multiline, dotall) -> String`
 
 Normalizes flag parameters into an inline flag prefix (e.g., `"(?ims)"`). Recognized flags: `IGNORECASE`/`I`, `MULTILINE`/`M`, `DOTALL`/`S`, `VERBOSE`/`X`.

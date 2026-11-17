@@ -31,16 +31,21 @@ retained only for traceability.
 
 | Subsystem | Status | Roadmap | Current milestone | Dependencies or blockers |
 |---|---|---|---|---|
-| Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | Guard only; no open milestone | 008 closed the post-007 wire-cardinality/guard-coverage corrective without reopening 007 architecture; workstream is guard-only. |
+| Deterministic tool substrate | active | `plans/subsystems/deterministic-tool-substrate-roadmap.md` | M009 implemented (runtime safety guards); local merge gate green; closure record pending; guard-only otherwise | 008 closed the post-007 wire-cardinality/guard-coverage corrective without reopening 007 architecture. M009 is independent: explicit regex limits and a package-level `unsafe_code` deny. |
 | MCP presentation surface | active | `plans/subsystems/mcp-presentation-surface-roadmap.md` | 03c blocked (deterministic prep re-verified 2026-09-30; external evidence blocked; closure `plans/closure/mcp-presentation-surface/003c-status.md`) | Blocked on provider credentials / eval budget for OpenAI + Anthropic direct/discovery pairs and instructions A/B. |
 | Harness integration and docs | active | `plans/subsystems/harness-integration-roadmap.md` | Guard only; no open milestone | Continuous guard (generate-docs check, parity baseline, context isolation). |
-| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | Maintenance-only; no open milestone | Eggpack is producer authority (cutover at `d8014cf`, pinned to Eggpack M003g `e5c81f2`); v1.2.7 live draft/release qualification is complete; M005a closed the Windows byte-reproducibility condition with real rerun-reuse evidence. Workstream is guard/maintenance-only. |
+| Distribution, update, and release | active | `plans/subsystems/distribution-update-release-roadmap.md` | M006 implemented; M009 implemented; M007 blocked (upstream registry release); M008 proposed (ADR-0002) | A November 2026 security audit opened M006-M009. Eggpack remains producer authority (cutover at `d8014cf`, pinned to Eggpack M003g `e5c81f2`); v1.2.7 live draft/release qualification is complete; M005a closed the Windows byte-reproducibility condition. M006 restored the source-policy signal and added the release provenance preflight; M007 is blocked on an upstream Eggup registry release carrying the ZIP security refresh, because git pins make `cargo package` fail today. |
 
 ## Open implementation work
 
 | Subsystem | Milestone | Status | Plan | Blocker / handoff note |
 |---|---|---|---|---|
 | MCP presentation surface | 03c evaluation closure corrective | blocked | `plans/implementation/mcp-presentation-surface/003c-evaluation-closure-corrective.md` | Closure `plans/closure/mcp-presentation-surface/003c-status.md` (blocked). Deterministic preparation is complete; model/client evidence and instructions A/B remain blocked on provider credentials and evaluation budget. Do not fabricate traces or mark complete without OpenAI + Anthropic pairs and instructions A/B. |
+| Distribution, update, and release | M006 dependency provenance and source policy | implemented | `plans/implementation/distribution-update-release/006-dependency-provenance-and-source-policy.md` | Implemented: exact-source allow-list, `check-dependency-provenance.py` with fixture self-test, release-check wiring, docs. Closure pending a green maintenance run and a clean-tree `release-check.sh`; packaging remains intentionally blocked until M007. Do not add `version` keys to the git pins. |
+| Distribution, update, and release | M007 Eggup registry adoption | blocked | `plans/implementation/distribution-update-release/007-eggup-registry-adoption.md` | Needs a published Eggup 0.2.x release whose graph resolves `zip >= 9.6.1`. Verified 2026-11-17: all four crates publish only 0.2.0, and `eggup-archive 0.2.0` requires `zip ^6.0.0`. Do not ship it. |
+| Distribution, update, and release | M008 release authenticity (signature verification) | proposed | `plans/implementation/distribution-update-release/008-release-authenticity-signature-verification.md` | Requires ADR-0002 (scheme, key custody, rotation, bootstrap) and an Eggup signature carrier. Signing is currently an explicit roadmap non-goal and must not be implemented ahead of the ADR. |
+| Distribution, update, and release | M009 operator-surface hardening | implemented | `plans/implementation/distribution-update-release/009-operator-surface-hardening.md` | Implemented: absolute `%SystemRoot%` PowerShell resolver, `0700`-at-creation staging, Windows config-block rendering with hostile-path tests, docs. Local merge gate green; closure record pending; Windows behavior reviewed statically only (no native Windows execution). |
+| Deterministic tool substrate | M009 runtime safety guards | implemented | `plans/implementation/deterministic-tool-substrate/009-runtime-safety-guards.md` | Implemented: `compile_fancy` limits (250k backtrack steps, 4 MiB delegate), schema-path error propagation, `INTERNAL_ERROR` at the tool layer, package `unsafe_code = "deny"` with two narrow allows; the unexpected third `unsafe` site in integration tests was refactored to `AtomicU32`. Local merge gate green; closure record pending. |
 
 ## Recently closed work (control points)
 
@@ -58,6 +63,8 @@ retained only for traceability.
 | Subsystem | Milestone | Blocker |
 |---|---|---|
 | MCP presentation surface | 03c Parts D-F (model/client traces, instructions A/B, rollout decision) | No provider credentials, subscriptions, or evaluation budget for ~200 model calls (attempted 2026-09-11 and re-attempted 2026-09-30: `codex` 0.159.2 / `claude` 2.1.280 CLIs present, no budget/approval). Closure `plans/closure/mcp-presentation-surface/003c-status.md` records the blocked disposition. Generated integrations stay on direct; discovery stays explicitly selectable. |
+| Distribution, update, and release | M007 Eggup registry adoption | Upstream Eggup registry release with `zip >= 9.6.1`. The published 0.2.0 tag still uses `zip 6.0.0`; the current git pin is the only source carrying the security refresh. |
+| Distribution, update, and release | M008 release authenticity | ADR-0002 acceptance (scheme, key custody, rotation, bootstrap) and an upstream signature carrier. Signing is a current roadmap non-goal. |
 
 ## Closure work and current control points
 
@@ -86,6 +93,14 @@ retained only for traceability.
   reuse of all fifteen staged assets, so a rerun no longer fails closed on the
   Windows asset. The distribution workstream is maintenance-only;
   self-update semantics remain eggsact/Eggup-owned and were not migrated.
+- A November 2026 read-only security audit of the current baseline found no
+  high-severity runtime vulnerability, but it did confirm two pre-existing
+  release-gate failures: `cargo package` refuses the four versionless git
+  dependencies, and `cargo deny check sources` denies the same sources
+  because `allow-git` is empty. It also found that release authenticity rests
+  on TLS plus a same-origin SHA-256 with no signature, and three local
+  operator-surface hardening gaps. M006-M009 record the follow-up; M007 is
+  blocked upstream and M008 needs an ADR before any implementation.
 - The durable rollout gates for `03c` remain: 100% stable-Model coverage,
   retrieval top-1 >=90% / top-3 >=98% / top-5 100%, 0 Model->HarnessOnly
   leaks, discovery/direct byte ratio <=25%, >=40 Model task scenarios

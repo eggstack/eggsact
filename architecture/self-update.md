@@ -43,7 +43,7 @@ eggsact update
     │     json → crate.max_stable_version → parse_stable_version
     ├─ is_already_current(latest <= current)? → print + exit 0     (update.rs:1209)
     │     (no manifest or artifact download happens at all)
-    ├─ unique_temp_dir("eggsact-update") → 0700 staging            (update.rs:550)
+    ├─ unique_temp_dir("eggsact-update") → 0700 at creation  (update.rs:586)
     │
     └─ target_for_host(OS, ARCH)?                                    (update.rs:150)
          │
@@ -67,7 +67,7 @@ eggsact update
                 └─ Absent ──→ prepare_legacy_candidate_async        (update.rs:995)
                       exact 404 ONLY; asset + .sha256 sidecar, or Cargo
                 │
-                └─ commit: shared tail commit_artifact_set           (update.rs:1091)
+                └─ commit: shared tail commit_artifact_set           (update.rs:1190)
                       root = current_exe.parent()
                       InstallPlan::new(product, release, root, set)
                         → prepare()          (private staging)
@@ -254,12 +254,15 @@ not the `M003 — Eggfetch 0.1.7 bump` milestone in
 
 ## Verification and safety
 
-`commit_artifact_set` ([update.rs:1091](../src/update.rs)) is the shared tail for
+`commit_artifact_set` ([update.rs:1190](../src/update.rs)) is the shared tail for
 both sources; only `ArtifactSet` construction differs. The order is fixed:
 
 1. **Private staging.** `prepare()` stages outside the install root; the install
    root is `current_exe.parent()`, so canonical and renamed installations both
-   update in place.
+   update in place. The updater's own temp directory is created with mode
+   `0700` at creation time on Unix (`unique_temp_dir` /
+   `create_private_dir`), so no world-readable window exists between
+   `create_dir` and a permission change.
 2. **SHA-256 integrity.** `verify_integrity()` enforces the `IntegrityRequirement`
    (manifest digest/size, legacy sidecar digest, or the Cargo self-measured digest).
    Under-sizing fails at adapter materialization; over-sizing is rejected during
@@ -305,8 +308,14 @@ handed to the existing detached PowerShell helper rather than replaced inline.
 `replace_current` copies the candidate to a sibling path derived from the running
 executable's name (its extension replaced with `eggsact-update-<pid>.exe`),
 derives a status path the same way (`eggsact-update-<pid>.status`), and spawns
-`powershell.exe -NoProfile -NonInteractive -Command <script>` with stdout and
-stderr discarded. The script waits for the updater's PID to exit
+`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile
+-NonInteractive -Command <script>` with stdout and stderr discarded. PowerShell
+is resolved from the explicit `SystemRoot` path, never from the OS search order:
+Windows checks the application and current directories first, so a bare
+`powershell.exe` could be a planted executable. A missing `SystemRoot` or
+missing PowerShell component fails closed with no `PATH` fallback (`Path::is_file`
+validates the absolute path before spawning). The script waits for the updater's
+PID to exit
 (`Get-Process -Id $p`, 100 ms polling), retries `Move-Item -Force` up to 50 times
 at 100 ms intervals, removes the status file on success, and otherwise writes
 `failed: <message>` and exits non-zero. It never enumerates or kills processes —
@@ -339,18 +348,18 @@ not publish — see [Release target contract](#release-target-contract).
 
 ## `eggsact integrate`
 
-`src/integrate.rs` is 258 lines of pure rendering. It reads `PATH` and
-`current_exe()` and writes to stdout only. The guarantee is stated in the
-program itself: after rendering, it prints "This command/config is an
-instruction only; eggsact does not edit client configuration."
+`src/integrate.rs` is pure rendering. It reads `PATH` and `current_exe()` and
+writes to stdout only. The guarantee is stated in the program itself: after
+rendering, it prints "This command/config is an instruction only; eggsact does
+not edit client configuration."
 
 | Client | Rendered form |
 |---|---|
 | `zed` | `context_servers` JSON with `command` / `args` / `env` |
 | `codex` | `[mcp_servers.eggsact]` TOML with `command` / `args` |
-| `claude` | `claude mcp add eggsact -- <path> --mcp` |
+| `claude` | `claude mcp add eggsact -- <path> --mcp`; Windows: `.claude.json` / `.mcp.json` config block |
 | `cursor` | `mcpServers` JSON |
-| `vscode` | `code --add-mcp '{"name":"eggsact",…}'` |
+| `vscode` | `code --add-mcp '{"name":"eggsact",…}'`; Windows: `.vscode\mcp.json` config block |
 | `opencode` | `opencode.jsonc` shape with `$schema`, `type: "local"`, command array |
 
 Subcommands: bare `integrate` prints usage plus the client list; `integrate list`
@@ -360,8 +369,13 @@ client, mapping `vscode` → `code` and `cursor` → `cursor-agent` and also acc
 unknown client is an error listing the supported names, and an empty executable
 path is rejected before rendering.
 
-Paths are escaped: JSON via `serde_json::to_string`, shell command forms via
-`shell_quote` (`'…'` with `'\''` on Unix, `"…"` with `\"` on Windows).
+Paths are escaped: JSON via `serde_json::to_string`; Unix shell command forms via
+`posix_quote` (`'…'` with `'\''`). Windows never renders a shell command for
+`claude` or `vscode`, because `cmd.exe` does not honor backslash quote escapes
+and expands `%VAR%` inside double quotes: those clients get a JSON configuration
+block and its target file, with the executable path JSON-escaped and never
+interpreted by a shell. `render_for_platform` makes that contract testable on
+any host.
 
 `--discovery` renders startup args as
 `["--mcp", "--mcp-surface", "discovery"]` instead of `["--mcp"]`; direct rendering

@@ -6,7 +6,7 @@ use std::path::Path;
 const CLIENTS: &[(&str, &str)] = &[
     ("zed", "Zed settings JSON"),
     ("codex", "Codex config.toml or `codex mcp add`"),
-    ("claude", "Claude Code `claude mcp add`"),
+    ("claude", "Claude Code config block or `claude mcp add`"),
     ("cursor", "Cursor mcp.json"),
     ("vscode", "VS Code mcp.json or `code --add-mcp`"),
     ("opencode", "OpenCode opencode.jsonc"),
@@ -36,6 +36,20 @@ pub fn render_with_surface(
     client: &str,
     executable: &str,
     discovery: bool,
+) -> Result<String, String> {
+    render_for_platform(client, executable, discovery, cfg!(windows))
+}
+
+/// Platform-explicit renderer so the Windows contract is testable on any host.
+///
+/// Windows `cmd.exe` does not honor backslash quote escapes and expands
+/// `%VAR%` inside double quotes, so the two shell-command clients render a
+/// JSON configuration block (with its target file) instead of a one-liner.
+fn render_for_platform(
+    client: &str,
+    executable: &str,
+    discovery: bool,
+    windows: bool,
 ) -> Result<String, String> {
     let path = Path::new(executable);
     if path.as_os_str().is_empty() {
@@ -71,9 +85,14 @@ pub fn render_with_surface(
             json_string(executable),
             args_toml
         )),
+        "claude" if windows => Ok(format!(
+            "Write this to %USERPROFILE%\\.claude.json under \"mcpServers\" \
+             (user scope) or to .mcp.json in the project root:\n{}",
+            claude_config(executable, args_json)
+        )),
         "claude" => Ok(format!(
             "claude mcp add eggsact -- {}{}",
-            shell_quote(executable),
+            posix_quote(executable),
             extra_cli
         )),
         "cursor" => Ok(format!(
@@ -88,13 +107,17 @@ pub fn render_with_surface(
             json_string(executable),
             args_json
         )),
+        "vscode" if windows => Ok(format!(
+            "Write this to .vscode\\mcp.json:\n{}",
+            vscode_config(executable, args_json)
+        )),
         "vscode" => {
             let inner = format!(
                 r#"{{"name":"eggsact","command":{},"args":{}}}"#,
                 json_string(executable),
                 args_json
             );
-            Ok(format!("code --add-mcp {}", shell_quote(&inner)))
+            Ok(format!("code --add-mcp {}", posix_quote(&inner)))
         }
         "opencode" => {
             let cmd_array = if discovery {
@@ -131,12 +154,39 @@ pub fn render_with_surface(
     }
 }
 
-fn shell_quote(value: &str) -> String {
-    if cfg!(windows) {
-        format!("\"{}\"", value.replace('"', "\\\""))
-    } else {
-        format!("'{}'", value.replace('\'', "'\\''"))
-    }
+fn claude_config(executable: &str, args_json: &str) -> String {
+    format!(
+        r#"{{
+  "mcpServers": {{
+    "eggsact": {{
+      "command": {},
+      "args": {}
+    }}
+  }}
+}}"#,
+        json_string(executable),
+        args_json
+    )
+}
+
+fn vscode_config(executable: &str, args_json: &str) -> String {
+    format!(
+        r#"{{
+  "servers": {{
+    "eggsact": {{
+      "type": "stdio",
+      "command": {},
+      "args": {}
+    }}
+  }}
+}}"#,
+        json_string(executable),
+        args_json
+    )
+}
+
+fn posix_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn command_on_path(command: &str) -> bool {
@@ -254,5 +304,64 @@ mod tests {
     #[test]
     fn unknown_clients_are_rejected() {
         assert!(render("unknown", "eggsact").is_err());
+    }
+
+    #[test]
+    fn windows_command_clients_emit_config_blocks_not_shell_commands() {
+        for (client, marker) in [("claude", ".claude.json"), ("vscode", ".vscode\\mcp.json")] {
+            let rendered =
+                render_for_platform(client, r"C:\Program Files\Eggsact\eggsact.exe", false, true)
+                    .unwrap();
+            assert!(rendered.contains(marker), "{client}: {rendered}");
+            assert!(!rendered.contains("claude mcp add"), "{client}: {rendered}");
+            assert!(!rendered.contains("code --add-mcp"), "{client}: {rendered}");
+            let json = &rendered[rendered.find('{').expect("config block")..];
+            let parsed: serde_json::Value = serde_json::from_str(json).unwrap();
+            assert!(parsed.is_object(), "{client}: {rendered}");
+        }
+    }
+
+    #[test]
+    fn windows_config_blocks_carry_hostile_paths_verbatim() {
+        let paths = [
+            r"C:\Program Files\Eggsact\eggsact.exe",
+            r"C:\it's\eggsact.exe",
+            "C:\\say\"hi\\eggsact.exe",
+            r"C:\%PATH%\eggsact.exe",
+            r"C:\a&b\eggsact.exe",
+            r"C:\a^b\eggsact.exe",
+        ];
+        for path in paths {
+            for client in ["claude", "vscode"] {
+                let rendered = render_for_platform(client, path, false, true).unwrap();
+                let json = &rendered[rendered.find('{').expect("config block")..];
+                let parsed: serde_json::Value = serde_json::from_str(json)
+                    .unwrap_or_else(|error| panic!("{client} with {path:?}: {error}"));
+                let command = match client {
+                    "claude" => &parsed["mcpServers"]["eggsact"]["command"],
+                    _ => &parsed["servers"]["eggsact"]["command"],
+                };
+                assert_eq!(command.as_str(), Some(path), "{client}: {rendered}");
+            }
+        }
+    }
+
+    #[test]
+    fn windows_discovery_config_blocks_include_surface_args() {
+        for client in ["claude", "vscode"] {
+            let rendered = render_for_platform(client, r"C:\eggsact.exe", true, true).unwrap();
+            assert!(rendered.contains("--mcp-surface"));
+            assert!(rendered.contains("discovery"));
+            let json = &rendered[rendered.find('{').unwrap()..];
+            let _: serde_json::Value = serde_json::from_str(json).unwrap();
+        }
+    }
+
+    #[test]
+    fn unix_command_clients_keep_shell_one_liners() {
+        let claude = render_for_platform("claude", "/opt/eggsact", false, false).unwrap();
+        assert!(claude.starts_with("claude mcp add eggsact -- "));
+        let vscode = render_for_platform("vscode", "/opt/eggsact", false, false).unwrap();
+        assert!(vscode.starts_with("code --add-mcp "));
     }
 }

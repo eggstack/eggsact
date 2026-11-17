@@ -446,7 +446,7 @@ fn toml_walk(value: &toml::Value, prefix: &str, out: &mut Vec<(String, String)>)
 /// Parse TOML and extract key-value pairs using recursive table traversal.
 /// Returns None if the text is not valid TOML.
 fn toml_parsed_kv_pairs(text: &str) -> Option<Vec<(String, String)>> {
-    let value: toml::Value = text.parse().ok()?;
+    let value: toml::Value = toml::from_str(text).ok()?;
     let mut pairs = Vec::new();
     toml_walk(&value, "", &mut pairs);
     Some(pairs)
@@ -641,7 +641,7 @@ pub fn config_file_inspect(args: &Value) -> ToolResponse {
     // guarantees without breaking the existing boolean shape.
     let parse_ok = match format {
         "json" | "package_json" => serde_json::from_str::<serde_json::Value>(text.trim()).is_ok(),
-        "toml" | "cargo_toml" | "pyproject" => text.parse::<toml::Value>().is_ok(),
+        "toml" | "cargo_toml" | "pyproject" => toml::from_str::<toml::Value>(text).is_ok(),
         "yaml" => !text.trim().is_empty(),
         _ => true,
     };
