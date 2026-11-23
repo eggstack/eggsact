@@ -91,30 +91,43 @@ redirect an install to another product or version
 
 ## The Eggup transport stack
 
-Four `eggup-*` crates plus `eggfetch-core` are pinned to a single git revision
-so the stack can never resolve to mixed sources:
+The update path uses a coordinated crates.io Eggup set. `Cargo.lock` records the
+resolved packages and ZIP security floor:
 
 | Crate | Version (`Cargo.lock`) | Role in the update path |
 |---|---|---|
-| `eggup-acquisition` | 0.1.2 | `AcquisitionRequest`, `FetchLimits`, `FetchOutcome`, `CancelFlag`, `AcquisitionError`, `redact_url` |
-| `eggup-eggfetch` | 0.1.2 | `EggfetchConfig::strict` → `EggfetchTransport`; the only runtime edge to `eggfetch-core` |
-| `eggup-core` | 0.1.2 | `InstallPlan`, `ArtifactSet`/`ArtifactMember`, `ExactIdentityValidator`, `OwnershipVerifier`, `hash_file`, `TransactionDisposition` |
-| `eggup-eggpack` | 0.1.2 | manifest parse/project/bind/materialize: `project_json`, `install_ids`, `bind_requests`, `MAX_MANIFEST_BYTES` |
-| `eggfetch-core` | 0.2.0 | in-process HTTP/1 + TLS, underneath `eggup-eggfetch` |
+| `eggup-acquisition` | 0.2.2 | `AcquisitionRequest`, `FetchLimits`, `FetchOutcome`, `CancelFlag`, `AcquisitionError`, `redact_url` |
+| `eggup-eggfetch` | 0.2.2 | `EggfetchConfig::strict` → `EggfetchTransport`; the only runtime edge to `eggfetch-core` |
+| `eggup-core` | 0.2.2 | `InstallPlan`, `ArtifactSet`/`ArtifactMember`, `ExactIdentityValidator`, `OwnershipVerifier`, `hash_file`, `TransactionDisposition` |
+| `eggup-eggpack` | 0.2.2 | manifest parse/project/bind/materialize: `project_json`, `install_ids`, `bind_requests`, `MAX_MANIFEST_BYTES` |
+| `eggup-archive` | 0.2.2 | archive verification and extraction; resolves `zip 9.6.1` |
+| `eggpack-manifest` | 0.1.2 | manifest schema reached only through `eggup-eggpack` |
+| `eggfetch-core` | 0.4.0 | in-process HTTP/1 + TLS underneath the published Eggup adapter |
 
-All four are declared with `git = "https://github.com/eggstack/eggup.git"` at the
-same `rev` ([Cargo.toml:50-53](../Cargo.toml)); the `eggup_dependency_identities_are_single_git_source`
-and `eggup_tree_has_single_source_per_package_and_no_direct_producer_edge` tests
-([update.rs:2942](../src/update.rs), [update.rs:2971](../src/update.rs)) enforce
-that as a 40-character commit SHA, one identity per package, and no direct
-`eggpack-*` producer edge. The manifest schema is reached only through
-`eggup-eggpack`, so the consumer never links the producer's schema crate.
+The four direct Eggup crates use the same exact registry requirement in
+`Cargo.toml:50-53`; no Eggup Git source is allowed. The
+`eggup_dependency_versions_are_coordinated_registry_packages` and
+`eggup_tree_has_single_registry_identity_per_package_and_no_direct_producer_edge`
+tests ([update.rs](../src/update.rs)) enforce the coordinated version, one
+registry identity per package, and no direct `eggpack-*` producer edge. The
+manifest schema remains reachable only through `eggup-eggpack`, so eggsact
+never links the producer's schema crate directly.
+
+The latest published `eggup-eggfetch 0.2.2` adapter requires
+`eggfetch-core ^0.4.0`; the direct Eggfetch dev-dependency is aligned at
+0.4.0 so the graph has one Eggfetch identity.
 
 `eggfetch-core` is a **dev**-dependency of eggsact (`Cargo.toml:57`) with
 features `http1`, `tls-rustls`, `tls-native-roots`, `proxy`. Every direct
 reference in `src/update.rs` is `#[cfg(test)]`. At runtime the binary reaches
 `eggfetch-core` transitively through `eggup-eggfetch`; the production code never
 constructs a `Client`.
+
+The producer-side Eggpack CLI is separate from this runtime dependency graph.
+The release workflow pins Eggpack v0.1.2 at revision
+`35b3fc26de63437947aa4f36764c17bd0ebb9f65` in
+`release/eggpack/github-policy.json`; regenerate the workflow from that policy
+and validate it with the Eggpack drift check rather than editing generated YAML.
 
 ### Transport policy
 

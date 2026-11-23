@@ -1,6 +1,6 @@
 # Distribution, Update, and Release Roadmap
 
-Status: active; M005a closed; audit follow-up M006-M009 registered (M006/M009 implemented pending closure, M007 blocked, M008 proposed)
+Status: active; M005a closed; M006/M009 implemented pending closure; M007 conditionally closed pending clean-tree release-check; M008 proposed
 
 Long-term references:
 
@@ -49,8 +49,8 @@ capability semantics, harness API selection, or MCP defaults.
 
 ### Infrastructure
 
-- `eggfetch-core` adoption line (0.1.6 -> 0.1.7 -> 0.2.0) with
-  lockfile/binary deltas and updater regressions.
+- Eggfetch updater line: historical 0.1.6 -> 0.1.7 -> 0.2.0 adoptions, now
+  registry 0.4.0 through M007, with lockfile deltas and updater regressions.
 - Zig 0.14.1 + cargo-zigbuild 0.23.3 as release-only tooling.
 
 ### Polish
@@ -69,28 +69,13 @@ capability semantics, harness API selection, or MCP defaults.
 
 ## 4. Current state
 
-M001-M004 remain closed historical control points. M005 replaced duplicated producer release construction with Eggpack while preserving eggsact-owned installer, updater, crates.io, tag, and publication policy, and qualified a real draft for v1.2.7. M005a then closed the one condition M005 was waiting on: the Windows release candidate is byte-reproducible, proven both by an independent double build and by a full pipeline rerun that reused all fifteen staged assets. No open distribution milestone remains; the workstream is maintenance-only.
+M001-M004 remain closed historical control points. M005 replaced duplicated producer release construction with Eggpack while preserving eggsact-owned installer, updater, crates.io, tag, and publication policy, and qualified a real draft for v1.2.7. M005a then closed the one condition M005 was waiting on: the Windows release candidate is byte-reproducible, proven both by an independent double build and by a full pipeline rerun that reused all fifteen staged assets.
 
-A November 2026 security audit of the current baseline re-opened this
-workstream. The four Eggup crates are declared as versionless git
-dependencies, so `cargo package` and `cargo publish --dry-run` fail, and
-`cargo deny check sources` denies those sources while `allow-git` is empty.
-The audit also found that update authenticity rests on TLS plus a
-same-origin SHA-256 with no signature, and three local operator-surface
-gaps. M006-M009 record the follow-up: M006 restores the source-policy
-signal, M007 is blocked on an upstream registry release carrying the ZIP
-security refresh, M008 requires an ADR before implementation, and M009 is
-independent local hardening. Distribution is maintenance-only again once
-M007 closes.
+The November 2026 audit opened M006-M009. On 2026-11-22, all four coordinated Eggup crates were published at 0.2.2; the current locked graph resolves `zip 9.6.1`, `eggfetch-core 0.4.0`, and `eggpack-manifest 0.1.2`. `Cargo.toml` now uses registry versions and `deny.toml` keeps `allow-git = []`. M007's full local merge gate, cargo-deny, provenance checks, package, and publish dry-run passed. The package and dry-run required `--allow-dirty` because the update remains uncommitted; the clean-tree `scripts/release-check.sh` remains outstanding, so M007 is conditionally closed rather than fully closed.
 
-Binary distribution qualified (C8 Zig correction `6658702`,
-v1.2.4 matrix, workflow `33944943782`, exact-tag installer checks).
-Self-update consolidated on `eggfetch-core 0.2.0` with the pinned
-feature/trust profile; lockfile 166 packages; +48-byte stripped delta
-on adoption; 19 updater tests green; ordinary CI `35734609288` +
-maintenance `35740940881` (MSRV, cargo-deny, native Windows, native
-macOS) green. No release published by the bump/corrective lines; the
-dependency reaches users with the next normal release.
+The audit's other findings remain separately scoped: M006 closure still awaits a green maintenance run and clean-tree release-check; M009 closure is pending; M008 remains proposed pending ADR-0002. Update authenticity still rests on TLS plus a same-origin SHA-256 without a signature.
+
+Binary distribution qualified (C8 Zig correction `6658702`, v1.2.4 matrix, workflow `33944943782`, exact-tag installer checks). M004's Eggfetch 0.2.0 adoption remains historical; M007 advances the active updater to Eggfetch 0.4.0 while preserving its feature/trust profile. No release was published by this local dependency update; users receive it only in a future maintainer-authorized eggsact release.
 
 ## 5. Target architecture
 
@@ -240,29 +225,31 @@ Dependencies: none (local).
 
 Deliverable boundary: exact-source `allow-git` entry, release provenance preflight, documentation; no dependency version, lockfile, or runtime change.
 
-Exit conditions: `cargo deny check advisories bans licenses sources` green; the provenance preflight fails with an actionable message and passes on a registry-only fixture; packaging stays intentionally blocked for M007.
+Exit conditions: `cargo deny check advisories bans licenses sources` green; the provenance preflight fails with an actionable message and passes on a registry-only fixture. M007 subsequently restored registry packaging and removed the temporary source exception.
 
-Deferred work: registry adoption (M007).
+Deferred work: M007 is conditionally closed; M006 closure still awaits a green maintenance run and clean-tree `release-check.sh`.
 
 Implementation plan: `plans/implementation/distribution-update-release/006-dependency-provenance-and-source-policy.md`.
 
 ### M007 — Eggup registry adoption
 
-Status: blocked
+Status: conditionally closed — implementation and local qualification passed; clean-tree release-check remains outstanding (see closure record).
 
 Class: infrastructure
 
-Objective: replace the four git pins with registry version requirements once upstream publishes a release that resolves `zip >= 9.6.1`, then remove the interim source allow-list and restore package/publish qualification.
+Objective: replace the four git pins with registry version requirements for the coordinated Eggup release resolving `zip >= 9.6.1`, remove the interim source allow-list, and restore package/publish qualification. Completed locally on 2026-11-22.
 
-Dependencies: upstream coordinated Eggup 0.2.x registry release carrying the ZIP security refresh; compatible public API.
+Dependencies: satisfied by published Eggup 0.2.2 crates and a compatible public API; see the closure record for checksums and registry evidence.
 
 Deliverable boundary: `Cargo.toml`/targeted `Cargo.lock` source change, empty `allow-git`, release-gate re-qualification. No updater behavior or feature change.
 
-Exit conditions: `cargo package` and `cargo publish --dry-run` succeed on a clean tree; `cargo tree -i zip` shows one line at 9.6.1 or newer; deny is green with an empty allow-list.
+Exit conditions: the locked graph shows one `zip 9.6.1`; deny is green with an empty allow-list; `cargo package --locked --allow-dirty` and `cargo publish --locked --dry-run --allow-dirty` pass. These package checks ran on the intentionally dirty worktree; strict clean-tree qualification remains pending.
 
-Deferred work: publication (maintainer-owned).
+Deferred work: clean-tree `scripts/release-check.sh` after the maintainer makes the local change set clean; actual publication remains a separate maintainer-owned action.
 
 Implementation plan: `plans/implementation/distribution-update-release/007-eggup-registry-adoption.md`.
+
+Closure record: `plans/closure/distribution-update-release/007-status.md` (conditionally closed).
 
 ### M008 — Release authenticity via signature verification
 
@@ -339,13 +326,13 @@ without replacement).
 
 M005 must not generalize eggsact-specific release selection/fallback policy into Eggpack. The principal migration risks are loss of public installer semantics, weaker MCP candidate qualification, mutable cross-tool provisioning, or duplicate active release workflows. HTTP surface expansion, retries, or extra updater eggfetch features remain out of scope without measurement and an ADR.
 
-M006/M007 decision point: a reviewed git source may be allow-listed only as an interim security-refresh exception, never as a basis for a published artifact. M006 must not add `version` keys to the git pins as a shortcut, because publishing then resolves the vulnerable registry 0.2.0 line. M007 is the only path back to a releasable crate.
+M006/M007 decision point: the exact-source Git allow-list was an interim security-refresh exception, not a publishable dependency policy. M007 replaced those pins with coordinated registry versions and returned `allow-git` to empty. The provenance preflight remains as a guard against future versionless Git dependencies; do not reintroduce git pins or add misleading `version` keys to them.
 
 M008 decision point: signing is a current non-goal. It requires an accepted ADR covering scheme, key custody, rotation, and bootstrap before any implementation. Without that decision, update authenticity remains TLS plus a same-origin digest, and the milestone stays proposed.
 
 ## 11. Completion definition
 
-M001-M004 stay closed historical milestones. M005 is closed with Eggpack producer authority qualified against a real draft/release, all eggsact-owned installer/updater/release-order semantics preserved, and its one conditional condition discharged by M005a. M005a remains the last closed milestone; M006-M009 are the November 2026 audit follow-up, and the workstream returns to maintenance-only once M007 closes (weekly MSRV/cargo-deny/platform checks, the Windows release reproducibility job, the Eggpack drift guard, and the release-contract guard).
+M001-M005a remain closed historical milestones. M005 is closed with Eggpack producer authority qualified against a real draft/release, all eggsact-owned installer/updater/release-order semantics preserved, and its condition discharged by M005a. M006-M009 are the November 2026 audit follow-up: M007 is conditionally closed with local qualification evidence, while M006 and M009 still await their closure evidence and M008 remains proposed. The workstream returns to maintenance-only once the remaining M006/M009 closure evidence is recorded (weekly MSRV/cargo-deny/platform checks, Windows release reproducibility, Eggpack drift, and release-contract guards).
 
 ## 12. Milestone status
 
@@ -359,6 +346,6 @@ M001-M004 stay closed historical milestones. M005 is closed with Eggpack produce
 | M005 Eggpack producer adoption + live draft qualification | closed | `plans/archive/implementation/distribution-update-release/005-eggpack-producer-adoption-and-live-draft-qualification.md` | `plans/closure/distribution-update-release/005-status.md` | Condition discharged by M005a; all former hard dependencies closed |
 | M005a Deterministic Windows release artifacts | closed | `plans/archive/implementation/distribution-update-release/005a-deterministic-windows-release-artifacts.md` | `plans/closure/distribution-update-release/005a-status.md` | None; M006-M009 opened by the November 2026 security audit |
 | M006 dependency provenance and source policy | implemented | `plans/implementation/distribution-update-release/006-dependency-provenance-and-source-policy.md` | — | Closure evidence: green maintenance run + clean-tree release-check |
-| M007 Eggup registry adoption | blocked | `plans/implementation/distribution-update-release/007-eggup-registry-adoption.md` | — | Upstream registry release with `zip >= 9.6.1`; verified 0.2.0 still requires `zip ^6.0.0` |
+| M007 Eggup registry adoption | conditionally closed | `plans/implementation/distribution-update-release/007-eggup-registry-adoption.md` | `plans/closure/distribution-update-release/007-status.md` | All local acceptance checks pass; strict clean-tree `scripts/release-check.sh` remains pending because the change set is intentionally uncommitted |
 | M008 release authenticity via signature verification | proposed | `plans/implementation/distribution-update-release/008-release-authenticity-signature-verification.md` | — | ADR-0002 acceptance and an upstream signature carrier |
 | M009 operator-surface hardening | implemented | `plans/implementation/distribution-update-release/009-operator-surface-hardening.md` | — | Local merge gate green; closure record pending |

@@ -47,14 +47,14 @@ caseless = "0.2"
 toml = "1.2"
 toml_edit = "0.25"
 tokio = { version = "1", features = ["rt", "macros", "io-std", "io-util", "sync", "time", "fs", "net"] }
-eggup-acquisition = { git = "https://github.com/eggstack/eggup.git", rev = "fe763189e4cfe1e0e6d6c62d431717d82b69f9f5" }
-eggup-core = { git = "https://github.com/eggstack/eggup.git", rev = "fe763189e4cfe1e0e6d6c62d431717d82b69f9f5" }
-eggup-eggfetch = { git = "https://github.com/eggstack/eggup.git", rev = "fe763189e4cfe1e0e6d6c62d431717d82b69f9f5" }
-eggup-eggpack = { git = "https://github.com/eggstack/eggup.git", rev = "fe763189e4cfe1e0e6d6c62d431717d82b69f9f5" }
+eggup-acquisition = { version = "=0.2.2" }
+eggup-core = { version = "=0.2.2" }
+eggup-eggfetch = { version = "=0.2.2" }
+eggup-eggpack = { version = "=0.2.2" }
 
 [dev-dependencies]
 url = "2"
-eggfetch-core = { version = "0.2.0", default-features = false, features = ["http1", "tls-rustls", "tls-native-roots", "proxy"] }
+eggfetch-core = { version = "0.4.0", default-features = false, features = ["http1", "tls-rustls", "tls-native-roots", "proxy"] }
 futures-util = "0.3"
 
 [features]

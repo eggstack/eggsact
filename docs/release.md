@@ -106,17 +106,21 @@ sources. The release gate enforces this before formatting with
 (including dev, build, workspace, and target-specific tables) and fails when a
 dependency is declared with `git` and no `version`.
 
-The four Eggup crates are currently an interim, exact-SHA exception: they are
-pinned to one reviewed commit in `Cargo.toml`, and `deny.toml` allow-lists
-exactly that repository. That pin carries the ZIP security refresh. Until plan
-007 replaces the pins with a registry release whose dependency graph resolves
-`zip >= 9.6.1`, `cargo package` and `cargo publish --dry-run` fail by design,
-and the provenance preflight names the blocker in seconds.
+The four direct Eggup dependencies now use the coordinated crates.io 0.2.2
+release set. Its archive dependency resolves `zip 9.6.1`, and the manifest
+consumer resolves `eggpack-manifest 0.1.2`; `deny.toml` keeps `allow-git`
+empty. The release provenance preflight remains a guard against future
+versionless Git dependencies, not an expected blocker. The published
+`eggup-eggfetch 0.2.2` adapter uses Eggfetch 0.4.0.
 
-Do not "repair" packaging by adding `version` keys to the git declarations:
-`cargo publish` would resolve the registry release instead of the pinned
-revision, silently shipping the vulnerable dependency graph. The preflight's
-message points at the owning plan.
+Eggpack is the producer-side release-workflow tool, separate from runtime
+Cargo dependencies. The workflow pins Eggpack CLI 0.1.2 at the exact revision
+in `release/eggpack/github-policy.json`; changes to that pin require workflow
+regeneration and a green Eggpack drift check.
+
+Do not add `version` keys to Git dependencies as a packaging workaround.
+Registry provenance must be established by selecting and qualifying a
+registry-sourced release; `allow-git` must remain empty.
 
 Optional parity gate (requires Python `eggcalc` at `../eggcalc`):
 

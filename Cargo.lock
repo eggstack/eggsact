@@ -261,9 +261,9 @@ dependencies = [
 
 [[package]]
 name = "eggfetch-core"
-version = "0.2.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27463e41d20019d7f1dd877ab2e71d49db14a01e2781766ecc2ef112421e4055"
+checksum = "db5ee3c2312c08942874fbc4b44d91c4ef674f19fb5e9d6edd1281c94225f65e"
 dependencies = [
  "base64",
  "bytes",
@@ -293,9 +293,9 @@ dependencies = [
 
 [[package]]
 name = "eggfetch-http-connect"
-version = "0.2.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbc41df795f7b7152912bc8fccf424c58ceb76da83eed31096edaef2a9340d5f"
+checksum = "16ee2bb546c6c60c27e32779a75f1472ccd419a3472c88ab8f03721de2223f25"
 dependencies = [
  "base64",
  "thiserror",
@@ -304,9 +304,9 @@ dependencies = [
 
 [[package]]
 name = "eggpack-manifest"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "352c3e327159615b763298e911e239f1decc4a2c9e28c28be8ddd28e50515e37"
+checksum = "4bbbe8d12026adf7c8e8ddaecbed0c6ac403a5621d4dd1ac9949f8daf8149a09"
 dependencies = [
  "serde",
  "serde_json",
@@ -348,13 +348,15 @@ dependencies = [
 
 [[package]]
 name = "eggup-acquisition"
-version = "0.2.0"
-source = "git+https://github.com/eggstack/eggup.git?rev=fe763189e4cfe1e0e6d6c62d431717d82b69f9f5#fe763189e4cfe1e0e6d6c62d431717d82b69f9f5"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4000935b1d4d384eaba066c9742e70f91d5cb3dd12618ac3aa79d654e2aab865"
 
 [[package]]
 name = "eggup-archive"
-version = "0.2.0"
-source = "git+https://github.com/eggstack/eggup.git?rev=fe763189e4cfe1e0e6d6c62d431717d82b69f9f5#fe763189e4cfe1e0e6d6c62d431717d82b69f9f5"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67ab697e3af41b3cd3d1ed140f821c68739ec446d2a7782fa26ca4960edc882b"
 dependencies = [
  "flate2",
  "fs_at",
@@ -365,8 +367,9 @@ dependencies = [
 
 [[package]]
 name = "eggup-core"
-version = "0.2.0"
-source = "git+https://github.com/eggstack/eggup.git?rev=fe763189e4cfe1e0e6d6c62d431717d82b69f9f5#fe763189e4cfe1e0e6d6c62d431717d82b69f9f5"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0b0dba6035ec7d403ddf0298f1021a5bd544764f9bb4e3011cb31b2dacd614b"
 dependencies = [
  "self-replace",
  "sha2 0.10.9",
@@ -374,8 +377,9 @@ dependencies = [
 
 [[package]]
 name = "eggup-eggfetch"
-version = "0.2.0"
-source = "git+https://github.com/eggstack/eggup.git?rev=fe763189e4cfe1e0e6d6c62d431717d82b69f9f5#fe763189e4cfe1e0e6d6c62d431717d82b69f9f5"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f683e0c3b377a1713a5af4a64257f785da24f17771a927c07508b0d73ad35df1"
 dependencies = [
  "eggfetch-core",
  "eggup-acquisition",
@@ -385,8 +389,9 @@ dependencies = [
 
 [[package]]
 name = "eggup-eggpack"
-version = "0.2.0"
-source = "git+https://github.com/eggstack/eggup.git?rev=fe763189e4cfe1e0e6d6c62d431717d82b69f9f5#fe763189e4cfe1e0e6d6c62d431717d82b69f9f5"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f24df78cf088e665dd69db1b319d7168007175ebc1ec5d2df76a069e31242e49"
 dependencies = [
  "eggpack-manifest",
  "eggup-acquisition",
@@ -461,9 +466,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -1648,9 +1653,9 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",

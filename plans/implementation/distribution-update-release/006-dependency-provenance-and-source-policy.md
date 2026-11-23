@@ -1,8 +1,8 @@
 # Distribution, Update, and Release Milestone 006 — Dependency Provenance and Source Policy
 
-Status: implemented — local merge gate and `cargo deny` green; closure pending a green maintenance run and a clean-tree `release-check.sh`; packaging stays intentionally blocked until 007
+Status: implemented — local merge gate, provenance checks, and `cargo deny` green; M007 has restored registry packaging and removed the temporary source exception. Closure remains pending a green maintenance run and a clean-tree `release-check.sh`.
 
-Repository baseline: `main` at `b4ec154` plus the uncommitted audit dependency refresh (`Cargo.toml`, `Cargo.lock`, API adaptations)
+Repository baseline reviewed: `b299d49` on `audit/security-followups-006-009` plus the uncommitted audit/dependency refresh (`Cargo.toml`, `Cargo.lock`, API adaptations).
 
 Source roadmap:
 
@@ -38,9 +38,10 @@ Two bounded outcomes:
    with `git` but without a `version`, naming milestone 007 as the only
    remediation.
 
-This plan does **not** restore releasability. `cargo package` must keep
-failing until 007 replaces the git pins with a registry release that carries
-the ZIP security refresh.
+At M006 implementation time, this plan did **not** restore releasability;
+`cargo package` was intentionally blocked until M007 replaced the git pins.
+M007 has since restored registry packaging and removed the temporary source
+allow-list; see `plans/closure/distribution-update-release/007-status.md`.
 
 ## 2. Why this milestone is ready
 
@@ -52,7 +53,7 @@ the ZIP security refresh.
 - No runtime, tool, schema, or protocol behavior changes, so the ordinary
   merge gate is unaffected.
 
-## 3. Current implementation evidence
+## 3. Evidence at M006 implementation time (historical; M007 supersedes the package blocker)
 
 - `Cargo.toml:50-53` declares `eggup-acquisition`, `eggup-core`,
   `eggup-eggfetch`, and `eggup-eggpack` as git dependencies with `rev` and no

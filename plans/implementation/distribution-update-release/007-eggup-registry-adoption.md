@@ -1,8 +1,8 @@
 # Distribution, Update, and Release Milestone 007 — Eggup Registry Adoption
 
-Status: blocked — requires an upstream Eggup registry release (0.2.x or later) whose dependency graph resolves `zip` at or above the ZIP security refresh
+Status: conditionally closed — published versions and local qualification passed; clean-tree release-check remains pending (see `plans/closure/distribution-update-release/007-status.md`)
 
-Repository baseline: `main` at `b4ec154` plus the uncommitted audit dependency refresh; re-verify at handoff
+Repository baseline reviewed: `b299d49` on `audit/security-followups-006-009` plus the uncommitted dependency refresh; no commit or push made.
 
 Source roadmap:
 
@@ -25,46 +25,49 @@ Primary class: infrastructure
 ## 1. Objective
 
 Replace the four git-pinned Eggup dependencies with registry version
-requirements once upstream publishes a release that carries the ZIP security
-refresh, then remove the interim source allow-list from milestone 006 and
-restore a working `cargo package` / `cargo publish --dry-run` path.
+requirements from the coordinated release carrying the ZIP security refresh,
+remove the interim source allow-list from milestone 006, and restore a working
+`cargo package` / `cargo publish --dry-run` path. This objective is implemented;
+strict clean-tree qualification remains as conditional closure evidence.
 
 The fixed outcome is a publishable crate whose dependency graph resolves
 `zip 9.6.1` or newer without relying on a git revision.
 
 ## 2. Why this milestone is ready
 
-It is **not** ready. Entry criteria:
+The upstream entry criteria were satisfied on 2026-11-22:
 
-- Upstream `eggup-acquisition`, `eggup-core`, `eggup-eggfetch`, and
-  `eggup-eggpack` are published to crates.io at one coordinated version
-  (0.2.x or later).
-- The published release's dependency graph resolves `zip` at or above 9.6.1
-  (the pinned commit `fe763189…` line), not the vulnerable 6.0.0 used by the
-  published 0.2.0 tag.
-- The published crate's public API remains compatible with the current
-  `src/update.rs` integration, or any drift is bounded and recorded before
-  handoff.
+- crates.io publishes all four coordinated Eggup crates at 0.2.2; they are
+  unyanked and declare Rust 1.89. Their exact checksums are recorded in the
+  closure record.
+- The locked graph resolves `zip 9.6.1` through `eggup-archive 0.2.2`; the
+  prior published 0.2.0 line's `zip 6.x` constraint is no longer used.
+- The published API integrates with `src/update.rs`; the full local test gate
+  passed.
 
 All local interfaces are known: `Cargo.toml:50-53`, the lockfile source
 entries, `deny.toml` sources section, and the release gate.
 
 ## 3. Current implementation evidence
 
-- `Cargo.toml:50-53` pins all four Eggup crates to commit
-  `fe763189e4cfe1e0e6d6c62d431717d82b69f9f5` with no `version`.
-- `cargo tree --locked -i zip` resolves `zip v9.6.1` through
-  `eggup-archive` → `eggup-eggpack` → `eggsact`.
-- The published Eggup 0.2.0 tag still uses `zip 6.0.0`; that is why the git
-  pin exists. Current users of the published eggsact release therefore carry
-  the vulnerable ZIP line until this milestone lands and a new eggsact
-  release is cut.
-- `cargo package --locked --no-verify --allow-dirty` fails:
-  `all dependencies must have a version specified when packaging`.
-- `cargo deny check sources` fails while four git sources are present; it is
-  green after 006 only because the source is allow-listed.
-- `scripts/release-check.sh` cannot pass its package/publish steps in this
-  state.
+- `Cargo.toml:50-53` uses exact registry requirements for all four Eggup
+  crates at 0.2.2; `deny.toml` has `allow-git = []`. Published versions and
+  checksums are listed in `plans/closure/distribution-update-release/007-status.md`.
+- `cargo tree --locked -i zip` resolves one `zip v9.6.1` through
+  `eggup-archive 0.2.2` → `eggup-eggpack 0.2.2`; the same locked graph
+  resolves `eggfetch-core 0.4.0` and `eggpack-manifest 0.1.2`.
+- crates.io reports Eggfetch 0.4.0, Eggpack manifest 0.1.2, and Eggpack CLI
+  0.1.2 as current stable releases; the binary workflow pins the CLI separately
+  at the revision in `release/eggpack/github-policy.json`.
+- `cargo deny check advisories bans licenses sources`, the provenance
+  preflight and its fixture self-test, the full merge gate,
+  `cargo package --locked --allow-dirty`, and
+  `cargo publish --locked --dry-run --allow-dirty` all pass.
+- The first deny run identified RUSTSEC-2026-0592 in `url 2.5.8`; the lockfile
+  now resolves `url 2.5.9` and `form_urlencoded 1.2.3`, after which deny passed.
+- `scripts/release-check.sh` was not run because it requires a clean worktree;
+  this task explicitly leaves the update uncommitted. The conditional closure
+  records that remaining operational check.
 
 ## 4. Invariants that must not regress
 

@@ -3311,30 +3311,26 @@ mod tests {
         handle.abort();
     }
 
-    /// Matrix row 16: one immutable Eggup source identity, no direct Eggpack
+    /// Matrix row 16: one coordinated Eggup registry set, no direct Eggpack
     /// producer crates.
     #[test]
-    fn eggup_dependency_identities_are_single_git_source() {
+    fn eggup_dependency_versions_are_coordinated_registry_packages() {
         let manifest = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"));
-        let mut revs = Vec::new();
-        for line in manifest.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("eggup-") {
-                let rev = trimmed
-                    .split("rev =")
-                    .nth(1)
-                    .expect("every eggup dependency pins an exact rev")
-                    .trim()
-                    .trim_matches(|c| c == '"' || c == '}' || c == ' ')
-                    .to_owned();
-                assert_eq!(rev.len(), 40, "rev is a full commit SHA, not a branch");
-                revs.push(rev);
-            }
-        }
-        assert_eq!(revs.len(), 4, "core, acquisition, eggfetch, and eggpack");
+        let eggup_dependencies = manifest
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("eggup-"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            eggup_dependencies.len(),
+            4,
+            "core, acquisition, eggfetch, and eggpack"
+        );
         assert!(
-            revs.windows(2).all(|pair| pair[0] == pair[1]),
-            "one Eggup revision, no mixed sources: {revs:?}"
+            eggup_dependencies
+                .iter()
+                .all(|line| line.contains("version = \"=0.2.2\"") && !line.contains("git =")),
+            "all four Eggup crates use the coordinated 0.2.2 registry set: {eggup_dependencies:?}"
         );
         assert!(
             !manifest.contains("eggpack-manifest"),
@@ -3343,11 +3339,12 @@ mod tests {
     }
 
     #[test]
-    fn eggup_tree_has_single_source_per_package_and_no_direct_producer_edge() {
+    fn eggup_tree_has_single_registry_identity_per_package_and_no_direct_producer_edge() {
         let direct = std::process::Command::new("cargo")
             .args([
                 "tree",
                 "--offline",
+                "--locked",
                 "--depth",
                 "1",
                 "--prefix",
@@ -3371,16 +3368,28 @@ mod tests {
         );
 
         let full = std::process::Command::new("cargo")
-            .args(["tree", "--offline", "--prefix", "none", "--no-dedupe"])
+            .args([
+                "tree",
+                "--offline",
+                "--locked",
+                "--prefix",
+                "none",
+                "--no-dedupe",
+            ])
             .output()
             .expect("cargo tree runs offline");
         assert!(full.status.success(), "cargo tree succeeds");
         let full = String::from_utf8_lossy(&full.stdout);
+        assert!(
+            !full.contains("github.com/eggstack/eggup"),
+            "Eggup dependencies resolve from the registry, not Git"
+        );
         for package in [
             "eggup-core",
             "eggup-acquisition",
             "eggup-eggfetch",
             "eggup-eggpack",
+            "eggup-archive",
         ] {
             let mut identities: Vec<&str> = full
                 .lines()
@@ -3392,12 +3401,24 @@ mod tests {
             assert_eq!(
                 identities.len(),
                 1,
-                "{package} must resolve to one source identity, got {identities:?}"
+                "{package} must resolve to one registry version, got {identities:?}"
             );
             assert!(
-                identities[0].contains("https://github.com/eggstack/eggup.git?rev="),
-                "{package} resolves to the pinned Eggup revision"
+                identities[0].contains("v0.2.2"),
+                "{package} must use the coordinated 0.2.2 set, got {identities:?}"
             );
         }
+
+        let mut fetch_identities: Vec<&str> = full
+            .lines()
+            .filter(|line| line.starts_with("eggfetch-core v"))
+            .collect();
+        fetch_identities.sort_unstable();
+        fetch_identities.dedup();
+        assert_eq!(fetch_identities.len(), 1, "Eggfetch must not be duplicated");
+        assert!(
+            fetch_identities[0].contains("v0.4.0"),
+            "published Eggup adapter requires Eggfetch 0.4: {fetch_identities:?}"
+        );
     }
 }
