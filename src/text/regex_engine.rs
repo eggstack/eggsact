@@ -996,11 +996,9 @@ mod compile_tests {
 
     #[test]
     fn compile_engine_used_matches_compiled_variant() {
-        // Simple pattern: should be rust-regex
         let compiled = compile_regex(r"\w+", None, false, false, false).unwrap();
         assert_eq!(compiled.engine_used(), RegexEngineUsed::RustRegex);
 
-        // Lookahead pattern: should be fancy-regex
         let compiled = compile_regex(r"(?=x)x", None, false, false, false).unwrap();
         assert_eq!(compiled.engine_used(), RegexEngineUsed::FancyRegex);
     }

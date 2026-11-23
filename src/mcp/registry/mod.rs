@@ -49,7 +49,6 @@ mod tests {
     #[test]
     fn all_tools_have_valid_exposure() {
         for spec in all_tools_vec() {
-            // exposure is typed as ToolExposure, so this always has a valid variant.
             // This test documents the invariant and ensures as_str() works.
             let _ = spec.exposure.as_str();
         }

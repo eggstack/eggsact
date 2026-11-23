@@ -1,26 +1,26 @@
 # Distribution, Update, and Release Milestone 007 — Closure Status
 
-Status: conditionally closed
+Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/distribution-update-release/007-eggup-registry-adoption.md`
+- `plans/archive/implementation/distribution-update-release/007-eggup-registry-adoption.md`
 
 Source subsystem roadmap:
 
 - `plans/subsystems/distribution-update-release-roadmap.md#7`
 
-Repository baseline reviewed: `b299d49` on `audit/security-followups-006-009`, with the dependency update and planning changes uncommitted.
+Dependency update commit: `a8416e9868e419f72942bb42795f19d4cbc9c9a2` on `audit/security-followups-006-009`. The follow-up closure and archival changes are recorded in the current PR.
 
-Implementation commits or pull requests:
+Implementation commit and pull request:
 
-- None for this update. The local changes remain uncommitted as requested; no push or publication was performed.
+- [`a8416e9`](https://github.com/eggstack/eggsact/commit/a8416e9868e419f72942bb42795f19d4cbc9c9a2); [PR #1](https://github.com/eggstack/eggsact/pull/1). No crate publication or release tag was performed.
 
 ## 1. Executive finding
 
 M007's registry adoption is implemented and its local qualification passed. The four coordinated Eggup crates are now sourced from crates.io at 0.2.2, the updater transport resolves Eggfetch 0.4.0, Eggpack's manifest consumer resolves 0.1.2, and the locked graph contains one `zip 9.6.1`. The source exception is removed (`allow-git = []`), the provenance preflight remains active, and the updated API passes the full local merge gate.
 
-The status is **conditionally closed**, not fully closed: `scripts/release-check.sh` requires a clean worktree. The user explicitly requested no commit or push, so the clean-tree release-check could not be run against this local change set. The package and publish dry-run commands were run with Cargo's explicit `--allow-dirty` option and passed. Run the clean-tree release-check after the change set is committed/otherwise clean to promote this closure to `closed`.
+The clean-tree `scripts/release-check.sh` passed on commit `a8416e9`. Maintenance run [45089096709](https://github.com/eggstack/eggsact/actions/runs/45089096709) passed all five jobs: macOS and Windows checks, `cargo-deny`, MSRV, and Windows reproducibility. Package and publish dry-run checks passed; the dry run aborted before upload, and no crate was published.
 
 ## 2. Requirement-to-evidence matrix
 
@@ -33,7 +33,8 @@ The status is **conditionally closed**, not fully closed: `scripts/release-check
 | Dependency provenance guard accepts the production manifest and its regression fixtures | `python3 scripts/check-dependency-provenance.py`; `python3 scripts/check-dependency-provenance.py --self-test` | pass | Manifest accepted; all 10 self-tests passed |
 | Ordinary merge gate passes | fmt, generated-docs check, Clippy, full non-parity test suite, doc tests | pass | Full gate rerun after the final lockfile update; parity is excluded per standing CI gate |
 | Package and publish dry-run qualify | `cargo package --locked --allow-dirty`; `cargo publish --locked --dry-run --allow-dirty` | pass | Publish command ended with “aborting upload due to dry run”; nothing was published |
-| Strict clean-tree release gate | `scripts/release-check.sh` | partial / not run | Requires a clean worktree; deferred to respect the no-commit/no-push scope |
+| Strict clean-tree release gate | `scripts/release-check.sh` | pass | Passed on clean commit `a8416e9`. |
+| Hosted Maintenance | [Run 45089096709](https://github.com/eggstack/eggsact/actions/runs/45089096709) | pass | All five jobs passed: macOS, Windows, cargo-deny, MSRV, and Windows reproducibility. |
 | Package file inventory | `cargo package --locked --allow-dirty --list` | pass with observation | 290 files listed; 10 existing `release/eggpack/` configuration files are included because that directory is not excluded. They were not introduced by M007. |
 
 ### Published Eggup 0.2.2 checksums
@@ -71,6 +72,7 @@ cargo package --locked --allow-dirty --list
 cargo tree --locked -i zip
 cargo tree --locked -i eggfetch-core
 cargo tree --locked -i eggpack-manifest
+scripts/release-check.sh
 ```
 
 ### Results and failure correction
@@ -81,12 +83,12 @@ The merge gate was run after that final lockfile update. Formatting, generated d
 
 `cargo package --list` listed 290 files, including 10 checked-in `release/eggpack/` policy/configuration files. The package exclusion list was not changed by M007; this inclusion is recorded transparently and is not newly introduced by the dependency refresh.
 
-### Not run
+### Hosted checks and not-run scope
 
-- `scripts/release-check.sh`: clean-worktree precondition not met; the user asked that the changes remain uncommitted.
-- Native Windows execution, separate native Windows/macOS platform qualification jobs, and the remote maintenance workflow: not run. The local merge gate did run on macOS.
-- Parity tests: excluded from the ordinary merge gate; no behavior change was intended.
-- Actual `cargo publish`, tag, push, or release: explicitly not performed.
+- Maintenance run `45089096709` passed all five jobs, including native Windows/macOS checks and Windows reproducibility.
+- PR #1 CI and Release drift checks passed on `a8416e9`.
+- Parity tests were excluded from the ordinary merge gate; no behavior change was intended.
+- Actual `cargo publish`, tag, or release was not performed.
 
 ## 5. Invariant review
 
@@ -95,7 +97,7 @@ The merge gate was run after that final lockfile update. Formatting, generated d
 - No advisory exception was added. The `url` fix is a lockfile update to the patched release.
 - Eggfetch feature selection and HTTP/1/TLS/proxy policy remain unchanged; no retries or new transport surface were introduced.
 - Release determinism flags and updater publication/tag policy were not changed by M007.
-- Cargo validation commands use `--locked`; package and dry-run additionally use `--allow-dirty` solely because the authorized local changes are uncommitted.
+- Cargo validation commands use `--locked`. The initial package and dry-run used `--allow-dirty`; the strict clean-tree release-check also passed on `a8416e9`.
 
 ## 6. Failure, cancellation, truncation, and contention review
 
@@ -103,7 +105,7 @@ No new updater runtime path was introduced beyond the published API compatibilit
 
 ## 7. Migration and compatibility review
 
-The source migration is from exact git revisions to coordinated crates.io Eggup 0.2.2 versions. Existing eggsact releases remain unchanged; users receive these dependencies only through a later maintainer-authorized eggsact release. The current change does not publish, tag, or alter the product's release order. Native Windows execution remains unverified in this environment.
+The source migration is from exact Git revisions to coordinated crates.io Eggup 0.2.2 versions. Existing eggsact releases remain unchanged; users receive these dependencies only through a later maintainer-authorized eggsact release. Maintenance passed the Windows/macOS checks and Windows reproducibility job; the full merge gate ran locally on macOS. No release was published or tagged.
 
 ## 8. Determinism and bounded-execution review
 
@@ -117,15 +119,13 @@ Updated release/dependency documentation, `AGENTS.md`, M006/M007 implementation 
 
 | Severity | Finding | Impact | Required action |
 |---|---|---|---|
-| Medium | Clean-tree `scripts/release-check.sh` was not run because the working tree is intentionally uncommitted | The exact clean-tree precondition in the source plan is not yet proven | Run after the maintainer makes the change set clean; then upgrade this closure to `closed` |
 | Informational | Cargo package inventory includes 10 existing `release/eggpack/` config files | No dependency-update behavior impact; files were already included by the package policy | No M007 change; consider only in a separate package-content review if scope warrants |
 
 ## 11. Roadmap disposition
 
-**Milestone conditionally closed with named operational evidence outstanding.** The source switch, ZIP floor, deny/source policy, provenance guard, package verification, publish dry-run, and ordinary local merge gate are satisfied. The remaining condition is the clean-tree `scripts/release-check.sh`; no user-facing release may be inferred from this local closeout.
+**Milestone closed.** The source switch, ZIP floor, deny/source policy, provenance guard, package verification, publish dry-run, ordinary merge gate, clean-tree `scripts/release-check.sh`, and hosted Maintenance evidence are complete. This closeout does not publish or imply a user-facing eggsact release.
 
 ## 12. Registry updates
 
-- `plans/registry.md`: remove M007 from blocked/open work and list it as conditionally closed with this record; update M006 to show that packaging is restored but its separate maintenance/clean-tree closure evidence remains pending.
-- `plans/subsystems/distribution-update-release-roadmap.md`: record M007's conditional closure, current dependency versions, and the clean-tree check condition.
-- `plans/implementation/distribution-update-release/007-eggup-registry-adoption.md`: update status and current evidence; retain the clean-tree release-check as the closure condition.
+- `plans/registry.md` and `plans/subsystems/distribution-update-release-roadmap.md` record M006 and M007 as closed with their collected evidence.
+- `plans/archive/implementation/distribution-update-release/007-eggup-registry-adoption.md`: archived with completed status and evidence; no closure condition remains.

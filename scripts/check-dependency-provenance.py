@@ -26,7 +26,7 @@ except ModuleNotFoundError:  # Python < 3.11
     )
     raise SystemExit(2)
 
-PLAN = "plans/implementation/distribution-update-release/007-eggup-registry-adoption.md"
+REFERENCE = "plans/closure/distribution-update-release/007-status.md"
 DEPENDENCY_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
 USAGE = "usage: check-dependency-provenance.py [Cargo.toml | --self-test]"
 
@@ -99,10 +99,10 @@ def check_manifest_bytes(data, label):
             "  makes cargo publish resolve the registry release instead of the pinned",
             "  revision, silently changing the shipped dependency graph.",
             "",
-            f"Remediation: {PLAN}",
-            "  Requires a published Eggup registry release whose dependency graph",
-            "  resolves zip at or above 9.6.1 (the pinned commit line).",
-            "  Do not add version keys to the git declarations.",
+            "Remediation: replace the Git dependency with a reviewed registry release.",
+            f"  See {REFERENCE} for the completed Eggup adoption precedent.",
+            "  If no compatible release exists, block packaging and plan a scoped",
+            "  upstream adoption; do not add a version key to the Git declaration.",
         ]
     )
     return 1, lines
@@ -134,7 +134,7 @@ eggup-core = { version = "0.2.1" }
         None,
     ),
     (
-        "git without version fails and names the owning plan",
+        "git without version fails and names the dependency",
         """
 [package]
 name = "fixture"

@@ -1,8 +1,8 @@
 # Distribution, Update, and Release Milestone 006 — Dependency Provenance and Source Policy
 
-Status: implemented — local merge gate, provenance checks, and `cargo deny` green; M007 has restored registry packaging and removed the temporary source exception. Closure remains pending a green maintenance run and a clean-tree `release-check.sh`.
+Status: closed — provenance guard, `cargo deny`, Maintenance, and clean-tree `release-check.sh` passed; see `plans/closure/distribution-update-release/006-status.md`. M007 restored registry packaging and removed the temporary source exception.
 
-Repository baseline reviewed: `b299d49` on `audit/security-followups-006-009` plus the uncommitted audit/dependency refresh (`Cargo.toml`, `Cargo.lock`, API adaptations).
+Implementation baseline: `b299d49` on `audit/security-followups-006-009`; the dependency refresh later landed in `a8416e9`.
 
 Source roadmap:
 
@@ -58,7 +58,7 @@ allow-list; see `plans/closure/distribution-update-release/007-status.md`.
 - `Cargo.toml:50-53` declares `eggup-acquisition`, `eggup-core`,
   `eggup-eggfetch`, and `eggup-eggpack` as git dependencies with `rev` and no
   `version`. `HEAD` (`e336b320…`) has the same shape at an older revision, so
-  this predates the current uncommitted refresh.
+  this predates the dependency refresh committed in `a8416e9`.
 - `cargo package --locked --no-verify --allow-dirty` fails with:
   `error: all dependencies must have a version specified when packaging.
   dependency 'eggup-acquisition' does not specify a version`.
@@ -303,8 +303,9 @@ the ordinary merge gate if any Rust file is touched.
 - A registry-only fixture manifest passes the preflight.
 - No `version` key is added to a git dependency; no lockfile dependency
   version changes.
-- Publishing remains impossible until 007; no temporary publishing mode,
-  `--allow-dirty` workflow, or gate bypass is introduced.
+- The preflight rejects versionless Git dependencies; use a reviewed registry
+  release rather than adding a `version` key to a Git declaration. M007 completed
+  the original Eggup migration without adding a publishing bypass.
 
 ## 14. Stop conditions
 
@@ -320,23 +321,23 @@ Stop and report rather than improvise when:
   redden every pull request;
 - scope expands into dependency versions, update behavior, or signing.
 
-## 15. Closure evidence required
+## 15. Closure evidence collected
 
-The closure record must contain:
-
-- the `deny.toml` diff and the exact `cargo deny check advisories bans
-  licenses sources` output;
-- the preflight's failing output on the baseline and passing output on a
-  registry-only fixture;
-- the scratch second-source denial evidence;
-- a green maintenance run URL for the `cargo-deny` job;
-- links to the documentation changes;
-- an explicit statement that `cargo package` remains blocked and 007 owns it.
+- The provenance self-test passed all 10 cases; the current manifest passes, and
+  the archived implementation note records that a second, unlisted Git source
+  was denied.
+- Maintenance run [45089096709](https://github.com/eggstack/eggsact/actions/runs/45089096709)
+  passed all five jobs, including `cargo-deny`.
+- `scripts/release-check.sh` passed on the clean dependency-update commit
+  `a8416e9`; M007 restored registry packaging and removed the temporary allow-list.
+- The full evidence and resulting dependency versions are recorded in
+  `plans/closure/distribution-update-release/006-status.md` and
+  `plans/closure/distribution-update-release/007-status.md`.
 
 ## 16. Handoff notes
 
-- The working tree is dirty from the dependency refresh; do not run
-  `scripts/release-check.sh` before committing and expect it to progress.
+- At implementation time the dependency refresh was uncommitted; the clean-tree
+  release check was later run successfully on `a8416e9`.
 - Do not "repair" packaging by adding `version` keys to the four git
   dependencies. That is the trap this plan exists to prevent.
 - Keep `zip 9.6.1` in the lock; a source-policy change must not alter the

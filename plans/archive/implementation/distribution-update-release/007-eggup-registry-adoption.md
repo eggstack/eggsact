@@ -1,8 +1,8 @@
 # Distribution, Update, and Release Milestone 007 — Eggup Registry Adoption
 
-Status: conditionally closed — published versions and local qualification passed; clean-tree release-check remains pending (see `plans/closure/distribution-update-release/007-status.md`)
+Status: closed — registry adoption, clean-tree release qualification, and Maintenance passed; see `plans/closure/distribution-update-release/007-status.md`.
 
-Repository baseline reviewed: `b299d49` on `audit/security-followups-006-009` plus the uncommitted dependency refresh; no commit or push made.
+Dependency update landed in `a8416e9` on `audit/security-followups-006-009` (PR #1); no crate publication or tag was performed.
 
 Source roadmap:
 
@@ -27,8 +27,8 @@ Primary class: infrastructure
 Replace the four git-pinned Eggup dependencies with registry version
 requirements from the coordinated release carrying the ZIP security refresh,
 remove the interim source allow-list from milestone 006, and restore a working
-`cargo package` / `cargo publish --dry-run` path. This objective is implemented;
-strict clean-tree qualification remains as conditional closure evidence.
+`cargo package` / `cargo publish --dry-run` path. This objective is complete;
+clean-tree qualification passed on `a8416e9` and is recorded in the closure record.
 
 The fixed outcome is a publishable crate whose dependency graph resolves
 `zip 9.6.1` or newer without relying on a git revision.
@@ -65,9 +65,8 @@ entries, `deny.toml` sources section, and the release gate.
   `cargo publish --locked --dry-run --allow-dirty` all pass.
 - The first deny run identified RUSTSEC-2026-0592 in `url 2.5.8`; the lockfile
   now resolves `url 2.5.9` and `form_urlencoded 1.2.3`, after which deny passed.
-- `scripts/release-check.sh` was not run because it requires a clean worktree;
-  this task explicitly leaves the update uncommitted. The conditional closure
-  records that remaining operational check.
+- `scripts/release-check.sh` passed on the clean commit `a8416e9`; the hosted
+  Maintenance run `45089096709` also passed all five jobs. See the closure record.
 
 ## 4. Invariants that must not regress
 
@@ -290,20 +289,20 @@ Stop and report when:
 - the release gate exposes an unrelated failure that cannot be bounded to
   this milestone.
 
-## 15. Closure evidence required
+## 15. Closure evidence collected
 
 - Published version/checksum record for all four crates.
 - `cargo tree --locked -i zip` output.
 - `Cargo.lock` source diff.
 - Green deny output with an empty allow-list.
 - Package and publish-dry-run output.
-- Merge-gate and updater test results.
+- Merge-gate, clean-tree release-check, and updater test results; Maintenance run evidence.
 - A statement of the remaining path to actually publishing (maintainer-owned).
 
 ## 16. Handoff notes
 
-- Do not start until a maintainer confirms the upstream release exists and
-  contains the ZIP fix; a tag alone is not evidence.
+- Entry criteria were met by the published Eggup 0.2.2 releases and their
+  recorded dependency graph; a tag alone was not treated as evidence.
 - Keep the lockfile churn minimal and reviewable.
 - Do not edit the generated release workflow or Eggpack configuration for a
   dependency bump.
