@@ -4,10 +4,12 @@
 [![Downloads](https://img.shields.io/crates/d/eggsact)](https://crates.io/crates/d/eggsact)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A deterministic MCP server and Rust utility library for coding agents. It
-provides 86 tools across 23 categories, including math, text, JSON, validation,
-repository analysis, configuration, patches, and time. Tool cores use explicit
-inputs and do not access the network, clock, or filesystem.
+A deterministic MCP server and Rust utility library for coding agents. It is a
+Rust implementation of the Python `eggcalc` MCP server with a larger tool
+catalog: 86 tools across 23 categories, including math, text, JSON, validation,
+repository analysis, configuration, patches, and time. Most tools operate
+deterministically on explicit input without reading local files, contacting the
+network, or consulting the clock. Run `eggsact update` to update the binary.
 
 ## Install
 
@@ -24,10 +26,10 @@ Windows PowerShell:
 irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | iex
 ```
 
-Or install from source with Cargo. This requires Rust 1.89.0 or newer:
+Build from the published crate with Cargo (requires Rust 1.89.0 or newer):
 
 ```bash
-cargo install eggsact
+cargo install eggsact --locked
 ```
 
 See [installation details](docs/installation.md) for platform support, pinned
@@ -73,8 +75,11 @@ See the [MCP tool reference](docs/mcp-tools.md) for tool behavior and
 
 ```toml
 [dependencies]
-eggsact = "1.2.7"
+eggsact = "1"
 ```
+
+The major-version requirement lets Cargo select the latest compatible 1.x
+release.
 
 ```rust
 use eggsact::run;
@@ -88,19 +93,17 @@ text utilities, typed preflight workflows, and in-process tool dispatch.
 
 ## Documentation
 
-- [Installation and updates](docs/installation.md)
+- [Install and update](docs/installation.md)
 - [CLI usage](docs/cli.md)
-- [MCP tools](docs/mcp-tools.md)
-- [Math and units](docs/math-features.md)
+- [Math and unit conversions](docs/math-features.md)
+- [MCP setup and tool reference](docs/mcp-tools.md)
 - [Rust library API](docs/library-api.md)
 - [Compatibility policy](docs/compatibility-policy.md)
-- [Python `eggcalc` parity status](docs/parity.md)
-- [Architecture overview](architecture/overview.md)
-- [Contributing](docs/contributing.md)
 
-`eggsact` is a Rust implementation of the Python `eggcalc` MCP server with a
-larger tool catalog. Its parity report lists 39 accepted test cases, represented
-by 40 ignored test instances, separately from regressions.
+Python `eggcalc` users can review the [parity status](docs/parity.md) for known
+behavior differences. For project and contributor details, see
+[Contributing](docs/contributing.md) and the
+[architecture overview](architecture/overview.md).
 
 ## License
 

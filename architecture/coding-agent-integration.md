@@ -45,20 +45,26 @@ Append `--discovery` to a client name to render discovery-mode startup args.
 |---|---|
 | Zed | `context_servers.eggsact` JSON settings block |
 | Codex | `mcp_servers.eggsact` TOML block (the config shape `codex mcp add` consumes) |
-| Claude Code | `claude mcp add eggsact -- <path> --mcp` |
+| Claude Code | Unix: `claude mcp add eggsact -- <path> --mcp`; Windows: `.claude.json` / `.mcp.json` config block |
 | Cursor | `mcpServers.eggsact` JSON block |
-| VS Code / Copilot | `code --add-mcp` JSON command |
+| VS Code / Copilot | Unix: `code --add-mcp` JSON command; Windows: `.vscode\mcp.json` config block |
 | OpenCode v2 | `mcp.servers.eggsact` local-server JSONC block |
 
 These are renderers rather than a configuration abstraction. JSON renderers
 are parsed in unit tests, and all adapters are checked for the server name,
 resolved path, and stdio argument. Paths containing spaces are quoted for the
-command form and JSON-escaped for config forms.
+Unix command form and JSON-escaped for config forms.
 
-Codex and Claude Code currently expose native registration CLIs, and VS Code
-exposes `code --add-mcp`; Eggsact still prints those commands without running
-them. A future explicit `--install` may use a verified native CLI, but direct
-JSONC/TOML editing is intentionally out of scope.
+Windows `claude` and `vscode` rendering deliberately emits a configuration
+block instead of a shell command: `cmd.exe` does not honor backslash quote
+escapes and expands `%VAR%` inside double quotes, so a path containing
+`%PATH%`, `&`, or `^` could be reinterpreted. The block names its target file;
+Eggsact still writes no files.
+
+Codex and Claude Code expose native registration CLIs, and VS Code exposes
+`code --add-mcp`; on Unix Eggsact prints those commands without running them.
+A future explicit `--install` may use a verified native CLI, but automatic
+client-configuration editing is intentionally out of scope.
 
 ## Configuration examples
 

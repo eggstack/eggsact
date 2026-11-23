@@ -6,10 +6,12 @@
 
 ```toml
 [dependencies]
-eggsact = "1.2.7"
+eggsact = "1"
 serde_json = "1" # Used by the in-process tool-dispatch examples
 tokio = { version = "1", features = ["rt-multi-thread"] } # Needed only for the direct MCP server example
 ```
+
+The major-version requirement selects the latest compatible 1.x release.
 
 The crate exposes seven public modules:
 
@@ -77,8 +79,8 @@ Full natural language pipeline. Normalizes English text into a math expression, 
 **What it handles:**
 - Number words: `"five plus three"` -> `("8", "int")`
 - Operator words: `"thirty times two"` -> `("60", "int")`
-- Function names: `"square root of 144"` -> `("12", "float")`
-- Percentages: `"50 percent of 200"` -> `("100", "float")`
+- Function names: `"square root of 144"` -> `("12", "int")`
+- Percentages: `"50 percent of 200"` -> `("100", "int")`
 - Unit conversions: `"30m + 100ft"` -> `("60.480000000000004 m", "float")`
 - Fillers: `"what's five plus three"` -> `("8", "int")`
 
@@ -117,11 +119,13 @@ Direct mathematical expression evaluation. Parses Python-style math syntax witho
 - Arithmetic: `+`, `-`, `*`, `/`, `%`, `**` (power)
 - Parentheses for grouping
 - Functions: `sin()`, `cos()`, `sqrt()`, `abs()`, `log()`, `log(x, base)`, `exp()`, etc.
-  (`log10()`/`log2()`/`log1p()` exist in the expression parser but currently fail
-  on the `run()` path. See [docs/cli.md](cli.md).)
-- Constants: `pi`, `e`, `tau`, `c`, `gravity`, `na`, `h`, etc.
+  (`evaluate()` accepts `log10()`/`log2()`/`log1p()`, but `run()`, the CLI, and
+  `math_eval` do not. Use `log(x, base)` in those interfaces; see
+  [Math Features](math-features.md).)
+- Constants: `pi`, `e`, `tau`, `c`, `standardgravity`, `na`, `h`, etc. The
+  `gravity` alias is handled by `run()` normalization.
 - Comparison: `<`, `>`, `<=`, `>=`, `==`, `!=`
-- Complex numbers: `3+4j`
+- Complex numbers are not supported.
 
 **Examples:**
 
@@ -130,7 +134,7 @@ use eggsact::evaluate;
 
 assert_eq!(evaluate("5 + 3").unwrap(), ("8", "int"));
 assert_eq!(evaluate("2 ** 10").unwrap(), ("1024", "int"));
-assert_eq!(evaluate("sqrt(144)").unwrap(), ("12", "float"));
+assert_eq!(evaluate("sqrt(144)").unwrap(), ("12", "int"));
 assert_eq!(evaluate("sin(pi / 2)").unwrap(), ("1", "float"));
 assert_eq!(evaluate("10 / 3").unwrap(), ("3.3333333333333335", "float"));
 ```
@@ -185,7 +189,9 @@ assert_eq!(
 
 ## Text Module
 
-The `eggsact::text` module provides text processing utilities. All public functions are re-exported from `eggsact::text`.
+The `eggsact::text` module provides text processing utilities. Common utilities
+are re-exported from `eggsact::text`; `glob` and `position` APIs are accessed
+through their submodules.
 
 ### Measurement
 
@@ -366,8 +372,8 @@ use eggsact::text::position::{text_position, text_window};
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `line_range_extract` | `(text: &str, start_line: usize, end_line: usize, line_base: usize, include_line_numbers: bool, include_fingerprint: bool) -> LineRangeExtractResult` | Extract a line range from text |
-| `line_range_compare` | `(left_text: &str, right_text: &str, start_line: usize, end_line: usize, line_base: usize, comparison_mode: &str) -> LineRangeCompareResult` | Compare text in a line range |
+| `line_range_extract` | `(text: &str, start_line: usize, end_line: usize, line_base: usize, include_line_numbers: bool, include_fingerprint: bool) -> Result<LineRangeExtractResult, String>` | Extract a line range from text |
+| `line_range_compare` | `(left_text: &str, right_text: &str, start_line: usize, end_line: usize, line_base: usize, comparison_mode: &str) -> Result<LineRangeCompareResult, String>` | Compare text in a line range |
 
 ### Grapheme Primitives
 
@@ -623,13 +629,6 @@ tool schema (`allow_path_deps: true`, `allow_git_deps: false`,
 `allow_patch_sections: false`). An undetectable ecosystem surfaces as
 `ToolRejected` with machine code `DEPENDENCY_UNKNOWN_ECOSYSTEM`, not a silent
 default.
-
-No typed patch-review or repo-audit facades are provided: `PatchAnalysis` and
-`RepoFacts` in `eggsact::services` are internal composition models whose
-projections (`patch_summary`, `patch_contract_check`, `diff_risk_classify`,
-repo tools) already answer those workflows through `ToolRegistry`. Per-tool
-typed wrappers are added only where a stable harness workflow needs
-compile-time contracts for route-critical fields.
 
 ---
 

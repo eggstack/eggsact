@@ -35,4 +35,6 @@ skip-tree = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Runtime and development dependencies are registry-sourced. Keep git sources
+# denied unless a separately reviewed plan explicitly permits one.
 allow-git = []

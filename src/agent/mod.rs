@@ -1243,7 +1243,6 @@ mod tests {
         let registry = ToolRegistry::default();
         let tools = registry.available_tools();
         assert!(!tools.is_empty(), "should have tools in full profile");
-        // text_equal is in the full profile
         assert!(tools.iter().any(|t| t.name == "text_equal"));
     }
 
@@ -1252,10 +1251,8 @@ mod tests {
     fn tool_registry_profile_filters_tools() {
         let registry = ToolRegistry::with_profile(Profile::CodeggCoreMin);
         let tools = registry.available_tools();
-        // codegg_core_min should have fewer tools than full
         let full_count = ToolRegistry::default().available_tools().len();
         assert!(tools.len() <= full_count);
-        // All tools should be in the codegg_core_min profile
         for tool in &tools {
             assert!(
                 tool.profiles.contains(&"codegg_core_min".to_string()),

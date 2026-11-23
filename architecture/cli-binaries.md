@@ -52,11 +52,11 @@ release-manifest.json                  exact GitHub vX.Y.Z asset
   -> executable replacement
 ```
 
-Verified-transaction mechanics are owned by `eggup-core` 0.1.2, network
-acquisition by `eggup-eggfetch` 0.1.2, manifest handling by `eggup-eggpack`
-0.1.2, and all four sit over `eggfetch-core` 0.2.0
+Verified-transaction mechanics are owned by `eggup-core` 0.2.2, network
+acquisition by `eggup-eggfetch` 0.2.2, manifest handling by `eggup-eggpack`
+0.2.2, and all four sit over `eggfetch-core` 0.4.0
 (`http1,tls-rustls,tls-native-roots,proxy`); direct `eggfetch-core` use remains
-only in the policy test harness. `src/update.rs` keeps release/update policy
+only in the policy test harness. The archive path uses ZIP 9.6.1. `src/update.rs` keeps release/update policy
 (version selection, asset naming, manifest/legacy source selection, Cargo
 fallback, checksum sidecar parsing, CLI presentation). Transport policy (single
 configuration point):

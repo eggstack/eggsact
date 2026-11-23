@@ -1042,7 +1042,6 @@ async fn handle_request_async(
             }
         };
 
-        // Parse typed InitializeParams
         let init_params: InitializeParams = match serde_json::from_value(params.clone()) {
             Ok(p) => p,
             Err(e) => {

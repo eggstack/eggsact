@@ -315,7 +315,7 @@ fn strip_line_prefix(line: &str) -> &str {
 fn fingerprint(text: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(text.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::text::validate::hex_encode(&hasher.finalize())
 }
 
 fn expected_hunk_context(hunk: &PatchHunk) -> Vec<String> {

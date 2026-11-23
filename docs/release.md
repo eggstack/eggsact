@@ -95,7 +95,32 @@ Run the local release check from a clean worktree:
 scripts/release-check.sh
 ```
 
-This runs formatting, generated-docs, Clippy, tests, cargo-deny, package, and publish dry-run. It refuses a dirty worktree and never publishes or tags.
+This runs dependency provenance, formatting, generated-docs, Clippy, tests, cargo-deny, package, and publish dry-run. It refuses a dirty worktree and never publishes or tags.
+
+## Dependency provenance
+
+Published artifacts must be registry-sourced: every publishable dependency
+carries a `version`, and `deny.toml` denies unknown registries and git
+sources. The release gate enforces this before formatting with
+`scripts/check-dependency-provenance.py`, which scans every dependency table
+(including dev, build, workspace, and target-specific tables) and fails when a
+dependency is declared with `git` and no `version`.
+
+The four direct Eggup dependencies now use the coordinated crates.io 0.2.2
+release set. Its archive dependency resolves `zip 9.6.1`, and the manifest
+consumer resolves `eggpack-manifest 0.1.2`; `deny.toml` keeps `allow-git`
+empty. The release provenance preflight remains a guard against future
+versionless Git dependencies, not an expected blocker. The published
+`eggup-eggfetch 0.2.2` adapter uses Eggfetch 0.4.0.
+
+Eggpack is the producer-side release-workflow tool, separate from runtime
+Cargo dependencies. The workflow pins Eggpack CLI 0.1.2 at the exact revision
+in `release/eggpack/github-policy.json`; changes to that pin require workflow
+regeneration and a green Eggpack drift check.
+
+Do not add `version` keys to Git dependencies as a packaging workaround.
+Registry provenance must be established by selecting and qualifying a
+registry-sourced release; `allow-git` must remain empty.
 
 Optional parity gate (requires Python `eggcalc` at `../eggcalc`):
 

@@ -192,10 +192,10 @@ replace the running binary. `src/update.rs` (3,029 lines, the second-largest fil
 the crate) implements a verified update: select a release via crates.io, fetch the
 Eggpack release manifest, project the asset for the host triple, download, verify
 SHA-256, validate the candidate by running it, and commit under a mutation lock with
-backup and rollback. Transport is the Eggup stack (`eggup-core`/`eggup-eggfetch`/
-`eggup-acquisition`/`eggup-eggpack` 0.1.2 over `eggfetch-core`): in-process HTTP/1 +
-TLS, strict HTTPS-downgrade rejection, explicit env proxy, no retries, no external
-`curl` after install.
+backup and rollback. Transport is the registry Eggup stack (`eggup-core`/`eggup-eggfetch`/
+`eggup-acquisition`/`eggup-eggpack` 0.2.2 over `eggfetch-core` 0.4.0): in-process
+HTTP/1 + TLS, strict HTTPS-downgrade rejection, explicit env proxy, no retries,
+no external `curl` after install. The archive path resolves `zip 9.6.1`.
 
 `src/integrate.rs` is the read-only counterpart: it *renders* per-client MCP setup
 text and never writes anything. Neither command installs a daemon or edits client
@@ -736,7 +736,7 @@ always pass `--locked`.
 | Unicode | `unicode-normalization`, `unicode-segmentation`, `unicode_names2`, `unicode-general-category`, `caseless` |
 | Crypto | `sha2`, `sha1`, `md5`, `crc32fast` |
 | Data | `urlencoding`, `toml`, `toml_edit` |
-| Self-update (binary-only, not the library/MCP API) | `eggup-core` / `eggup-eggfetch` / `eggup-acquisition` / `eggup-eggpack` **0.1.2** (single git rev) over `eggfetch-core` 0.2.0; `eggfetch-core` and `futures-util` are **dev**-dependencies, pulled in by the test fixture |
+| Self-update (binary-only, not the library/MCP API) | `eggup-core` / `eggup-eggfetch` / `eggup-acquisition` / `eggup-eggpack` **0.2.2** (registry set) over `eggfetch-core` 0.4.0; `eggfetch-core` and `futures-util` are **dev**-dependencies, pulled in by the test fixture; archive resolves ZIP 9.6.1 |
 
 `serde_json` has `preserve_order` enabled, so **key order in outputs is intentional** —
 do not "fix" it with a `BTreeMap` or a sort.

@@ -131,7 +131,9 @@ pub fn with_current_eval_context<R>(f: impl FnOnce(Option<&mut EvalContext>) -> 
                 // The borrow does not escape this callback. The mutable-borrow
                 // guard above prevents a second `&mut EvalContext` from being
                 // handed out while this one is live.
-                f(Some(unsafe { &mut *ptr }))
+                #[allow(unsafe_code)]
+                let context = unsafe { &mut *ptr };
+                f(Some(context))
             }
             None => f(None),
         }

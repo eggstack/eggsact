@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 use crate::text::primitives::byte_offset_to_char_index;
-use crate::text::regex_engine::{classify_pattern, compile_regex, CompileError, CompiledRegex};
+use crate::text::regex_engine::{
+    classify_pattern, compile_fancy, compile_regex, CompileError, CompiledRegex,
+};
 
 const MAX_PATTERN_LENGTH: usize = 1000;
 const MAX_PATTERN_NESTING: usize = 5;
@@ -3070,7 +3072,7 @@ pub fn json_canonicalize(
     })
 }
 
-fn hex_encode(bytes: &[u8]) -> String {
+pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
@@ -3212,14 +3214,14 @@ pub fn validate_schema_light(
         depth: usize,
         walk_count: &mut usize,
         violations: &mut Vec<SchemaViolation>,
-        pattern_cache: &mut HashMap<String, Option<Regex>>,
-    ) {
+        pattern_cache: &mut HashMap<String, Result<Regex, String>>,
+    ) -> Result<(), String> {
         *walk_count += 1;
         if *walk_count > MAX_SCHEMA_ELEMENTS {
-            return;
+            return Ok(());
         }
         if violations.len() >= MAX_SCHEMA_VIOLATIONS {
-            return;
+            return Ok(());
         }
         if depth > MAX_SCHEMA_DEPTH {
             violations.push(SchemaViolation {
@@ -3231,7 +3233,7 @@ pub fn validate_schema_light(
                 value_type: Some(get_schema_type_name(value)),
                 expected_type: None,
             });
-            return;
+            return Ok(());
         }
 
         let expected_type = schema_map.get("type").and_then(|v| v.as_str());
@@ -3255,7 +3257,7 @@ pub fn validate_schema_light(
                     value_type: Some(actual_type),
                     expected_type: Some(exp.to_string()),
                 });
-                return;
+                return Ok(());
             }
         }
 
@@ -3327,7 +3329,7 @@ pub fn validate_schema_light(
                                     walk_count,
                                     violations,
                                     pattern_cache,
-                                );
+                                )?;
                             }
                         }
                     }
@@ -3381,7 +3383,7 @@ pub fn validate_schema_light(
                             walk_count,
                             violations,
                             pattern_cache,
-                        );
+                        )?;
                     }
                 }
             }
@@ -3425,21 +3427,29 @@ pub fn validate_schema_light(
                 if let Some(serde_json::Value::String(pattern)) = schema_map.get("pattern") {
                     // Memoize compiled patterns: the same schema pattern is
                     // otherwise recompiled for every string value checked.
+                    // Compile and match failures propagate: a runtime limit
+                    // must never be reported as "does not match".
                     if !pattern_cache.contains_key(pattern) {
-                        pattern_cache.insert(pattern.clone(), Regex::new(pattern).ok());
+                        pattern_cache.insert(
+                            pattern.clone(),
+                            compile_fancy(pattern)
+                                .map_err(|e| format!("invalid schema pattern '{pattern}': {e}")),
+                        );
                     }
-                    if let Some(re) = pattern_cache.get(pattern).and_then(|r| r.as_ref()) {
-                        if !re.is_match(s).unwrap_or(false) {
-                            violations.push(SchemaViolation {
-                                path: path.to_string(),
-                                message: format!(
-                                    "string '{}' does not match pattern '{}'",
-                                    s, pattern
-                                ),
-                                value_type: Some("string".to_string()),
-                                expected_type: None,
-                            });
-                        }
+                    let re = pattern_cache
+                        .get(pattern)
+                        .expect("schema pattern was inserted immediately above")
+                        .as_ref()
+                        .map_err(|error| error.clone())?;
+                    if !re.is_match(s).map_err(|e| {
+                        format!("schema pattern '{pattern}' could not be evaluated: {e}")
+                    })? {
+                        violations.push(SchemaViolation {
+                            path: path.to_string(),
+                            message: format!("string '{}' does not match pattern '{}'", s, pattern),
+                            value_type: Some("string".to_string()),
+                            expected_type: None,
+                        });
                     }
                 }
             }
@@ -3456,9 +3466,11 @@ pub fn validate_schema_light(
                 });
             }
         }
+
+        Ok(())
     }
 
-    let mut pattern_cache: HashMap<String, Option<Regex>> = HashMap::new();
+    let mut pattern_cache: HashMap<String, Result<Regex, String>> = HashMap::new();
     validate_recursive(
         "",
         data,
@@ -3467,7 +3479,7 @@ pub fn validate_schema_light(
         &mut walk_count,
         &mut violations,
         &mut pattern_cache,
-    );
+    )?;
 
     let truncated = violations.len() >= MAX_SCHEMA_VIOLATIONS || walk_count > MAX_SCHEMA_ELEMENTS;
 

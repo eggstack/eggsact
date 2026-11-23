@@ -799,6 +799,7 @@ pub(crate) async fn execute_tool_bounded_with_hooks(
     // deriving a &'static reference is sound. This leak is intentional and
     // test-only. A future refactor must not change `metrics_ptr` provenance to
     // a stack local or non-leaked allocation without updating this reasoning.
+    #[allow(unsafe_code)]
     let metrics_static: &'static runtime::RuntimeMetrics = unsafe { &*metrics_ptr };
     execute_tool_bounded_inner(
         handler,

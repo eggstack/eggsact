@@ -457,7 +457,7 @@ pub fn text_replace_check_with_options(
 
     let mut hasher = Sha256::new();
     hasher.update(changed_text_built.as_bytes());
-    let after_fp = format!("{:x}", hasher.finalize());
+    let after_fp = crate::text::validate::hex_encode(&hasher.finalize());
     let after_fp = after_fp[..16.min(after_fp.len())].to_string();
 
     let newline_before = detect_newline_style(text);

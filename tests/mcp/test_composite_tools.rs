@@ -1,6 +1,7 @@
 use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 fn mcp_request(request: &str) -> String {
     super::support::retry_mcp_request(|| mcp_request_once(request))
@@ -191,6 +192,49 @@ fn test_config_preflight_json() {
 }
 
 #[test]
+fn test_config_preflight_surfaces_schema_pattern_errors() {
+    // A named backreference is not caught by the advisory static scanner, so
+    // this reaches the schema validator and exceeds the configured backtrack
+    // limit. The composite must report a finding, not a clean verdict.
+    let value = format!("{}cb", "a".repeat(1000));
+    let text = serde_json::json!({ "v": value }).to_string();
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+            "name": "config_preflight",
+            "arguments": {
+                "text": text,
+                "format": "json",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "v": { "type": "string", "pattern": r"(?P<w>a+)(?P=w)b$" }
+                    }
+                }
+            }
+        },
+        "id": 11
+    })
+    .to_string();
+    let result = call_tool_and_get_result(&request);
+    assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    let inner = result.get("result").unwrap();
+    assert_eq!(
+        inner.get("verdict"),
+        Some(&Value::String("valid_with_warnings".to_string()))
+    );
+    assert_eq!(
+        inner.get("machine_code"),
+        Some(&Value::String("CONFIG_SCHEMA_MISMATCH".to_string()))
+    );
+    let findings = inner.get("findings").unwrap().as_array().unwrap();
+    assert_eq!(findings.len(), 1, "findings: {findings:?}");
+    let message = findings[0].get("message").unwrap().as_str().unwrap();
+    assert!(message.contains("Schema validation failed"), "{message}");
+}
+
+#[test]
 fn test_config_preflight_toml() {
     let toml_text = "[package]\nname = \"test\"\nversion = \"0.1.0\"\n";
     let escaped = toml_text
@@ -256,13 +300,10 @@ fn test_structured_data_compare_different() {
 // command_preflight policy engine tests
 // ============================================================
 
-static mut CMD_ID: u32 = 100;
+static CMD_ID: AtomicU32 = AtomicU32::new(100);
 
 fn next_id() -> u32 {
-    unsafe {
-        CMD_ID += 1;
-        CMD_ID
-    }
+    CMD_ID.fetch_add(1, Ordering::Relaxed) + 1
 }
 
 fn cmd_preflight(command: &str) -> Value {

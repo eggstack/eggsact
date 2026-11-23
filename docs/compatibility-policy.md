@@ -21,69 +21,27 @@ major version.
 
 ## Minimum Supported Rust Version (MSRV)
 
-eggsact declares `rust-version = "1.89.0"` in `Cargo.toml`. This is tested
-in CI with the exact declared toolchain.
-
-**Policy:**
-- MSRV covers the library, all binaries, and the supported test subset.
-- MSRV may be raised in a MINOR release with a changelog entry.
-- An MSRV increase requires at least Rust 1.89.0+ and must be justified by
-  a dependency requirement or language feature need.
-- The locked dependency graph must resolve on MSRV.
-- MSRV is checked weekly by the scheduled `maintenance.yml` workflow; it is not
-  a merge-blocking gate.
-
-**Rationale for 1.89.0**: hashbrown 0.17.1 requires Rust 1.85.0, but test
-code uses temporary lifetime extension that stabilized in Rust 1.89.0.
+`eggsact` requires Rust 1.89.0 or newer. This minimum applies to the library,
+binaries, and the tests used for MSRV checks. Any increase will be announced in
+a minor release with a changelog entry.
 
 ## Public Rust API Stability
 
-The crate exposes public modules and root-level re-exports. The supported
-integration surface is documented in the [Library API Reference](library-api.md).
-Other low-level public items remain available for 1.x source compatibility, but
-are not recommended for new integrations. Their visibility will not be reduced
-in a 1.x release; removing them requires a major release.
+Use the [Library API Reference](library-api.md) for supported entry points.
+Other low-level items remain public for 1.x compatibility but are not
+recommended for new integrations.
 
-Key supported entry points include:
-
-| Symbol | Module | Description |
-|--------|--------|-------------|
-| `evaluate` | `calc` | Direct math expression evaluation |
-| `evaluate_with_context` | `calc` | Context-aware math evaluation |
-| `run` | `calc` | Natural language math evaluation |
-| `run_with_context` | `calc` | Context-aware natural language evaluation |
-| `split_at_operators` | `calc` | Tokenizer helper |
-| `EvalContext` | `calc` | Evaluation context (PRNG, variables, memory) |
-| `agent::ToolRegistry` | `agent` | In-process tool dispatch |
-| `agent::Profile` | `agent` | Profile enum for tool filtering |
-| `preflight::*` | `preflight` | Typed preflight wrappers |
-
-**Rules:**
-
-- Renaming or removing a public item is a MAJOR change.
-- Adding a new public item is a MINOR change.
-- Changing a function signature is a MAJOR change.
-- Adding a new parameter with a default is a MINOR change (Rust doesn't have
-  default params, so this typically means a new function + deprecation of old).
-- Changing the return type is a MAJOR change.
-- Adding a variant to a public enum with a catch-all `Other(String)` is MINOR;
-  without a catch-all is MAJOR.
+Within 1.x, removing or renaming a public item, changing its signature or return
+type, or reducing its visibility is a MAJOR change. Adding a public item is
+MINOR. Adding an enum variant is MINOR only when the enum has a catch-all
+variant; otherwise it is MAJOR.
 
 ## MCP Tool Name Stability
 
-Tool names are the primary contract between eggsact and MCP clients (codegg,
-other harnesses). Once a tool ships in a release:
-
-- **Renaming** a tool is a MAJOR change.
-- **Removing** a tool is a MAJOR change.
-- **Adding** a tool is a MINOR change.
-- **Marking a tool `deprecated: true`** in its `ToolSpec` is a MINOR change
-  (tool still exists and functions).
-- **Actually removing a deprecated tool** is a MAJOR change (requires two full
-  minor releases as deprecated before removal, per the Deprecation Policy below).
-
-Tool aliases (`ToolSpec.aliases`) provide alternate names. Adding an alias is
-MINOR. Removing an alias is MAJOR if any known client depends on it.
+Tool names and aliases are stable contracts once released. Renaming or removing
+a tool is a MAJOR change; adding one is MINOR. Deprecating a tool is MINOR, but
+it remains functional during the deprecation period. Adding an alias is MINOR;
+removing one is breaking when a supported client depends on it.
 
 ## MCP Input Schema Compatibility
 
@@ -117,197 +75,56 @@ Output schemas define the JSON structure returned by a tool.
 - **Changing a machine code's meaning** for an existing response shape is
   breaking.
 
-The `machine_code` and `verdict` fields on route-critical tools
-(`edit_preflight`, `command_preflight`, `config_preflight`,
-`patch_apply_check`, `text_security_inspect`) are particularly sensitive.
-Their values drive downstream action selection in codegg.
+Machine-code and verdict fields used for programmatic routing are part of the
+response contract. Removing them or changing their meaning is breaking.
 
-### Protocol-Era Serialization (2026-07-28 Dual-Era, Connection-Pinned)
+## Protocol Versions
 
-Protocol-era-specific standard serialization may differ while tool semantic
-contracts remain stable. This is **not** a breaking change:
-
-- Modern (`2026-07-28`) envelopes add `resultType`, `_meta` server identity,
-  `ttlMs`/`cacheScope` on cacheable lists, standard Tool `annotations`, namespaced
-  Tool `_meta`, and `structuredContent` (= `ToolResponse.result`) on successful calls.
-- Legacy (`2025-11-25`, `2024-11-05`) envelopes are byte/semantics-compatible and unchanged.
-- One stdio connection pins exactly one era (`Undecided` → `Legacy` for
-  `initialize` or any claim-less opening, → modern on a valid modern claim).
-  Cross-era requests after pinning return `-32022 Unsupported protocol
-  version` (id preserved); mismatched notifications are dropped before side
-  effects. Invalid modern envelopes and unsupported claims do not pin;
-  claim-less `server/discover` is legacy traffic, not an era-neutral probe.
-- Tool names, input contracts, machine codes, route-critical verdicts, and profile
-  membership must remain equivalent across eras for the same tool and arguments
-  (verified by cross-era goldens in `tests/mcp/test_modern_protocol.rs`, which use
-  separate connections per era, plus `tests/mcp/test_era_pinning.rs` for rejection).
-- `tool_invoke` intentionally has no facade-level `outputSchema`: modern
-  `structuredContent` is target-specific. Omitting it is not an omission to be
-  "fixed" with a union schema.
-
-Removing a modern envelope field that clients already rely on, or changing tool
-semantics under the guise of era work, **is** breaking and follows the rules above.
+Modern (`2026-07-28`) responses include structured results and metadata; legacy
+(`2025-11-25` and `2024-11-05`) response envelopes remain unchanged. Wire
+serialization can vary by protocol era, but tool names, input and output
+semantics, machine codes, and profile behavior remain stable. See the
+[MCP server architecture](../architecture/mcp-server.md) for negotiation details.
 
 ## Machine-Code Stability
 
-Machine codes are defined in `src/mcp/machine_codes.rs` and emitted in tool
-response envelopes. They are the machine-readable contract for harnesses.
-
-- **Adding a new code** is MINOR.
-- **Removing a code** is MAJOR.
-- **Changing a code's string value** is MAJOR.
-- **Adding a category-prefixed alias** (e.g., `COMMON_INVALID_ARGUMENTS` for
-  `INVALID_ARGUMENTS`) is MINOR because the underlying value is identical.
-- **Deprecating a code** (keeping it but adding a preferred alternative) is
-  MINOR. The old code must continue to work.
-
-The `ALL` array in `machine_codes.rs` is the canonical registry.
-`test_machine_code_all_contains_key_codes` in `tests/mcp/test_machine_codes.rs`
-verifies that `ALL` contains the key codes, and
-`test_route_critical_finding_codes_are_enumerated` in
-`tests/mcp/test_route_contracts.rs` verifies that every UPPERCASE_SNAKE finding
-`code` emitted by a route-critical tool is present in `ALL`.
+Machine codes are stable identifiers for tool errors and findings. Adding a
+code or alias is MINOR. Removing a code, changing its value or changing the
+meaning of an existing code is MAJOR. Deprecated codes keep their original
+value for at least two minor releases.
 
 ## Profile and Audience Compatibility
 
-Profiles (`full`, `default`, `codegg_core_min`, `codegg_core`,
-`codegg_preflight`, `codegg_shell`, `codegg_patch`, `codegg_config`,
-`codegg_unicode_security`, `codegg_repo_audit`, `human_math`) control which
-tools are visible to a given integration.
-
-- **Adding a tool to a profile** is MINOR (more tools available).
-- **Removing a tool from a profile** is MAJOR if the profile is used by a
-  named integration (e.g., `codegg_core_min`).
-- **Adding a new profile** is MINOR.
-- **Removing a profile** is MAJOR.
-- **Changing `ToolExposure`** on a tool is MINOR if it makes the tool MORE
-  visible, MAJOR if it makes it LESS visible to a profile that depends on it.
-
-The `ToolAudience` enum (`Model`, `Harness`, `Debug`) controls execution-time
-access. Changing which audience can execute a tool is a behavioral change that
-should be documented.
+Profiles and audiences control which tools an MCP client can see and call.
+Adding a profile or making an additional tool available is MINOR. Removing a
+profile or reducing tool availability for a supported integration is MAJOR.
+Changes that reduce access must be documented.
 
 ## CompatibilityMode Behavior
 
-`CompatibilityMode` (in `src/mcp/compat.rs`) controls validation and error
-message formatting:
-
-- **`EggcalcPython`:** MCP server default. Python-style type names in errors
-  (`NoneType`, `int`, `float`, `str`, `list`, `dict`). Used at the MCP
-  boundary for client compatibility.
-- **`StrictNative`:** In-process API default. Standard JSON Schema type names
-  (`null`, `integer`, `number`, `string`, `array`, `object`). Used by
-  `ToolRegistry::default()` and preflight wrappers.
-
-Both modes reject booleans for numeric schema fields.
-
-- **Changing which inputs are rejected** in either mode is a behavioral change
-  that should be documented as PATCH or MINOR depending on severity.
-- **Switching the default mode** for an API surface is a MAJOR change.
-- **Adding a new mode** is MINOR.
-- **Removing a mode** is MAJOR.
+`CompatibilityMode` controls validation and error type names. The MCP server
+uses `EggcalcPython`; in-process APIs default to `StrictNative`. Both reject
+booleans for numeric fields. Changing accepted inputs or switching an API's
+default mode is a compatibility change and must be documented.
 
 ## Deprecation Policy
 
-### Tools
+We announce deprecations with a migration path. Deprecated tools remain
+functional for at least two minor releases or six months, whichever is longer.
+Deprecated machine codes and profiles remain supported for at least two minor
+releases. Removing a deprecated item is a MAJOR change.
 
-1. A tool is **deprecated** by setting `stability: ToolStability::Deprecated` in
-   its `ToolSpec`. The tool continues to function normally.
-2. A deprecated tool must remain functional for at least **two minor releases**
-   (or 6 months, whichever is longer) before removal.
-3. Deprecation is announced in `CHANGELOG.md` under "Deprecated" with a
-   migration path (recommended replacement tool, if any).
-4. The tool's description should note it is deprecated.
+## Breaking Changes
 
-### Machine Codes
+Major releases are required to remove or rename a public Rust API item or MCP
+tool, remove a machine code or profile, remove an input or output field, rename
+an output field or change its type, switch a `CompatibilityMode` default, or
+reject previously accepted valid input (except when fixing a documented bug).
+New tools, profiles, aliases, machine codes, and optional schema fields are
+normally backward-compatible additions.
 
-1. Deprecated codes continue to emit their original string value.
-2. A preferred alternative code is introduced in the same release.
-3. The deprecated code must remain for at least **two minor releases**.
+## Further Reading
 
-### Profiles
-
-1. Deprecated profiles continue to function.
-2. Removal requires **two minor releases** of deprecation notice.
-3. Named integrations (codegg) must be updated before the profile is removed.
-
-### CompatibilityMode
-
-1. Changing validation behavior in a mode is documented in CHANGELOG.
-2. Switching defaults requires a MAJOR version bump.
-
-## What Constitutes a Breaking Change
-
-**Breaking (MAJOR):**
-- Removing or renaming a public Rust API item
-- Removing or renaming an MCP tool
-- Removing a machine code
-- Removing a profile
-- Removing a required input schema property
-- Changing an output field's type or name
-- Switching a CompatibilityMode default
-- Tightening validation that rejects previously-accepted inputs (unless fixing
-  a documented bug)
-
-**Non-breaking (MINOR or PATCH):**
-- Adding a new tool, profile, or machine code
-- Adding optional input/output fields
-- Adding tool aliases
-- Adding enum variants (with catch-all)
-- Deprecating (but not removing) tools, codes, or profiles
-- Tightening validation that matches the Python reference (bug fix)
-- Documentation-only changes
-
-### Regex Backend Contract Extension
-
-The `validate_regex` and `regex_finditer` tools gained new optional output
-fields (`engine_used`, `dialect`, `unsupported_features`) and a new machine
-code (`REGEX_UNSUPPORTED_FEATURE`) in a minor release. This is a backward-
-compatible behavioral extension:
-
-- Callers that ignore unknown fields in the response envelope continue to
-  work unchanged (standard JSON ignore-unknown behavior).
-- The `REGEX_UNSUPPORTED_FEATURE` machine code is new (MINOR) and can be
-  handled by callers that support it or ignored by callers that do not.
-- The `dialect` field always reports `"eggsact-regex"` and is not expected
-  to change. The `engine_used` field reflects backend selection between
-  `"rust-regex"` and `"fancy-regex"` based on pattern features. Callers
-  should not assume a specific engine, only that the engine is chosen
-  automatically to support the pattern's features.
-
-### Registry Audience Enforcement
-
-`get_tool` and `has_tool` now enforce audience/exposure restrictions in
-addition to profile membership. Previously these methods only checked
-profile membership, which created an authorization-policy inconsistency. A
-Model-audience registry could discover metadata for Harness-only tools it
-could never execute.
-
-**Semver classification**: MINOR (non-breaking). The old behavior was a
-bug. The new behavior is strictly more restrictive: tools that were visible
-AND executable before remain visible and executable. Only tools that were
-visible but NOT executable (due to audience mismatch) are now correctly
-hidden.
-
-**Administrative access**: `get_tool_unfiltered` and `has_registered_tool`
-bypass audience/exposure checks for callers that need to inspect all
-registered tools regardless of policy.
-
-## Versioning Workflow
-
-1. Before release, run the canonical verification gate (see `scripts/release-check.sh`).
-2. Review `CHANGELOG.md` for any breaking changes since last release.
-3. If breaking changes exist, bump MAJOR. If only additions, bump MINOR. If
-   only fixes, bump PATCH.
-4. Update `Cargo.toml` version.
-5. Run `cargo run --locked --features dev-tools --bin generate-docs` to regenerate docs.
-6. Tag the release.
-
-## References
-
-- `src/mcp/machine_codes.rs`: machine-code registry
-- `src/mcp/registry/types.rs`: `ToolSpec`, `ToolExposure`, `ToolStability`
-- `src/mcp/compat.rs`: `CompatibilityMode`
-- `architecture/machine-codes.md`: machine-code taxonomy
-- `architecture/compatibility.md`: `CompatibilityMode` usage details
-- `AGENTS.md`: tool counts, profiles, and architecture overview
+- [Library API Reference](library-api.md)
+- [MCP Tool Reference](mcp-tools.md)
+- [MCP Server Architecture](../architecture/mcp-server.md)
