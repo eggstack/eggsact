@@ -1,15 +1,12 @@
 # eggsact MCP Tool Reference
 
-This page summarizes the 86 tools in 23 categories. Most tools have a detailed
-entry with arguments and response shape. Thirteen repository, analysis, and
-patch tools have summary coverage only; their full schemas are available in the
-[generated tool cards](../generated/tool-cards.md).
+This reference summarizes 86 tools in 23 categories. Most entries describe
+arguments and response fields; 13 tools have summary-only coverage. For the
+authoritative schemas available to your connection, use `tools/list`. The active
+profile and audience determine which tools are available.
 
-Tool specifications and schemas are maintained in `src/mcp/specs/` and
-`src/mcp/schemas/`.
-
-See also: [Math Features](math-features.md), [Library API](library-api.md),
-[MCP Server Architecture](../architecture/mcp-server.md)
+See also: [CLI usage](cli.md), [Math Features](math-features.md),
+[Library API](library-api.md), [MCP Server Architecture](../architecture/mcp-server.md).
 
 ## Overview
 
@@ -17,9 +14,8 @@ See also: [Math Features](math-features.md), [Library API](library-api.md),
 |----------|-------|
 | Protocol versions | `2026-07-28` (preferred, modern stateless), `2025-11-25` (legacy), `2024-11-05` (legacy) |
 | Server name | `eggsact` |
-| Server version | crate version from `Cargo.toml` |
-| Transport | stdio JSON-RPC 2.0 (no HTTP; header routing not implemented) |
-| Total tools | 86, registered in `src/mcp/specs/` (single source of truth; per-profile counts in `architecture/mcp-server.md`) |
+| Transport | stdio JSON-RPC 2.0; the MCP client launches the process |
+| Total tools | 86 across 23 categories; profile and audience settings filter availability |
 
 The server communicates over stdin and stdout using newline-delimited JSON-RPC 2.0. In legacy responses, `result.content[0].text` contains a JSON-encoded `ToolResponse` envelope with an `ok` field.
 
@@ -81,10 +77,9 @@ same profile and audience rules as direct calls. See
 
 ### Machine Codes
 
-Every non-OK tool response includes a stable `machine_code` from
-`src/mcp/machine_codes.rs`. Use codes to route errors without parsing their
-messages. Structured findings use `code`, `severity`, and `message` fields.
-See `architecture/machine-codes.md` for the code table and finding helpers.
+Tool errors include a stable `machine_code`. Use it for programmatic routing
+instead of parsing the human-readable message. Structured findings use `code`,
+`severity`, and `message` fields. See the [machine-code reference](../architecture/machine-codes.md).
 
 ### Server Error Format (JSON-RPC level)
 
@@ -96,13 +91,17 @@ See `architecture/machine-codes.md` for the code table and finding helpers.
 
 | Constant | Value | Applies to |
 |----------|-------|------------|
+| `MAX_REQUEST_BYTES` | 1,000,000 bytes | Per-request line limit; larger requests return `-32700` |
+| `MAX_OUTPUT_BYTES` | 1,000,000 bytes | Serialized response limit; larger responses return `OUTPUT_TOO_LARGE` |
 | `MAX_TEXT_LENGTH` | 100,000 UTF-8 bytes | Shared limit for most text inputs; individual tools may define other limits |
 | `MAX_EXPRESSION_LENGTH` | 10,000 characters | `math_eval` expression parameter |
 | `MAX_LIST_ITEMS` | 10,000 items | Array parameters in `list_compare`, `list_dedupe`, `list_sort`, `identifier_inspect`, `identifier_table_inspect`, `shell_quote_join` |
 | `MAX_REGEX_SAMPLES` | 100 | `validate_regex` samples array |
 | `MAX_PATTERN_LENGTH` | 1,000 characters | `regex_safety_check` pattern parameter |
 
-Limits are enforced at the tool level. Exceeding a limit returns an `input_too_large` error with a descriptive message.
+Tool-level input limits return `input_too_large`. The request-line limit is a
+JSON-RPC error, while an oversized serialized response returns
+`output_too_large` (`OUTPUT_TOO_LARGE`).
 
 ## Error Handling
 
@@ -112,7 +111,8 @@ All tool errors use snake_case error types:
 
 | Error Type | Description |
 |------------|-------------|
-| `input_too_large` | Input exceeds the applicable size limit |
+| `input_too_large` | Input exceeds a tool-level size limit |
+| `output_too_large` | Serialized response exceeds the output limit |
 | `invalid_arguments` | Missing or malformed required parameters |
 | `validation_error` | Enum value out of range, invalid input combination |
 | `evaluation_error` | Math expression evaluation failed |

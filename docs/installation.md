@@ -1,7 +1,7 @@
 # Installation and Updates
 
-The current binary release is v1.2.7. Installers use the latest release by
-default. Pass a version to pin an installation.
+The installers use the latest stable release by default. Pass a release version
+to pin an installation. See the platform table below for published binaries.
 
 ## Install
 
@@ -12,12 +12,12 @@ curl --proto '=https' --tlsv1.2 -fsSL \
   https://github.com/eggstack/eggsact/releases/latest/download/install.sh | bash
 ```
 
-To pin v1.2.7, append the installer argument:
+To pin a version, replace `X.Y.Z` with the release version:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
   https://github.com/eggstack/eggsact/releases/latest/download/install.sh \
-  | bash -s -- --version 1.2.7
+  | bash -s -- --version X.Y.Z
 ```
 
 The installer requires Bash and `curl`. It installs to `/usr/local/bin` when run
@@ -32,49 +32,54 @@ Run in PowerShell:
 irm https://github.com/eggstack/eggsact/releases/latest/download/install.ps1 | iex
 ```
 
-Pin a version with `-Version 1.2.7`. The installer uses
+To pin a version, download its versioned `install.ps1` and run it with
+`-Version X.Y.Z`; the inspect steps below show the commands. The installer uses
 `%ProgramFiles%\Eggsact` for administrator installs and
-`%LOCALAPPDATA%\Eggsact` for regular users. It prints PATH guidance when needed.
+`%LOCALAPPDATA%\Eggsact` for regular users. It prints PATH guidance when
+needed.
 
 ### Cargo
 
-Use Cargo if you prefer a source install or your system has no published binary:
+Install from the published crate with Cargo if you prefer a source build or
+need a platform without a published binary:
 
 ```bash
-cargo install eggsact
+cargo install eggsact --locked
 ```
 
-Cargo requires Rust 1.89.0 or newer. The installers use Cargo only when the host
-has no published binary or the expected binary asset returns HTTP 404. Checksum,
-version, and other transport errors stop installation instead of triggering a
+Cargo requires Rust 1.89.0 or newer. Installers use Cargo when the host has no
+published binary or the expected release asset returns HTTP 404. Checksum,
+version, and other download errors stop installation instead of triggering a
 source build.
 
 ## Inspect before installing
 
-Both installers download binaries over HTTPS, verify the SHA-256 sidecar, and
-check the candidate's version before installation. The checksum sidecar comes
-from the same GitHub release, so it detects corruption but does not protect
-against a compromised release account. macOS binaries are not signed or
-notarized. Windows binaries are not code-signed.
+For published binaries, the installers use HTTPS, verify the SHA-256 sidecar,
+and check the candidate version before installation. A checksum detects
+corruption but does not protect against a compromised release account because
+the checksum and binary come from the same GitHub release. macOS binaries are
+not signed or notarized. Windows binaries are not code-signed.
 
-To inspect the Unix installer for v1.2.7 before running it:
+To inspect a versioned Unix installer before running it, replace `X.Y.Z` with
+the release version:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
-  https://github.com/eggstack/eggsact/releases/download/v1.2.7/install.sh \
+  https://github.com/eggstack/eggsact/releases/download/vX.Y.Z/install.sh \
   -o install.sh
 less install.sh
-bash install.sh --version 1.2.7
+bash install.sh --version X.Y.Z
 ```
 
-For Windows, download and inspect the script before invoking it:
+For Windows, replace `X.Y.Z` with the release version, then download and inspect
+the script before invoking it:
 
 ```powershell
 Invoke-WebRequest `
-  https://github.com/eggstack/eggsact/releases/download/v1.2.7/install.ps1 `
+  https://github.com/eggstack/eggsact/releases/download/vX.Y.Z/install.ps1 `
   -OutFile .\install.ps1
 Get-Content .\install.ps1
-. .\install.ps1 -Version 1.2.7
+& .\install.ps1 -Version X.Y.Z
 ```
 
 ## Published binaries
@@ -82,7 +87,7 @@ Get-Content .\install.ps1
 | Platform | Binary | Notes |
 |---|---|---|
 | Linux x86-64 | Yes | glibc 2.17 or newer |
-| Linux AArch64 | Yes | |
+| Linux AArch64 | Yes | glibc 2.17 or newer |
 | macOS Intel | Yes | Unsigned and not notarized |
 | macOS Apple Silicon | Yes | Unsigned and not notarized |
 | Windows x86-64 | Yes | Not code-signed |

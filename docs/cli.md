@@ -18,7 +18,7 @@ eggsact integrate [client] [--discovery]
 | `--mcp-surface direct or discovery` | Select the MCP presentation surface. Requires `--mcp`; defaults to `direct`. |
 | `--diagnostics` | Print version, tool counts, active settings, and runtime limits. |
 | `--format json or text` | Set diagnostics output format. Requires `--diagnostics`; defaults to `text`. |
-| `update` | Download and verify the latest stable release. |
+| `update` | Update to latest stable; see [installation details](installation.md). |
 | `integrate` | List supported clients. `integrate detect` reports installed clients. |
 | `integrate <client>` | Print setup instructions for `zed`, `codex`, `claude`, `cursor`, `vscode`, or `opencode`. |
 | `--discovery` | Render setup for the discovery surface. Use with `integrate <client>`. |
@@ -48,9 +48,6 @@ conversions. `**` means power; `^` means bitwise XOR. `g` means gram. Use
 `gravity` or `standardgravity` for standard gravity. See
 [Math Features](math-features.md) for supported operations and units.
 
-`log10(x)`, `log2(x)`, and `log1p(x)` currently fail through the natural-language
-path used by the CLI and `math_eval`. Use `log(x, base)` instead.
-
 Errors go to stderr and return a non-zero exit code:
 
 ```console
@@ -67,11 +64,9 @@ eggsact --mcp
 ```
 
 The default `direct` surface advertises tools allowed by the active profile and
-audience. The registry contains 86 tools. In the `full` profile, the default
-Model audience sees 77. Other profile and audience combinations show different
-counts. Run `eggsact --diagnostics` to see the count for each profile.
-
-Use discovery when the client supports deferred tool discovery:
+audience. Use `discovery` when the client supports deferred tool discovery. It
+shows a smaller set of entry tools plus search and invoke, without changing
+access policy:
 
 ```bash
 eggsact --mcp --mcp-surface discovery
@@ -79,12 +74,9 @@ eggsact --mcp --mcp-surface discovery
 EGGSACT_MCP_SURFACE=discovery eggsact --mcp
 ```
 
-With the `full` profile and Model audience, discovery lists five pinned front
-doors plus the `tool_search` and `tool_invoke` facades, seven entries total.
-Other profile and audience settings may hide pinned tools. Discovery changes
-presentation, not access policy.
-See the [MCP tool reference](mcp-tools.md) for tool behavior and
-[MCP server architecture](../architecture/mcp-server.md) for protocol details.
+Other profile and audience settings may hide tools. See [MCP tools](mcp-tools.md)
+for behavior and [server architecture](../architecture/mcp-server.md) for
+protocol details.
 
 ## Client setup
 
@@ -99,11 +91,9 @@ eggsact integrate codex --discovery
 ```
 
 Replace `codex` with another supported client name. On Unix, `claude` and
-`vscode` render a copy-paste shell command. On Windows they render a JSON
-configuration block plus its target file (`.claude.json` / `.mcp.json` for
-Claude, `.vscode\mcp.json` for VS Code) instead of a `cmd.exe` one-liner, so a
-path containing `%VAR%`, `&`, or `^` cannot be reinterpreted by the shell. See
-[client integration details](../architecture/coding-agent-integration.md).
+`vscode` print copyable shell commands. On Windows, they print a JSON
+configuration block and its target file. See the
+[client integration guide](../architecture/coding-agent-integration.md).
 
 ## Diagnostics
 

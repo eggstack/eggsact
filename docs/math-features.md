@@ -33,10 +33,10 @@ See also: [Library API](library-api.md), [Calculator Core](../architecture/calcu
 
 `log(x)` / `ln(x)`, `log(x, base)`, `exp(x)`, `expm1(x)`
 
-The expression evaluator implements `log10(x)`, `log2(x)`, and `log1p(x)`, but
-the natural-language path used by `run()`, the CLI, and `math_eval` currently
-returns `Error: Unknown constant: log`. Use `log(x, base)` instead. See
-[CLI usage](cli.md).
+`evaluate()` supports `log10(x)`, `log2(x)`, and `log1p(x)`. The natural-language
+path used by `run()`, the CLI, and MCP `math_eval` currently returns
+`Error: Unknown constant: log` for these functions. Use `log(x, base)` through
+those interfaces.
 
 ### Power / Root
 
